@@ -216,3 +216,19 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ROS2 build artifacts
+install/
+log/
+
+# Competition submission artifacts
+*.bag
+*.bag.active
+*.db3
+*.mcap
+*.mp4
+*.avi
+*.mov
+*.zip
+*.key
+simulator/
