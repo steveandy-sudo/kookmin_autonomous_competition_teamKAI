@@ -10,6 +10,7 @@ def generate_launch_description():
     yolo_light_model_path = LaunchConfiguration('yolo_light_model_path')
     light_debug_image_topic = LaunchConfiguration('light_debug_image_topic')
     control_rate_hz = LaunchConfiguration('control_rate_hz')
+    yolo_light_input_size = LaunchConfiguration('yolo_light_input_size')
     yolo_light_conf_threshold = LaunchConfiguration('yolo_light_conf_threshold')
     yolo_red_light_period_sec = LaunchConfiguration('yolo_red_light_period_sec')
 
@@ -18,6 +19,7 @@ def generate_launch_description():
         DeclareLaunchArgument('yolo_light_model_path', default_value='/home/xytron/model/best_new.onnx'),
         DeclareLaunchArgument('light_debug_image_topic', default_value='/track_drive/light_debug_image'),
         DeclareLaunchArgument('control_rate_hz', default_value='20.0'),
+        DeclareLaunchArgument('yolo_light_input_size', default_value='640'),
         DeclareLaunchArgument('yolo_light_conf_threshold', default_value='0.45'),
         DeclareLaunchArgument('yolo_red_light_period_sec', default_value='0.10'),
 
@@ -35,6 +37,7 @@ def generate_launch_description():
                 'light_debug_image_topic': light_debug_image_topic,
                 'yolo_safety_enabled': True,
                 'yolo_light_model_path': yolo_light_model_path,
+                'yolo_light_input_size': ParameterValue(yolo_light_input_size, value_type=int),
                 'yolo_light_conf_threshold': ParameterValue(yolo_light_conf_threshold, value_type=float),
                 'yolo_red_light_period_sec': ParameterValue(yolo_red_light_period_sec, value_type=float),
                 'stop_on_red_light_enabled': True,

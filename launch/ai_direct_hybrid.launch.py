@@ -172,6 +172,7 @@ def generate_launch_description():
     yolo_person_model_path = LaunchConfiguration('yolo_person_model_path')
     yolo_light_model_path = LaunchConfiguration('yolo_light_model_path')
     yolo_person_conf_threshold = LaunchConfiguration('yolo_person_conf_threshold')
+    yolo_light_input_size = LaunchConfiguration('yolo_light_input_size')
     yolo_safety_period_sec = LaunchConfiguration('yolo_safety_period_sec')
     yolo_red_light_period_sec = LaunchConfiguration('yolo_red_light_period_sec')
     yolo_person_min_box_height_ratio = LaunchConfiguration('yolo_person_min_box_height_ratio')
@@ -351,6 +352,7 @@ def generate_launch_description():
         DeclareLaunchArgument('yolo_safety_enabled', default_value='true'),
         DeclareLaunchArgument('yolo_person_model_path', default_value='/home/xytron/model/best.onnx'),
         DeclareLaunchArgument('yolo_light_model_path', default_value='/home/xytron/model/best_new.onnx'),
+        DeclareLaunchArgument('yolo_light_input_size', default_value='640'),
         DeclareLaunchArgument('yolo_person_conf_threshold', default_value='0.26'),
         DeclareLaunchArgument('yolo_safety_period_sec', default_value='0.02'),
         DeclareLaunchArgument('yolo_red_light_period_sec', default_value='0.10'),
@@ -633,6 +635,7 @@ def generate_launch_description():
                 'yolo_safety_enabled': ParameterValue(yolo_safety_enabled, value_type=bool),
                 'yolo_person_model_path': yolo_person_model_path,
                 'yolo_light_model_path': yolo_light_model_path,
+                'yolo_light_input_size': ParameterValue(yolo_light_input_size, value_type=int),
                 'yolo_person_conf_threshold': ParameterValue(yolo_person_conf_threshold, value_type=float),
                 'yolo_safety_period_sec': ParameterValue(yolo_safety_period_sec, value_type=float),
                 'yolo_red_light_period_sec': ParameterValue(yolo_red_light_period_sec, value_type=float),

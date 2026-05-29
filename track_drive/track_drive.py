@@ -148,7 +148,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('yolo_person_model_path', '/home/xytron/model/best.onnx')
         self.declare_parameter('yolo_light_model_path', '/home/xytron/model/best_new.onnx')
         self.declare_parameter('yolo_person_input_size', 640)
-        self.declare_parameter('yolo_light_input_size', 416)
+        self.declare_parameter('yolo_light_input_size', 640)
         self.declare_parameter('yolo_person_class_count', 4)
         self.declare_parameter('yolo_light_class_count', 5)
         self.declare_parameter('yolo_person_conf_threshold', 0.26)
