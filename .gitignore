@@ -232,3 +232,13 @@ log/
 *.zip
 *.key
 simulator/
+
+# Imitation-learning datasets and model artifacts
+*.pt
+*.pth
+*.onnx
+*.engine
+cone_il_dataset*/
+cone_il_model*/
+*.npy
+*:Zone.Identifier
