@@ -453,6 +453,7 @@ class TrackDriverNode(Node):
         self.school_zone_yellow_bottom_pair_row_ratio = 0.0
         self.school_zone_yellow_separation_ratio = 0.0
         self.school_zone_candidate_active = False
+        self.school_zone_candidate_last_seen_sec: Optional[float] = None
         self.school_zone_confirm_count = 0
         self.school_zone_lost_count = 0
         self.school_zone_last_seen_sec: Optional[float] = None
@@ -3930,6 +3931,7 @@ class TrackDriverNode(Node):
             self.school_zone_confirm_count = 0
             self.school_zone_lost_count = 0
             self.school_zone_last_seen_sec = None
+            self.school_zone_candidate_last_seen_sec = None
             return
         if (
             bool(self.get_parameter('school_zone_suppress_when_vehicle_visible').value)
@@ -3939,6 +3941,7 @@ class TrackDriverNode(Node):
             self.school_zone_confirm_count = 0
             self.school_zone_lost_count = 0
             self.school_zone_last_seen_sec = None
+            self.school_zone_candidate_last_seen_sec = None
             return
 
         height, width = image.shape[:2]
@@ -4025,6 +4028,8 @@ class TrackDriverNode(Node):
         min_pair_rows = max(int(self.get_parameter('school_zone_yellow_min_pair_rows').value), 1)
         preslow_ratio = float(np.clip(
             self.get_parameter('school_zone_preslow_ratio').value, 0.30, 1.00))
+        hold_sec = max(float(self.get_parameter('school_zone_hold_sec').value), 0.0)
+        now = time.monotonic()
         raw_active = (
             left_pixels >= min_pixels
             and right_pixels >= min_pixels
@@ -4037,7 +4042,7 @@ class TrackDriverNode(Node):
             and self.school_zone_yellow_bottom_pair_row_ratio >= bottom_pair_threshold
             and self.school_zone_yellow_separation_ratio >= min_separation
         )
-        self.school_zone_candidate_active = raw_active or (
+        candidate_raw = raw_active or (
             left_pixels >= int(min_pixels * preslow_ratio)
             and right_pixels >= int(min_pixels * preslow_ratio)
             and left_row_ratio >= row_ratio_threshold * preslow_ratio
@@ -4047,10 +4052,19 @@ class TrackDriverNode(Node):
             and self.school_zone_yellow_bottom_pair_row_ratio >= bottom_pair_threshold * preslow_ratio
             and self.school_zone_yellow_separation_ratio >= min_separation
         )
+        if candidate_raw:
+            self.school_zone_candidate_active = True
+            self.school_zone_candidate_last_seen_sec = now
+        elif (
+            self.school_zone_candidate_last_seen_sec is not None
+            and now - self.school_zone_candidate_last_seen_sec <= hold_sec
+        ):
+            self.school_zone_candidate_active = True
+        else:
+            self.school_zone_candidate_active = False
+
         confirm_frames = max(int(self.get_parameter('school_zone_confirm_frames').value), 1)
         lost_frames = max(int(self.get_parameter('school_zone_lost_frames').value), 0)
-        hold_sec = max(float(self.get_parameter('school_zone_hold_sec').value), 0.0)
-        now = time.monotonic()
         if raw_active:
             self.school_zone_confirm_count += 1
             self.school_zone_lost_count = 0
