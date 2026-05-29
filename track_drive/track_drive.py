@@ -141,6 +141,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('yolo_vehicle_class_ids', [0, 2])
         self.declare_parameter('yolo_light_class_ids', [2, 3, 4])
         self.declare_parameter('yolo_red_light_class_ids', [2])
+        self.declare_parameter('yolo_go_light_class_ids', [3, 4])
         self.declare_parameter('yolo_person_min_box_height_ratio', 0.035)
         self.declare_parameter('yolo_person_min_box_bottom_ratio', 0.24)
         self.declare_parameter('yolo_vehicle_min_box_height_ratio', 0.025)
@@ -163,8 +164,9 @@ class TrackDriverNode(Node):
         self.declare_parameter('red_light_min_ratio', 0.006)
         self.declare_parameter('red_light_min_dominance', 1.80)
         self.declare_parameter('red_light_min_circularity', 0.25)
+        self.declare_parameter('red_light_go_release_enabled', True)
         self.declare_parameter('startup_light_check_enabled', True)
-        self.declare_parameter('startup_light_check_timeout_sec', 1.50)
+        self.declare_parameter('startup_light_check_timeout_sec', 0.80)
         self.declare_parameter('stop_on_person_enabled', False)
         self.declare_parameter('stop_on_vehicle_enabled', False)
         self.declare_parameter('vehicle_overtake_enabled', False)
@@ -1252,6 +1254,8 @@ class TrackDriverNode(Node):
             self.cached_yolo_vehicle_detections = []
             self.cached_yolo_vehicle_box = None
             self.cached_yolo_red_light = False
+            self.cached_yolo_go_light = False
+            self.cached_yolo_raw_red_light = False
             self.red_light_confirm_count = 0
             return
 
@@ -1328,6 +1332,8 @@ class TrackDriverNode(Node):
             self.yolo_light_checked_once = True
             self.yolo_light_last_check_sec = now
             self.cached_yolo_red_light = False
+            self.cached_yolo_go_light = False
+            self.cached_yolo_raw_red_light = False
             light_detections = self._run_yolo_detector(
                 'light',
                 str(self.get_parameter('yolo_light_model_path').value),
@@ -1338,8 +1344,10 @@ class TrackDriverNode(Node):
             )
             light_debug = []
             raw_red_light = False
+            raw_go_light = False
             light_class_ids = self._int_set_parameter('yolo_light_class_ids')
             red_light_class_ids = self._int_set_parameter('yolo_red_light_class_ids')
+            go_light_class_ids = self._int_set_parameter('yolo_go_light_class_ids')
             for box, score, class_id in light_detections:
                 if not self._class_id_allowed(class_id, light_class_ids):
                     continue
@@ -1350,11 +1358,18 @@ class TrackDriverNode(Node):
                     and self._class_id_allowed(class_id, red_light_class_ids)
                     and red_present
                 )
+                go_present = valid and self._class_id_allowed(class_id, go_light_class_ids)
                 raw_red_light = raw_red_light or red_present
+                raw_go_light = raw_go_light or go_present
                 light_debug.append((
                     box, score, class_id, valid,
                     red_present, red_ratio, green_ratio, yellow_ratio,
                 ))
+
+            self.cached_yolo_go_light = raw_go_light
+            if raw_go_light and bool(self.get_parameter('red_light_go_release_enabled').value):
+                raw_red_light = False
+            self.cached_yolo_raw_red_light = raw_red_light
 
             if raw_red_light:
                 self.red_light_confirm_count += 1
@@ -1367,6 +1382,8 @@ class TrackDriverNode(Node):
         elif not light_enabled:
             self.red_light_confirm_count = 0
             self.cached_yolo_red_light = False
+            self.cached_yolo_go_light = False
+            self.cached_yolo_raw_red_light = False
             self._publish_light_debug_image(image, [])
 
     def _run_yolo_detector(
@@ -2615,10 +2632,14 @@ class TrackDriverNode(Node):
 
         debug = image.copy()
         status = 'RED CONFIRMED' if self.cached_yolo_red_light else 'NO RED'
+        if self.cached_yolo_go_light and not self.cached_yolo_red_light:
+            status = 'GO LIGHT'
         if self.red_light_confirm_count > 0 and not self.cached_yolo_red_light:
             status = f'RAW RED {self.red_light_confirm_count}'
         status_color = (0, 0, 255) if self.cached_yolo_red_light else (0, 180, 255)
-        if self.red_light_confirm_count == 0 and not self.cached_yolo_red_light:
+        if self.cached_yolo_go_light and not self.cached_yolo_red_light:
+            status_color = (0, 220, 0)
+        elif self.red_light_confirm_count == 0 and not self.cached_yolo_red_light:
             status_color = (0, 220, 0)
 
         cv2.rectangle(debug, (6, 6), (360, 56), (0, 0, 0), thickness=-1)
@@ -2634,7 +2655,7 @@ class TrackDriverNode(Node):
         )
         cv2.putText(
             debug,
-            f'red_count={self.red_light_confirm_count}',
+            f'red_count={self.red_light_confirm_count} go={int(self.cached_yolo_go_light)}',
             (14, 49),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.50,

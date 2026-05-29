@@ -170,6 +170,7 @@ def generate_launch_description():
     red_light_confirm_frames = LaunchConfiguration('red_light_confirm_frames')
     red_light_min_ratio = LaunchConfiguration('red_light_min_ratio')
     red_light_min_dominance = LaunchConfiguration('red_light_min_dominance')
+    red_light_go_release_enabled = LaunchConfiguration('red_light_go_release_enabled')
     startup_light_check_enabled = LaunchConfiguration('startup_light_check_enabled')
     startup_light_check_timeout_sec = LaunchConfiguration('startup_light_check_timeout_sec')
     safety_stop_hold_sec = LaunchConfiguration('safety_stop_hold_sec')
@@ -336,8 +337,9 @@ def generate_launch_description():
         DeclareLaunchArgument('red_light_confirm_frames', default_value='2'),
         DeclareLaunchArgument('red_light_min_ratio', default_value='0.006'),
         DeclareLaunchArgument('red_light_min_dominance', default_value='1.80'),
+        DeclareLaunchArgument('red_light_go_release_enabled', default_value='true'),
         DeclareLaunchArgument('startup_light_check_enabled', default_value='true'),
-        DeclareLaunchArgument('startup_light_check_timeout_sec', default_value='1.50'),
+        DeclareLaunchArgument('startup_light_check_timeout_sec', default_value='0.80'),
         DeclareLaunchArgument('safety_stop_hold_sec', default_value='0.35'),
 
         Node(
@@ -602,6 +604,8 @@ def generate_launch_description():
                 'red_light_confirm_frames': ParameterValue(red_light_confirm_frames, value_type=int),
                 'red_light_min_ratio': ParameterValue(red_light_min_ratio, value_type=float),
                 'red_light_min_dominance': ParameterValue(red_light_min_dominance, value_type=float),
+                'red_light_go_release_enabled': ParameterValue(
+                    red_light_go_release_enabled, value_type=bool),
                 'startup_light_check_enabled': ParameterValue(startup_light_check_enabled, value_type=bool),
                 'startup_light_check_timeout_sec': ParameterValue(
                     startup_light_check_timeout_sec, value_type=float),
