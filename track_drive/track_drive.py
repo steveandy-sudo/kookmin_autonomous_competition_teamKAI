@@ -155,7 +155,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('yolo_light_conf_threshold', 0.70)
         self.declare_parameter('yolo_person_class_ids', [3])
         self.declare_parameter('yolo_vehicle_class_ids', [0, 2])
-        self.declare_parameter('yolo_light_class_ids', [1, 2, 3, 4])
+        self.declare_parameter('yolo_light_class_ids', [0, 1, 2, 3, 4])
         self.declare_parameter('yolo_red_light_class_ids', [3, 4])
         self.declare_parameter('yolo_go_light_class_ids', [1])
         self.declare_parameter('yolo_person_min_box_height_ratio', 0.035)
@@ -2732,7 +2732,10 @@ class TrackDriverNode(Node):
         for box, score, class_id, valid, red_present, red_ratio, green_ratio, yellow_ratio in light_debug:
             x0, y0, x1, y1 = box
             class_name = self._light_class_name(class_id)
-            if not valid:
+            if int(class_id) == 0:
+                color = (0, 165, 255)
+                label = f'CONE:{class_name}'
+            elif not valid:
                 color = (130, 130, 130)
                 label = f'reject:{class_name}'
             elif red_present:

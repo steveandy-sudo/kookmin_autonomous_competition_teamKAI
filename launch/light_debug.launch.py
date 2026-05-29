@@ -42,7 +42,7 @@ def generate_launch_description():
                 'yolo_red_light_period_sec': ParameterValue(yolo_red_light_period_sec, value_type=float),
                 'stop_on_red_light_enabled': True,
                 'red_light_confirm_frames': 1,
-                'yolo_light_class_ids': [1, 2, 3, 4],
+                'yolo_light_class_ids': [0, 1, 2, 3, 4],
                 'yolo_red_light_class_ids': [3, 4],
                 'yolo_go_light_class_ids': [1],
                 'stop_on_person_enabled': False,
