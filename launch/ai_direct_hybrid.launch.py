@@ -350,7 +350,7 @@ def generate_launch_description():
         DeclareLaunchArgument('person_avoidance_steer_smoothing', default_value='0.0'),
         DeclareLaunchArgument('yolo_safety_enabled', default_value='true'),
         DeclareLaunchArgument('yolo_person_model_path', default_value='/home/xytron/model/best.onnx'),
-        DeclareLaunchArgument('yolo_light_model_path', default_value='/home/xytron/model/light.onnx'),
+        DeclareLaunchArgument('yolo_light_model_path', default_value='/home/xytron/model/best_new.onnx'),
         DeclareLaunchArgument('yolo_person_conf_threshold', default_value='0.26'),
         DeclareLaunchArgument('yolo_safety_period_sec', default_value='0.02'),
         DeclareLaunchArgument('yolo_red_light_period_sec', default_value='0.10'),

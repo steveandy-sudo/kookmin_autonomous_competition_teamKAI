@@ -146,7 +146,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('ai_speed_limit_topic', '/cone_ai/speed_limit')
         self.declare_parameter('yolo_safety_enabled', True)
         self.declare_parameter('yolo_person_model_path', '/home/xytron/model/best.onnx')
-        self.declare_parameter('yolo_light_model_path', '/home/xytron/model/light.onnx')
+        self.declare_parameter('yolo_light_model_path', '/home/xytron/model/best_new.onnx')
         self.declare_parameter('yolo_person_input_size', 640)
         self.declare_parameter('yolo_light_input_size', 416)
         self.declare_parameter('yolo_person_class_count', 4)
@@ -155,9 +155,9 @@ class TrackDriverNode(Node):
         self.declare_parameter('yolo_light_conf_threshold', 0.70)
         self.declare_parameter('yolo_person_class_ids', [3])
         self.declare_parameter('yolo_vehicle_class_ids', [0, 2])
-        self.declare_parameter('yolo_light_class_ids', [2, 3, 4])
-        self.declare_parameter('yolo_red_light_class_ids', [2, 3])
-        self.declare_parameter('yolo_go_light_class_ids', [4])
+        self.declare_parameter('yolo_light_class_ids', [1, 3, 4])
+        self.declare_parameter('yolo_red_light_class_ids', [3, 4])
+        self.declare_parameter('yolo_go_light_class_ids', [1])
         self.declare_parameter('yolo_person_min_box_height_ratio', 0.035)
         self.declare_parameter('yolo_person_min_box_bottom_ratio', 0.24)
         self.declare_parameter('yolo_vehicle_min_box_height_ratio', 0.025)
@@ -1406,8 +1406,7 @@ class TrackDriverNode(Node):
                 valid = self._valid_light_detection(image, box)
                 red_present, red_ratio, green_ratio, yellow_ratio = self._red_light_box_metrics(image, box)
                 is_stop_light_class = valid and self._class_id_allowed(class_id, red_light_class_ids)
-                is_yellow_stop_light = is_stop_light_class and int(class_id) == 3
-                red_present = is_stop_light_class and (red_present or is_yellow_stop_light)
+                red_present = is_stop_light_class
                 go_present = valid and self._class_id_allowed(class_id, go_light_class_ids)
                 raw_red_light = raw_red_light or red_present
                 raw_go_light = raw_go_light or go_present
