@@ -704,12 +704,6 @@ class TrackDriverNode(Node):
         white_lane_path = self._build_lane_center_path(self.image)
         school_zone_path = self._build_school_zone_center_path(self.image)
         lane_guard_path = self._lane_guard_reference_path(white_lane_path)
-        if school_zone_path is not None and lane_guard_path is not None:
-            school_zone_path = self._clamp_path_to_guard(
-                school_zone_path,
-                lane_guard_path,
-                self._vehicle_lane_center_offset_limit(),
-            )
         lane_path = school_zone_path if school_zone_path is not None else white_lane_path
         cone_path = None if school_zone_path is not None else self._build_cone_center_path(cones)
         if school_zone_path is not None:
@@ -811,7 +805,6 @@ class TrackDriverNode(Node):
                 smoothing_override=float(self.get_parameter('school_zone_steer_smoothing').value),
                 lookahead_scale_override=float(self.get_parameter('school_zone_lookahead_scale').value),
             )
-            steer = self._lane_edge_steer_guard(steer, best.path, lane_guard_path)
             speed = self._target_speed(steer, cones, best.min_clearance)
             self.last_mode = 'school_zone_yellow_line'
         else:
