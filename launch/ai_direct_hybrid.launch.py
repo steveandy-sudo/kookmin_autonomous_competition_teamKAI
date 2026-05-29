@@ -13,6 +13,7 @@ def generate_launch_description():
     speed = LaunchConfiguration('speed')
     max_steer_deg = LaunchConfiguration('max_steer_deg')
     ai_enable_topic = LaunchConfiguration('ai_enable_topic')
+    ai_speed_limit_topic = LaunchConfiguration('ai_speed_limit_topic')
     hybrid_trigger_topic = LaunchConfiguration('hybrid_trigger_topic')
     control_rate_hz = LaunchConfiguration('control_rate_hz')
     publish_light_debug_image = LaunchConfiguration('publish_light_debug_image')
@@ -30,6 +31,8 @@ def generate_launch_description():
         'school_zone_yellow_min_separation_ratio')
     school_zone_yellow_row_max_width_ratio = LaunchConfiguration('school_zone_yellow_row_max_width_ratio')
     school_zone_yellow_min_pixels = LaunchConfiguration('school_zone_yellow_min_pixels')
+    school_zone_preslow_enabled = LaunchConfiguration('school_zone_preslow_enabled')
+    school_zone_preslow_ratio = LaunchConfiguration('school_zone_preslow_ratio')
     school_zone_confirm_frames = LaunchConfiguration('school_zone_confirm_frames')
     school_zone_lost_frames = LaunchConfiguration('school_zone_lost_frames')
     school_zone_hold_sec = LaunchConfiguration('school_zone_hold_sec')
@@ -194,20 +197,23 @@ def generate_launch_description():
         DeclareLaunchArgument('speed', default_value='10.0'),
         DeclareLaunchArgument('max_steer_deg', default_value='100.0'),
         DeclareLaunchArgument('ai_enable_topic', default_value='/cone_ai/enable'),
+        DeclareLaunchArgument('ai_speed_limit_topic', default_value='/cone_ai/speed_limit'),
         DeclareLaunchArgument('hybrid_trigger_topic', default_value='/track_drive/hybrid_trigger'),
         DeclareLaunchArgument('control_rate_hz', default_value='20.0'),
         DeclareLaunchArgument('publish_light_debug_image', default_value='true'),
         DeclareLaunchArgument('school_zone_speed', default_value='6.0'),
         DeclareLaunchArgument('school_zone_left_edge_max_ratio', default_value='0.36'),
         DeclareLaunchArgument('school_zone_right_edge_min_ratio', default_value='0.64'),
-        DeclareLaunchArgument('school_zone_yellow_ratio_threshold', default_value='0.008'),
-        DeclareLaunchArgument('school_zone_yellow_row_ratio_threshold', default_value='0.16'),
-        DeclareLaunchArgument('school_zone_yellow_pair_row_ratio_threshold', default_value='0.14'),
-        DeclareLaunchArgument('school_zone_yellow_bottom_pair_row_ratio_threshold', default_value='0.12'),
-        DeclareLaunchArgument('school_zone_yellow_min_pair_rows', default_value='8'),
+        DeclareLaunchArgument('school_zone_yellow_ratio_threshold', default_value='0.006'),
+        DeclareLaunchArgument('school_zone_yellow_row_ratio_threshold', default_value='0.14'),
+        DeclareLaunchArgument('school_zone_yellow_pair_row_ratio_threshold', default_value='0.12'),
+        DeclareLaunchArgument('school_zone_yellow_bottom_pair_row_ratio_threshold', default_value='0.10'),
+        DeclareLaunchArgument('school_zone_yellow_min_pair_rows', default_value='6'),
         DeclareLaunchArgument('school_zone_yellow_min_separation_ratio', default_value='0.42'),
         DeclareLaunchArgument('school_zone_yellow_row_max_width_ratio', default_value='0.10'),
-        DeclareLaunchArgument('school_zone_yellow_min_pixels', default_value='150'),
+        DeclareLaunchArgument('school_zone_yellow_min_pixels', default_value='120'),
+        DeclareLaunchArgument('school_zone_preslow_enabled', default_value='true'),
+        DeclareLaunchArgument('school_zone_preslow_ratio', default_value='0.60'),
         DeclareLaunchArgument('school_zone_confirm_frames', default_value='2'),
         DeclareLaunchArgument('school_zone_lost_frames', default_value='3'),
         DeclareLaunchArgument('school_zone_hold_sec', default_value='1.0'),
@@ -376,6 +382,7 @@ def generate_launch_description():
                 'max_steer_deg': ParameterValue(max_steer_deg, value_type=float),
                 'control_rate_hz': ParameterValue(control_rate_hz, value_type=float),
                 'enable_topic': ai_enable_topic,
+                'speed_limit_topic': ai_speed_limit_topic,
                 'start_enabled': True,
                 'use_lidar_emergency_stop': False,
                 'require_orange_gate': False,
@@ -413,6 +420,8 @@ def generate_launch_description():
                 'school_zone_yellow_row_max_width_ratio': ParameterValue(
                     school_zone_yellow_row_max_width_ratio, value_type=float),
                 'school_zone_yellow_min_pixels': ParameterValue(school_zone_yellow_min_pixels, value_type=int),
+                'school_zone_preslow_enabled': ParameterValue(school_zone_preslow_enabled, value_type=bool),
+                'school_zone_preslow_ratio': ParameterValue(school_zone_preslow_ratio, value_type=float),
                 'school_zone_confirm_frames': ParameterValue(school_zone_confirm_frames, value_type=int),
                 'school_zone_lost_frames': ParameterValue(school_zone_lost_frames, value_type=int),
                 'school_zone_hold_sec': ParameterValue(school_zone_hold_sec, value_type=float),
@@ -443,6 +452,7 @@ def generate_launch_description():
                 'hybrid_trigger_topic': hybrid_trigger_topic,
                 'hybrid_standby_enabled': True,
                 'ai_enable_topic': ai_enable_topic,
+                'ai_speed_limit_topic': ai_speed_limit_topic,
                 'ai_hybrid_enabled': False,
                 'ai_passthrough_enabled': False,
                 'ai_command_passthrough_enabled': False,

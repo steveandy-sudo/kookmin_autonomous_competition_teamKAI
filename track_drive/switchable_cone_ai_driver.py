@@ -3,7 +3,7 @@
 
 import cv2
 import rclpy
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Float32
 
 from cone_il.cone_ai_driver_node import ConeAIDriver
 
@@ -14,17 +14,32 @@ class SwitchableConeAIDriver(ConeAIDriver):
 
         self.declare_parameter('enable_topic', '/cone_ai/enable')
         self.declare_parameter('start_enabled', False)
+        self.declare_parameter('speed_limit_topic', '/cone_ai/speed_limit')
         self.enabled = bool(self.get_parameter('start_enabled').value)
+        self.speed_limit = -1.0
 
         enable_topic = str(self.get_parameter('enable_topic').value)
+        speed_limit_topic = str(self.get_parameter('speed_limit_topic').value)
         self.create_subscription(Bool, enable_topic, self.enable_callback, 10)
-        self.get_logger().info(f'AI direct enable topic={enable_topic}, start_enabled={self.enabled}')
+        self.create_subscription(Float32, speed_limit_topic, self.speed_limit_callback, 10)
+        self.get_logger().info(
+            f'AI direct enable topic={enable_topic}, speed_limit_topic={speed_limit_topic}, '
+            f'start_enabled={self.enabled}'
+        )
 
     def enable_callback(self, msg: Bool):
         enabled = bool(msg.data)
         if self.enabled != enabled:
             self._log_status_once('enabled' if enabled else 'disabled')
         self.enabled = enabled
+
+    def speed_limit_callback(self, msg: Float32):
+        self.speed_limit = float(msg.data)
+
+    def drive(self, angle: float, speed: float):
+        if self.speed_limit >= 0.0 and speed > 0.0:
+            speed = min(float(speed), self.speed_limit)
+        super().drive(angle, speed)
 
     def control_once(self):
         if not self.enabled:

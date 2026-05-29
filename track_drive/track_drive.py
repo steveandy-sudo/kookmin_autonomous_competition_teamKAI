@@ -90,14 +90,16 @@ class TrackDriverNode(Node):
         self.declare_parameter('school_zone_roi_top_ratio', 0.40)
         self.declare_parameter('school_zone_left_edge_max_ratio', 0.36)
         self.declare_parameter('school_zone_right_edge_min_ratio', 0.64)
-        self.declare_parameter('school_zone_yellow_ratio_threshold', 0.008)
-        self.declare_parameter('school_zone_yellow_row_ratio_threshold', 0.16)
-        self.declare_parameter('school_zone_yellow_pair_row_ratio_threshold', 0.14)
-        self.declare_parameter('school_zone_yellow_bottom_pair_row_ratio_threshold', 0.12)
-        self.declare_parameter('school_zone_yellow_min_pair_rows', 8)
+        self.declare_parameter('school_zone_yellow_ratio_threshold', 0.006)
+        self.declare_parameter('school_zone_yellow_row_ratio_threshold', 0.14)
+        self.declare_parameter('school_zone_yellow_pair_row_ratio_threshold', 0.12)
+        self.declare_parameter('school_zone_yellow_bottom_pair_row_ratio_threshold', 0.10)
+        self.declare_parameter('school_zone_yellow_min_pair_rows', 6)
         self.declare_parameter('school_zone_yellow_min_separation_ratio', 0.42)
         self.declare_parameter('school_zone_yellow_row_max_width_ratio', 0.10)
-        self.declare_parameter('school_zone_yellow_min_pixels', 150)
+        self.declare_parameter('school_zone_yellow_min_pixels', 120)
+        self.declare_parameter('school_zone_preslow_enabled', True)
+        self.declare_parameter('school_zone_preslow_ratio', 0.60)
         self.declare_parameter('school_zone_confirm_frames', 2)
         self.declare_parameter('school_zone_lost_frames', 3)
         self.declare_parameter('school_zone_hold_sec', 1.0)
@@ -140,6 +142,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('hybrid_trigger_topic', '/track_drive/hybrid_trigger')
         self.declare_parameter('hybrid_standby_enabled', False)
         self.declare_parameter('ai_enable_topic', '/cone_ai/enable')
+        self.declare_parameter('ai_speed_limit_topic', '/cone_ai/speed_limit')
         self.declare_parameter('yolo_safety_enabled', True)
         self.declare_parameter('yolo_person_model_path', '/home/xytron/model/best.onnx')
         self.declare_parameter('yolo_light_model_path', '/home/xytron/model/light.onnx')
@@ -448,6 +451,7 @@ class TrackDriverNode(Node):
         self.school_zone_yellow_pair_row_ratio = 0.0
         self.school_zone_yellow_bottom_pair_row_ratio = 0.0
         self.school_zone_yellow_separation_ratio = 0.0
+        self.school_zone_candidate_active = False
         self.school_zone_confirm_count = 0
         self.school_zone_lost_count = 0
         self.school_zone_last_seen_sec: Optional[float] = None
@@ -478,10 +482,12 @@ class TrackDriverNode(Node):
         ai_command_topic = self.get_parameter('ai_command_topic').value
         hybrid_trigger_topic = self.get_parameter('hybrid_trigger_topic').value
         ai_enable_topic = self.get_parameter('ai_enable_topic').value
+        ai_speed_limit_topic = self.get_parameter('ai_speed_limit_topic').value
         light_debug_image_topic = self.get_parameter('light_debug_image_topic').value
 
         self.motor_pub = self.create_publisher(XycarMotor, motor_topic, 10)
         self.ai_enable_pub = self.create_publisher(Bool, ai_enable_topic, 10)
+        self.ai_speed_limit_pub = self.create_publisher(Float32, ai_speed_limit_topic, 10)
         self.nearest_obstacle_pub = self.create_publisher(
             Float32, '/track_drive/nearest_obstacle_distance', 10)
         self.marker_pub = self.create_publisher(MarkerArray, '/track_drive/markers', 10)
@@ -559,6 +565,17 @@ class TrackDriverNode(Node):
         msg.data = bool(enabled)
         self.ai_enable_pub.publish(msg)
 
+    def publish_ai_speed_limit(self):
+        msg = Float32()
+        if self.school_zone_active or (
+            self.school_zone_candidate_active
+            and bool(self.get_parameter('school_zone_preslow_enabled').value)
+        ):
+            msg.data = max(float(self.get_parameter('school_zone_speed').value), 0.0)
+        else:
+            msg.data = -1.0
+        self.ai_speed_limit_pub.publish(msg)
+
     def main_loop(self):
         self.get_logger().info('START DRIVING: lane/cone local lattice planner enabled')
 
@@ -578,6 +595,7 @@ class TrackDriverNode(Node):
         if bool(self.get_parameter('yolo_safety_enabled').value):
             self._update_yolo_safety_cache(self.image)
         self._update_school_zone_state(self.image)
+        self.publish_ai_speed_limit()
 
         command_passthrough_enabled = bool(self.get_parameter('ai_command_passthrough_enabled').value)
         if command_passthrough_enabled and self._can_relay_ai_motor_immediately():
@@ -3894,6 +3912,7 @@ class TrackDriverNode(Node):
         self.school_zone_yellow_pair_row_ratio = 0.0
         self.school_zone_yellow_bottom_pair_row_ratio = 0.0
         self.school_zone_yellow_separation_ratio = 0.0
+        self.school_zone_candidate_active = False
         if image is None or not bool(self.get_parameter('school_zone_enabled').value):
             self.school_zone_active = False
             self.school_zone_confirm_count = 0
@@ -3992,6 +4011,8 @@ class TrackDriverNode(Node):
             self.get_parameter('school_zone_yellow_bottom_pair_row_ratio_threshold').value, 0.0, 1.0))
         min_pixels = max(int(self.get_parameter('school_zone_yellow_min_pixels').value), 1)
         min_pair_rows = max(int(self.get_parameter('school_zone_yellow_min_pair_rows').value), 1)
+        preslow_ratio = float(np.clip(
+            self.get_parameter('school_zone_preslow_ratio').value, 0.30, 1.00))
         raw_active = (
             left_pixels >= min_pixels
             and right_pixels >= min_pixels
@@ -4002,6 +4023,16 @@ class TrackDriverNode(Node):
             and pair_row_hits >= min_pair_rows
             and self.school_zone_yellow_pair_row_ratio >= pair_row_threshold
             and self.school_zone_yellow_bottom_pair_row_ratio >= bottom_pair_threshold
+            and self.school_zone_yellow_separation_ratio >= min_separation
+        )
+        self.school_zone_candidate_active = raw_active or (
+            left_pixels >= int(min_pixels * preslow_ratio)
+            and right_pixels >= int(min_pixels * preslow_ratio)
+            and left_row_ratio >= row_ratio_threshold * preslow_ratio
+            and right_row_ratio >= row_ratio_threshold * preslow_ratio
+            and pair_row_hits >= max(3, int(min_pair_rows * preslow_ratio))
+            and self.school_zone_yellow_pair_row_ratio >= pair_row_threshold * preslow_ratio
+            and self.school_zone_yellow_bottom_pair_row_ratio >= bottom_pair_threshold * preslow_ratio
             and self.school_zone_yellow_separation_ratio >= min_separation
         )
         confirm_frames = max(int(self.get_parameter('school_zone_confirm_frames').value), 1)
@@ -4909,10 +4940,11 @@ class TrackDriverNode(Node):
         return f'{distance:.2f}m'
 
     def _school_zone_log_text(self) -> str:
-        if not self.school_zone_active:
+        if not self.school_zone_active and not self.school_zone_candidate_active:
             return ''
+        state = 'active' if self.school_zone_active else 'candidate'
         return (
-            f' school_zone=yellow({self.school_zone_yellow_left_ratio:.3f},'
+            f' school_zone={state}({self.school_zone_yellow_left_ratio:.3f},'
             f'{self.school_zone_yellow_right_ratio:.3f},'
             f'pair={self.school_zone_yellow_pair_row_ratio:.3f},'
             f'bottom={self.school_zone_yellow_bottom_pair_row_ratio:.3f},'
