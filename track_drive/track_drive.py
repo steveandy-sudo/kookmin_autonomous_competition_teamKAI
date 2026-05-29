@@ -155,7 +155,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('yolo_light_conf_threshold', 0.70)
         self.declare_parameter('yolo_person_class_ids', [3])
         self.declare_parameter('yolo_vehicle_class_ids', [0, 2])
-        self.declare_parameter('yolo_light_class_ids', [1, 3, 4])
+        self.declare_parameter('yolo_light_class_ids', [1, 2, 3, 4])
         self.declare_parameter('yolo_red_light_class_ids', [3, 4])
         self.declare_parameter('yolo_go_light_class_ids', [1])
         self.declare_parameter('yolo_person_min_box_height_ratio', 0.035)
@@ -2741,6 +2741,9 @@ class TrackDriverNode(Node):
             elif self._class_id_allowed(class_id, self._int_set_parameter('yolo_go_light_class_ids')):
                 color = (0, 220, 0)
                 label = f'GO:{class_name}'
+            elif int(class_id) == 2:
+                color = (255, 160, 0)
+                label = f'LEFT:{class_name}'
             elif yellow_ratio >= red_ratio and yellow_ratio >= green_ratio:
                 color = (0, 220, 255)
                 label = f'yellow?:{class_name}'
