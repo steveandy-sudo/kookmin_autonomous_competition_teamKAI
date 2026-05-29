@@ -86,7 +86,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('base_speed', 5.0)
         self.declare_parameter('min_speed', 3.0)
         self.declare_parameter('school_zone_enabled', True)
-        self.declare_parameter('school_zone_speed', 6.0)
+        self.declare_parameter('school_zone_speed', 5.0)
         self.declare_parameter('school_zone_roi_top_ratio', 0.40)
         self.declare_parameter('school_zone_left_edge_max_ratio', 0.36)
         self.declare_parameter('school_zone_right_edge_min_ratio', 0.64)

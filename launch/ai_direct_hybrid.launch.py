@@ -202,7 +202,7 @@ def generate_launch_description():
         DeclareLaunchArgument('hybrid_trigger_topic', default_value='/track_drive/hybrid_trigger'),
         DeclareLaunchArgument('control_rate_hz', default_value='20.0'),
         DeclareLaunchArgument('publish_light_debug_image', default_value='true'),
-        DeclareLaunchArgument('school_zone_speed', default_value='6.0'),
+        DeclareLaunchArgument('school_zone_speed', default_value='5.0'),
         DeclareLaunchArgument('school_zone_left_edge_max_ratio', default_value='0.36'),
         DeclareLaunchArgument('school_zone_right_edge_min_ratio', default_value='0.64'),
         DeclareLaunchArgument('school_zone_yellow_ratio_threshold', default_value='0.006'),
