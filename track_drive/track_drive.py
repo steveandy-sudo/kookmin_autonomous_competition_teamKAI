@@ -90,11 +90,14 @@ class TrackDriverNode(Node):
         self.declare_parameter('school_zone_roi_top_ratio', 0.40)
         self.declare_parameter('school_zone_left_edge_max_ratio', 0.36)
         self.declare_parameter('school_zone_right_edge_min_ratio', 0.64)
-        self.declare_parameter('school_zone_yellow_ratio_threshold', 0.005)
-        self.declare_parameter('school_zone_yellow_row_ratio_threshold', 0.12)
-        self.declare_parameter('school_zone_yellow_pair_row_ratio_threshold', 0.10)
+        self.declare_parameter('school_zone_yellow_ratio_threshold', 0.008)
+        self.declare_parameter('school_zone_yellow_row_ratio_threshold', 0.16)
+        self.declare_parameter('school_zone_yellow_pair_row_ratio_threshold', 0.14)
+        self.declare_parameter('school_zone_yellow_bottom_pair_row_ratio_threshold', 0.12)
+        self.declare_parameter('school_zone_yellow_min_pair_rows', 8)
+        self.declare_parameter('school_zone_yellow_min_separation_ratio', 0.42)
         self.declare_parameter('school_zone_yellow_row_max_width_ratio', 0.10)
-        self.declare_parameter('school_zone_yellow_min_pixels', 90)
+        self.declare_parameter('school_zone_yellow_min_pixels', 150)
         self.declare_parameter('school_zone_confirm_frames', 2)
         self.declare_parameter('school_zone_lost_frames', 3)
         self.declare_parameter('school_zone_hold_sec', 1.0)
@@ -443,6 +446,8 @@ class TrackDriverNode(Node):
         self.school_zone_yellow_left_ratio = 0.0
         self.school_zone_yellow_right_ratio = 0.0
         self.school_zone_yellow_pair_row_ratio = 0.0
+        self.school_zone_yellow_bottom_pair_row_ratio = 0.0
+        self.school_zone_yellow_separation_ratio = 0.0
         self.school_zone_confirm_count = 0
         self.school_zone_lost_count = 0
         self.school_zone_last_seen_sec: Optional[float] = None
@@ -3887,6 +3892,8 @@ class TrackDriverNode(Node):
         self.school_zone_yellow_left_ratio = 0.0
         self.school_zone_yellow_right_ratio = 0.0
         self.school_zone_yellow_pair_row_ratio = 0.0
+        self.school_zone_yellow_bottom_pair_row_ratio = 0.0
+        self.school_zone_yellow_separation_ratio = 0.0
         if image is None or not bool(self.get_parameter('school_zone_enabled').value):
             self.school_zone_active = False
             self.school_zone_confirm_count = 0
@@ -3947,8 +3954,33 @@ class TrackDriverNode(Node):
         right_row_hits = int(np.count_nonzero(right_row_mask))
         left_row_ratio = left_row_hits / float(max(left.shape[0], 1))
         right_row_ratio = right_row_hits / float(max(right.shape[0], 1))
-        pair_row_hits = int(np.count_nonzero(left_row_mask & right_row_mask))
+        min_separation = float(np.clip(
+            self.get_parameter('school_zone_yellow_min_separation_ratio').value, 0.10, 0.90))
+        paired_rows = np.nonzero(left_row_mask & right_row_mask)[0]
+        valid_pair_rows: List[int] = []
+        separations: List[float] = []
+        for row_idx in paired_rows:
+            left_xs = np.flatnonzero(left[row_idx])
+            right_xs = np.flatnonzero(right[row_idx])
+            if len(left_xs) < min_row_pixels or len(right_xs) < min_row_pixels:
+                continue
+            left_x = float(np.median(left_xs))
+            right_x = float(right_start + np.median(right_xs))
+            separation = (right_x - left_x) / float(max(width, 1))
+            if separation < min_separation:
+                continue
+            valid_pair_rows.append(int(row_idx))
+            separations.append(separation)
+
+        pair_row_hits = len(valid_pair_rows)
         self.school_zone_yellow_pair_row_ratio = pair_row_hits / float(max(left.shape[0], 1))
+        if separations:
+            self.school_zone_yellow_separation_ratio = float(np.median(separations))
+        bottom_start = int(left.shape[0] * 0.55)
+        bottom_pair_hits = sum(1 for row_idx in valid_pair_rows if row_idx >= bottom_start)
+        self.school_zone_yellow_bottom_pair_row_ratio = bottom_pair_hits / float(
+            max(left.shape[0] - bottom_start, 1)
+        )
 
         ratio_threshold = float(np.clip(
             self.get_parameter('school_zone_yellow_ratio_threshold').value, 0.0, 1.0))
@@ -3956,7 +3988,10 @@ class TrackDriverNode(Node):
             self.get_parameter('school_zone_yellow_row_ratio_threshold').value, 0.0, 1.0))
         pair_row_threshold = float(np.clip(
             self.get_parameter('school_zone_yellow_pair_row_ratio_threshold').value, 0.0, 1.0))
+        bottom_pair_threshold = float(np.clip(
+            self.get_parameter('school_zone_yellow_bottom_pair_row_ratio_threshold').value, 0.0, 1.0))
         min_pixels = max(int(self.get_parameter('school_zone_yellow_min_pixels').value), 1)
+        min_pair_rows = max(int(self.get_parameter('school_zone_yellow_min_pair_rows').value), 1)
         raw_active = (
             left_pixels >= min_pixels
             and right_pixels >= min_pixels
@@ -3964,7 +3999,10 @@ class TrackDriverNode(Node):
             and self.school_zone_yellow_right_ratio >= ratio_threshold
             and left_row_ratio >= row_ratio_threshold
             and right_row_ratio >= row_ratio_threshold
+            and pair_row_hits >= min_pair_rows
             and self.school_zone_yellow_pair_row_ratio >= pair_row_threshold
+            and self.school_zone_yellow_bottom_pair_row_ratio >= bottom_pair_threshold
+            and self.school_zone_yellow_separation_ratio >= min_separation
         )
         confirm_frames = max(int(self.get_parameter('school_zone_confirm_frames').value), 1)
         lost_frames = max(int(self.get_parameter('school_zone_lost_frames').value), 0)
@@ -4876,7 +4914,9 @@ class TrackDriverNode(Node):
         return (
             f' school_zone=yellow({self.school_zone_yellow_left_ratio:.3f},'
             f'{self.school_zone_yellow_right_ratio:.3f},'
-            f'pair={self.school_zone_yellow_pair_row_ratio:.3f})'
+            f'pair={self.school_zone_yellow_pair_row_ratio:.3f},'
+            f'bottom={self.school_zone_yellow_bottom_pair_row_ratio:.3f},'
+            f'sep={self.school_zone_yellow_separation_ratio:.2f})'
         )
 
     def _vehicle_log_text(self) -> str:

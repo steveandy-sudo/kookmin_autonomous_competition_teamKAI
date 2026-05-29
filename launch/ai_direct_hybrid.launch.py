@@ -23,6 +23,11 @@ def generate_launch_description():
     school_zone_yellow_row_ratio_threshold = LaunchConfiguration('school_zone_yellow_row_ratio_threshold')
     school_zone_yellow_pair_row_ratio_threshold = LaunchConfiguration(
         'school_zone_yellow_pair_row_ratio_threshold')
+    school_zone_yellow_bottom_pair_row_ratio_threshold = LaunchConfiguration(
+        'school_zone_yellow_bottom_pair_row_ratio_threshold')
+    school_zone_yellow_min_pair_rows = LaunchConfiguration('school_zone_yellow_min_pair_rows')
+    school_zone_yellow_min_separation_ratio = LaunchConfiguration(
+        'school_zone_yellow_min_separation_ratio')
     school_zone_yellow_row_max_width_ratio = LaunchConfiguration('school_zone_yellow_row_max_width_ratio')
     school_zone_yellow_min_pixels = LaunchConfiguration('school_zone_yellow_min_pixels')
     school_zone_confirm_frames = LaunchConfiguration('school_zone_confirm_frames')
@@ -195,11 +200,14 @@ def generate_launch_description():
         DeclareLaunchArgument('school_zone_speed', default_value='6.0'),
         DeclareLaunchArgument('school_zone_left_edge_max_ratio', default_value='0.36'),
         DeclareLaunchArgument('school_zone_right_edge_min_ratio', default_value='0.64'),
-        DeclareLaunchArgument('school_zone_yellow_ratio_threshold', default_value='0.005'),
-        DeclareLaunchArgument('school_zone_yellow_row_ratio_threshold', default_value='0.12'),
-        DeclareLaunchArgument('school_zone_yellow_pair_row_ratio_threshold', default_value='0.10'),
+        DeclareLaunchArgument('school_zone_yellow_ratio_threshold', default_value='0.008'),
+        DeclareLaunchArgument('school_zone_yellow_row_ratio_threshold', default_value='0.16'),
+        DeclareLaunchArgument('school_zone_yellow_pair_row_ratio_threshold', default_value='0.14'),
+        DeclareLaunchArgument('school_zone_yellow_bottom_pair_row_ratio_threshold', default_value='0.12'),
+        DeclareLaunchArgument('school_zone_yellow_min_pair_rows', default_value='8'),
+        DeclareLaunchArgument('school_zone_yellow_min_separation_ratio', default_value='0.42'),
         DeclareLaunchArgument('school_zone_yellow_row_max_width_ratio', default_value='0.10'),
-        DeclareLaunchArgument('school_zone_yellow_min_pixels', default_value='90'),
+        DeclareLaunchArgument('school_zone_yellow_min_pixels', default_value='150'),
         DeclareLaunchArgument('school_zone_confirm_frames', default_value='2'),
         DeclareLaunchArgument('school_zone_lost_frames', default_value='3'),
         DeclareLaunchArgument('school_zone_hold_sec', default_value='1.0'),
@@ -396,6 +404,12 @@ def generate_launch_description():
                     school_zone_yellow_row_ratio_threshold, value_type=float),
                 'school_zone_yellow_pair_row_ratio_threshold': ParameterValue(
                     school_zone_yellow_pair_row_ratio_threshold, value_type=float),
+                'school_zone_yellow_bottom_pair_row_ratio_threshold': ParameterValue(
+                    school_zone_yellow_bottom_pair_row_ratio_threshold, value_type=float),
+                'school_zone_yellow_min_pair_rows': ParameterValue(
+                    school_zone_yellow_min_pair_rows, value_type=int),
+                'school_zone_yellow_min_separation_ratio': ParameterValue(
+                    school_zone_yellow_min_separation_ratio, value_type=float),
                 'school_zone_yellow_row_max_width_ratio': ParameterValue(
                     school_zone_yellow_row_max_width_ratio, value_type=float),
                 'school_zone_yellow_min_pixels': ParameterValue(school_zone_yellow_min_pixels, value_type=int),
