@@ -338,7 +338,7 @@ def generate_launch_description():
         DeclareLaunchArgument('red_light_min_ratio', default_value='0.006'),
         DeclareLaunchArgument('red_light_min_dominance', default_value='1.80'),
         DeclareLaunchArgument('red_light_go_release_enabled', default_value='true'),
-        DeclareLaunchArgument('startup_light_check_enabled', default_value='true'),
+        DeclareLaunchArgument('startup_light_check_enabled', default_value='false'),
         DeclareLaunchArgument('startup_light_check_timeout_sec', default_value='0.80'),
         DeclareLaunchArgument('safety_stop_hold_sec', default_value='0.35'),
 
@@ -356,7 +356,7 @@ def generate_launch_description():
                 'max_steer_deg': ParameterValue(max_steer_deg, value_type=float),
                 'control_rate_hz': ParameterValue(control_rate_hz, value_type=float),
                 'enable_topic': ai_enable_topic,
-                'start_enabled': False,
+                'start_enabled': True,
                 'use_lidar_emergency_stop': False,
                 'require_orange_gate': False,
             }],

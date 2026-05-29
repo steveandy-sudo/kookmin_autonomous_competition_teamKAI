@@ -165,7 +165,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('red_light_min_dominance', 1.80)
         self.declare_parameter('red_light_min_circularity', 0.25)
         self.declare_parameter('red_light_go_release_enabled', True)
-        self.declare_parameter('startup_light_check_enabled', True)
+        self.declare_parameter('startup_light_check_enabled', False)
         self.declare_parameter('startup_light_check_timeout_sec', 0.80)
         self.declare_parameter('stop_on_person_enabled', False)
         self.declare_parameter('stop_on_vehicle_enabled', False)
