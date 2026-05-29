@@ -106,6 +106,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('school_zone_mask_vehicle_boxes', True)
         self.declare_parameter('school_zone_suppress_when_vehicle_visible', True)
         self.declare_parameter('school_zone_follow_yellow_centerline', True)
+        self.declare_parameter('school_zone_takeover_enabled', False)
         self.declare_parameter('school_zone_center_left_ratio', 0.30)
         self.declare_parameter('school_zone_center_right_ratio', 0.70)
         self.declare_parameter('school_zone_center_min_pixels', 24)
@@ -651,6 +652,7 @@ class TrackDriverNode(Node):
         if not person_avoidance_active:
             self._update_vehicle_lidar_fallback(self.scan_msg)
         vehicle_rule_requested = self._vehicle_rule_requested()
+        school_zone_takeover_requested = self._school_zone_takeover_requested()
         if person_avoidance_active:
             if standby_enabled:
                 self.publish_ai_enable(False)
@@ -665,7 +667,7 @@ class TrackDriverNode(Node):
                 self._should_use_hybrid_mode(nearest_obstacle)
                 or person_avoidance_active
                 or vehicle_rule_requested
-                or self.school_zone_active
+                or school_zone_takeover_requested
             )
             if not use_hybrid:
                 self.publish_ai_enable(True)
@@ -680,7 +682,7 @@ class TrackDriverNode(Node):
                 self._should_use_hybrid_mode(nearest_obstacle)
                 or person_avoidance_active
                 or vehicle_rule_requested
-                or self.school_zone_active
+                or school_zone_takeover_requested
             )
             if not use_hybrid:
                 if self.last_ai_motor_msg is not None:
@@ -705,7 +707,7 @@ class TrackDriverNode(Node):
             self._should_use_hybrid_mode(nearest_obstacle)
             or person_avoidance_active
             or vehicle_rule_requested
-            or self.school_zone_active
+            or school_zone_takeover_requested
         )
         ai_steer = None if (force_rule_hybrid or person_avoidance_active) else self._predict_ai_steer(
             self.image,
@@ -725,7 +727,11 @@ class TrackDriverNode(Node):
         raw_cones = self._extract_cones_from_scan(self.scan_msg)
         cones = raw_cones
         white_lane_path = self._build_lane_center_path(self.image)
-        school_zone_path = self._build_school_zone_center_path(self.image)
+        school_zone_path = (
+            self._build_school_zone_center_path(self.image)
+            if school_zone_takeover_requested
+            else None
+        )
         lane_guard_path = self._lane_guard_reference_path(white_lane_path)
         lane_path = school_zone_path if school_zone_path is not None else white_lane_path
         cone_path = None if school_zone_path is not None else self._build_cone_center_path(cones)
@@ -859,12 +865,18 @@ class TrackDriverNode(Node):
         trigger_distance = max(float(self.get_parameter('hybrid_obstacle_distance').value), 0.0)
         return nearest_obstacle < trigger_distance
 
+    def _school_zone_takeover_requested(self) -> bool:
+        return (
+            self.school_zone_active
+            and bool(self.get_parameter('school_zone_takeover_enabled').value)
+        )
+
     def _can_relay_ai_motor_immediately(self) -> bool:
         if not bool(self.get_parameter('ai_command_passthrough_enabled').value):
             return False
         if self.hybrid_trigger_active:
             return False
-        if self.school_zone_active:
+        if self._school_zone_takeover_requested():
             return False
         return not bool(self.get_parameter('hybrid_on_obstacle_enabled').value)
 

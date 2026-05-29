@@ -39,6 +39,7 @@ def generate_launch_description():
     school_zone_mask_vehicle_boxes = LaunchConfiguration('school_zone_mask_vehicle_boxes')
     school_zone_suppress_when_vehicle_visible = LaunchConfiguration('school_zone_suppress_when_vehicle_visible')
     school_zone_follow_yellow_centerline = LaunchConfiguration('school_zone_follow_yellow_centerline')
+    school_zone_takeover_enabled = LaunchConfiguration('school_zone_takeover_enabled')
     school_zone_center_left_ratio = LaunchConfiguration('school_zone_center_left_ratio')
     school_zone_center_right_ratio = LaunchConfiguration('school_zone_center_right_ratio')
     school_zone_center_min_pixels = LaunchConfiguration('school_zone_center_min_pixels')
@@ -220,6 +221,7 @@ def generate_launch_description():
         DeclareLaunchArgument('school_zone_mask_vehicle_boxes', default_value='true'),
         DeclareLaunchArgument('school_zone_suppress_when_vehicle_visible', default_value='true'),
         DeclareLaunchArgument('school_zone_follow_yellow_centerline', default_value='true'),
+        DeclareLaunchArgument('school_zone_takeover_enabled', default_value='false'),
         DeclareLaunchArgument('school_zone_center_left_ratio', default_value='0.30'),
         DeclareLaunchArgument('school_zone_center_right_ratio', default_value='0.70'),
         DeclareLaunchArgument('school_zone_center_min_pixels', default_value='24'),
@@ -431,6 +433,8 @@ def generate_launch_description():
                     school_zone_suppress_when_vehicle_visible, value_type=bool),
                 'school_zone_follow_yellow_centerline': ParameterValue(
                     school_zone_follow_yellow_centerline, value_type=bool),
+                'school_zone_takeover_enabled': ParameterValue(
+                    school_zone_takeover_enabled, value_type=bool),
                 'school_zone_center_left_ratio': ParameterValue(
                     school_zone_center_left_ratio, value_type=float),
                 'school_zone_center_right_ratio': ParameterValue(
