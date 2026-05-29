@@ -2729,23 +2729,24 @@ class TrackDriverNode(Node):
                 cv2.LINE_AA,
             )
 
-        for box, score, _, valid, red_present, red_ratio, green_ratio, yellow_ratio in light_debug:
+        for box, score, class_id, valid, red_present, red_ratio, green_ratio, yellow_ratio in light_debug:
             x0, y0, x1, y1 = box
+            class_name = self._light_class_name(class_id)
             if not valid:
                 color = (130, 130, 130)
-                label = 'reject'
+                label = f'reject:{class_name}'
             elif red_present:
                 color = (0, 0, 255)
-                label = 'RED'
-            elif green_ratio >= yellow_ratio and green_ratio >= red_ratio:
+                label = f'STOP:{class_name}'
+            elif self._class_id_allowed(class_id, self._int_set_parameter('yolo_go_light_class_ids')):
                 color = (0, 220, 0)
-                label = 'green'
-            elif yellow_ratio >= red_ratio:
+                label = f'GO:{class_name}'
+            elif yellow_ratio >= red_ratio and yellow_ratio >= green_ratio:
                 color = (0, 220, 255)
-                label = 'yellow'
+                label = f'yellow?:{class_name}'
             else:
                 color = (255, 180, 0)
-                label = 'light'
+                label = f'light:{class_name}'
 
             cv2.rectangle(debug, (x0, y0), (x1, y1), color, thickness=2)
             text = f'{label} s={score:.2f} r={red_ratio:.3f} g={green_ratio:.3f} y={yellow_ratio:.3f}'
@@ -2768,6 +2769,17 @@ class TrackDriverNode(Node):
             self.light_debug_pub.publish(msg)
         except Exception as exc:
             self._warn_yolo_once('light_debug', f'light debug image publish failed: {exc}')
+
+    @staticmethod
+    def _light_class_name(class_id: int) -> str:
+        names = {
+            0: 'cone',
+            1: 'green',
+            2: 'left',
+            3: 'red',
+            4: 'yellow',
+        }
+        return names.get(int(class_id), f'class{int(class_id)}')
 
     def _warn_yolo_once(self, name: str, reason: str):
         now_sec = self.get_clock().now().nanoseconds // 1_000_000_000
