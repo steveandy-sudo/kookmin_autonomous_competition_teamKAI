@@ -2,7 +2,7 @@
 
 2026 국민대학교 자율주행 경진대회 예선을 준비하기 위한 Team KAI의 ROS2 Humble 파이썬 스타터 프로젝트입니다.
 
-> 이 저장소는 **초기 개발 뼈대(starter code)** 목적이며, 미션 로직/인지 알고리즘은 TODO 중심의 기본 구현입니다.
+> 현재 저장소에는 `track_drive` 주행 코드와 `cone_il` 모방학습 도구 패키지가 함께 들어 있습니다.
 
 ## 목표
 
@@ -36,7 +36,14 @@ ros2 run track_drive track_drive
 4. `source install/setup.bash`
 5. 한 터미널에서 ROS-TCP endpoint 실행
 6. Windows에서 시뮬레이터 실행
-7. `ros2 run track_drive track_drive`
+7. 기본 노드 실행: `ros2 run track_drive track_drive`
+8. AI 주행 + 신호등 정지 + 어린이 보호구역 하이브리드 실행:
+
+```bash
+ros2 launch track_drive ai_direct_hybrid.launch.py
+```
+
+기본 AI 모델 경로는 launch 파일 안의 `model_path` 기본값을 사용합니다. 모델 파일은 Git에 포함하지 않으므로, 다른 PC에서는 같은 경로에 모델을 복사하거나 `model_path:=/path/to/cone_bc_scripted.pt`로 지정하세요.
 
 ## 미션 순서 (예선 기준)
 
