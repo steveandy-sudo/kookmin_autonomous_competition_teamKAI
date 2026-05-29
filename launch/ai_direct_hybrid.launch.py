@@ -34,9 +34,15 @@ def generate_launch_description():
     school_zone_center_left_ratio = LaunchConfiguration('school_zone_center_left_ratio')
     school_zone_center_right_ratio = LaunchConfiguration('school_zone_center_right_ratio')
     school_zone_center_min_pixels = LaunchConfiguration('school_zone_center_min_pixels')
+    school_zone_center_memory_sec = LaunchConfiguration('school_zone_center_memory_sec')
+    school_zone_center_memory_weight = LaunchConfiguration('school_zone_center_memory_weight')
+    school_zone_edge_center_weight = LaunchConfiguration('school_zone_edge_center_weight')
     school_zone_yellow_path_edge_guard_enabled = LaunchConfiguration(
         'school_zone_yellow_path_edge_guard_enabled')
     school_zone_yellow_path_edge_limit = LaunchConfiguration('school_zone_yellow_path_edge_limit')
+    school_zone_max_steer_deg = LaunchConfiguration('school_zone_max_steer_deg')
+    school_zone_steer_smoothing = LaunchConfiguration('school_zone_steer_smoothing')
+    school_zone_lookahead_scale = LaunchConfiguration('school_zone_lookahead_scale')
     stop_on_red_light = LaunchConfiguration('stop_on_red_light')
     stop_on_person = LaunchConfiguration('stop_on_person')
     stop_on_vehicle = LaunchConfiguration('stop_on_vehicle')
@@ -202,9 +208,15 @@ def generate_launch_description():
         DeclareLaunchArgument('school_zone_follow_yellow_centerline', default_value='true'),
         DeclareLaunchArgument('school_zone_center_left_ratio', default_value='0.30'),
         DeclareLaunchArgument('school_zone_center_right_ratio', default_value='0.70'),
-        DeclareLaunchArgument('school_zone_center_min_pixels', default_value='40'),
+        DeclareLaunchArgument('school_zone_center_min_pixels', default_value='24'),
+        DeclareLaunchArgument('school_zone_center_memory_sec', default_value='1.20'),
+        DeclareLaunchArgument('school_zone_center_memory_weight', default_value='0.45'),
+        DeclareLaunchArgument('school_zone_edge_center_weight', default_value='0.20'),
         DeclareLaunchArgument('school_zone_yellow_path_edge_guard_enabled', default_value='true'),
-        DeclareLaunchArgument('school_zone_yellow_path_edge_limit', default_value='0.22'),
+        DeclareLaunchArgument('school_zone_yellow_path_edge_limit', default_value='0.35'),
+        DeclareLaunchArgument('school_zone_max_steer_deg', default_value='70.0'),
+        DeclareLaunchArgument('school_zone_steer_smoothing', default_value='0.05'),
+        DeclareLaunchArgument('school_zone_lookahead_scale', default_value='0.72'),
         DeclareLaunchArgument('stop_on_red_light', default_value='true'),
         DeclareLaunchArgument('stop_on_person', default_value='false'),
         DeclareLaunchArgument('stop_on_vehicle', default_value='false'),
@@ -401,10 +413,19 @@ def generate_launch_description():
                 'school_zone_center_right_ratio': ParameterValue(
                     school_zone_center_right_ratio, value_type=float),
                 'school_zone_center_min_pixels': ParameterValue(school_zone_center_min_pixels, value_type=int),
+                'school_zone_center_memory_sec': ParameterValue(
+                    school_zone_center_memory_sec, value_type=float),
+                'school_zone_center_memory_weight': ParameterValue(
+                    school_zone_center_memory_weight, value_type=float),
+                'school_zone_edge_center_weight': ParameterValue(
+                    school_zone_edge_center_weight, value_type=float),
                 'school_zone_yellow_path_edge_guard_enabled': ParameterValue(
                     school_zone_yellow_path_edge_guard_enabled, value_type=bool),
                 'school_zone_yellow_path_edge_limit': ParameterValue(
                     school_zone_yellow_path_edge_limit, value_type=float),
+                'school_zone_max_steer_deg': ParameterValue(school_zone_max_steer_deg, value_type=float),
+                'school_zone_steer_smoothing': ParameterValue(school_zone_steer_smoothing, value_type=float),
+                'school_zone_lookahead_scale': ParameterValue(school_zone_lookahead_scale, value_type=float),
                 'hybrid_trigger_topic': hybrid_trigger_topic,
                 'hybrid_standby_enabled': True,
                 'ai_enable_topic': ai_enable_topic,

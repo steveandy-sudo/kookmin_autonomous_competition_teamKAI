@@ -103,9 +103,18 @@ class TrackDriverNode(Node):
         self.declare_parameter('school_zone_follow_yellow_centerline', True)
         self.declare_parameter('school_zone_center_left_ratio', 0.30)
         self.declare_parameter('school_zone_center_right_ratio', 0.70)
-        self.declare_parameter('school_zone_center_min_pixels', 40)
+        self.declare_parameter('school_zone_center_min_pixels', 24)
+        self.declare_parameter('school_zone_center_band_count', 11)
+        self.declare_parameter('school_zone_center_band_half_height', 34.0)
+        self.declare_parameter('school_zone_center_min_band_pixels', 2)
+        self.declare_parameter('school_zone_center_memory_sec', 1.20)
+        self.declare_parameter('school_zone_center_memory_weight', 0.45)
+        self.declare_parameter('school_zone_edge_center_weight', 0.20)
         self.declare_parameter('school_zone_yellow_path_edge_guard_enabled', True)
-        self.declare_parameter('school_zone_yellow_path_edge_limit', 0.22)
+        self.declare_parameter('school_zone_yellow_path_edge_limit', 0.35)
+        self.declare_parameter('school_zone_max_steer_deg', 70.0)
+        self.declare_parameter('school_zone_steer_smoothing', 0.05)
+        self.declare_parameter('school_zone_lookahead_scale', 0.72)
         self.declare_parameter('stop_distance', 0.75)
         self.declare_parameter('slow_distance', 1.35)
         self.declare_parameter('lookahead_min', 1.0)
@@ -437,6 +446,8 @@ class TrackDriverNode(Node):
         self.school_zone_confirm_count = 0
         self.school_zone_lost_count = 0
         self.school_zone_last_seen_sec: Optional[float] = None
+        self.last_school_zone_path: List[Point] = []
+        self.last_school_zone_path_seen_sec: Optional[float] = None
         self.safety_stop_until_sec = 0.0
         self.last_safety_stop_reason = 'safety_stop'
 
@@ -735,7 +746,9 @@ class TrackDriverNode(Node):
                     self.last_center_path = guarded_path
                 self.last_mode = vehicle_behavior.mode
 
-        if vehicle_behavior is not None and vehicle_behavior.path is not None:
+        if school_zone_path is not None:
+            candidates = [PathCandidate(offset=0.0, path=list(center_path), cost=0.0, min_clearance=float('inf'))]
+        elif vehicle_behavior is not None and vehicle_behavior.path is not None:
             candidates = [PathCandidate(offset=0.0, path=list(center_path), cost=0.0, min_clearance=float('inf'))]
         else:
             candidates = self._make_lattice_candidates(center_path)
@@ -791,6 +804,16 @@ class TrackDriverNode(Node):
             steer = self._lane_edge_steer_guard(steer, best.path, lane_guard_path)
             speed = vehicle_behavior.speed
             self.last_mode = vehicle_behavior.mode
+        elif school_zone_path is not None:
+            steer = self._pure_pursuit_steer(
+                best.path,
+                max_steer_override=float(self.get_parameter('school_zone_max_steer_deg').value),
+                smoothing_override=float(self.get_parameter('school_zone_steer_smoothing').value),
+                lookahead_scale_override=float(self.get_parameter('school_zone_lookahead_scale').value),
+            )
+            steer = self._lane_edge_steer_guard(steer, best.path, lane_guard_path)
+            speed = self._target_speed(steer, cones, best.min_clearance)
+            self.last_mode = 'school_zone_yellow_line'
         else:
             steer = self._pure_pursuit_steer(best.path)
             steer = self._lane_edge_steer_guard(steer, best.path, lane_guard_path)
@@ -3394,43 +3417,52 @@ class TrackDriverNode(Node):
         kernel = np.ones((3, 3), np.uint8)
         center_mask = cv2.morphologyEx(center_mask, cv2.MORPH_OPEN, kernel)
         center_mask = cv2.morphologyEx(center_mask, cv2.MORPH_CLOSE, kernel)
+        vertical_close = max(9, int(center_mask.shape[0] * 0.055))
+        if vertical_close % 2 == 0:
+            vertical_close += 1
+        center_mask = cv2.morphologyEx(
+            center_mask,
+            cv2.MORPH_CLOSE,
+            np.ones((vertical_close, 5), np.uint8),
+        )
 
         ys, xs = np.nonzero(center_mask)
         min_pixels = max(int(self.get_parameter('school_zone_center_min_pixels').value), 1)
         if len(xs) < min_pixels:
-            return None
+            recent = self._recent_school_zone_path()
+            return recent if recent is not None else edge_guard_path
 
-        bottom_cut = int(center_mask.shape[0] * 0.62)
         center_pixels: List[Tuple[float, float]] = []
-        for yq in np.linspace(bottom_cut, center_mask.shape[0] - 1, 7):
-            band = np.abs(ys - yq) < 30.0
-            if np.count_nonzero(band) < 3:
+        band_count = max(int(self.get_parameter('school_zone_center_band_count').value), 3)
+        band_half_height = max(float(self.get_parameter('school_zone_center_band_half_height').value), 8.0)
+        min_band_pixels = max(int(self.get_parameter('school_zone_center_min_band_pixels').value), 1)
+        top_cut = int(center_mask.shape[0] * 0.18)
+        for yq in np.linspace(top_cut, center_mask.shape[0] - 1, band_count):
+            band = np.abs(ys - yq) < band_half_height
+            if np.count_nonzero(band) < min_band_pixels:
                 continue
             center_pixels.append((float(yq), float(np.median(xs[band]))))
 
         if len(center_pixels) < 2:
-            return None
+            recent = self._recent_school_zone_path()
+            return recent if recent is not None else edge_guard_path
 
-        center_pixels.sort(key=lambda p: p[0], reverse=True)
-        bottom_center = center_pixels[0][1]
-        upper_center = center_pixels[-1][1]
+        path = self._path_from_camera_center_pixels(center_pixels, width, curvature_gain=0.06)
 
-        mid_x = width * 0.5
-        center_error_px = bottom_center - mid_x
-        heading_error_px = bottom_center - upper_center
-        lateral_scale = float(self.get_parameter('camera_lateral_scale').value)
-        forward_scale = float(self.get_parameter('camera_forward_scale').value)
-        center_gain = float(self.get_parameter('lane_center_gain').value)
-        heading_gain = float(self.get_parameter('lane_heading_gain').value)
+        if edge_guard_path is not None:
+            edge_weight = float(np.clip(
+                self.get_parameter('school_zone_edge_center_weight').value, 0.0, 0.80))
+            if edge_weight > 0.0:
+                path = self._blend_paths(path, edge_guard_path, edge_weight)
 
-        lateral_error = center_error_px * lateral_scale * center_gain
-        heading_error = heading_error_px * lateral_scale * heading_gain
+        recent = self._recent_school_zone_path()
+        if recent is not None:
+            memory_weight = float(np.clip(
+                self.get_parameter('school_zone_center_memory_weight').value, 0.0, 0.90))
+            if memory_weight > 0.0:
+                path = self._blend_paths(path, recent, memory_weight)
 
-        path: List[Point] = []
-        for x in self._path_x_samples():
-            curvature_bias = 0.08 * heading_error * x * x
-            y = lateral_error + heading_error * forward_scale * x + curvature_bias
-            path.append((x, float(np.clip(y, -2.0, 2.0))))
+        path = self._smooth_path(path, iterations=2)
 
         if (
             bool(self.get_parameter('school_zone_yellow_path_edge_guard_enabled').value)
@@ -3439,7 +3471,36 @@ class TrackDriverNode(Node):
             limit = max(float(self.get_parameter('school_zone_yellow_path_edge_limit').value), 0.05)
             path = self._clamp_path_to_guard(path, edge_guard_path, limit)
 
+        self._remember_school_zone_path(path)
         return path
+
+    def _recent_school_zone_path(self) -> Optional[List[Point]]:
+        if self.last_school_zone_path_seen_sec is None or len(self.last_school_zone_path) < 2:
+            return None
+        memory_sec = max(float(self.get_parameter('school_zone_center_memory_sec').value), 0.0)
+        if time.monotonic() - self.last_school_zone_path_seen_sec > memory_sec:
+            return None
+        return list(self.last_school_zone_path)
+
+    def _remember_school_zone_path(self, path: Sequence[Point]):
+        if len(path) < 2:
+            return
+        self.last_school_zone_path = list(path)
+        self.last_school_zone_path_seen_sec = time.monotonic()
+
+    def _blend_paths(
+        self,
+        primary_path: Sequence[Point],
+        secondary_path: Sequence[Point],
+        secondary_weight: float,
+    ) -> List[Point]:
+        if len(primary_path) < 2 or len(secondary_path) < 2:
+            return list(primary_path)
+        weight = float(np.clip(secondary_weight, 0.0, 1.0))
+        return [
+            (x, float((1.0 - weight) * y + weight * self._path_y_at_x(secondary_path, x)))
+            for x, y in primary_path
+        ]
 
     def _build_school_zone_edge_center_path_from_mask(
         self,
