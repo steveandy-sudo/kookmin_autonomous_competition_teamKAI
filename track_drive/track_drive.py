@@ -479,24 +479,26 @@ class TrackDriverNode(Node):
         self.declare_parameter('cone_boundary_min_points', 2)
         self.declare_parameter('cone_seed_neighbor_radius', 1.80)
         self.declare_parameter('intersection_route_enabled', True)
-        self.declare_parameter('intersection_stop_line_trigger_row_ratio', 0.36)
+        self.declare_parameter('intersection_stop_line_trigger_row_ratio', 0.30)
         self.declare_parameter('intersection_left_cone_min_count', 1)
+        self.declare_parameter('intersection_left_no_cone_confirm_frames', 3)
+        self.declare_parameter('intersection_left_cone_memory_sec', 0.60)
         self.declare_parameter('intersection_use_lidar_cones', False)
         self.declare_parameter('intersection_camera_cone_enabled', True)
         self.declare_parameter('intersection_camera_cone_class_ids', [0])
-        self.declare_parameter('intersection_camera_cone_min_score', 0.30)
+        self.declare_parameter('intersection_camera_cone_min_score', 0.25)
         self.declare_parameter('intersection_camera_cone_left_min_ratio', 0.00)
-        self.declare_parameter('intersection_camera_cone_left_max_ratio', 0.68)
+        self.declare_parameter('intersection_camera_cone_left_max_ratio', 0.72)
         self.declare_parameter('intersection_camera_cone_min_height_ratio', 0.012)
         self.declare_parameter('intersection_camera_cone_min_bottom_ratio', 0.12)
-        self.declare_parameter('intersection_left_decision_delay_sec', 0.80)
+        self.declare_parameter('intersection_left_decision_delay_sec', 0.45)
         self.declare_parameter('intersection_left_cone_min_x', 0.20)
         self.declare_parameter('intersection_left_cone_max_x', 5.50)
         self.declare_parameter('intersection_left_cone_min_y', 0.18)
         self.declare_parameter('intersection_left_cone_max_y', 2.50)
-        self.declare_parameter('intersection_left_turn_speed', 6.0)
+        self.declare_parameter('intersection_left_turn_speed', 8.0)
         self.declare_parameter('intersection_left_turn_steer_deg', -100.0)
-        self.declare_parameter('intersection_left_turn_duration_sec', 5.00)
+        self.declare_parameter('intersection_left_turn_duration_sec', 3.00)
         self.declare_parameter('intersection_left_turn_repeat_enabled', True)
         self.declare_parameter('intersection_left_turn_repeat_delay_sec', 8.50)
         self.declare_parameter('intersection_left_turn_post_school_limit_sec', 6.00)
@@ -630,6 +632,8 @@ class TrackDriverNode(Node):
         self.intersection_last_decision = ''
         self.intersection_left_cone_count = 0
         self.intersection_camera_left_cone_count = 0
+        self.intersection_left_no_cone_confirm_count = 0
+        self.intersection_left_cone_last_seen_sec: Optional[float] = None
         self.intersection_trigger_seen_since_sec: Optional[float] = None
         self.intersection_signal_wait_until_sec = 0.0
         self.last_mode = 'straight'
@@ -1089,6 +1093,7 @@ class TrackDriverNode(Node):
             self.intersection_left_turn_repeat_start_sec = 0.0
             self.intersection_post_left_school_limit_until_sec = 0.0
             self.intersection_signal_wait_until_sec = 0.0
+            self._reset_intersection_left_cone_state()
             return None
 
         now = time.monotonic()
@@ -1103,7 +1108,7 @@ class TrackDriverNode(Node):
         if repeat_handled:
             return repeat_command
 
-        wait_handled, wait_command = self._latched_intersection_wait_command(now)
+        wait_handled, wait_command = self._latched_intersection_wait_command(now, cones)
         if wait_handled:
             return wait_command
 
@@ -1111,8 +1116,7 @@ class TrackDriverNode(Node):
             return None
 
         if not self._intersection_trigger_ready() or not self._traffic_light_visible():
-            self.intersection_left_cone_count = 0
-            self.intersection_camera_left_cone_count = 0
+            self._reset_intersection_left_cone_state()
             self.intersection_trigger_seen_since_sec = None
             return None
 
@@ -1122,16 +1126,10 @@ class TrackDriverNode(Node):
         if now - self.intersection_trigger_seen_since_sec < decision_delay:
             return None
 
-        use_lidar_cones = bool(self.get_parameter('intersection_use_lidar_cones').value)
-        left_cones = self._intersection_left_cones(cones) if use_lidar_cones else []
-        camera_left_count = self._intersection_camera_left_cone_count()
-        self.intersection_left_cone_count = len(left_cones)
-        self.intersection_camera_left_cone_count = camera_left_count
-        combined_left_count = len(left_cones) + camera_left_count
         min_count = max(int(self.get_parameter('intersection_left_cone_min_count').value), 1)
         cooldown_sec = max(float(self.get_parameter('intersection_route_cooldown_sec').value), 0.0)
 
-        if combined_left_count >= min_count:
+        if self._intersection_left_cone_present(cones, now, min_count):
             if not self._green_light_visible():
                 self.intersection_last_decision = 'straight_wait_green'
                 self.intersection_signal_wait_until_sec = self._intersection_signal_wait_until(now)
@@ -1146,6 +1144,15 @@ class TrackDriverNode(Node):
             self.intersection_post_left_school_limit_until_sec = 0.0
             return None
 
+        self.intersection_left_no_cone_confirm_count += 1
+        required_no_cone_frames = max(
+            int(self.get_parameter('intersection_left_no_cone_confirm_frames').value),
+            1,
+        )
+        if self.intersection_left_no_cone_confirm_count < required_no_cone_frames:
+            self.intersection_last_decision = 'left_cone_check'
+            return ('intersection_check_left_cone', 0.0, 0.0)
+
         if not self._left_turn_signal_visible():
             self.intersection_last_decision = 'left_wait_signal'
             self.intersection_signal_wait_until_sec = self._intersection_signal_wait_until(now)
@@ -1156,6 +1163,7 @@ class TrackDriverNode(Node):
     def _latched_intersection_wait_command(
         self,
         now: float,
+        cones: Sequence[Point],
     ) -> Tuple[bool, Optional[Tuple[str, float, float]]]:
         if self.intersection_last_decision not in ('left_wait_signal', 'straight_wait_green'):
             return False, None
@@ -1163,10 +1171,25 @@ class TrackDriverNode(Node):
         if now > self.intersection_signal_wait_until_sec:
             self.intersection_last_decision = ''
             self.intersection_signal_wait_until_sec = 0.0
+            self.intersection_left_no_cone_confirm_count = 0
             return False, None
 
         cooldown_sec = max(float(self.get_parameter('intersection_route_cooldown_sec').value), 0.0)
         if self.intersection_last_decision == 'left_wait_signal':
+            min_count = max(int(self.get_parameter('intersection_left_cone_min_count').value), 1)
+            if self._intersection_left_cone_present(cones, now, min_count):
+                self.intersection_last_decision = 'straight_wait_green'
+                if self._green_light_visible():
+                    self.intersection_last_decision = 'straight'
+                    hold_sec = max(float(self.get_parameter('intersection_straight_hold_sec').value), 0.0)
+                    self.intersection_straight_until_sec = now + hold_sec
+                    self.intersection_route_cooldown_until_sec = now + max(hold_sec, cooldown_sec)
+                    self.intersection_trigger_seen_since_sec = None
+                    self.intersection_signal_wait_until_sec = 0.0
+                    self.intersection_left_turn_repeat_start_sec = 0.0
+                    self.intersection_post_left_school_limit_until_sec = 0.0
+                    return True, None
+                return True, ('intersection_wait_green', 0.0, 0.0)
             if self._left_turn_signal_visible():
                 return True, self._start_intersection_left_turn(now, cooldown_sec)
             return True, ('intersection_wait_left_signal', 0.0, 0.0)
@@ -1214,6 +1237,8 @@ class TrackDriverNode(Node):
         self.intersection_route_cooldown_until_sec = now + duration_sec + cooldown_sec
         self.intersection_trigger_seen_since_sec = None
         self.intersection_signal_wait_until_sec = 0.0
+        self.intersection_left_no_cone_confirm_count = 0
+        self.intersection_left_cone_last_seen_sec = None
         if schedule_repeat and bool(self.get_parameter('intersection_left_turn_repeat_enabled').value):
             repeat_delay_sec = max(
                 float(self.get_parameter('intersection_left_turn_repeat_delay_sec').value),
@@ -1233,6 +1258,39 @@ class TrackDriverNode(Node):
             max(float(self.get_parameter('intersection_left_turn_speed').value), 0.0),
             float(self.get_parameter('intersection_left_turn_steer_deg').value),
         )
+
+    def _intersection_left_cone_present(
+        self,
+        cones: Sequence[Point],
+        now: float,
+        min_count: int,
+    ) -> bool:
+        use_lidar_cones = bool(self.get_parameter('intersection_use_lidar_cones').value)
+        left_cones = self._intersection_left_cones(cones) if use_lidar_cones else []
+        camera_left_count = self._intersection_camera_left_cone_count()
+        self.intersection_left_cone_count = len(left_cones)
+        self.intersection_camera_left_cone_count = camera_left_count
+
+        combined_left_count = len(left_cones) + camera_left_count
+        if combined_left_count >= min_count:
+            self.intersection_left_cone_last_seen_sec = now
+            self.intersection_left_no_cone_confirm_count = 0
+            return True
+
+        memory_sec = max(float(self.get_parameter('intersection_left_cone_memory_sec').value), 0.0)
+        if (
+            memory_sec > 0.0
+            and self.intersection_left_cone_last_seen_sec is not None
+            and now - self.intersection_left_cone_last_seen_sec <= memory_sec
+        ):
+            return True
+        return False
+
+    def _reset_intersection_left_cone_state(self):
+        self.intersection_left_cone_count = 0
+        self.intersection_camera_left_cone_count = 0
+        self.intersection_left_no_cone_confirm_count = 0
+        self.intersection_left_cone_last_seen_sec = None
 
     def _intersection_trigger_ready(self) -> bool:
         if not self._traffic_light_visible():

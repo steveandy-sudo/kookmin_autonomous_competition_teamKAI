@@ -61,6 +61,8 @@ def generate_launch_description():
     intersection_route_enabled = LaunchConfiguration('intersection_route_enabled')
     intersection_stop_line_trigger_row_ratio = LaunchConfiguration('intersection_stop_line_trigger_row_ratio')
     intersection_left_cone_min_count = LaunchConfiguration('intersection_left_cone_min_count')
+    intersection_left_no_cone_confirm_frames = LaunchConfiguration('intersection_left_no_cone_confirm_frames')
+    intersection_left_cone_memory_sec = LaunchConfiguration('intersection_left_cone_memory_sec')
     intersection_use_lidar_cones = LaunchConfiguration('intersection_use_lidar_cones')
     intersection_camera_cone_enabled = LaunchConfiguration('intersection_camera_cone_enabled')
     intersection_camera_cone_class_ids = LaunchConfiguration('intersection_camera_cone_class_ids')
@@ -342,24 +344,26 @@ def generate_launch_description():
         DeclareLaunchArgument('school_zone_steer_smoothing', default_value='0.05'),
         DeclareLaunchArgument('school_zone_lookahead_scale', default_value='0.72'),
         DeclareLaunchArgument('intersection_route_enabled', default_value='true'),
-        DeclareLaunchArgument('intersection_stop_line_trigger_row_ratio', default_value='0.36'),
+        DeclareLaunchArgument('intersection_stop_line_trigger_row_ratio', default_value='0.30'),
         DeclareLaunchArgument('intersection_left_cone_min_count', default_value='1'),
+        DeclareLaunchArgument('intersection_left_no_cone_confirm_frames', default_value='3'),
+        DeclareLaunchArgument('intersection_left_cone_memory_sec', default_value='0.60'),
         DeclareLaunchArgument('intersection_use_lidar_cones', default_value='false'),
         DeclareLaunchArgument('intersection_camera_cone_enabled', default_value='true'),
         DeclareLaunchArgument('intersection_camera_cone_class_ids', default_value='[0]'),
-        DeclareLaunchArgument('intersection_camera_cone_min_score', default_value='0.30'),
+        DeclareLaunchArgument('intersection_camera_cone_min_score', default_value='0.25'),
         DeclareLaunchArgument('intersection_camera_cone_left_min_ratio', default_value='0.00'),
-        DeclareLaunchArgument('intersection_camera_cone_left_max_ratio', default_value='0.68'),
+        DeclareLaunchArgument('intersection_camera_cone_left_max_ratio', default_value='0.72'),
         DeclareLaunchArgument('intersection_camera_cone_min_height_ratio', default_value='0.012'),
         DeclareLaunchArgument('intersection_camera_cone_min_bottom_ratio', default_value='0.12'),
-        DeclareLaunchArgument('intersection_left_decision_delay_sec', default_value='0.80'),
+        DeclareLaunchArgument('intersection_left_decision_delay_sec', default_value='0.45'),
         DeclareLaunchArgument('intersection_left_cone_min_x', default_value='0.20'),
         DeclareLaunchArgument('intersection_left_cone_max_x', default_value='5.50'),
         DeclareLaunchArgument('intersection_left_cone_min_y', default_value='0.18'),
         DeclareLaunchArgument('intersection_left_cone_max_y', default_value='2.50'),
-        DeclareLaunchArgument('intersection_left_turn_speed', default_value='6.0'),
+        DeclareLaunchArgument('intersection_left_turn_speed', default_value='8.0'),
         DeclareLaunchArgument('intersection_left_turn_steer_deg', default_value='-100.0'),
-        DeclareLaunchArgument('intersection_left_turn_duration_sec', default_value='5.00'),
+        DeclareLaunchArgument('intersection_left_turn_duration_sec', default_value='3.00'),
         DeclareLaunchArgument('intersection_left_turn_repeat_enabled', default_value='true'),
         DeclareLaunchArgument('intersection_left_turn_repeat_delay_sec', default_value='8.50'),
         DeclareLaunchArgument('intersection_left_turn_post_school_limit_sec', default_value='6.00'),
@@ -647,6 +651,10 @@ def generate_launch_description():
                     intersection_stop_line_trigger_row_ratio, value_type=float),
                 'intersection_left_cone_min_count': ParameterValue(
                     intersection_left_cone_min_count, value_type=int),
+                'intersection_left_no_cone_confirm_frames': ParameterValue(
+                    intersection_left_no_cone_confirm_frames, value_type=int),
+                'intersection_left_cone_memory_sec': ParameterValue(
+                    intersection_left_cone_memory_sec, value_type=float),
                 'intersection_use_lidar_cones': ParameterValue(
                     intersection_use_lidar_cones, value_type=bool),
                 'intersection_camera_cone_enabled': ParameterValue(
