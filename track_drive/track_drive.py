@@ -19,6 +19,12 @@ from std_msgs.msg import Bool, Float32
 from visualization_msgs.msg import Marker, MarkerArray
 from xycar_msgs.msg import XycarMotor
 
+from track_drive.intersection_decider import IntersectionDecider
+from track_drive.safety_supervisor import SafetySupervisor
+from track_drive.school_zone_detector import SchoolZoneDetector
+from track_drive.stop_line_detector import StopLineDetector
+from track_drive.traffic_light_detector import TrafficLightDetector
+
 
 Point = Tuple[float, float]
 
@@ -83,6 +89,11 @@ class TrackDriverNode(Node):
         self.declare_parameter('publish_light_debug_image', True)
         self.declare_parameter('light_debug_image_topic', '/track_drive/light_debug_image')
         self.declare_parameter('light_debug_publish_rate_hz', 10.0)
+        self.declare_parameter('publish_drive_debug_image', True)
+        self.declare_parameter('drive_debug_image_topic', '/track_drive/drive_debug_image')
+        self.declare_parameter('drive_debug_publish_rate_hz', 4.0)
+        self.declare_parameter('stop_line_update_period_sec', 0.07)
+        self.declare_parameter('school_zone_update_period_sec', 0.15)
 
         self.declare_parameter('base_speed', 5.0)
         self.declare_parameter('min_speed', 3.0)
@@ -122,6 +133,34 @@ class TrackDriverNode(Node):
         self.declare_parameter('school_zone_max_steer_deg', 70.0)
         self.declare_parameter('school_zone_steer_smoothing', 0.05)
         self.declare_parameter('school_zone_lookahead_scale', 0.72)
+        self.declare_parameter('school_zone_bev_enabled', True)
+        self.declare_parameter('school_zone_bev_width', 320)
+        self.declare_parameter('school_zone_bev_height', 240)
+        self.declare_parameter('school_zone_bev_src_top_ratio', 0.50)
+        self.declare_parameter('school_zone_bev_src_bottom_ratio', 0.90)
+        self.declare_parameter('school_zone_bev_src_top_half_width_ratio', 0.12)
+        self.declare_parameter('school_zone_bev_src_bottom_half_width_ratio', 0.50)
+        self.declare_parameter('school_zone_bev_center_shift_ratio', 0.0)
+        self.declare_parameter('school_zone_bev_front_top_ratio', 0.40)
+        self.declare_parameter('school_zone_bev_front_bottom_ratio', 1.00)
+        self.declare_parameter('school_zone_bev_left_edge_max_ratio', 0.42)
+        self.declare_parameter('school_zone_bev_right_edge_min_ratio', 0.58)
+        self.declare_parameter('school_zone_yellow_h_min', 15)
+        self.declare_parameter('school_zone_yellow_h_max', 40)
+        self.declare_parameter('school_zone_yellow_s_min', 70)
+        self.declare_parameter('school_zone_yellow_v_min', 80)
+        self.declare_parameter('school_zone_bev_open_kernel', 3)
+        self.declare_parameter('school_zone_bev_close_kernel', 5)
+        self.declare_parameter('school_zone_bev_min_pixels', 45)
+        self.declare_parameter('school_zone_bev_min_row_pixels', 3)
+        self.declare_parameter('school_zone_bev_max_row_width_ratio', 0.16)
+        self.declare_parameter('school_zone_bev_min_left_ratio', 0.0015)
+        self.declare_parameter('school_zone_bev_min_right_ratio', 0.0015)
+        self.declare_parameter('school_zone_bev_min_pair_row_ratio', 0.10)
+        self.declare_parameter('school_zone_bev_min_bottom_pair_row_ratio', 0.06)
+        self.declare_parameter('school_zone_bev_min_pair_rows', 5)
+        self.declare_parameter('school_zone_bev_min_separation_ratio', 0.38)
+        self.declare_parameter('school_zone_bev_preslow_ratio', 0.50)
         self.declare_parameter('stop_distance', 0.75)
         self.declare_parameter('slow_distance', 1.35)
         self.declare_parameter('lookahead_min', 1.0)
@@ -135,8 +174,8 @@ class TrackDriverNode(Node):
         self.declare_parameter('invert_steering', True)
 
         self.declare_parameter('ai_hybrid_enabled', True)
-        self.declare_parameter('ai_model_path', '~/cone_il_model_newdata3/cone_bc_scripted.pt')
-        self.declare_parameter('ai_speed', 10.0)
+        self.declare_parameter('ai_model_path', '/home/xytron/cone_il_model_speed14_left_clean_epoch/cone_bc_scripted.pt')
+        self.declare_parameter('ai_speed', 14.0)
         self.declare_parameter('ai_fixed_speed_enabled', True)
         self.declare_parameter('ai_passthrough_enabled', True)
         self.declare_parameter('ai_command_passthrough_enabled', False)
@@ -152,6 +191,8 @@ class TrackDriverNode(Node):
         self.declare_parameter('yolo_light_input_size', 640)
         self.declare_parameter('yolo_person_class_count', 6)
         self.declare_parameter('yolo_light_class_count', 6)
+        self.declare_parameter('yolo_dnn_backend', 'auto')
+        self.declare_parameter('yolo_dnn_target', 'auto')
         self.declare_parameter('yolo_person_conf_threshold', 0.10)
         self.declare_parameter('yolo_light_conf_threshold', 0.35)
         self.declare_parameter('yolo_stop_light_conf_threshold', 0.55)
@@ -160,7 +201,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('yolo_person_class_ids', [3])
         self.declare_parameter('yolo_vehicle_class_ids', [99])
         self.declare_parameter('yolo_light_class_ids', [0, 1, 2, 3, 4, 5])
-        self.declare_parameter('yolo_red_light_class_ids', [2, 4, 5])
+        self.declare_parameter('yolo_red_light_class_ids', [4, 5])
         self.declare_parameter('yolo_go_light_class_ids', [1])
         self.declare_parameter('yolo_left_light_class_ids', [2])
         self.declare_parameter('yolo_left_light_conf_threshold', 0.28)
@@ -169,13 +210,14 @@ class TrackDriverNode(Node):
         self.declare_parameter('yolo_vehicle_min_box_height_ratio', 0.025)
         self.declare_parameter('yolo_vehicle_min_box_width_ratio', 0.025)
         self.declare_parameter('yolo_vehicle_min_box_bottom_ratio', 0.18)
-        self.declare_parameter('yolo_light_min_box_height_ratio', 0.008)
-        self.declare_parameter('yolo_light_max_box_height_ratio', 0.45)
-        self.declare_parameter('yolo_light_min_box_area_ratio', 0.00002)
-        self.declare_parameter('yolo_light_max_box_area_ratio', 0.080)
-        self.declare_parameter('yolo_light_max_box_bottom_ratio', 0.85)
+        self.declare_parameter('yolo_light_min_box_height_ratio', 0.025)
+        self.declare_parameter('yolo_light_min_box_width_ratio', 0.015)
+        self.declare_parameter('yolo_light_max_box_height_ratio', 0.65)
+        self.declare_parameter('yolo_light_min_box_area_ratio', 0.00012)
+        self.declare_parameter('yolo_light_max_box_area_ratio', 0.20)
+        self.declare_parameter('yolo_light_max_box_bottom_ratio', 0.98)
         self.declare_parameter('yolo_nms_threshold', 0.45)
-        self.declare_parameter('yolo_safety_period_sec', 0.02)
+        self.declare_parameter('yolo_safety_period_sec', 0.05)
         self.declare_parameter('yolo_red_light_period_sec', 0.10)
         self.declare_parameter('stop_on_red_light_enabled', True)
         self.declare_parameter('red_light_confirm_frames', 2)
@@ -192,9 +234,9 @@ class TrackDriverNode(Node):
         self.declare_parameter('stop_on_light_requires_stop_line', True)
         self.declare_parameter('stop_line_roi_top_ratio', 0.20)
         self.declare_parameter('stop_line_roi_bottom_ratio', 1.00)
-        self.declare_parameter('stop_line_stop_row_ratio', 0.992)
-        self.declare_parameter('stop_line_stop_bottom_row_ratio', 0.997)
-        self.declare_parameter('stop_line_stop_distance_m', 0.06)
+        self.declare_parameter('stop_line_stop_row_ratio', 0.70)
+        self.declare_parameter('stop_line_stop_bottom_row_ratio', 0.75)
+        self.declare_parameter('stop_line_stop_distance_m', 2.20)
         self.declare_parameter('stop_line_distance_bottom_ratio', 1.00)
         self.declare_parameter('stop_line_distance_scale_m', 7.00)
         self.declare_parameter('stop_line_min_width_ratio', 0.32)
@@ -202,22 +244,36 @@ class TrackDriverNode(Node):
         self.declare_parameter('stop_line_min_rows', 2)
         self.declare_parameter('stop_line_min_aspect_ratio', 5.0)
         self.declare_parameter('stop_line_min_fill_ratio', 0.35)
-        self.declare_parameter('stop_line_confirm_frames', 3)
+        self.declare_parameter('stop_line_confirm_frames', 2)
         self.declare_parameter('stop_line_bev_gate_enabled', True)
-        self.declare_parameter('stop_line_bev_src_top_ratio', 0.58)
-        self.declare_parameter('stop_line_bev_src_bottom_ratio', 0.99)
-        self.declare_parameter('stop_line_bev_src_top_half_width_ratio', 0.23)
-        self.declare_parameter('stop_line_bev_src_bottom_half_width_ratio', 0.50)
-        self.declare_parameter('stop_line_bev_front_top_ratio', 0.96)
+        self.declare_parameter('stop_line_bev_width', 320)
+        self.declare_parameter('stop_line_bev_height', 240)
+        self.declare_parameter('stop_line_bev_src_top_ratio', 0.50)
+        self.declare_parameter('stop_line_bev_src_bottom_ratio', 0.80)
+        self.declare_parameter('stop_line_bev_src_top_half_width_ratio', 0.075)
+        self.declare_parameter('stop_line_bev_src_bottom_half_width_ratio', 0.475)
+        self.declare_parameter('stop_line_bev_center_shift_ratio', 0.0)
+        self.declare_parameter('stop_line_bev_front_top_ratio', 0.25)
         self.declare_parameter('stop_line_bev_front_bottom_ratio', 1.00)
-        self.declare_parameter('stop_line_bev_min_width_ratio', 0.35)
-        self.declare_parameter('stop_line_bev_min_aspect_ratio', 3.0)
+        self.declare_parameter('stop_line_bev_min_width_ratio', 0.40)
+        self.declare_parameter('stop_line_bev_min_aspect_ratio', 5.0)
         self.declare_parameter('stop_line_bev_min_fill_ratio', 0.22)
+        self.declare_parameter('stop_line_bev_min_row_run', 3)
+        self.declare_parameter('stop_line_bev_min_solid_run_ratio', 0.58)
+        self.declare_parameter('stop_line_bev_solid_col_min_fill_ratio', 0.43)
+        self.declare_parameter('stop_line_detect_min_row_ratio', 0.55)
+        self.declare_parameter('stop_line_detect_max_distance_m', 4.20)
+        self.declare_parameter('stop_line_white_value_min', 200)
+        self.declare_parameter('stop_line_white_sat_max', 80)
+        self.declare_parameter('stop_line_bev_close_width_ratio', 0.055)
+        self.declare_parameter('stop_line_bev_close_height', 3)
+        self.declare_parameter('stop_line_bev_open_kernel', 3)
         self.declare_parameter('stop_line_memory_sec', 1.50)
         self.declare_parameter('startup_light_check_enabled', True)
-        self.declare_parameter('startup_light_check_timeout_sec', 2.00)
+        self.declare_parameter('startup_light_check_timeout_sec', 5.00)
         self.declare_parameter('startup_light_check_min_sec', 0.35)
         self.declare_parameter('startup_light_ignore_stop_line', True)
+        self.declare_parameter('startup_light_require_signal', True)
         self.declare_parameter('stop_on_person_enabled', False)
         self.declare_parameter('stop_on_vehicle_enabled', False)
         self.declare_parameter('vehicle_overtake_enabled', False)
@@ -439,10 +495,14 @@ class TrackDriverNode(Node):
         self.declare_parameter('intersection_left_cone_min_y', 0.18)
         self.declare_parameter('intersection_left_cone_max_y', 2.50)
         self.declare_parameter('intersection_left_turn_speed', 5.0)
-        self.declare_parameter('intersection_left_turn_steer_deg', -45.0)
-        self.declare_parameter('intersection_left_turn_duration_sec', 2.20)
+        self.declare_parameter('intersection_left_turn_steer_deg', -100.0)
+        self.declare_parameter('intersection_left_turn_duration_sec', 5.00)
+        self.declare_parameter('intersection_left_turn_repeat_enabled', True)
+        self.declare_parameter('intersection_left_turn_repeat_delay_sec', 8.50)
+        self.declare_parameter('intersection_left_turn_post_school_limit_sec', 6.00)
         self.declare_parameter('intersection_straight_hold_sec', 2.00)
         self.declare_parameter('intersection_route_cooldown_sec', 4.00)
+        self.declare_parameter('intersection_signal_wait_timeout_sec', 120.0)
 
         self.image: Optional[np.ndarray] = None
         self.scan_msg: Optional[LaserScan] = None
@@ -459,6 +519,7 @@ class TrackDriverNode(Node):
         self.last_ai_enable: Optional[bool] = None
         self.person_hog = None
         self.yolo_nets = {}
+        self.yolo_ort_sessions = {}
         self.yolo_last_warn_sec = {}
         self.next_yolo_safety_check_sec = 0.0
         self.next_yolo_light_check_sec = 0.0
@@ -481,6 +542,9 @@ class TrackDriverNode(Node):
         self.cached_yolo_light_raw_shape = ''
         self.cached_yolo_light_detect_count = 0
         self.last_light_debug_publish_sec = 0.0
+        self.last_drive_debug_publish_sec = 0.0
+        self.last_command_speed = 0.0
+        self.last_command_steer = 0.0
         self.red_light_confirm_count = 0
         self.red_light_close_ready_since_sec: Optional[float] = None
         self.red_light_close_stop_waiting = False
@@ -559,14 +623,23 @@ class TrackDriverNode(Node):
         self.current_right_boundary: List[Point] = []
         self.current_cone_centerline: List[Point] = []
         self.intersection_left_turn_until_sec = 0.0
+        self.intersection_left_turn_repeat_start_sec = 0.0
+        self.intersection_post_left_school_limit_until_sec = 0.0
         self.intersection_route_cooldown_until_sec = 0.0
         self.intersection_straight_until_sec = 0.0
         self.intersection_last_decision = ''
         self.intersection_left_cone_count = 0
         self.intersection_camera_left_cone_count = 0
         self.intersection_trigger_seen_since_sec: Optional[float] = None
+        self.intersection_signal_wait_until_sec = 0.0
         self.last_mode = 'straight'
         self.last_candidates: List[PathCandidate] = []
+
+        self.traffic_light_detector = TrafficLightDetector(self)
+        self.stop_line_detector = StopLineDetector(self)
+        self.school_zone_detector = SchoolZoneDetector(self)
+        self.intersection_decider = IntersectionDecider(self)
+        self.safety_supervisor = SafetySupervisor(self)
 
         self._load_ai_model()
 
@@ -579,6 +652,7 @@ class TrackDriverNode(Node):
         ai_speed_limit_topic = self.get_parameter('ai_speed_limit_topic').value
         person_avoidance_enable_topic = self.get_parameter('person_avoidance_enable_topic').value
         light_debug_image_topic = self.get_parameter('light_debug_image_topic').value
+        drive_debug_image_topic = self.get_parameter('drive_debug_image_topic').value
 
         self.motor_pub = self.create_publisher(XycarMotor, motor_topic, 10)
         self.ai_enable_pub = self.create_publisher(Bool, ai_enable_topic, 10)
@@ -587,11 +661,14 @@ class TrackDriverNode(Node):
             Float32, '/track_drive/nearest_obstacle_distance', 10)
         self.marker_pub = self.create_publisher(MarkerArray, '/track_drive/markers', 10)
         self.light_debug_pub = self.create_publisher(Image, light_debug_image_topic, 10)
+        self.drive_debug_pub = self.create_publisher(Image, drive_debug_image_topic, 10)
         self.create_subscription(Image, camera_topic, self.cam_callback, qos_profile_sensor_data)
         self.create_subscription(LaserScan, scan_topic, self.lidar_callback, qos_profile_sensor_data)
         self.create_subscription(XycarMotor, ai_command_topic, self.ai_motor_callback, 10)
         self.create_subscription(Bool, hybrid_trigger_topic, self.hybrid_trigger_callback, 10)
         self.create_subscription(Bool, person_avoidance_enable_topic, self.person_avoidance_enable_callback, 10)
+        drive_debug_rate_hz = max(float(self.get_parameter('drive_debug_publish_rate_hz').value), 0.1)
+        self.create_timer(1.0 / drive_debug_rate_hz, self._publish_drive_debug_image)
 
         self.get_logger().info(
             f'Track driver ready | camera={camera_topic}, scan={scan_topic}, motor={motor_topic}'
@@ -620,7 +697,7 @@ class TrackDriverNode(Node):
     def cam_callback(self, data: Image):
         try:
             self.image = self.bridge.imgmsg_to_cv2(data, 'bgr8')
-            self._publish_cached_light_debug_image()
+            self.traffic_light_detector.publish_cached_debug_image()
         except Exception as exc:
             self.get_logger().warn(f'camera conversion failed: {exc}')
 
@@ -650,6 +727,8 @@ class TrackDriverNode(Node):
 
         self.motor_msg.angle = float(angle)
         self.motor_msg.speed = float(self._apply_school_zone_speed_limit(speed))
+        self.last_command_steer = float(self.motor_msg.angle)
+        self.last_command_speed = float(self.motor_msg.speed)
         try:
             self.motor_pub.publish(self.motor_msg)
         except Exception as exc:
@@ -657,17 +736,23 @@ class TrackDriverNode(Node):
                 self.get_logger().warn(f'motor publish failed: {exc}')
 
     def _apply_school_zone_speed_limit(self, speed: float) -> float:
-        speed = float(speed)
-        speed_limit_active = self.school_zone_active or (
-            self.school_zone_candidate_active
-            and bool(self.get_parameter('school_zone_preslow_enabled').value)
-        )
-        if not speed_limit_active:
-            return speed
-        limit = max(float(self.get_parameter('school_zone_speed').value), 0.0)
-        if speed > 0.0:
-            return min(speed, limit)
+        speed = self.school_zone_detector.apply_speed_limit(speed)
+        if self._forced_school_zone_speed_limit_active() and speed > 0.0:
+            speed = min(float(speed), max(float(self.get_parameter('school_zone_speed').value), 0.0))
         return speed
+
+    def _forced_school_zone_speed_limit_active(self) -> bool:
+        return time.monotonic() < self.intersection_post_left_school_limit_until_sec
+
+    def _school_zone_speed_limit_active(self) -> bool:
+        return (
+            self.school_zone_active
+            or (
+                self.school_zone_candidate_active
+                and bool(self.get_parameter('school_zone_preslow_enabled').value)
+            )
+            or self._forced_school_zone_speed_limit_active()
+        )
 
     def publish_ai_enable(self, enabled: bool):
         self.last_ai_enable = bool(enabled)
@@ -677,10 +762,7 @@ class TrackDriverNode(Node):
 
     def publish_ai_speed_limit(self):
         msg = Float32()
-        if self.school_zone_active or (
-            self.school_zone_candidate_active
-            and bool(self.get_parameter('school_zone_preslow_enabled').value)
-        ):
+        if self._school_zone_speed_limit_active():
             msg.data = max(float(self.get_parameter('school_zone_speed').value), 0.0)
         else:
             msg.data = -1.0
@@ -702,10 +784,7 @@ class TrackDriverNode(Node):
                 time.sleep(period - elapsed)
 
     def control_once(self):
-        if bool(self.get_parameter('yolo_safety_enabled').value):
-            self._update_yolo_safety_cache(self.image)
-        self._update_school_zone_state(self.image)
-        self._update_stop_line_state(self.image)
+        self.safety_supervisor.update_perception(self.image)
         self.publish_ai_speed_limit()
 
         command_passthrough_enabled = bool(self.get_parameter('ai_command_passthrough_enabled').value)
@@ -723,7 +802,7 @@ class TrackDriverNode(Node):
         self._publish_nearest_obstacle_distance(nearest_obstacle)
         standby_enabled = bool(self.get_parameter('hybrid_standby_enabled').value)
         raw_cones = self._extract_cones_from_scan(self.scan_msg)
-        pre_safety_intersection_command = self._intersection_route_command(raw_cones)
+        pre_safety_intersection_command = self.intersection_decider.route_command(raw_cones)
         if pre_safety_intersection_command is not None:
             if standby_enabled:
                 self.publish_ai_enable(False)
@@ -737,7 +816,9 @@ class TrackDriverNode(Node):
             return
 
         force_rule_hybrid = False
-        safety_stop, safety_reason = self._detect_safety_stop()
+        safety_decision = self.safety_supervisor.detect_safety_stop()
+        safety_stop = safety_decision.should_stop
+        safety_reason = safety_decision.reason
         if safety_stop:
             if standby_enabled:
                 self.publish_ai_enable(False)
@@ -747,7 +828,7 @@ class TrackDriverNode(Node):
             self._log_status(self.last_mode, 0.0, 0.0, 0, None, 0, nearest_obstacle)
             return
 
-        if self._startup_light_check_pending():
+        if self.safety_supervisor.startup_light_check_pending():
             if standby_enabled:
                 self.publish_ai_enable(False)
             self.prev_steer *= 0.5
@@ -778,8 +859,8 @@ class TrackDriverNode(Node):
         if not person_avoidance_active:
             self._update_vehicle_lidar_fallback(self.scan_msg)
         vehicle_rule_requested = self._vehicle_rule_requested()
-        school_zone_takeover_requested = self._school_zone_takeover_requested()
-        intersection_command = self._intersection_route_command(raw_cones)
+        school_zone_takeover_requested = self.school_zone_detector.takeover_requested()
+        intersection_command = self.intersection_decider.route_command(raw_cones)
         if person_avoidance_active:
             if standby_enabled:
                 self.publish_ai_enable(False)
@@ -1005,6 +1086,9 @@ class TrackDriverNode(Node):
     def _intersection_route_command(self, cones: Sequence[Point]) -> Optional[Tuple[str, float, float]]:
         if not bool(self.get_parameter('intersection_route_enabled').value):
             self.intersection_left_turn_until_sec = 0.0
+            self.intersection_left_turn_repeat_start_sec = 0.0
+            self.intersection_post_left_school_limit_until_sec = 0.0
+            self.intersection_signal_wait_until_sec = 0.0
             return None
 
         now = time.monotonic()
@@ -1015,10 +1099,18 @@ class TrackDriverNode(Node):
                 float(self.get_parameter('intersection_left_turn_steer_deg').value),
             )
 
+        repeat_handled, repeat_command = self._pending_intersection_left_turn_repeat_command(now)
+        if repeat_handled:
+            return repeat_command
+
+        wait_handled, wait_command = self._latched_intersection_wait_command(now)
+        if wait_handled:
+            return wait_command
+
         if now < self.intersection_route_cooldown_until_sec:
             return None
 
-        if not self._intersection_trigger_ready() or not self._left_turn_signal_visible():
+        if not self._intersection_trigger_ready() or not self._traffic_light_visible():
             self.intersection_left_cone_count = 0
             self.intersection_camera_left_cone_count = 0
             self.intersection_trigger_seen_since_sec = None
@@ -1040,18 +1132,102 @@ class TrackDriverNode(Node):
         cooldown_sec = max(float(self.get_parameter('intersection_route_cooldown_sec').value), 0.0)
 
         if combined_left_count >= min_count:
+            if not self._green_light_visible():
+                self.intersection_last_decision = 'straight_wait_green'
+                self.intersection_signal_wait_until_sec = self._intersection_signal_wait_until(now)
+                return ('intersection_wait_green', 0.0, 0.0)
             self.intersection_last_decision = 'straight'
             hold_sec = max(float(self.get_parameter('intersection_straight_hold_sec').value), 0.0)
             self.intersection_straight_until_sec = now + hold_sec
             self.intersection_route_cooldown_until_sec = now + max(hold_sec, cooldown_sec)
             self.intersection_trigger_seen_since_sec = None
+            self.intersection_signal_wait_until_sec = 0.0
+            self.intersection_left_turn_repeat_start_sec = 0.0
+            self.intersection_post_left_school_limit_until_sec = 0.0
             return None
 
+        if not self._left_turn_signal_visible():
+            self.intersection_last_decision = 'left_wait_signal'
+            self.intersection_signal_wait_until_sec = self._intersection_signal_wait_until(now)
+            return ('intersection_wait_left_signal', 0.0, 0.0)
+
+        return self._start_intersection_left_turn(now, cooldown_sec)
+
+    def _latched_intersection_wait_command(
+        self,
+        now: float,
+    ) -> Tuple[bool, Optional[Tuple[str, float, float]]]:
+        if self.intersection_last_decision not in ('left_wait_signal', 'straight_wait_green'):
+            return False, None
+
+        if now > self.intersection_signal_wait_until_sec:
+            self.intersection_last_decision = ''
+            self.intersection_signal_wait_until_sec = 0.0
+            return False, None
+
+        cooldown_sec = max(float(self.get_parameter('intersection_route_cooldown_sec').value), 0.0)
+        if self.intersection_last_decision == 'left_wait_signal':
+            if self._left_turn_signal_visible():
+                return True, self._start_intersection_left_turn(now, cooldown_sec)
+            return True, ('intersection_wait_left_signal', 0.0, 0.0)
+
+        if self._green_light_visible():
+            self.intersection_last_decision = 'straight'
+            hold_sec = max(float(self.get_parameter('intersection_straight_hold_sec').value), 0.0)
+            self.intersection_straight_until_sec = now + hold_sec
+            self.intersection_route_cooldown_until_sec = now + max(hold_sec, cooldown_sec)
+            self.intersection_trigger_seen_since_sec = None
+            self.intersection_signal_wait_until_sec = 0.0
+            self.intersection_left_turn_repeat_start_sec = 0.0
+            self.intersection_post_left_school_limit_until_sec = 0.0
+            return True, None
+        return True, ('intersection_wait_green', 0.0, 0.0)
+
+    def _pending_intersection_left_turn_repeat_command(
+        self,
+        now: float,
+    ) -> Tuple[bool, Optional[Tuple[str, float, float]]]:
+        if self.intersection_left_turn_repeat_start_sec <= 0.0:
+            return False, None
+        if now < self.intersection_left_turn_repeat_start_sec:
+            return True, None
+
+        cooldown_sec = max(float(self.get_parameter('intersection_route_cooldown_sec').value), 0.0)
+        return True, self._start_intersection_left_turn(now, cooldown_sec, schedule_repeat=False)
+
+    def _intersection_signal_wait_until(self, now: float) -> float:
+        timeout_sec = float(self.get_parameter('intersection_signal_wait_timeout_sec').value)
+        if timeout_sec <= 0.0:
+            return float('inf')
+        return now + timeout_sec
+
+    def _start_intersection_left_turn(
+        self,
+        now: float,
+        cooldown_sec: float,
+        schedule_repeat: bool = True,
+    ) -> Tuple[str, float, float]:
         self.intersection_last_decision = 'left'
         duration_sec = max(float(self.get_parameter('intersection_left_turn_duration_sec').value), 0.10)
-        self.intersection_left_turn_until_sec = now + duration_sec
+        turn_until_sec = now + duration_sec
+        self.intersection_left_turn_until_sec = turn_until_sec
         self.intersection_route_cooldown_until_sec = now + duration_sec + cooldown_sec
         self.intersection_trigger_seen_since_sec = None
+        self.intersection_signal_wait_until_sec = 0.0
+        if schedule_repeat and bool(self.get_parameter('intersection_left_turn_repeat_enabled').value):
+            repeat_delay_sec = max(
+                float(self.get_parameter('intersection_left_turn_repeat_delay_sec').value),
+                0.0,
+            )
+            self.intersection_left_turn_repeat_start_sec = turn_until_sec + repeat_delay_sec
+            self.intersection_post_left_school_limit_until_sec = 0.0
+        else:
+            self.intersection_left_turn_repeat_start_sec = 0.0
+            post_limit_sec = max(
+                float(self.get_parameter('intersection_left_turn_post_school_limit_sec').value),
+                0.0,
+            )
+            self.intersection_post_left_school_limit_until_sec = turn_until_sec + post_limit_sec
         return (
             'intersection_left_turn_no_cone',
             max(float(self.get_parameter('intersection_left_turn_speed').value), 0.0),
@@ -1113,6 +1289,28 @@ class TrackDriverNode(Node):
             0 <= int(class_id) < len(scores) and float(scores[int(class_id)]) >= min_score
             for class_id in class_ids
         )
+
+    def _green_light_visible(self) -> bool:
+        if self.cached_yolo_go_light:
+            return True
+
+        scores = getattr(self, 'cached_yolo_light_class_scores', [])
+        class_ids = self._int_set_parameter('yolo_go_light_class_ids') or set()
+        min_score = max(float(self.get_parameter('yolo_light_conf_threshold').value), 0.0)
+        if any(
+            0 <= int(class_id) < len(scores) and float(scores[int(class_id)]) >= min_score
+            for class_id in class_ids
+        ):
+            return True
+
+        for _, score, class_id, valid, *_ in self.cached_light_debug:
+            if (
+                valid
+                and float(score) >= min_score
+                and self._class_id_allowed(class_id, class_ids)
+            ):
+                return True
+        return False
 
     def _intersection_left_cones(self, cones: Sequence[Point]) -> List[Point]:
         min_x = max(float(self.get_parameter('intersection_left_cone_min_x').value), 0.0)
@@ -1443,11 +1641,13 @@ class TrackDriverNode(Node):
             self.startup_light_gate_released = True
             return False
 
-        if (
+        stop_signal_seen = (
             getattr(self, 'cached_yolo_raw_red_light', False)
             or self.cached_yolo_red_light
             or self.red_light_confirm_count > 0
-        ):
+        )
+        signal_seen = stop_signal_seen or getattr(self, 'cached_yolo_go_light', False)
+        if stop_signal_seen:
             return True
 
         timeout_sec = max(float(self.get_parameter('startup_light_check_timeout_sec').value), 0.0)
@@ -1459,6 +1659,9 @@ class TrackDriverNode(Node):
         ):
             self.startup_light_gate_released = True
             return False
+
+        if bool(self.get_parameter('startup_light_require_signal').value) and not signal_seen:
+            return True
 
         required_frames = max(int(self.get_parameter('red_light_confirm_frames').value), 1)
         return 0 < self.red_light_confirm_count < required_frames
@@ -1614,9 +1817,10 @@ class TrackDriverNode(Node):
             return False
 
         stop_line_ready = self._stop_line_ready_for_light_stop()
+        stop_ready = stop_line_ready or self._startup_light_stop_without_line_active()
         if bool(self.get_parameter('yolo_safety_enabled').value):
             if self.cached_yolo_red_light:
-                return stop_line_ready
+                return stop_ready
             if not bool(self.get_parameter('red_light_color_fallback_enabled').value):
                 return False
 
@@ -1629,35 +1833,17 @@ class TrackDriverNode(Node):
         if roi.size == 0:
             return False
 
-        return stop_line_ready and self._red_light_color_present(roi)
+        return stop_ready and self._red_light_color_present(roi)
 
     def _stop_line_ready_for_light_stop(self) -> bool:
-        if not bool(self.get_parameter('stop_on_light_requires_stop_line').value):
-            return True
-        required_frames = max(int(self.get_parameter('stop_line_confirm_frames').value), 1)
-        if self.stop_line_confirm_count < required_frames:
-            return False
-        if bool(self.get_parameter('stop_line_bev_gate_enabled').value) and not self.stop_line_bev_detected:
-            return False
+        return self.stop_line_detector.ready_for_light_stop()
 
-        stop_row_ratio = float(np.clip(
-            self.get_parameter('stop_line_stop_row_ratio').value, 0.0, 1.0))
-        stop_bottom_row_ratio = float(np.clip(
-            self.get_parameter('stop_line_stop_bottom_row_ratio').value, 0.0, 1.0))
-        stop_distance = float(self.get_parameter('stop_line_stop_distance_m').value)
-        if stop_distance > 0.0:
-            return (
-                self.stop_line_detected
-                and self.stop_line_distance_m is not None
-                and self.stop_line_distance_m <= stop_distance
-                and self.stop_line_row_ratio >= stop_row_ratio
-                and self.stop_line_bottom_row_ratio >= stop_bottom_row_ratio
-            )
-
+    def _startup_light_stop_without_line_active(self) -> bool:
         return (
-            self.stop_line_detected
-            and self.stop_line_row_ratio >= stop_row_ratio
-            and self.stop_line_bottom_row_ratio >= stop_bottom_row_ratio
+            bool(self.get_parameter('startup_light_ignore_stop_line').value)
+            and bool(self.get_parameter('startup_light_check_enabled').value)
+            and bool(self.get_parameter('stop_on_red_light_enabled').value)
+            and not bool(self.startup_light_gate_released)
         )
 
     def _estimate_stop_line_distance(self, row_ratio: float) -> float:
@@ -2007,6 +2193,7 @@ class TrackDriverNode(Node):
             self.cached_yolo_left_light = False
             self.cached_yolo_raw_red_light = False
             stop_line_ready_for_light = self._stop_line_ready_for_light_stop()
+            stop_ready_for_light = stop_line_ready_for_light or self._startup_light_stop_without_line_active()
             light_detections = self._run_yolo_detector(
                 'light',
                 str(self.get_parameter('yolo_light_model_path').value),
@@ -2026,7 +2213,7 @@ class TrackDriverNode(Node):
                 float(self.get_parameter('yolo_stop_light_conf_threshold').value),
                 0.0,
             )
-            if stop_line_ready_for_light:
+            if stop_ready_for_light:
                 stop_light_conf_threshold = min(
                     stop_light_conf_threshold,
                     max(float(self.get_parameter('yolo_stop_light_stop_line_conf_threshold').value), 0.0),
@@ -2035,7 +2222,7 @@ class TrackDriverNode(Node):
                 float(self.get_parameter('yolo_stop_light_go_margin').value),
                 0.0,
             )
-            if stop_line_ready_for_light:
+            if stop_ready_for_light:
                 stop_light_go_margin = max(stop_light_go_margin, 0.06)
             best_stop_light_score = 0.0
             best_go_light_score = 0.0
@@ -2081,7 +2268,7 @@ class TrackDriverNode(Node):
                     for class_id in (left_light_class_ids or set())
                 )
 
-            if stop_line_ready_for_light and not raw_red_light:
+            if stop_ready_for_light and not raw_red_light:
                 score_stop, score_go = self._stop_light_score_fallback()
                 if score_stop >= stop_light_conf_threshold and score_stop >= score_go + stop_light_go_margin:
                     raw_red_light = True
@@ -2107,7 +2294,7 @@ class TrackDriverNode(Node):
                 self.red_light_confirm_count = 0
 
             required_frames = max(int(self.get_parameter('red_light_confirm_frames').value), 1)
-            if stop_line_ready_for_light:
+            if stop_ready_for_light:
                 required_frames = max(
                     int(self.get_parameter('red_light_stop_line_confirm_frames').value), 1)
             self.cached_yolo_red_light = self.red_light_confirm_count >= required_frames
@@ -2140,23 +2327,24 @@ class TrackDriverNode(Node):
             return []
 
         input_size = max(int(input_size), 32)
-        net = self._get_yolo_net(name, model_path)
-        if net is None:
-            return []
-
         padded, scale, pad_x, pad_y = self._letterbox_image(image, input_size)
         blob = cv2.dnn.blobFromImage(
             padded, scalefactor=1.0 / 255.0, size=(input_size, input_size),
             mean=(0.0, 0.0, 0.0), swapRB=True, crop=False)
 
-        try:
-            net.setInput(blob)
-            output = net.forward()
-        except Exception as exc:
-            self._warn_yolo_once(name, f'YOLO inference failed: {exc}')
-            if name == 'light':
-                self.cached_yolo_light_detect_count = 0
-            return []
+        output = self._run_yolo_ort(name, model_path, blob)
+        if output is None:
+            net = self._get_yolo_net(name, model_path)
+            if net is None:
+                return []
+            try:
+                net.setInput(blob)
+                output = net.forward()
+            except Exception as exc:
+                self._warn_yolo_once(name, f'YOLO inference failed: {exc}')
+                if name == 'light':
+                    self.cached_yolo_light_detect_count = 0
+                return []
 
         if name == 'light':
             self._cache_yolo_light_score_debug(output, class_count)
@@ -2168,6 +2356,61 @@ class TrackDriverNode(Node):
         if name == 'light':
             self.cached_yolo_light_detect_count = len(detections)
         return detections
+
+    def _run_yolo_ort(self, name: str, model_path: Path, blob: np.ndarray):
+        session_info = self._get_yolo_ort_session(name, model_path)
+        if session_info is None:
+            return None
+        session, input_name, provider_text = session_info
+        try:
+            outputs = session.run(None, {input_name: blob.astype(np.float32, copy=False)})
+            if not outputs:
+                return None
+            return outputs[0]
+        except Exception as exc:
+            self._warn_yolo_once(f'{name}_ort_infer', f'YOLO {name} ONNX Runtime failed ({provider_text}); falling back to OpenCV DNN: {exc}')
+            return None
+
+    def _get_yolo_ort_session(self, name: str, model_path: Path):
+        backend_name = str(self.get_parameter('yolo_dnn_backend').value).strip().lower()
+        target_name = str(self.get_parameter('yolo_dnn_target').value).strip().lower()
+        if backend_name not in ('auto', 'cuda', 'onnxruntime', 'ort') and target_name not in ('cuda', 'cuda_fp16', 'fp16'):
+            return None
+
+        key = (name, str(model_path), 'ort', backend_name, target_name)
+        if key in self.yolo_ort_sessions:
+            return self.yolo_ort_sessions[key]
+
+        try:
+            import onnxruntime as ort
+        except Exception as exc:
+            self._warn_yolo_once('onnxruntime', f'ONNX Runtime is not available; using OpenCV DNN: {exc}')
+            return None
+
+        available = set(ort.get_available_providers())
+        providers = []
+        if 'CUDAExecutionProvider' in available and backend_name in ('auto', 'cuda', 'onnxruntime', 'ort'):
+            providers.append('CUDAExecutionProvider')
+        if 'CPUExecutionProvider' in available:
+            providers.append('CPUExecutionProvider')
+        if not providers:
+            return None
+
+        try:
+            session = ort.InferenceSession(str(model_path), providers=providers)
+        except Exception as exc:
+            self._warn_yolo_once(f'{name}_ort_load', f'YOLO {name} ONNX Runtime load failed; using OpenCV DNN: {exc}')
+            return None
+
+        active = session.get_providers()
+        if 'CUDAExecutionProvider' not in active and backend_name == 'auto':
+            return None
+        input_name = session.get_inputs()[0].name
+        provider_text = '+'.join(active)
+        info = (session, input_name, provider_text)
+        self.yolo_ort_sessions[key] = info
+        self.get_logger().info(f'YOLO {name} model loaded: {model_path} | ort={provider_text}')
+        return info
 
     def _cache_yolo_light_score_debug(self, output, class_count: Optional[int]):
         self.cached_yolo_light_class_scores = []
@@ -2247,15 +2490,42 @@ class TrackDriverNode(Node):
 
         try:
             net = cv2.dnn.readNetFromONNX(str(model_path))
-            net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
-            net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
+            backend, target = self._configure_yolo_dnn_net(net)
         except Exception as exc:
             self._warn_yolo_once(name, f'YOLO model load failed: {model_path} | {exc}')
             return None
 
         self.yolo_nets[key] = net
-        self.get_logger().info(f'YOLO {name} model loaded: {model_path}')
+        self.get_logger().info(f'YOLO {name} model loaded: {model_path} | dnn={backend}/{target}')
         return net
+
+    def _configure_yolo_dnn_net(self, net):
+        backend_name = str(self.get_parameter('yolo_dnn_backend').value).strip().lower()
+        target_name = str(self.get_parameter('yolo_dnn_target').value).strip().lower()
+        cuda_requested = backend_name == 'cuda' or target_name in ('cuda', 'cuda_fp16', 'fp16')
+        cuda_allowed = backend_name in ('auto', 'cuda') and target_name in ('auto', 'cuda', 'cuda_fp16', 'fp16')
+        if cuda_allowed and self._opencv_dnn_cuda_available():
+            net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
+            if target_name in ('cuda_fp16', 'fp16') and hasattr(cv2.dnn, 'DNN_TARGET_CUDA_FP16'):
+                net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA_FP16)
+                return 'cuda', 'cuda_fp16'
+            net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
+            return 'cuda', 'cuda'
+
+        if cuda_requested:
+            self._warn_yolo_once('dnn_cuda', 'OpenCV DNN CUDA is not available; using CPU backend')
+        net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+        net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
+        return 'opencv', 'cpu'
+
+    @staticmethod
+    def _opencv_dnn_cuda_available() -> bool:
+        if not hasattr(cv2.dnn, 'DNN_BACKEND_CUDA') or not hasattr(cv2.dnn, 'DNN_TARGET_CUDA'):
+            return False
+        try:
+            return bool(hasattr(cv2, 'cuda') and cv2.cuda.getCudaEnabledDeviceCount() > 0)
+        except Exception:
+            return False
 
     @staticmethod
     def _letterbox_image(image: np.ndarray, input_size: int):
@@ -3354,6 +3624,8 @@ class TrackDriverNode(Node):
 
         min_height_ratio = float(np.clip(
             self.get_parameter('yolo_light_min_box_height_ratio').value, 0.0, 1.0))
+        min_width_ratio = float(np.clip(
+            self.get_parameter('yolo_light_min_box_width_ratio').value, 0.0, 1.0))
         max_height_ratio = float(np.clip(
             self.get_parameter('yolo_light_max_box_height_ratio').value, min_height_ratio, 1.0))
         min_area_ratio = float(np.clip(
@@ -3364,6 +3636,7 @@ class TrackDriverNode(Node):
             self.get_parameter('yolo_light_max_box_bottom_ratio').value, 0.05, 1.0))
         return (
             min_height_ratio <= height_ratio <= max_height_ratio
+            and box_width >= min_width_ratio * max(image_width, 1)
             and min_area_ratio <= box_area_ratio <= max_area_ratio
             and y1 <= max_bottom_ratio * max(image_height, 1)
         )
@@ -3423,6 +3696,179 @@ class TrackDriverNode(Node):
             if circularity >= min_circularity:
                 return True, red_ratio, green_ratio, yellow_ratio
         return False, red_ratio, green_ratio, yellow_ratio
+
+    def _publish_drive_debug_image(self):
+        if not bool(self.get_parameter('publish_drive_debug_image').value):
+            return
+        if self.image is None or not rclpy.ok():
+            return
+
+        rate_hz = max(float(self.get_parameter('drive_debug_publish_rate_hz').value), 0.0)
+        now = time.monotonic()
+        if rate_hz > 0.0:
+            min_period = 1.0 / rate_hz
+            if now - self.last_drive_debug_publish_sec < min_period:
+                return
+        self.last_drive_debug_publish_sec = now
+
+        view_w = 960
+        view_h = 540
+        panel_h = 180
+        canvas = np.zeros((view_h + panel_h, view_w, 3), dtype=np.uint8)
+        frame, scale, pad_x, pad_y = self._letterbox_debug_image(self.image, view_w, view_h)
+        self._draw_drive_light_boxes(frame, scale, pad_x, pad_y)
+        canvas[:view_h, :] = frame
+        self._draw_drive_status_overlay(canvas)
+        self._draw_drive_debug_panel(canvas, view_h)
+
+        try:
+            msg = self.bridge.cv2_to_imgmsg(canvas, 'bgr8')
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.frame_id = 'front_camera'
+            self.drive_debug_pub.publish(msg)
+        except Exception as exc:
+            self._warn_yolo_once('drive_debug', f'drive debug image publish failed: {exc}')
+
+    @staticmethod
+    def _letterbox_debug_image(image: np.ndarray, target_w: int, target_h: int):
+        height, width = image.shape[:2]
+        scale = min(target_w / float(max(width, 1)), target_h / float(max(height, 1)))
+        resized_w = max(1, int(round(width * scale)))
+        resized_h = max(1, int(round(height * scale)))
+        resized = cv2.resize(image, (resized_w, resized_h), interpolation=cv2.INTER_AREA)
+        canvas = np.zeros((target_h, target_w, 3), dtype=np.uint8)
+        pad_x = (target_w - resized_w) // 2
+        pad_y = (target_h - resized_h) // 2
+        canvas[pad_y:pad_y + resized_h, pad_x:pad_x + resized_w] = resized
+        return canvas, scale, pad_x, pad_y
+
+    def _draw_drive_light_boxes(self, frame: np.ndarray, scale: float, pad_x: int, pad_y: int):
+        for box, score, class_id, valid, red_present, red_ratio, green_ratio, yellow_ratio in self.cached_light_debug:
+            x0, y0, x1, y1 = box
+            sx0 = int(round(x0 * scale + pad_x))
+            sy0 = int(round(y0 * scale + pad_y))
+            sx1 = int(round(x1 * scale + pad_x))
+            sy1 = int(round(y1 * scale + pad_y))
+            if not valid:
+                color = (130, 130, 130)
+                label = 'reject'
+            elif int(class_id) == 0:
+                color = (0, 165, 255)
+                label = 'cone'
+            elif red_present:
+                color = (0, 0, 255)
+                label = 'stop'
+            elif self._class_id_allowed(class_id, self._int_set_parameter('yolo_go_light_class_ids')):
+                color = (0, 220, 0)
+                label = 'green'
+            elif self._class_id_allowed(class_id, self._int_set_parameter('yolo_left_light_class_ids')):
+                color = (255, 160, 0)
+                label = 'left'
+            elif int(class_id) == 5:
+                color = (0, 220, 255)
+                label = 'yellow'
+            else:
+                color = (255, 180, 0)
+                label = self._light_class_name(class_id)
+            cv2.rectangle(frame, (sx0, sy0), (sx1, sy1), color, 2)
+            cv2.putText(
+                frame,
+                f'{label}:{score:.2f}',
+                (sx0, max(sy0 - 6, 18)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.45,
+                color,
+                1,
+                cv2.LINE_AA,
+            )
+
+    def _draw_drive_status_overlay(self, canvas: np.ndarray):
+        ai_state = 'ON' if self.last_ai_enable else ('OFF' if self.last_ai_enable is not None else '?')
+        light_state = self._drive_debug_light_state()
+        startup = 'released' if self.startup_light_gate_released else 'checking'
+        speed = float(self.last_command_speed)
+        steer = float(self.last_command_steer)
+        cv2.rectangle(canvas, (8, 8), (952, 96), (0, 0, 0), thickness=-1)
+        color = (0, 0, 255) if self.cached_yolo_red_light else ((0, 220, 0) if self.cached_yolo_go_light else (0, 180, 255))
+        lines = [
+            f'mode={self.last_mode} ai={ai_state} cmd_speed={speed:.1f} cmd_steer={steer:.1f}',
+            f'light={light_state} startup={startup} red_count={self.red_light_confirm_count}',
+            f'intersection={self.intersection_last_decision or "none"} left_cam={self.intersection_camera_left_cone_count} left_lidar={self.intersection_left_cone_count}',
+        ]
+        self._put_debug_lines(canvas, lines, (18, 31), color, 0.56, 22)
+
+    def _draw_drive_debug_panel(self, canvas: np.ndarray, y0: int):
+        cv2.rectangle(canvas, (0, y0), (canvas.shape[1] - 1, canvas.shape[0] - 1), (24, 24, 24), thickness=-1)
+        stop_result = getattr(self.stop_line_detector, 'last_result', None)
+        school_result = getattr(self.school_zone_detector, 'last_result', None)
+
+        stop_distance = self.stop_line_distance_m
+        if stop_distance is None:
+            stop_distance = self.stop_line_last_distance_m
+        distance_text = 'none' if stop_distance is None else f'{stop_distance:.2f}m'
+        school_hold = getattr(school_result, 'hold_remaining_sec', 0.0) if school_result is not None else 0.0
+        ai_rule = 'left turn only' if self.last_mode.startswith('intersection_left') else 'AI steering'
+        nearest = self._nearest_scan_obstacle_distance(self.scan_msg)
+        lines = [
+            f'stop_line detected={int(self.stop_line_detected)} cnt={self.stop_line_confirm_count} row={self.stop_line_bev_row_ratio:.2f} w={self.stop_line_bev_width_ratio:.2f} d={distance_text}',
+            f'school active={int(self.school_zone_active)} cand={int(self.school_zone_candidate_active)} L={self.school_zone_yellow_left_ratio:.3f} R={self.school_zone_yellow_right_ratio:.3f} hold={school_hold:.1f}s',
+            f'control rule: {ai_rule}; straight/intersection straight stays on AI direct',
+            f'safety={self.last_safety_stop_reason} nearest={self._format_nearest_obstacle(nearest)}',
+        ]
+        self._put_debug_lines(canvas, lines, (14, y0 + 26), (230, 230, 230), 0.46, 25)
+
+        stop_thumb = self._debug_thumbnail(getattr(stop_result, 'debug_image', None), 290, 162, 'STOP LINE BEV')
+        school_thumb = self._debug_thumbnail(getattr(school_result, 'debug_image', None), 290, 162, 'SCHOOL ZONE BEV')
+        canvas[y0 + 10:y0 + 172, 360:650] = stop_thumb
+        canvas[y0 + 10:y0 + 172, 660:950] = school_thumb
+
+    @staticmethod
+    def _debug_thumbnail(image: Optional[np.ndarray], width: int, height: int, label: str) -> np.ndarray:
+        thumb = np.zeros((height, width, 3), dtype=np.uint8)
+        if image is not None and image.size > 0:
+            source = image
+            if source.ndim == 2:
+                source = cv2.cvtColor(source, cv2.COLOR_GRAY2BGR)
+            thumb, _, _, _ = TrackDriverNode._letterbox_debug_image(source, width, height)
+        cv2.rectangle(thumb, (0, 0), (width - 1, 24), (0, 0, 0), thickness=-1)
+        cv2.putText(thumb, label, (8, 17), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (230, 230, 230), 1, cv2.LINE_AA)
+        return thumb
+
+    @staticmethod
+    def _put_debug_lines(
+        image: np.ndarray,
+        lines: Sequence[str],
+        origin: Tuple[int, int],
+        color: Tuple[int, int, int],
+        scale: float,
+        line_height: int,
+    ):
+        x, y = origin
+        for idx, line in enumerate(lines):
+            cv2.putText(
+                image,
+                str(line),
+                (x, y + idx * line_height),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                scale,
+                color,
+                1,
+                cv2.LINE_AA,
+            )
+
+    def _drive_debug_light_state(self) -> str:
+        states = []
+        if self.cached_yolo_red_light:
+            states.append('stop')
+        elif self.cached_yolo_raw_red_light:
+            states.append('raw_stop')
+        if self.cached_yolo_go_light:
+            states.append('green')
+        if self.cached_yolo_left_light:
+            states.append('left')
+        if not states:
+            states.append('none')
+        return '+'.join(states)
 
     def _publish_light_debug_image(self, image: np.ndarray, light_debug):
         if not bool(self.get_parameter('publish_light_debug_image').value):

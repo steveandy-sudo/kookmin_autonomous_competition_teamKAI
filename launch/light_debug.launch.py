@@ -12,15 +12,17 @@ def generate_launch_description():
     control_rate_hz = LaunchConfiguration('control_rate_hz')
     yolo_light_input_size = LaunchConfiguration('yolo_light_input_size')
     yolo_light_conf_threshold = LaunchConfiguration('yolo_light_conf_threshold')
+    yolo_stop_light_conf_threshold = LaunchConfiguration('yolo_stop_light_conf_threshold')
     yolo_red_light_period_sec = LaunchConfiguration('yolo_red_light_period_sec')
 
     return LaunchDescription([
         DeclareLaunchArgument('camera_topic', default_value='/usb_cam/image_raw/front'),
-        DeclareLaunchArgument('yolo_light_model_path', default_value='/home/xytron/model/best_new.onnx'),
+        DeclareLaunchArgument('yolo_light_model_path', default_value='/home/xytron/model/final.onnx'),
         DeclareLaunchArgument('light_debug_image_topic', default_value='/track_drive/light_debug_image'),
         DeclareLaunchArgument('control_rate_hz', default_value='20.0'),
         DeclareLaunchArgument('yolo_light_input_size', default_value='640'),
-        DeclareLaunchArgument('yolo_light_conf_threshold', default_value='0.45'),
+        DeclareLaunchArgument('yolo_light_conf_threshold', default_value='0.10'),
+        DeclareLaunchArgument('yolo_stop_light_conf_threshold', default_value='0.80'),
         DeclareLaunchArgument('yolo_red_light_period_sec', default_value='0.10'),
 
         Node(
@@ -39,11 +41,14 @@ def generate_launch_description():
                 'yolo_light_model_path': yolo_light_model_path,
                 'yolo_light_input_size': ParameterValue(yolo_light_input_size, value_type=int),
                 'yolo_light_conf_threshold': ParameterValue(yolo_light_conf_threshold, value_type=float),
+                'yolo_stop_light_conf_threshold': ParameterValue(
+                    yolo_stop_light_conf_threshold, value_type=float),
                 'yolo_red_light_period_sec': ParameterValue(yolo_red_light_period_sec, value_type=float),
                 'stop_on_red_light_enabled': True,
                 'red_light_confirm_frames': 1,
-                'yolo_light_class_ids': [0, 1, 2, 3, 4],
-                'yolo_red_light_class_ids': [3, 4],
+                'yolo_light_class_count': 6,
+                'yolo_light_class_ids': [0, 1, 2, 3, 4, 5],
+                'yolo_red_light_class_ids': [4, 5],
                 'yolo_go_light_class_ids': [1],
                 'stop_on_person_enabled': False,
                 'stop_on_vehicle_enabled': False,

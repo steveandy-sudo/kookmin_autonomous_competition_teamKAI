@@ -14,6 +14,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         # launch 파일을 설치
         (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
+        (os.path.join('share', package_name, 'rviz'), glob('rviz/*.rviz')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -26,6 +27,10 @@ setup(
         'console_scripts': [
             'track_drive = track_drive.track_drive:main',
             'switchable_cone_ai_driver = track_drive.switchable_cone_ai_driver:main',
+            'stop_line_bev_debug = track_drive.stop_line_bev_debug_node:main',
+            'traffic_light_debug = track_drive.traffic_light_debug_node:main',
+            'school_zone_debug = track_drive.school_zone_debug_node:main',
+            'intersection_debug = track_drive.intersection_debug_node:main',
         ],
     },
 )

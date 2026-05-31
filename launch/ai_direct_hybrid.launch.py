@@ -1,6 +1,6 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -17,7 +17,13 @@ def generate_launch_description():
     hybrid_trigger_topic = LaunchConfiguration('hybrid_trigger_topic')
     control_rate_hz = LaunchConfiguration('control_rate_hz')
     publish_light_debug_image = LaunchConfiguration('publish_light_debug_image')
+    publish_drive_debug_image = LaunchConfiguration('publish_drive_debug_image')
+    drive_debug_image_topic = LaunchConfiguration('drive_debug_image_topic')
+    drive_debug_publish_rate_hz = LaunchConfiguration('drive_debug_publish_rate_hz')
+    stop_line_update_period_sec = LaunchConfiguration('stop_line_update_period_sec')
+    school_zone_update_period_sec = LaunchConfiguration('school_zone_update_period_sec')
     school_zone_speed = LaunchConfiguration('school_zone_speed')
+    school_zone_roi_top_ratio = LaunchConfiguration('school_zone_roi_top_ratio')
     school_zone_left_edge_max_ratio = LaunchConfiguration('school_zone_left_edge_max_ratio')
     school_zone_right_edge_min_ratio = LaunchConfiguration('school_zone_right_edge_min_ratio')
     school_zone_yellow_ratio_threshold = LaunchConfiguration('school_zone_yellow_ratio_threshold')
@@ -52,6 +58,32 @@ def generate_launch_description():
     school_zone_max_steer_deg = LaunchConfiguration('school_zone_max_steer_deg')
     school_zone_steer_smoothing = LaunchConfiguration('school_zone_steer_smoothing')
     school_zone_lookahead_scale = LaunchConfiguration('school_zone_lookahead_scale')
+    intersection_route_enabled = LaunchConfiguration('intersection_route_enabled')
+    intersection_stop_line_trigger_row_ratio = LaunchConfiguration('intersection_stop_line_trigger_row_ratio')
+    intersection_left_cone_min_count = LaunchConfiguration('intersection_left_cone_min_count')
+    intersection_use_lidar_cones = LaunchConfiguration('intersection_use_lidar_cones')
+    intersection_camera_cone_enabled = LaunchConfiguration('intersection_camera_cone_enabled')
+    intersection_camera_cone_class_ids = LaunchConfiguration('intersection_camera_cone_class_ids')
+    intersection_camera_cone_min_score = LaunchConfiguration('intersection_camera_cone_min_score')
+    intersection_camera_cone_left_min_ratio = LaunchConfiguration('intersection_camera_cone_left_min_ratio')
+    intersection_camera_cone_left_max_ratio = LaunchConfiguration('intersection_camera_cone_left_max_ratio')
+    intersection_camera_cone_min_height_ratio = LaunchConfiguration('intersection_camera_cone_min_height_ratio')
+    intersection_camera_cone_min_bottom_ratio = LaunchConfiguration('intersection_camera_cone_min_bottom_ratio')
+    intersection_left_decision_delay_sec = LaunchConfiguration('intersection_left_decision_delay_sec')
+    intersection_left_cone_min_x = LaunchConfiguration('intersection_left_cone_min_x')
+    intersection_left_cone_max_x = LaunchConfiguration('intersection_left_cone_max_x')
+    intersection_left_cone_min_y = LaunchConfiguration('intersection_left_cone_min_y')
+    intersection_left_cone_max_y = LaunchConfiguration('intersection_left_cone_max_y')
+    intersection_left_turn_speed = LaunchConfiguration('intersection_left_turn_speed')
+    intersection_left_turn_steer_deg = LaunchConfiguration('intersection_left_turn_steer_deg')
+    intersection_left_turn_duration_sec = LaunchConfiguration('intersection_left_turn_duration_sec')
+    intersection_left_turn_repeat_enabled = LaunchConfiguration('intersection_left_turn_repeat_enabled')
+    intersection_left_turn_repeat_delay_sec = LaunchConfiguration('intersection_left_turn_repeat_delay_sec')
+    intersection_left_turn_post_school_limit_sec = LaunchConfiguration(
+        'intersection_left_turn_post_school_limit_sec')
+    intersection_straight_hold_sec = LaunchConfiguration('intersection_straight_hold_sec')
+    intersection_route_cooldown_sec = LaunchConfiguration('intersection_route_cooldown_sec')
+    intersection_signal_wait_timeout_sec = LaunchConfiguration('intersection_signal_wait_timeout_sec')
     stop_on_red_light = LaunchConfiguration('stop_on_red_light')
     stop_on_person = LaunchConfiguration('stop_on_person')
     stop_on_vehicle = LaunchConfiguration('stop_on_vehicle')
@@ -129,6 +161,9 @@ def generate_launch_description():
     person_fusion_lateral_limit = LaunchConfiguration('person_fusion_lateral_limit')
     person_fusion_lidar_min_points = LaunchConfiguration('person_fusion_lidar_min_points')
     person_yolo_camera_fallback_enabled = LaunchConfiguration('person_yolo_camera_fallback_enabled')
+    person_yolo_lidar_fallback_enabled = LaunchConfiguration('person_yolo_lidar_fallback_enabled')
+    person_yolo_far_stop_enabled = LaunchConfiguration('person_yolo_far_stop_enabled')
+    person_yolo_far_stop_distance = LaunchConfiguration('person_yolo_far_stop_distance')
     person_dynamic_enabled = LaunchConfiguration('person_dynamic_enabled')
     person_dynamic_prediction_sec = LaunchConfiguration('person_dynamic_prediction_sec')
     person_dynamic_image_center_deadband = LaunchConfiguration('person_dynamic_image_center_deadband')
@@ -143,6 +178,7 @@ def generate_launch_description():
     person_reverse_max_sec = LaunchConfiguration('person_reverse_max_sec')
     person_reverse_steer_deg = LaunchConfiguration('person_reverse_steer_deg')
     person_avoidance_enabled = LaunchConfiguration('person_avoidance_enabled')
+    person_avoidance_enable_topic = LaunchConfiguration('person_avoidance_enable_topic')
     person_wait_release_left_y = LaunchConfiguration('person_wait_release_left_y')
     person_wait_release_image_left_ratio = LaunchConfiguration('person_wait_release_image_left_ratio')
     person_wait_release_confirm_frames = LaunchConfiguration('person_wait_release_confirm_frames')
@@ -171,6 +207,8 @@ def generate_launch_description():
     yolo_safety_enabled = LaunchConfiguration('yolo_safety_enabled')
     yolo_person_model_path = LaunchConfiguration('yolo_person_model_path')
     yolo_light_model_path = LaunchConfiguration('yolo_light_model_path')
+    yolo_dnn_backend = LaunchConfiguration('yolo_dnn_backend')
+    yolo_dnn_target = LaunchConfiguration('yolo_dnn_target')
     yolo_person_conf_threshold = LaunchConfiguration('yolo_person_conf_threshold')
     yolo_light_input_size = LaunchConfiguration('yolo_light_input_size')
     yolo_safety_period_sec = LaunchConfiguration('yolo_safety_period_sec')
@@ -178,47 +216,116 @@ def generate_launch_description():
     yolo_person_min_box_height_ratio = LaunchConfiguration('yolo_person_min_box_height_ratio')
     yolo_person_min_box_bottom_ratio = LaunchConfiguration('yolo_person_min_box_bottom_ratio')
     yolo_light_conf_threshold = LaunchConfiguration('yolo_light_conf_threshold')
+    yolo_stop_light_conf_threshold = LaunchConfiguration('yolo_stop_light_conf_threshold')
+    yolo_stop_light_stop_line_conf_threshold = LaunchConfiguration(
+        'yolo_stop_light_stop_line_conf_threshold')
+    yolo_stop_light_go_margin = LaunchConfiguration('yolo_stop_light_go_margin')
+    yolo_left_light_class_ids = LaunchConfiguration('yolo_left_light_class_ids')
+    yolo_left_light_conf_threshold = LaunchConfiguration('yolo_left_light_conf_threshold')
     yolo_light_min_box_height_ratio = LaunchConfiguration('yolo_light_min_box_height_ratio')
+    yolo_light_min_box_width_ratio = LaunchConfiguration('yolo_light_min_box_width_ratio')
     yolo_light_max_box_height_ratio = LaunchConfiguration('yolo_light_max_box_height_ratio')
     yolo_light_min_box_area_ratio = LaunchConfiguration('yolo_light_min_box_area_ratio')
     yolo_light_max_box_area_ratio = LaunchConfiguration('yolo_light_max_box_area_ratio')
     yolo_light_max_box_bottom_ratio = LaunchConfiguration('yolo_light_max_box_bottom_ratio')
     red_light_confirm_frames = LaunchConfiguration('red_light_confirm_frames')
+    red_light_stop_line_confirm_frames = LaunchConfiguration('red_light_stop_line_confirm_frames')
     red_light_min_ratio = LaunchConfiguration('red_light_min_ratio')
     red_light_min_dominance = LaunchConfiguration('red_light_min_dominance')
     red_light_go_release_enabled = LaunchConfiguration('red_light_go_release_enabled')
+    red_light_close_stop_delay_sec = LaunchConfiguration('red_light_close_stop_delay_sec')
+    stop_on_light_requires_stop_line = LaunchConfiguration('stop_on_light_requires_stop_line')
+    stop_line_roi_top_ratio = LaunchConfiguration('stop_line_roi_top_ratio')
+    stop_line_roi_bottom_ratio = LaunchConfiguration('stop_line_roi_bottom_ratio')
+    stop_line_stop_row_ratio = LaunchConfiguration('stop_line_stop_row_ratio')
+    stop_line_stop_bottom_row_ratio = LaunchConfiguration('stop_line_stop_bottom_row_ratio')
+    stop_line_stop_distance_m = LaunchConfiguration('stop_line_stop_distance_m')
+    stop_line_distance_bottom_ratio = LaunchConfiguration('stop_line_distance_bottom_ratio')
+    stop_line_distance_scale_m = LaunchConfiguration('stop_line_distance_scale_m')
+    stop_line_min_width_ratio = LaunchConfiguration('stop_line_min_width_ratio')
+    stop_line_min_row_ratio = LaunchConfiguration('stop_line_min_row_ratio')
+    stop_line_min_rows = LaunchConfiguration('stop_line_min_rows')
+    stop_line_min_aspect_ratio = LaunchConfiguration('stop_line_min_aspect_ratio')
+    stop_line_min_fill_ratio = LaunchConfiguration('stop_line_min_fill_ratio')
+    stop_line_confirm_frames = LaunchConfiguration('stop_line_confirm_frames')
+    stop_line_bev_gate_enabled = LaunchConfiguration('stop_line_bev_gate_enabled')
+    stop_line_bev_src_top_ratio = LaunchConfiguration('stop_line_bev_src_top_ratio')
+    stop_line_bev_src_bottom_ratio = LaunchConfiguration('stop_line_bev_src_bottom_ratio')
+    stop_line_bev_src_top_half_width_ratio = LaunchConfiguration(
+        'stop_line_bev_src_top_half_width_ratio')
+    stop_line_bev_src_bottom_half_width_ratio = LaunchConfiguration(
+        'stop_line_bev_src_bottom_half_width_ratio')
+    stop_line_bev_front_top_ratio = LaunchConfiguration('stop_line_bev_front_top_ratio')
+    stop_line_bev_front_bottom_ratio = LaunchConfiguration('stop_line_bev_front_bottom_ratio')
+    stop_line_bev_min_width_ratio = LaunchConfiguration('stop_line_bev_min_width_ratio')
+    stop_line_bev_min_aspect_ratio = LaunchConfiguration('stop_line_bev_min_aspect_ratio')
+    stop_line_bev_min_fill_ratio = LaunchConfiguration('stop_line_bev_min_fill_ratio')
+    stop_line_bev_min_row_run = LaunchConfiguration('stop_line_bev_min_row_run')
+    stop_line_bev_min_solid_run_ratio = LaunchConfiguration('stop_line_bev_min_solid_run_ratio')
+    stop_line_bev_solid_col_min_fill_ratio = LaunchConfiguration('stop_line_bev_solid_col_min_fill_ratio')
+    stop_line_detect_min_row_ratio = LaunchConfiguration('stop_line_detect_min_row_ratio')
+    stop_line_detect_max_distance_m = LaunchConfiguration('stop_line_detect_max_distance_m')
+    stop_line_memory_sec = LaunchConfiguration('stop_line_memory_sec')
     startup_light_check_enabled = LaunchConfiguration('startup_light_check_enabled')
     startup_light_check_timeout_sec = LaunchConfiguration('startup_light_check_timeout_sec')
+    startup_light_check_min_sec = LaunchConfiguration('startup_light_check_min_sec')
+    startup_light_ignore_stop_line = LaunchConfiguration('startup_light_ignore_stop_line')
+    startup_light_require_signal = LaunchConfiguration('startup_light_require_signal')
     safety_stop_hold_sec = LaunchConfiguration('safety_stop_hold_sec')
 
+    nvidia_library_path = (
+        '/home/xytron/.local/lib/python3.10/site-packages/nvidia/cublas/lib:'
+        '/home/xytron/.local/lib/python3.10/site-packages/nvidia/cudnn/lib:'
+        '/home/xytron/.local/lib/python3.10/site-packages/nvidia/cuda_runtime/lib:'
+        '/home/xytron/.local/lib/python3.10/site-packages/nvidia/cuda_nvrtc/lib:'
+        '/home/xytron/.local/lib/python3.10/site-packages/nvidia/cufft/lib:'
+        '/home/xytron/.local/lib/python3.10/site-packages/nvidia/curand/lib:'
+        '/home/xytron/.local/lib/python3.10/site-packages/nvidia/cusolver/lib:'
+        '/home/xytron/.local/lib/python3.10/site-packages/nvidia/cusparse/lib:'
+        '/home/xytron/.local/lib/python3.10/site-packages/nvidia/nvjitlink/lib'
+    )
+
     return LaunchDescription([
+        SetEnvironmentVariable(
+            name='LD_LIBRARY_PATH',
+            value=[nvidia_library_path, ':', EnvironmentVariable('LD_LIBRARY_PATH', default_value='')],
+        ),
         DeclareLaunchArgument('camera_topic', default_value='/usb_cam/image_raw/front'),
         DeclareLaunchArgument('scan_topic', default_value='/scan'),
         DeclareLaunchArgument('motor_topic', default_value='xycar_motor'),
-        DeclareLaunchArgument('model_path', default_value='~/cone_il_model_merged_new2/cone_bc_scripted.pt'),
-        DeclareLaunchArgument('speed', default_value='10.0'),
+        DeclareLaunchArgument(
+            'model_path',
+            default_value='/home/xytron/cone_il_model_speed14_left_clean_epoch/cone_bc_scripted.pt',
+        ),
+        DeclareLaunchArgument('speed', default_value='14.0'),
         DeclareLaunchArgument('max_steer_deg', default_value='100.0'),
         DeclareLaunchArgument('ai_enable_topic', default_value='/cone_ai/enable'),
         DeclareLaunchArgument('ai_speed_limit_topic', default_value='/cone_ai/speed_limit'),
         DeclareLaunchArgument('hybrid_trigger_topic', default_value='/track_drive/hybrid_trigger'),
         DeclareLaunchArgument('control_rate_hz', default_value='20.0'),
         DeclareLaunchArgument('publish_light_debug_image', default_value='true'),
+        DeclareLaunchArgument('publish_drive_debug_image', default_value='true'),
+        DeclareLaunchArgument('drive_debug_image_topic', default_value='/track_drive/drive_debug_image'),
+        DeclareLaunchArgument('drive_debug_publish_rate_hz', default_value='4.0'),
+        DeclareLaunchArgument('stop_line_update_period_sec', default_value='0.07'),
+        DeclareLaunchArgument('school_zone_update_period_sec', default_value='0.15'),
         DeclareLaunchArgument('school_zone_speed', default_value='5.0'),
-        DeclareLaunchArgument('school_zone_left_edge_max_ratio', default_value='0.36'),
-        DeclareLaunchArgument('school_zone_right_edge_min_ratio', default_value='0.64'),
-        DeclareLaunchArgument('school_zone_yellow_ratio_threshold', default_value='0.006'),
-        DeclareLaunchArgument('school_zone_yellow_row_ratio_threshold', default_value='0.14'),
-        DeclareLaunchArgument('school_zone_yellow_pair_row_ratio_threshold', default_value='0.12'),
-        DeclareLaunchArgument('school_zone_yellow_bottom_pair_row_ratio_threshold', default_value='0.10'),
-        DeclareLaunchArgument('school_zone_yellow_min_pair_rows', default_value='6'),
+        DeclareLaunchArgument('school_zone_roi_top_ratio', default_value='0.24'),
+        DeclareLaunchArgument('school_zone_left_edge_max_ratio', default_value='0.38'),
+        DeclareLaunchArgument('school_zone_right_edge_min_ratio', default_value='0.62'),
+        DeclareLaunchArgument('school_zone_yellow_ratio_threshold', default_value='0.0035'),
+        DeclareLaunchArgument('school_zone_yellow_row_ratio_threshold', default_value='0.085'),
+        DeclareLaunchArgument('school_zone_yellow_pair_row_ratio_threshold', default_value='0.060'),
+        DeclareLaunchArgument('school_zone_yellow_bottom_pair_row_ratio_threshold', default_value='0.045'),
+        DeclareLaunchArgument('school_zone_yellow_min_pair_rows', default_value='4'),
         DeclareLaunchArgument('school_zone_yellow_min_separation_ratio', default_value='0.42'),
         DeclareLaunchArgument('school_zone_yellow_row_max_width_ratio', default_value='0.10'),
-        DeclareLaunchArgument('school_zone_yellow_min_pixels', default_value='120'),
+        DeclareLaunchArgument('school_zone_yellow_min_pixels', default_value='55'),
         DeclareLaunchArgument('school_zone_preslow_enabled', default_value='true'),
-        DeclareLaunchArgument('school_zone_preslow_ratio', default_value='0.60'),
-        DeclareLaunchArgument('school_zone_confirm_frames', default_value='2'),
+        DeclareLaunchArgument('school_zone_preslow_ratio', default_value='0.35'),
+        DeclareLaunchArgument('school_zone_confirm_frames', default_value='1'),
         DeclareLaunchArgument('school_zone_lost_frames', default_value='3'),
-        DeclareLaunchArgument('school_zone_hold_sec', default_value='1.0'),
+        DeclareLaunchArgument('school_zone_hold_sec', default_value='1.5'),
         DeclareLaunchArgument('school_zone_mask_vehicle_boxes', default_value='true'),
         DeclareLaunchArgument('school_zone_suppress_when_vehicle_visible', default_value='true'),
         DeclareLaunchArgument('school_zone_follow_yellow_centerline', default_value='true'),
@@ -234,6 +341,31 @@ def generate_launch_description():
         DeclareLaunchArgument('school_zone_max_steer_deg', default_value='70.0'),
         DeclareLaunchArgument('school_zone_steer_smoothing', default_value='0.05'),
         DeclareLaunchArgument('school_zone_lookahead_scale', default_value='0.72'),
+        DeclareLaunchArgument('intersection_route_enabled', default_value='true'),
+        DeclareLaunchArgument('intersection_stop_line_trigger_row_ratio', default_value='0.36'),
+        DeclareLaunchArgument('intersection_left_cone_min_count', default_value='1'),
+        DeclareLaunchArgument('intersection_use_lidar_cones', default_value='false'),
+        DeclareLaunchArgument('intersection_camera_cone_enabled', default_value='true'),
+        DeclareLaunchArgument('intersection_camera_cone_class_ids', default_value='[0]'),
+        DeclareLaunchArgument('intersection_camera_cone_min_score', default_value='0.30'),
+        DeclareLaunchArgument('intersection_camera_cone_left_min_ratio', default_value='0.00'),
+        DeclareLaunchArgument('intersection_camera_cone_left_max_ratio', default_value='0.68'),
+        DeclareLaunchArgument('intersection_camera_cone_min_height_ratio', default_value='0.012'),
+        DeclareLaunchArgument('intersection_camera_cone_min_bottom_ratio', default_value='0.12'),
+        DeclareLaunchArgument('intersection_left_decision_delay_sec', default_value='0.80'),
+        DeclareLaunchArgument('intersection_left_cone_min_x', default_value='0.20'),
+        DeclareLaunchArgument('intersection_left_cone_max_x', default_value='5.50'),
+        DeclareLaunchArgument('intersection_left_cone_min_y', default_value='0.18'),
+        DeclareLaunchArgument('intersection_left_cone_max_y', default_value='2.50'),
+        DeclareLaunchArgument('intersection_left_turn_speed', default_value='5.0'),
+        DeclareLaunchArgument('intersection_left_turn_steer_deg', default_value='-100.0'),
+        DeclareLaunchArgument('intersection_left_turn_duration_sec', default_value='5.00'),
+        DeclareLaunchArgument('intersection_left_turn_repeat_enabled', default_value='true'),
+        DeclareLaunchArgument('intersection_left_turn_repeat_delay_sec', default_value='8.50'),
+        DeclareLaunchArgument('intersection_left_turn_post_school_limit_sec', default_value='6.00'),
+        DeclareLaunchArgument('intersection_straight_hold_sec', default_value='2.00'),
+        DeclareLaunchArgument('intersection_route_cooldown_sec', default_value='4.00'),
+        DeclareLaunchArgument('intersection_signal_wait_timeout_sec', default_value='120.0'),
         DeclareLaunchArgument('stop_on_red_light', default_value='true'),
         DeclareLaunchArgument('stop_on_person', default_value='false'),
         DeclareLaunchArgument('stop_on_vehicle', default_value='false'),
@@ -301,15 +433,18 @@ def generate_launch_description():
         DeclareLaunchArgument('lane_guard_memory_sec', default_value='2.00'),
         DeclareLaunchArgument('person_camera_enabled', default_value='false'),
         DeclareLaunchArgument('person_lidar_fallback_enabled', default_value='false'),
-        DeclareLaunchArgument('person_stop_distance', default_value='1.15'),
-        DeclareLaunchArgument('person_lateral_limit', default_value='0.38'),
+        DeclareLaunchArgument('person_stop_distance', default_value='5.50'),
+        DeclareLaunchArgument('person_lateral_limit', default_value='1.50'),
         DeclareLaunchArgument('person_fusion_enabled', default_value='true'),
         DeclareLaunchArgument('person_fusion_camera_fov_deg', default_value='62.0'),
-        DeclareLaunchArgument('person_fusion_angle_margin_deg', default_value='16.0'),
-        DeclareLaunchArgument('person_fusion_max_distance', default_value='6.0'),
-        DeclareLaunchArgument('person_fusion_lateral_limit', default_value='1.60'),
+        DeclareLaunchArgument('person_fusion_angle_margin_deg', default_value='40.0'),
+        DeclareLaunchArgument('person_fusion_max_distance', default_value='10.0'),
+        DeclareLaunchArgument('person_fusion_lateral_limit', default_value='3.50'),
         DeclareLaunchArgument('person_fusion_lidar_min_points', default_value='1'),
         DeclareLaunchArgument('person_yolo_camera_fallback_enabled', default_value='true'),
+        DeclareLaunchArgument('person_yolo_lidar_fallback_enabled', default_value='true'),
+        DeclareLaunchArgument('person_yolo_far_stop_enabled', default_value='true'),
+        DeclareLaunchArgument('person_yolo_far_stop_distance', default_value='10.00'),
         DeclareLaunchArgument('person_dynamic_enabled', default_value='true'),
         DeclareLaunchArgument('person_dynamic_prediction_sec', default_value='0.80'),
         DeclareLaunchArgument('person_dynamic_image_center_deadband', default_value='0.12'),
@@ -323,7 +458,10 @@ def generate_launch_description():
         DeclareLaunchArgument('person_reverse_speed', default_value='-4.0'),
         DeclareLaunchArgument('person_reverse_max_sec', default_value='1.00'),
         DeclareLaunchArgument('person_reverse_steer_deg', default_value='0.0'),
-        DeclareLaunchArgument('person_avoidance_enabled', default_value='false'),
+        DeclareLaunchArgument('person_avoidance_enabled', default_value='true'),
+        DeclareLaunchArgument(
+            'person_avoidance_enable_topic',
+            default_value='/track_drive/person_avoidance_enable'),
         DeclareLaunchArgument('person_wait_release_left_y', default_value='0.55'),
         DeclareLaunchArgument('person_wait_release_image_left_ratio', default_value='-0.35'),
         DeclareLaunchArgument('person_wait_release_confirm_frames', default_value='2'),
@@ -350,26 +488,69 @@ def generate_launch_description():
         DeclareLaunchArgument('person_avoidance_min_steer_deg', default_value='0.0'),
         DeclareLaunchArgument('person_avoidance_steer_smoothing', default_value='0.0'),
         DeclareLaunchArgument('yolo_safety_enabled', default_value='true'),
-        DeclareLaunchArgument('yolo_person_model_path', default_value='/home/xytron/model/best.onnx'),
-        DeclareLaunchArgument('yolo_light_model_path', default_value='/home/xytron/model/best_new.onnx'),
+        DeclareLaunchArgument('yolo_person_model_path', default_value='/home/xytron/model/final.onnx'),
+        DeclareLaunchArgument('yolo_light_model_path', default_value='/home/xytron/model/final.onnx'),
+        DeclareLaunchArgument('yolo_dnn_backend', default_value='auto'),
+        DeclareLaunchArgument('yolo_dnn_target', default_value='auto'),
         DeclareLaunchArgument('yolo_light_input_size', default_value='640'),
-        DeclareLaunchArgument('yolo_person_conf_threshold', default_value='0.26'),
-        DeclareLaunchArgument('yolo_safety_period_sec', default_value='0.02'),
+        DeclareLaunchArgument('yolo_person_conf_threshold', default_value='0.10'),
+        DeclareLaunchArgument('yolo_safety_period_sec', default_value='0.05'),
         DeclareLaunchArgument('yolo_red_light_period_sec', default_value='0.10'),
-        DeclareLaunchArgument('yolo_person_min_box_height_ratio', default_value='0.035'),
-        DeclareLaunchArgument('yolo_person_min_box_bottom_ratio', default_value='0.24'),
-        DeclareLaunchArgument('yolo_light_conf_threshold', default_value='0.70'),
-        DeclareLaunchArgument('yolo_light_min_box_height_ratio', default_value='0.015'),
-        DeclareLaunchArgument('yolo_light_max_box_height_ratio', default_value='0.45'),
-        DeclareLaunchArgument('yolo_light_min_box_area_ratio', default_value='0.00008'),
-        DeclareLaunchArgument('yolo_light_max_box_area_ratio', default_value='0.080'),
-        DeclareLaunchArgument('yolo_light_max_box_bottom_ratio', default_value='0.70'),
+        DeclareLaunchArgument('yolo_person_min_box_height_ratio', default_value='0.010'),
+        DeclareLaunchArgument('yolo_person_min_box_bottom_ratio', default_value='0.04'),
+        DeclareLaunchArgument('yolo_light_conf_threshold', default_value='0.35'),
+        DeclareLaunchArgument('yolo_stop_light_conf_threshold', default_value='0.55'),
+        DeclareLaunchArgument('yolo_stop_light_stop_line_conf_threshold', default_value='0.28'),
+        DeclareLaunchArgument('yolo_stop_light_go_margin', default_value='0.00'),
+        DeclareLaunchArgument('yolo_left_light_class_ids', default_value='[2]'),
+        DeclareLaunchArgument('yolo_left_light_conf_threshold', default_value='0.28'),
+        DeclareLaunchArgument('yolo_light_min_box_height_ratio', default_value='0.025'),
+        DeclareLaunchArgument('yolo_light_min_box_width_ratio', default_value='0.015'),
+        DeclareLaunchArgument('yolo_light_max_box_height_ratio', default_value='0.65'),
+        DeclareLaunchArgument('yolo_light_min_box_area_ratio', default_value='0.00012'),
+        DeclareLaunchArgument('yolo_light_max_box_area_ratio', default_value='0.20'),
+        DeclareLaunchArgument('yolo_light_max_box_bottom_ratio', default_value='0.98'),
         DeclareLaunchArgument('red_light_confirm_frames', default_value='2'),
-        DeclareLaunchArgument('red_light_min_ratio', default_value='0.006'),
-        DeclareLaunchArgument('red_light_min_dominance', default_value='1.80'),
+        DeclareLaunchArgument('red_light_stop_line_confirm_frames', default_value='1'),
+        DeclareLaunchArgument('red_light_min_ratio', default_value='0.0012'),
+        DeclareLaunchArgument('red_light_min_dominance', default_value='1.20'),
         DeclareLaunchArgument('red_light_go_release_enabled', default_value='true'),
-        DeclareLaunchArgument('startup_light_check_enabled', default_value='false'),
-        DeclareLaunchArgument('startup_light_check_timeout_sec', default_value='0.80'),
+        DeclareLaunchArgument('red_light_close_stop_delay_sec', default_value='0.80'),
+        DeclareLaunchArgument('stop_on_light_requires_stop_line', default_value='true'),
+        DeclareLaunchArgument('stop_line_roi_top_ratio', default_value='0.20'),
+        DeclareLaunchArgument('stop_line_roi_bottom_ratio', default_value='1.00'),
+        DeclareLaunchArgument('stop_line_stop_row_ratio', default_value='0.70'),
+        DeclareLaunchArgument('stop_line_stop_bottom_row_ratio', default_value='0.75'),
+        DeclareLaunchArgument('stop_line_stop_distance_m', default_value='2.20'),
+        DeclareLaunchArgument('stop_line_distance_bottom_ratio', default_value='1.00'),
+        DeclareLaunchArgument('stop_line_distance_scale_m', default_value='7.00'),
+        DeclareLaunchArgument('stop_line_min_width_ratio', default_value='0.32'),
+        DeclareLaunchArgument('stop_line_min_row_ratio', default_value='0.08'),
+        DeclareLaunchArgument('stop_line_min_rows', default_value='2'),
+        DeclareLaunchArgument('stop_line_min_aspect_ratio', default_value='5.0'),
+        DeclareLaunchArgument('stop_line_min_fill_ratio', default_value='0.35'),
+        DeclareLaunchArgument('stop_line_confirm_frames', default_value='2'),
+        DeclareLaunchArgument('stop_line_bev_gate_enabled', default_value='true'),
+        DeclareLaunchArgument('stop_line_bev_src_top_ratio', default_value='0.50'),
+        DeclareLaunchArgument('stop_line_bev_src_bottom_ratio', default_value='0.80'),
+        DeclareLaunchArgument('stop_line_bev_src_top_half_width_ratio', default_value='0.075'),
+        DeclareLaunchArgument('stop_line_bev_src_bottom_half_width_ratio', default_value='0.475'),
+        DeclareLaunchArgument('stop_line_bev_front_top_ratio', default_value='0.25'),
+        DeclareLaunchArgument('stop_line_bev_front_bottom_ratio', default_value='1.00'),
+        DeclareLaunchArgument('stop_line_bev_min_width_ratio', default_value='0.40'),
+        DeclareLaunchArgument('stop_line_bev_min_aspect_ratio', default_value='5.0'),
+        DeclareLaunchArgument('stop_line_bev_min_fill_ratio', default_value='0.22'),
+        DeclareLaunchArgument('stop_line_bev_min_row_run', default_value='3'),
+        DeclareLaunchArgument('stop_line_bev_min_solid_run_ratio', default_value='0.58'),
+        DeclareLaunchArgument('stop_line_bev_solid_col_min_fill_ratio', default_value='0.43'),
+        DeclareLaunchArgument('stop_line_detect_min_row_ratio', default_value='0.55'),
+        DeclareLaunchArgument('stop_line_detect_max_distance_m', default_value='4.20'),
+        DeclareLaunchArgument('stop_line_memory_sec', default_value='1.50'),
+        DeclareLaunchArgument('startup_light_check_enabled', default_value='true'),
+        DeclareLaunchArgument('startup_light_check_timeout_sec', default_value='5.00'),
+        DeclareLaunchArgument('startup_light_check_min_sec', default_value='0.35'),
+        DeclareLaunchArgument('startup_light_ignore_stop_line', default_value='true'),
+        DeclareLaunchArgument('startup_light_require_signal', default_value='true'),
         DeclareLaunchArgument('safety_stop_hold_sec', default_value='0.35'),
 
         Node(
@@ -387,7 +568,7 @@ def generate_launch_description():
                 'control_rate_hz': ParameterValue(control_rate_hz, value_type=float),
                 'enable_topic': ai_enable_topic,
                 'speed_limit_topic': ai_speed_limit_topic,
-                'start_enabled': True,
+                'start_enabled': False,
                 'use_lidar_emergency_stop': False,
                 'require_orange_gate': False,
             }],
@@ -404,7 +585,13 @@ def generate_launch_description():
                 'motor_topic': motor_topic,
                 'control_rate_hz': ParameterValue(control_rate_hz, value_type=float),
                 'publish_light_debug_image': ParameterValue(publish_light_debug_image, value_type=bool),
+                'publish_drive_debug_image': ParameterValue(publish_drive_debug_image, value_type=bool),
+                'drive_debug_image_topic': drive_debug_image_topic,
+                'drive_debug_publish_rate_hz': ParameterValue(drive_debug_publish_rate_hz, value_type=float),
+                'stop_line_update_period_sec': ParameterValue(stop_line_update_period_sec, value_type=float),
+                'school_zone_update_period_sec': ParameterValue(school_zone_update_period_sec, value_type=float),
                 'school_zone_speed': ParameterValue(school_zone_speed, value_type=float),
+                'school_zone_roi_top_ratio': ParameterValue(school_zone_roi_top_ratio, value_type=float),
                 'school_zone_left_edge_max_ratio': ParameterValue(
                     school_zone_left_edge_max_ratio, value_type=float),
                 'school_zone_right_edge_min_ratio': ParameterValue(
@@ -455,6 +642,48 @@ def generate_launch_description():
                 'school_zone_max_steer_deg': ParameterValue(school_zone_max_steer_deg, value_type=float),
                 'school_zone_steer_smoothing': ParameterValue(school_zone_steer_smoothing, value_type=float),
                 'school_zone_lookahead_scale': ParameterValue(school_zone_lookahead_scale, value_type=float),
+                'intersection_route_enabled': ParameterValue(intersection_route_enabled, value_type=bool),
+                'intersection_stop_line_trigger_row_ratio': ParameterValue(
+                    intersection_stop_line_trigger_row_ratio, value_type=float),
+                'intersection_left_cone_min_count': ParameterValue(
+                    intersection_left_cone_min_count, value_type=int),
+                'intersection_use_lidar_cones': ParameterValue(
+                    intersection_use_lidar_cones, value_type=bool),
+                'intersection_camera_cone_enabled': ParameterValue(
+                    intersection_camera_cone_enabled, value_type=bool),
+                'intersection_camera_cone_class_ids': intersection_camera_cone_class_ids,
+                'intersection_camera_cone_min_score': ParameterValue(
+                    intersection_camera_cone_min_score, value_type=float),
+                'intersection_camera_cone_left_min_ratio': ParameterValue(
+                    intersection_camera_cone_left_min_ratio, value_type=float),
+                'intersection_camera_cone_left_max_ratio': ParameterValue(
+                    intersection_camera_cone_left_max_ratio, value_type=float),
+                'intersection_camera_cone_min_height_ratio': ParameterValue(
+                    intersection_camera_cone_min_height_ratio, value_type=float),
+                'intersection_camera_cone_min_bottom_ratio': ParameterValue(
+                    intersection_camera_cone_min_bottom_ratio, value_type=float),
+                'intersection_left_decision_delay_sec': ParameterValue(
+                    intersection_left_decision_delay_sec, value_type=float),
+                'intersection_left_cone_min_x': ParameterValue(intersection_left_cone_min_x, value_type=float),
+                'intersection_left_cone_max_x': ParameterValue(intersection_left_cone_max_x, value_type=float),
+                'intersection_left_cone_min_y': ParameterValue(intersection_left_cone_min_y, value_type=float),
+                'intersection_left_cone_max_y': ParameterValue(intersection_left_cone_max_y, value_type=float),
+                'intersection_left_turn_speed': ParameterValue(intersection_left_turn_speed, value_type=float),
+                'intersection_left_turn_steer_deg': ParameterValue(
+                    intersection_left_turn_steer_deg, value_type=float),
+                'intersection_left_turn_duration_sec': ParameterValue(
+                    intersection_left_turn_duration_sec, value_type=float),
+                'intersection_left_turn_repeat_enabled': ParameterValue(
+                    intersection_left_turn_repeat_enabled, value_type=bool),
+                'intersection_left_turn_repeat_delay_sec': ParameterValue(
+                    intersection_left_turn_repeat_delay_sec, value_type=float),
+                'intersection_left_turn_post_school_limit_sec': ParameterValue(
+                    intersection_left_turn_post_school_limit_sec, value_type=float),
+                'intersection_straight_hold_sec': ParameterValue(intersection_straight_hold_sec, value_type=float),
+                'intersection_route_cooldown_sec': ParameterValue(
+                    intersection_route_cooldown_sec, value_type=float),
+                'intersection_signal_wait_timeout_sec': ParameterValue(
+                    intersection_signal_wait_timeout_sec, value_type=float),
                 'hybrid_trigger_topic': hybrid_trigger_topic,
                 'hybrid_standby_enabled': True,
                 'ai_enable_topic': ai_enable_topic,
@@ -581,6 +810,12 @@ def generate_launch_description():
                 'person_fusion_lidar_min_points': ParameterValue(person_fusion_lidar_min_points, value_type=int),
                 'person_yolo_camera_fallback_enabled': ParameterValue(
                     person_yolo_camera_fallback_enabled, value_type=bool),
+                'person_yolo_lidar_fallback_enabled': ParameterValue(
+                    person_yolo_lidar_fallback_enabled, value_type=bool),
+                'person_yolo_far_stop_enabled': ParameterValue(
+                    person_yolo_far_stop_enabled, value_type=bool),
+                'person_yolo_far_stop_distance': ParameterValue(
+                    person_yolo_far_stop_distance, value_type=float),
                 'person_dynamic_enabled': ParameterValue(person_dynamic_enabled, value_type=bool),
                 'person_dynamic_prediction_sec': ParameterValue(person_dynamic_prediction_sec, value_type=float),
                 'person_dynamic_image_center_deadband': ParameterValue(
@@ -599,6 +834,7 @@ def generate_launch_description():
                 'person_reverse_max_sec': ParameterValue(person_reverse_max_sec, value_type=float),
                 'person_reverse_steer_deg': ParameterValue(person_reverse_steer_deg, value_type=float),
                 'person_avoidance_enabled': ParameterValue(person_avoidance_enabled, value_type=bool),
+                'person_avoidance_enable_topic': person_avoidance_enable_topic,
                 'person_wait_release_left_y': ParameterValue(person_wait_release_left_y, value_type=float),
                 'person_wait_release_image_left_ratio': ParameterValue(
                     person_wait_release_image_left_ratio, value_type=float),
@@ -635,6 +871,8 @@ def generate_launch_description():
                 'yolo_safety_enabled': ParameterValue(yolo_safety_enabled, value_type=bool),
                 'yolo_person_model_path': yolo_person_model_path,
                 'yolo_light_model_path': yolo_light_model_path,
+                'yolo_dnn_backend': yolo_dnn_backend,
+                'yolo_dnn_target': yolo_dnn_target,
                 'yolo_light_input_size': ParameterValue(yolo_light_input_size, value_type=int),
                 'yolo_person_conf_threshold': ParameterValue(yolo_person_conf_threshold, value_type=float),
                 'yolo_safety_period_sec': ParameterValue(yolo_safety_period_sec, value_type=float),
@@ -644,8 +882,18 @@ def generate_launch_description():
                 'yolo_person_min_box_bottom_ratio': ParameterValue(
                     yolo_person_min_box_bottom_ratio, value_type=float),
                 'yolo_light_conf_threshold': ParameterValue(yolo_light_conf_threshold, value_type=float),
+                'yolo_stop_light_conf_threshold': ParameterValue(
+                    yolo_stop_light_conf_threshold, value_type=float),
+                'yolo_stop_light_stop_line_conf_threshold': ParameterValue(
+                    yolo_stop_light_stop_line_conf_threshold, value_type=float),
+                'yolo_stop_light_go_margin': ParameterValue(yolo_stop_light_go_margin, value_type=float),
+                'yolo_left_light_class_ids': yolo_left_light_class_ids,
+                'yolo_left_light_conf_threshold': ParameterValue(
+                    yolo_left_light_conf_threshold, value_type=float),
                 'yolo_light_min_box_height_ratio': ParameterValue(
                     yolo_light_min_box_height_ratio, value_type=float),
+                'yolo_light_min_box_width_ratio': ParameterValue(
+                    yolo_light_min_box_width_ratio, value_type=float),
                 'yolo_light_max_box_height_ratio': ParameterValue(
                     yolo_light_max_box_height_ratio, value_type=float),
                 'yolo_light_min_box_area_ratio': ParameterValue(
@@ -654,13 +902,71 @@ def generate_launch_description():
                     yolo_light_max_box_area_ratio, value_type=float),
                 'yolo_light_max_box_bottom_ratio': ParameterValue(yolo_light_max_box_bottom_ratio, value_type=float),
                 'red_light_confirm_frames': ParameterValue(red_light_confirm_frames, value_type=int),
+                'red_light_stop_line_confirm_frames': ParameterValue(
+                    red_light_stop_line_confirm_frames, value_type=int),
                 'red_light_min_ratio': ParameterValue(red_light_min_ratio, value_type=float),
                 'red_light_min_dominance': ParameterValue(red_light_min_dominance, value_type=float),
                 'red_light_go_release_enabled': ParameterValue(
                     red_light_go_release_enabled, value_type=bool),
+                'red_light_close_stop_delay_sec': ParameterValue(
+                    red_light_close_stop_delay_sec, value_type=float),
+                'stop_on_light_requires_stop_line': ParameterValue(
+                    stop_on_light_requires_stop_line, value_type=bool),
+                'stop_line_roi_top_ratio': ParameterValue(stop_line_roi_top_ratio, value_type=float),
+                'stop_line_roi_bottom_ratio': ParameterValue(stop_line_roi_bottom_ratio, value_type=float),
+                'stop_line_stop_row_ratio': ParameterValue(stop_line_stop_row_ratio, value_type=float),
+                'stop_line_stop_bottom_row_ratio': ParameterValue(
+                    stop_line_stop_bottom_row_ratio, value_type=float),
+                'stop_line_stop_distance_m': ParameterValue(stop_line_stop_distance_m, value_type=float),
+                'stop_line_distance_bottom_ratio': ParameterValue(
+                    stop_line_distance_bottom_ratio, value_type=float),
+                'stop_line_distance_scale_m': ParameterValue(stop_line_distance_scale_m, value_type=float),
+                'stop_line_min_width_ratio': ParameterValue(stop_line_min_width_ratio, value_type=float),
+                'stop_line_min_row_ratio': ParameterValue(stop_line_min_row_ratio, value_type=float),
+                'stop_line_min_rows': ParameterValue(stop_line_min_rows, value_type=int),
+                'stop_line_min_aspect_ratio': ParameterValue(
+                    stop_line_min_aspect_ratio, value_type=float),
+                'stop_line_min_fill_ratio': ParameterValue(stop_line_min_fill_ratio, value_type=float),
+                'stop_line_confirm_frames': ParameterValue(stop_line_confirm_frames, value_type=int),
+                'stop_line_bev_gate_enabled': ParameterValue(
+                    stop_line_bev_gate_enabled, value_type=bool),
+                'stop_line_bev_src_top_ratio': ParameterValue(
+                    stop_line_bev_src_top_ratio, value_type=float),
+                'stop_line_bev_src_bottom_ratio': ParameterValue(
+                    stop_line_bev_src_bottom_ratio, value_type=float),
+                'stop_line_bev_src_top_half_width_ratio': ParameterValue(
+                    stop_line_bev_src_top_half_width_ratio, value_type=float),
+                'stop_line_bev_src_bottom_half_width_ratio': ParameterValue(
+                    stop_line_bev_src_bottom_half_width_ratio, value_type=float),
+                'stop_line_bev_front_top_ratio': ParameterValue(
+                    stop_line_bev_front_top_ratio, value_type=float),
+                'stop_line_bev_front_bottom_ratio': ParameterValue(
+                    stop_line_bev_front_bottom_ratio, value_type=float),
+                'stop_line_bev_min_width_ratio': ParameterValue(
+                    stop_line_bev_min_width_ratio, value_type=float),
+                'stop_line_bev_min_aspect_ratio': ParameterValue(
+                    stop_line_bev_min_aspect_ratio, value_type=float),
+                'stop_line_bev_min_fill_ratio': ParameterValue(
+                    stop_line_bev_min_fill_ratio, value_type=float),
+                'stop_line_bev_min_row_run': ParameterValue(
+                    stop_line_bev_min_row_run, value_type=int),
+                'stop_line_bev_min_solid_run_ratio': ParameterValue(
+                    stop_line_bev_min_solid_run_ratio, value_type=float),
+                'stop_line_bev_solid_col_min_fill_ratio': ParameterValue(
+                    stop_line_bev_solid_col_min_fill_ratio, value_type=float),
+                'stop_line_detect_min_row_ratio': ParameterValue(
+                    stop_line_detect_min_row_ratio, value_type=float),
+                'stop_line_detect_max_distance_m': ParameterValue(
+                    stop_line_detect_max_distance_m, value_type=float),
+                'stop_line_memory_sec': ParameterValue(stop_line_memory_sec, value_type=float),
                 'startup_light_check_enabled': ParameterValue(startup_light_check_enabled, value_type=bool),
                 'startup_light_check_timeout_sec': ParameterValue(
                     startup_light_check_timeout_sec, value_type=float),
+                'startup_light_check_min_sec': ParameterValue(startup_light_check_min_sec, value_type=float),
+                'startup_light_ignore_stop_line': ParameterValue(
+                    startup_light_ignore_stop_line, value_type=bool),
+                'startup_light_require_signal': ParameterValue(
+                    startup_light_require_signal, value_type=bool),
                 'safety_stop_hold_sec': ParameterValue(safety_stop_hold_sec, value_type=float),
             }],
         ),
