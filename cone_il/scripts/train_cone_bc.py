@@ -69,6 +69,13 @@ def train(args):
     dataset_dir = Path(args.dataset_dir).expanduser()
     output_dir = Path(args.output_dir).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_dir = output_dir / 'checkpoints'
+    save_epoch_checkpoints = (
+        bool(args.save_every_epoch)
+        or int(args.save_every_n_epochs) > 0
+    )
+    if save_epoch_checkpoints:
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     full_ds = ConeDataset(dataset_dir, max_steer_deg=args.max_steer_deg, augment=True)
     val_size = max(1, int(len(full_ds) * args.val_ratio))
@@ -93,8 +100,10 @@ def train(args):
     criterion = nn.SmoothL1Loss()
 
     best_val = float('inf')
+    best_epoch = 0
     best_path = output_dir / 'cone_bc_best.pth'
     scripted_path = output_dir / 'cone_bc_scripted.pt'
+    history = []
 
     print(f'dataset={dataset_dir}, samples={len(full_ds)}, train={train_size}, val={val_size}, device={device}')
 
@@ -127,13 +136,46 @@ def train(args):
         val_mae_deg /= val_size
 
         print(f'epoch={epoch:03d} train_loss={train_loss:.5f} val_loss={val_loss:.5f} val_mae={val_mae_deg:.2f} deg')
+        metrics = {
+            'epoch': epoch,
+            'train_loss': train_loss,
+            'val_loss': val_loss,
+            'val_mae_deg': val_mae_deg,
+        }
+        history.append(metrics)
 
-        if val_loss < best_val:
-            best_val = val_loss
+        save_this_epoch = bool(args.save_every_epoch)
+        if int(args.save_every_n_epochs) > 0 and epoch % int(args.save_every_n_epochs) == 0:
+            save_this_epoch = True
+        if save_this_epoch:
+            checkpoint_path = checkpoint_dir / f'cone_bc_epoch_{epoch:03d}.pth'
+            checkpoint_scripted_path = checkpoint_dir / f'cone_bc_epoch_{epoch:03d}.pt'
             torch.save({
+                'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'max_steer_deg': args.max_steer_deg,
                 'dataset_dir': str(dataset_dir),
+                'train_loss': train_loss,
+                'val_loss': val_loss,
+                'val_mae_deg': val_mae_deg,
+            }, checkpoint_path)
+            example = torch.zeros(1, 3, args.resize_height, args.resize_width, device=device)
+            scripted = torch.jit.trace(model, example)
+            scripted.save(str(checkpoint_scripted_path))
+            print(f'  saved epoch checkpoint: {checkpoint_path}')
+            print(f'  saved epoch scripted: {checkpoint_scripted_path}')
+
+        if val_loss < best_val:
+            best_val = val_loss
+            best_epoch = epoch
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'max_steer_deg': args.max_steer_deg,
+                'dataset_dir': str(dataset_dir),
+                'train_loss': train_loss,
+                'val_loss': val_loss,
+                'val_mae_deg': val_mae_deg,
             }, best_path)
             example = torch.zeros(1, 3, args.resize_height, args.resize_width, device=device)
             scripted = torch.jit.trace(model, example)
@@ -147,10 +189,15 @@ def train(args):
         'resize_height': args.resize_height,
         'roi_top_ratio': args.roi_top_ratio,
         'best_val_loss': best_val,
+        'best_epoch': best_epoch,
         'scripted_model': str(scripted_path),
+        'save_every_epoch': bool(args.save_every_epoch),
+        'save_every_n_epochs': int(args.save_every_n_epochs),
     }
     with open(output_dir / 'model_config.json', 'w') as f:
         json.dump(config, f, indent=2)
+    with open(output_dir / 'training_history.json', 'w') as f:
+        json.dump(history, f, indent=2)
     print('done')
 
 
@@ -169,6 +216,17 @@ def parse_args():
     p.add_argument('--resize-width', type=int, default=160)
     p.add_argument('--resize-height', type=int, default=90)
     p.add_argument('--roi-top-ratio', type=float, default=0.45)
+    p.add_argument(
+        '--save-every-epoch',
+        action='store_true',
+        help='Save checkpoint and TorchScript model for every epoch under output-dir/checkpoints',
+    )
+    p.add_argument(
+        '--save-every-n-epochs',
+        type=int,
+        default=0,
+        help='Save checkpoint and TorchScript model every N epochs; 0 disables this option',
+    )
     p.add_argument('--cpu', action='store_true')
     return p.parse_args()
 

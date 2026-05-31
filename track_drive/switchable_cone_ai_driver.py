@@ -17,6 +17,7 @@ class SwitchableConeAIDriver(ConeAIDriver):
         self.declare_parameter('speed_limit_topic', '/cone_ai/speed_limit')
         self.enabled = bool(self.get_parameter('start_enabled').value)
         self.speed_limit = -1.0
+        self._last_logged_speed_limit = None
 
         enable_topic = str(self.get_parameter('enable_topic').value)
         speed_limit_topic = str(self.get_parameter('speed_limit_topic').value)
@@ -35,6 +36,11 @@ class SwitchableConeAIDriver(ConeAIDriver):
 
     def speed_limit_callback(self, msg: Float32):
         self.speed_limit = float(msg.data)
+        rounded = round(self.speed_limit, 2)
+        if self._last_logged_speed_limit != rounded:
+            self._last_logged_speed_limit = rounded
+            text = 'off' if self.speed_limit < 0.0 else f'{self.speed_limit:.1f}'
+            self.get_logger().info(f'speed_limit={text}')
 
     def drive(self, angle: float, speed: float):
         if self.speed_limit >= 0.0 and speed > 0.0:
