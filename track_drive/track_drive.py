@@ -494,7 +494,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('intersection_left_cone_max_x', 5.50)
         self.declare_parameter('intersection_left_cone_min_y', 0.18)
         self.declare_parameter('intersection_left_cone_max_y', 2.50)
-        self.declare_parameter('intersection_left_turn_speed', 5.0)
+        self.declare_parameter('intersection_left_turn_speed', 6.0)
         self.declare_parameter('intersection_left_turn_steer_deg', -100.0)
         self.declare_parameter('intersection_left_turn_duration_sec', 5.00)
         self.declare_parameter('intersection_left_turn_repeat_enabled', True)

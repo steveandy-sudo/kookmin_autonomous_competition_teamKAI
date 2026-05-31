@@ -357,7 +357,7 @@ def generate_launch_description():
         DeclareLaunchArgument('intersection_left_cone_max_x', default_value='5.50'),
         DeclareLaunchArgument('intersection_left_cone_min_y', default_value='0.18'),
         DeclareLaunchArgument('intersection_left_cone_max_y', default_value='2.50'),
-        DeclareLaunchArgument('intersection_left_turn_speed', default_value='5.0'),
+        DeclareLaunchArgument('intersection_left_turn_speed', default_value='6.0'),
         DeclareLaunchArgument('intersection_left_turn_steer_deg', default_value='-100.0'),
         DeclareLaunchArgument('intersection_left_turn_duration_sec', default_value='5.00'),
         DeclareLaunchArgument('intersection_left_turn_repeat_enabled', default_value='true'),
