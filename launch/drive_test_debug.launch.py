@@ -14,6 +14,7 @@ def generate_launch_description():
     motor_topic = LaunchConfiguration('motor_topic')
     model_path = LaunchConfiguration('model_path')
     speed = LaunchConfiguration('speed')
+    intersection_left_turn_enabled = LaunchConfiguration('intersection_left_turn_enabled')
     use_rviz = LaunchConfiguration('use_rviz')
     rviz_config = LaunchConfiguration('rviz_config')
 
@@ -25,7 +26,8 @@ def generate_launch_description():
             'model_path',
             default_value='/home/xytron/cone_il_model_speed14_left_clean_epoch/cone_bc_scripted.pt',
         ),
-        DeclareLaunchArgument('speed', default_value='14.0'),
+        DeclareLaunchArgument('speed', default_value='30.0'),
+        DeclareLaunchArgument('intersection_left_turn_enabled', default_value='true'),
         DeclareLaunchArgument('use_rviz', default_value='false'),
         DeclareLaunchArgument(
             'rviz_config',
@@ -47,12 +49,13 @@ def generate_launch_description():
                 'motor_topic': motor_topic,
                 'model_path': model_path,
                 'speed': speed,
+                'intersection_left_turn_enabled': intersection_left_turn_enabled,
                 'publish_drive_debug_image': 'false',
                 'drive_debug_image_topic': '/track_drive/drive_debug_image',
                 'publish_light_debug_image': 'false',
                 'drive_debug_publish_rate_hz': '4.0',
                 'stop_line_update_period_sec': '0.07',
-                'school_zone_update_period_sec': '0.15',
+                'school_zone_update_period_sec': '0.10',
                 'startup_light_check_enabled': 'true',
                 'startup_light_ignore_stop_line': 'true',
                 'startup_light_require_signal': 'true',

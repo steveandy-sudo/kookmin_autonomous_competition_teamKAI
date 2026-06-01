@@ -38,8 +38,8 @@ def generate_launch_description():
         DeclareLaunchArgument('yolo_light_max_box_bottom_ratio', default_value='0.98'),
         DeclareLaunchArgument('intersection_camera_cone_min_score', default_value='0.30'),
         DeclareLaunchArgument('intersection_camera_cone_left_max_ratio', default_value='0.68'),
-        DeclareLaunchArgument('stop_line_detect_min_row_ratio', default_value='0.55'),
-        DeclareLaunchArgument('stop_line_detect_max_distance_m', default_value='3.20'),
+        DeclareLaunchArgument('stop_line_detect_min_row_ratio', default_value='0.25'),
+        DeclareLaunchArgument('stop_line_detect_max_distance_m', default_value='5.25'),
         DeclareLaunchArgument('use_rviz', default_value='true'),
         DeclareLaunchArgument(
             'rviz_config',

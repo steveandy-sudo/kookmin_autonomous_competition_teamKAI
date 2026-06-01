@@ -93,12 +93,13 @@ class TrackDriverNode(Node):
         self.declare_parameter('drive_debug_image_topic', '/track_drive/drive_debug_image')
         self.declare_parameter('drive_debug_publish_rate_hz', 4.0)
         self.declare_parameter('stop_line_update_period_sec', 0.07)
-        self.declare_parameter('school_zone_update_period_sec', 0.15)
+        self.declare_parameter('school_zone_update_period_sec', 0.10)
 
         self.declare_parameter('base_speed', 5.0)
         self.declare_parameter('min_speed', 3.0)
         self.declare_parameter('school_zone_enabled', True)
-        self.declare_parameter('school_zone_speed', 5.0)
+        self.declare_parameter('school_zone_speed', 5.5)
+        self.declare_parameter('school_zone_speed_limit_enabled', False)
         self.declare_parameter('school_zone_roi_top_ratio', 0.24)
         self.declare_parameter('school_zone_left_edge_max_ratio', 0.38)
         self.declare_parameter('school_zone_right_edge_min_ratio', 0.62)
@@ -141,7 +142,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('school_zone_bev_src_top_half_width_ratio', 0.12)
         self.declare_parameter('school_zone_bev_src_bottom_half_width_ratio', 0.50)
         self.declare_parameter('school_zone_bev_center_shift_ratio', 0.0)
-        self.declare_parameter('school_zone_bev_front_top_ratio', 0.40)
+        self.declare_parameter('school_zone_bev_front_top_ratio', 0.38)
         self.declare_parameter('school_zone_bev_front_bottom_ratio', 1.00)
         self.declare_parameter('school_zone_bev_left_edge_max_ratio', 0.42)
         self.declare_parameter('school_zone_bev_right_edge_min_ratio', 0.58)
@@ -156,9 +157,9 @@ class TrackDriverNode(Node):
         self.declare_parameter('school_zone_bev_max_row_width_ratio', 0.16)
         self.declare_parameter('school_zone_bev_min_left_ratio', 0.0015)
         self.declare_parameter('school_zone_bev_min_right_ratio', 0.0015)
-        self.declare_parameter('school_zone_bev_min_pair_row_ratio', 0.10)
-        self.declare_parameter('school_zone_bev_min_bottom_pair_row_ratio', 0.06)
-        self.declare_parameter('school_zone_bev_min_pair_rows', 5)
+        self.declare_parameter('school_zone_bev_min_pair_row_ratio', 0.085)
+        self.declare_parameter('school_zone_bev_min_bottom_pair_row_ratio', 0.05)
+        self.declare_parameter('school_zone_bev_min_pair_rows', 4)
         self.declare_parameter('school_zone_bev_min_separation_ratio', 0.38)
         self.declare_parameter('school_zone_bev_preslow_ratio', 0.50)
         self.declare_parameter('stop_distance', 0.75)
@@ -175,8 +176,16 @@ class TrackDriverNode(Node):
 
         self.declare_parameter('ai_hybrid_enabled', True)
         self.declare_parameter('ai_model_path', '/home/xytron/cone_il_model_speed14_left_clean_epoch/cone_bc_scripted.pt')
-        self.declare_parameter('ai_speed', 14.0)
-        self.declare_parameter('ai_fixed_speed_enabled', True)
+        self.declare_parameter('ai_speed', 30.0)
+        self.declare_parameter('traffic_light_speed_limit_enabled', True)
+        self.declare_parameter('traffic_light_speed', 20.0)
+        self.declare_parameter('traffic_light_speed_hold_sec', 0.12)
+        self.declare_parameter('stop_line_speed_limit_enabled', True)
+        self.declare_parameter('stop_line_speed', 15.0)
+        self.declare_parameter('ai_initial_speed_limit_enabled', True)
+        self.declare_parameter('ai_initial_speed', 17.0)
+        self.declare_parameter('ai_initial_speed_duration_sec', 5.0)
+        self.declare_parameter('ai_fixed_speed_enabled', False)
         self.declare_parameter('ai_passthrough_enabled', True)
         self.declare_parameter('ai_command_passthrough_enabled', False)
         self.declare_parameter('ai_command_topic', '/track_drive/ai_motor')
@@ -193,7 +202,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('yolo_light_class_count', 6)
         self.declare_parameter('yolo_dnn_backend', 'auto')
         self.declare_parameter('yolo_dnn_target', 'auto')
-        self.declare_parameter('yolo_person_conf_threshold', 0.10)
+        self.declare_parameter('yolo_person_conf_threshold', 0.15)
         self.declare_parameter('yolo_light_conf_threshold', 0.35)
         self.declare_parameter('yolo_stop_light_conf_threshold', 0.55)
         self.declare_parameter('yolo_stop_light_stop_line_conf_threshold', 0.28)
@@ -205,7 +214,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('yolo_go_light_class_ids', [1])
         self.declare_parameter('yolo_left_light_class_ids', [2])
         self.declare_parameter('yolo_left_light_conf_threshold', 0.28)
-        self.declare_parameter('yolo_person_min_box_height_ratio', 0.010)
+        self.declare_parameter('yolo_person_min_box_height_ratio', 0.015)
         self.declare_parameter('yolo_person_min_box_bottom_ratio', 0.04)
         self.declare_parameter('yolo_vehicle_min_box_height_ratio', 0.025)
         self.declare_parameter('yolo_vehicle_min_box_width_ratio', 0.025)
@@ -230,13 +239,13 @@ class TrackDriverNode(Node):
         self.declare_parameter('red_light_min_dominance', 1.20)
         self.declare_parameter('red_light_min_circularity', 0.10)
         self.declare_parameter('red_light_go_release_enabled', True)
-        self.declare_parameter('red_light_close_stop_delay_sec', 0.80)
+        self.declare_parameter('red_light_close_stop_delay_sec', 0.00)
         self.declare_parameter('stop_on_light_requires_stop_line', True)
         self.declare_parameter('stop_line_roi_top_ratio', 0.20)
         self.declare_parameter('stop_line_roi_bottom_ratio', 1.00)
         self.declare_parameter('stop_line_stop_row_ratio', 0.70)
         self.declare_parameter('stop_line_stop_bottom_row_ratio', 0.75)
-        self.declare_parameter('stop_line_stop_distance_m', 2.20)
+        self.declare_parameter('stop_line_stop_distance_m', 1.80)
         self.declare_parameter('stop_line_distance_bottom_ratio', 1.00)
         self.declare_parameter('stop_line_distance_scale_m', 7.00)
         self.declare_parameter('stop_line_min_width_ratio', 0.32)
@@ -261,8 +270,8 @@ class TrackDriverNode(Node):
         self.declare_parameter('stop_line_bev_min_row_run', 3)
         self.declare_parameter('stop_line_bev_min_solid_run_ratio', 0.58)
         self.declare_parameter('stop_line_bev_solid_col_min_fill_ratio', 0.43)
-        self.declare_parameter('stop_line_detect_min_row_ratio', 0.55)
-        self.declare_parameter('stop_line_detect_max_distance_m', 4.20)
+        self.declare_parameter('stop_line_detect_min_row_ratio', 0.25)
+        self.declare_parameter('stop_line_detect_max_distance_m', 5.25)
         self.declare_parameter('stop_line_white_value_min', 200)
         self.declare_parameter('stop_line_white_sat_max', 80)
         self.declare_parameter('stop_line_bev_close_width_ratio', 0.055)
@@ -418,10 +427,14 @@ class TrackDriverNode(Node):
         self.declare_parameter('person_avoidance_max_steer_deg', 100.0)
         self.declare_parameter('person_avoidance_min_steer_deg', 0.0)
         self.declare_parameter('person_avoidance_steer_smoothing', 0.0)
+        self.declare_parameter('person_slow_until_school_passed_enabled', True)
+        self.declare_parameter('person_slow_speed', 14.0)
+        self.declare_parameter('person_slow_release_after_school_sec', 0.0)
+        self.declare_parameter('person_slow_rearm_sec', 0.5)
         self.declare_parameter('safety_stop_hold_sec', 0.35)
         self.declare_parameter('hybrid_on_obstacle_enabled', False)
         self.declare_parameter('hybrid_obstacle_distance', 0.75)
-        self.declare_parameter('ai_curve_speed', 3.0)
+        self.declare_parameter('ai_curve_speed', 12.0)
         self.declare_parameter('ai_curve_start_steer_deg', 8.0)
         self.declare_parameter('ai_curve_full_steer_deg', 45.0)
         self.declare_parameter('ai_speed_smoothing', 0.20)
@@ -496,12 +509,15 @@ class TrackDriverNode(Node):
         self.declare_parameter('intersection_left_cone_max_x', 5.50)
         self.declare_parameter('intersection_left_cone_min_y', 0.18)
         self.declare_parameter('intersection_left_cone_max_y', 2.50)
-        self.declare_parameter('intersection_left_turn_speed', 8.0)
+        self.declare_parameter('intersection_left_turn_enabled', True)
+        self.declare_parameter('intersection_left_turn_speed', 9.0)
+        self.declare_parameter('intersection_left_turn_second_speed', 9.0)
         self.declare_parameter('intersection_left_turn_steer_deg', -100.0)
         self.declare_parameter('intersection_left_turn_duration_sec', 3.00)
         self.declare_parameter('intersection_left_turn_repeat_enabled', True)
-        self.declare_parameter('intersection_left_turn_repeat_delay_sec', 8.50)
+        self.declare_parameter('intersection_left_turn_repeat_delay_sec', 5.80)
         self.declare_parameter('intersection_left_turn_post_school_limit_sec', 6.00)
+        self.declare_parameter('intersection_left_turn_post_school_ai_hold_sec', 0.45)
         self.declare_parameter('intersection_straight_hold_sec', 2.00)
         self.declare_parameter('intersection_route_cooldown_sec', 4.00)
         self.declare_parameter('intersection_signal_wait_timeout_sec', 120.0)
@@ -515,6 +531,8 @@ class TrackDriverNode(Node):
         self.ai_device = None
         self.prev_ai_steer = 0.0
         self.prev_ai_speed: Optional[float] = None
+        self.ai_initial_speed_start_sec: Optional[float] = None
+        self.ai_initial_speed_limit_done = False
         self._ai_last_warn_sec = -1
         self.hybrid_trigger_active = False
         self.last_ai_motor_msg: Optional[XycarMotor] = None
@@ -583,6 +601,11 @@ class TrackDriverNode(Node):
         self.person_wait_left_confirm_count = 0
         self.person_wait_last_seen_sec: Optional[float] = None
         self.person_stop_enabled = bool(self.get_parameter('stop_on_person_enabled').value)
+        self.person_slow_speed_limit_active = False
+        self.person_slow_seen_school_zone = False
+        self.person_slow_completed = False
+        self.person_slow_last_person_seen_sec: Optional[float] = None
+        self.person_slow_clear_since_sec: Optional[float] = None
         self.stop_line_detected = False
         self.stop_line_last_seen_sec: Optional[float] = None
         self.stop_line_row_ratio = 0.0
@@ -625,8 +648,12 @@ class TrackDriverNode(Node):
         self.current_right_boundary: List[Point] = []
         self.current_cone_centerline: List[Point] = []
         self.intersection_left_turn_until_sec = 0.0
+        self.intersection_left_turn_current_speed = 0.0
+        self.intersection_left_turn_school_limit_enabled = False
         self.intersection_left_turn_repeat_start_sec = 0.0
+        self.intersection_post_left_school_limit_start_sec = 0.0
         self.intersection_post_left_school_limit_until_sec = 0.0
+        self.intersection_post_left_ai_hold_until_sec = 0.0
         self.intersection_route_cooldown_until_sec = 0.0
         self.intersection_straight_until_sec = 0.0
         self.intersection_last_decision = ''
@@ -729,8 +756,11 @@ class TrackDriverNode(Node):
         if not rclpy.ok():
             return
 
+        if speed > 0.0:
+            self._mark_ai_initial_speed_started()
+
         self.motor_msg.angle = float(angle)
-        self.motor_msg.speed = float(self._apply_school_zone_speed_limit(speed))
+        self.motor_msg.speed = float(self._apply_context_speed_limit(speed))
         self.last_command_steer = float(self.motor_msg.angle)
         self.last_command_speed = float(self.motor_msg.speed)
         try:
@@ -739,14 +769,37 @@ class TrackDriverNode(Node):
             if rclpy.ok():
                 self.get_logger().warn(f'motor publish failed: {exc}')
 
+    def _apply_context_speed_limit(self, speed: float) -> float:
+        speed = self._apply_school_zone_speed_limit(speed)
+        if self._stop_line_speed_limit_active() and speed > 0.0:
+            speed = min(float(speed), max(float(self.get_parameter('stop_line_speed').value), 0.0))
+        if self._ai_initial_speed_limit_active() and speed > 0.0:
+            speed = min(float(speed), max(float(self.get_parameter('ai_initial_speed').value), 0.0))
+        if self._person_slow_speed_limit_active() and speed > 0.0:
+            speed = min(float(speed), max(float(self.get_parameter('person_slow_speed').value), 0.0))
+        return speed
+
+    def _stop_line_speed_limit_active(self) -> bool:
+        return (
+            bool(self.get_parameter('stop_line_speed_limit_enabled').value)
+            and bool(self.stop_line_detected)
+        )
+
     def _apply_school_zone_speed_limit(self, speed: float) -> float:
+        if not bool(self.get_parameter('school_zone_speed_limit_enabled').value):
+            return speed
         speed = self.school_zone_detector.apply_speed_limit(speed)
         if self._forced_school_zone_speed_limit_active() and speed > 0.0:
             speed = min(float(speed), max(float(self.get_parameter('school_zone_speed').value), 0.0))
         return speed
 
     def _forced_school_zone_speed_limit_active(self) -> bool:
-        return time.monotonic() < self.intersection_post_left_school_limit_until_sec
+        now = time.monotonic()
+        return (
+            self.intersection_post_left_school_limit_start_sec > 0.0
+            and self.intersection_post_left_school_limit_start_sec <= now
+            and now < self.intersection_post_left_school_limit_until_sec
+        )
 
     def _school_zone_speed_limit_active(self) -> bool:
         return (
@@ -758,19 +811,146 @@ class TrackDriverNode(Node):
             or self._forced_school_zone_speed_limit_active()
         )
 
+    def _update_person_slow_speed_limit_state(self):
+        if not bool(self.get_parameter('person_slow_until_school_passed_enabled').value):
+            self.person_slow_speed_limit_active = False
+            self.person_slow_seen_school_zone = False
+            self.person_slow_completed = False
+            self.person_slow_last_person_seen_sec = None
+            self.person_slow_clear_since_sec = None
+            return
+
+        now = time.monotonic()
+        trigger_visible = self._person_slow_trigger_visible()
+        if trigger_visible:
+            self.person_slow_clear_since_sec = None
+        elif self.person_slow_clear_since_sec is None:
+            self.person_slow_clear_since_sec = now
+
+        if self._school_zone_detected_for_person_slow_release():
+            self.person_slow_speed_limit_active = False
+            self.person_slow_seen_school_zone = True
+            self.person_slow_completed = True
+            return
+
+        if (
+            self.person_slow_speed_limit_active
+            and self.person_slow_seen_school_zone
+            and self._school_zone_passed_after_person_slow(now)
+        ):
+            self.person_slow_speed_limit_active = False
+            self.person_slow_seen_school_zone = False
+            self.person_slow_completed = True
+            return
+
+        if self.person_slow_speed_limit_active and self._school_zone_speed_limit_active():
+            self.person_slow_seen_school_zone = True
+
+        if self.person_slow_completed:
+            rearm_sec = max(float(self.get_parameter('person_slow_rearm_sec').value), 0.0)
+            if (
+                self.person_slow_clear_since_sec is None
+                or now - self.person_slow_clear_since_sec < rearm_sec
+            ):
+                return
+            self.person_slow_completed = False
+
+        if trigger_visible:
+            self.person_slow_speed_limit_active = True
+            self.person_slow_last_person_seen_sec = now
+            if self._school_zone_speed_limit_active():
+                self.person_slow_seen_school_zone = True
+
+    def _school_zone_detected_for_person_slow_release(self) -> bool:
+        return bool(self.school_zone_active or self.school_zone_candidate_active)
+
+    def _person_slow_trigger_visible(self) -> bool:
+        return bool(
+            self.cached_yolo_person
+            or self.cached_yolo_person_box is not None
+            or self.person_fusion_point is not None
+            or self.person_predicted_point is not None
+            or self.person_avoidance_active
+        )
+
+    def _school_zone_passed_after_person_slow(self, now: float) -> bool:
+        if self._school_zone_speed_limit_active():
+            return False
+        last_seen_sec = self.school_zone_last_seen_sec
+        if last_seen_sec is None:
+            last_seen_sec = self.school_zone_candidate_last_seen_sec
+        if last_seen_sec is None and self.intersection_post_left_school_limit_until_sec > 0.0:
+            last_seen_sec = self.intersection_post_left_school_limit_until_sec
+        if last_seen_sec is None:
+            return False
+
+        release_delay_sec = max(
+            float(self.get_parameter('person_slow_release_after_school_sec').value),
+            0.0,
+        )
+        return now - last_seen_sec > release_delay_sec
+
     def publish_ai_enable(self, enabled: bool):
         self.last_ai_enable = bool(enabled)
+        if enabled:
+            self._mark_ai_initial_speed_started()
+            self.publish_ai_speed_limit()
         msg = Bool()
         msg.data = bool(enabled)
         self.ai_enable_pub.publish(msg)
 
     def publish_ai_speed_limit(self):
         msg = Float32()
-        if self._school_zone_speed_limit_active():
-            msg.data = max(float(self.get_parameter('school_zone_speed').value), 0.0)
-        else:
+        speed_limit = self._current_external_speed_limit()
+        if speed_limit is None:
             msg.data = -1.0
+        else:
+            msg.data = speed_limit
         self.ai_speed_limit_pub.publish(msg)
+
+    def _current_external_speed_limit(self) -> Optional[float]:
+        limits = []
+        if (
+            bool(self.get_parameter('school_zone_speed_limit_enabled').value)
+            and self._school_zone_speed_limit_active()
+        ):
+            limits.append(max(float(self.get_parameter('school_zone_speed').value), 0.0))
+        if self._stop_line_speed_limit_active():
+            limits.append(max(float(self.get_parameter('stop_line_speed').value), 0.0))
+        if self._ai_initial_speed_limit_active():
+            limits.append(max(float(self.get_parameter('ai_initial_speed').value), 0.0))
+        if self._person_slow_speed_limit_active():
+            limits.append(max(float(self.get_parameter('person_slow_speed').value), 0.0))
+        return min(limits) if limits else None
+
+    def _mark_ai_initial_speed_started(self):
+        if not bool(self.get_parameter('ai_initial_speed_limit_enabled').value):
+            return
+        if self.ai_initial_speed_limit_done:
+            return
+        if self.ai_initial_speed_start_sec is None:
+            self.ai_initial_speed_start_sec = time.monotonic()
+
+    def _ai_initial_speed_limit_active(self) -> bool:
+        if not bool(self.get_parameter('ai_initial_speed_limit_enabled').value):
+            return False
+        if self.ai_initial_speed_limit_done:
+            return False
+        if self.ai_initial_speed_start_sec is None:
+            return False
+
+        duration_sec = max(float(self.get_parameter('ai_initial_speed_duration_sec').value), 0.0)
+        if time.monotonic() - self.ai_initial_speed_start_sec < duration_sec:
+            return True
+
+        self.ai_initial_speed_limit_done = True
+        return False
+
+    def _person_slow_speed_limit_active(self) -> bool:
+        return (
+            bool(self.get_parameter('person_slow_until_school_passed_enabled').value)
+            and self.person_slow_speed_limit_active
+        )
 
     def main_loop(self):
         self.get_logger().info('START DRIVING: lane/cone local lattice planner enabled')
@@ -789,6 +969,7 @@ class TrackDriverNode(Node):
 
     def control_once(self):
         self.safety_supervisor.update_perception(self.image)
+        self._update_person_slow_speed_limit_state()
         self.publish_ai_speed_limit()
 
         command_passthrough_enabled = bool(self.get_parameter('ai_command_passthrough_enabled').value)
@@ -821,6 +1002,8 @@ class TrackDriverNode(Node):
 
         force_rule_hybrid = False
         safety_decision = self.safety_supervisor.detect_safety_stop()
+        self._update_person_slow_speed_limit_state()
+        self.publish_ai_speed_limit()
         safety_stop = safety_decision.should_stop
         safety_reason = safety_decision.reason
         if safety_stop:
@@ -1090,8 +1273,12 @@ class TrackDriverNode(Node):
     def _intersection_route_command(self, cones: Sequence[Point]) -> Optional[Tuple[str, float, float]]:
         if not bool(self.get_parameter('intersection_route_enabled').value):
             self.intersection_left_turn_until_sec = 0.0
+            self.intersection_left_turn_current_speed = 0.0
+            self.intersection_left_turn_school_limit_enabled = False
             self.intersection_left_turn_repeat_start_sec = 0.0
+            self.intersection_post_left_school_limit_start_sec = 0.0
             self.intersection_post_left_school_limit_until_sec = 0.0
+            self.intersection_post_left_ai_hold_until_sec = 0.0
             self.intersection_signal_wait_until_sec = 0.0
             self._reset_intersection_left_cone_state()
             return None
@@ -1100,8 +1287,18 @@ class TrackDriverNode(Node):
         if now < self.intersection_left_turn_until_sec:
             return (
                 'intersection_left_turn_no_cone',
-                max(float(self.get_parameter('intersection_left_turn_speed').value), 0.0),
+                self._current_intersection_left_turn_speed(),
                 float(self.get_parameter('intersection_left_turn_steer_deg').value),
+            )
+
+        if (
+            bool(self.get_parameter('school_zone_speed_limit_enabled').value)
+            and now < self.intersection_post_left_ai_hold_until_sec
+        ):
+            return (
+                'intersection_post_left_school_limit',
+                max(float(self.get_parameter('school_zone_speed').value), 0.0),
+                0.0,
             )
 
         repeat_handled, repeat_command = self._pending_intersection_left_turn_repeat_command(now)
@@ -1141,7 +1338,9 @@ class TrackDriverNode(Node):
             self.intersection_trigger_seen_since_sec = None
             self.intersection_signal_wait_until_sec = 0.0
             self.intersection_left_turn_repeat_start_sec = 0.0
+            self.intersection_post_left_school_limit_start_sec = 0.0
             self.intersection_post_left_school_limit_until_sec = 0.0
+            self.intersection_post_left_ai_hold_until_sec = 0.0
             return None
 
         self.intersection_left_no_cone_confirm_count += 1
@@ -1152,6 +1351,9 @@ class TrackDriverNode(Node):
         if self.intersection_left_no_cone_confirm_count < required_no_cone_frames:
             self.intersection_last_decision = 'left_cone_check'
             return ('intersection_check_left_cone', 0.0, 0.0)
+
+        if not self._intersection_left_turn_enabled():
+            return self._skip_intersection_left_turn(now, cooldown_sec)
 
         if not self._left_turn_signal_visible():
             self.intersection_last_decision = 'left_wait_signal'
@@ -1176,6 +1378,9 @@ class TrackDriverNode(Node):
 
         cooldown_sec = max(float(self.get_parameter('intersection_route_cooldown_sec').value), 0.0)
         if self.intersection_last_decision == 'left_wait_signal':
+            if not self._intersection_left_turn_enabled():
+                return True, self._skip_intersection_left_turn(now, cooldown_sec)
+
             min_count = max(int(self.get_parameter('intersection_left_cone_min_count').value), 1)
             if self._intersection_left_cone_present(cones, now, min_count):
                 self.intersection_last_decision = 'straight_wait_green'
@@ -1187,7 +1392,9 @@ class TrackDriverNode(Node):
                     self.intersection_trigger_seen_since_sec = None
                     self.intersection_signal_wait_until_sec = 0.0
                     self.intersection_left_turn_repeat_start_sec = 0.0
+                    self.intersection_post_left_school_limit_start_sec = 0.0
                     self.intersection_post_left_school_limit_until_sec = 0.0
+                    self.intersection_post_left_ai_hold_until_sec = 0.0
                     return True, None
                 return True, ('intersection_wait_green', 0.0, 0.0)
             if self._left_turn_signal_visible():
@@ -1202,7 +1409,9 @@ class TrackDriverNode(Node):
             self.intersection_trigger_seen_since_sec = None
             self.intersection_signal_wait_until_sec = 0.0
             self.intersection_left_turn_repeat_start_sec = 0.0
+            self.intersection_post_left_school_limit_start_sec = 0.0
             self.intersection_post_left_school_limit_until_sec = 0.0
+            self.intersection_post_left_ai_hold_until_sec = 0.0
             return True, None
         return True, ('intersection_wait_green', 0.0, 0.0)
 
@@ -1229,11 +1438,25 @@ class TrackDriverNode(Node):
         now: float,
         cooldown_sec: float,
         schedule_repeat: bool = True,
-    ) -> Tuple[str, float, float]:
+    ) -> Optional[Tuple[str, float, float]]:
+        if not self._intersection_left_turn_enabled():
+            return self._skip_intersection_left_turn(now, cooldown_sec)
+
         self.intersection_last_decision = 'left'
         duration_sec = max(float(self.get_parameter('intersection_left_turn_duration_sec').value), 0.10)
         turn_until_sec = now + duration_sec
         self.intersection_left_turn_until_sec = turn_until_sec
+        speed_parameter = (
+            'intersection_left_turn_speed'
+            if schedule_repeat
+            else 'intersection_left_turn_second_speed'
+        )
+        self.intersection_left_turn_current_speed = max(
+            float(self.get_parameter(speed_parameter).value),
+            0.0,
+        )
+        self.intersection_left_turn_school_limit_enabled = not schedule_repeat
+        self.intersection_left_turn_current_speed = self._current_intersection_left_turn_speed()
         self.intersection_route_cooldown_until_sec = now + duration_sec + cooldown_sec
         self.intersection_trigger_seen_since_sec = None
         self.intersection_signal_wait_until_sec = 0.0
@@ -1245,19 +1468,75 @@ class TrackDriverNode(Node):
                 0.0,
             )
             self.intersection_left_turn_repeat_start_sec = turn_until_sec + repeat_delay_sec
+            self.intersection_post_left_school_limit_start_sec = 0.0
             self.intersection_post_left_school_limit_until_sec = 0.0
+            self.intersection_post_left_ai_hold_until_sec = 0.0
         else:
             self.intersection_left_turn_repeat_start_sec = 0.0
             post_limit_sec = max(
                 float(self.get_parameter('intersection_left_turn_post_school_limit_sec').value),
                 0.0,
             )
+            post_ai_hold_sec = max(
+                float(self.get_parameter('intersection_left_turn_post_school_ai_hold_sec').value),
+                0.0,
+            )
+            self.intersection_post_left_school_limit_start_sec = turn_until_sec
             self.intersection_post_left_school_limit_until_sec = turn_until_sec + post_limit_sec
+            self.intersection_post_left_ai_hold_until_sec = turn_until_sec + post_ai_hold_sec
         return (
             'intersection_left_turn_no_cone',
-            max(float(self.get_parameter('intersection_left_turn_speed').value), 0.0),
+            self._current_intersection_left_turn_speed(),
             float(self.get_parameter('intersection_left_turn_steer_deg').value),
         )
+
+    def _current_intersection_left_turn_speed(self) -> float:
+        speed = self.intersection_left_turn_current_speed
+        if speed <= 0.0:
+            speed = max(float(self.get_parameter('intersection_left_turn_speed').value), 0.0)
+        if (
+            self.intersection_left_turn_school_limit_enabled
+            and bool(self.get_parameter('school_zone_speed_limit_enabled').value)
+            and self._school_zone_limit_for_intersection_turn_active()
+            and speed > 0.0
+        ):
+            speed = min(speed, max(float(self.get_parameter('school_zone_speed').value), 0.0))
+            self.intersection_left_turn_current_speed = speed
+        return speed
+
+    def _school_zone_limit_for_intersection_turn_active(self) -> bool:
+        if self._school_zone_speed_limit_active():
+            return True
+
+        now = time.monotonic()
+        hold_sec = max(float(self.get_parameter('school_zone_hold_sec').value), 0.0)
+        return (
+            self.school_zone_last_seen_sec is not None
+            and now - self.school_zone_last_seen_sec <= hold_sec
+        )
+
+    def _intersection_left_turn_enabled(self) -> bool:
+        return bool(self.get_parameter('intersection_left_turn_enabled').value)
+
+    def _skip_intersection_left_turn(
+        self,
+        now: float,
+        cooldown_sec: float,
+    ) -> Optional[Tuple[str, float, float]]:
+        self.intersection_last_decision = 'left_disabled_ai'
+        self.intersection_left_turn_until_sec = 0.0
+        self.intersection_left_turn_current_speed = 0.0
+        self.intersection_left_turn_school_limit_enabled = False
+        self.intersection_left_turn_repeat_start_sec = 0.0
+        self.intersection_post_left_school_limit_start_sec = 0.0
+        self.intersection_post_left_school_limit_until_sec = 0.0
+        self.intersection_post_left_ai_hold_until_sec = 0.0
+        self.intersection_route_cooldown_until_sec = now + max(cooldown_sec, 0.0)
+        self.intersection_trigger_seen_since_sec = None
+        self.intersection_signal_wait_until_sec = 0.0
+        self.intersection_left_no_cone_confirm_count = 0
+        self.intersection_left_cone_last_seen_sec = None
+        return None
 
     def _intersection_left_cone_present(
         self,
@@ -1298,18 +1577,7 @@ class TrackDriverNode(Node):
         if not bool(self.get_parameter('stop_on_light_requires_stop_line').value):
             return True
 
-        now = time.monotonic()
-        trigger_row_ratio = float(np.clip(
-            self.get_parameter('intersection_stop_line_trigger_row_ratio').value, 0.0, 1.0))
-        if self.stop_line_detected and self.stop_line_row_ratio >= trigger_row_ratio:
-            return True
-
-        memory_sec = max(float(self.get_parameter('stop_line_memory_sec').value), 0.0)
-        return (
-            self.stop_line_last_seen_sec is not None
-            and now - self.stop_line_last_seen_sec <= memory_sec
-            and self.stop_line_last_row_ratio >= trigger_row_ratio
-        )
+        return self._stop_line_ready_for_light_stop()
 
     def _traffic_light_visible(self) -> bool:
         if (
@@ -1761,6 +2029,12 @@ class TrackDriverNode(Node):
             return bool(self.get_parameter('stop_on_person_enabled').value)
         return bool(enabled)
 
+    def _person_slow_monitoring_enabled(self) -> bool:
+        return (
+            bool(self.get_parameter('person_slow_until_school_passed_enabled').value)
+            and not self.person_slow_completed
+        )
+
     def _person_avoidance_requested(self) -> bool:
         if not bool(self.get_parameter('person_avoidance_enabled').value):
             return False
@@ -2196,7 +2470,8 @@ class TrackDriverNode(Node):
             self.cached_yolo_vehicle_detections = []
             self.cached_yolo_vehicle_box = None
 
-        if safety_due and (self._person_stop_enabled() or vehicle_enabled):
+        person_monitor_enabled = self._person_stop_enabled() or self._person_slow_monitoring_enabled()
+        if safety_due and (person_monitor_enabled or vehicle_enabled):
             safety_detections = self._run_yolo_detector(
                 'safety',
                 str(self.get_parameter('yolo_person_model_path').value),
@@ -6287,7 +6562,7 @@ class TrackDriverNode(Node):
         if best is None:
             raw_text = f' raw_cones={raw_cone_count}' if raw_cone_count is not None else ''
             nearest_text = self._format_nearest_obstacle(nearest_obstacle)
-            speed = self._apply_school_zone_speed_limit(speed)
+            speed = self._apply_context_speed_limit(speed)
             zone_text = self._school_zone_log_text()
             vehicle_text = self._vehicle_log_text()
             stop_line_text = self._stop_line_log_text()
@@ -6302,7 +6577,7 @@ class TrackDriverNode(Node):
         clearance = best.min_clearance if math.isfinite(best.min_clearance) else 99.0
         raw_text = f'raw_cones={raw_cone_count} ' if raw_cone_count is not None else ''
         nearest_text = self._format_nearest_obstacle(nearest_obstacle)
-        speed = self._apply_school_zone_speed_limit(speed)
+        speed = self._apply_context_speed_limit(speed)
         zone_text = self._school_zone_log_text()
         vehicle_text = self._vehicle_log_text()
         stop_line_text = self._stop_line_log_text()
@@ -6320,16 +6595,22 @@ class TrackDriverNode(Node):
         return f'{distance:.2f}m'
 
     def _school_zone_log_text(self) -> str:
+        slow_text = ''
+        if self._person_slow_speed_limit_active():
+            state = 'seen_zone' if self.person_slow_seen_school_zone else 'waiting_zone'
+            slow_text = f' person_slow={state}/{float(self.get_parameter("person_slow_speed").value):.1f}'
+
         if not self.school_zone_active and not self.school_zone_candidate_active:
-            return ''
+            return slow_text
         state = 'active' if self.school_zone_active else 'candidate'
-        return (
+        zone_text = (
             f' school_zone={state}({self.school_zone_yellow_left_ratio:.3f},'
             f'{self.school_zone_yellow_right_ratio:.3f},'
             f'pair={self.school_zone_yellow_pair_row_ratio:.3f},'
             f'bottom={self.school_zone_yellow_bottom_pair_row_ratio:.3f},'
             f'sep={self.school_zone_yellow_separation_ratio:.2f})'
         )
+        return zone_text + slow_text
 
     def _stop_line_log_text(self) -> str:
         if not self.stop_line_detected and self.stop_line_last_seen_sec is None:

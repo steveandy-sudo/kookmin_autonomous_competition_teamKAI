@@ -42,8 +42,8 @@ def declare_stop_line_bev_parameters(node):
     node.declare_parameter('stop_line_bev_min_row_run', 3)
     node.declare_parameter('stop_line_bev_min_solid_run_ratio', 0.58)
     node.declare_parameter('stop_line_bev_solid_col_min_fill_ratio', 0.43)
-    node.declare_parameter('stop_line_detect_min_row_ratio', 0.55)
-    node.declare_parameter('stop_line_detect_max_distance_m', 4.20)
+    node.declare_parameter('stop_line_detect_min_row_ratio', 0.25)
+    node.declare_parameter('stop_line_detect_max_distance_m', 5.25)
     node.declare_parameter('stop_line_white_value_min', 200)
     node.declare_parameter('stop_line_white_sat_max', 80)
     node.declare_parameter('stop_line_bev_close_width_ratio', 0.055)
@@ -53,7 +53,7 @@ def declare_stop_line_bev_parameters(node):
     node.declare_parameter('stop_line_distance_scale_m', 7.0)
     node.declare_parameter('stop_line_stop_row_ratio', 0.70)
     node.declare_parameter('stop_line_stop_bottom_row_ratio', 0.75)
-    node.declare_parameter('stop_line_stop_distance_m', 2.2)
+    node.declare_parameter('stop_line_stop_distance_m', 1.8)
     node.declare_parameter('stop_line_confirm_frames', 2)
     node.declare_parameter('stop_on_light_requires_stop_line', True)
 
@@ -300,11 +300,11 @@ class BEVStopLineDetector:
 
     def _close_enough_to_detect(self, row_ratio: float, distance_m: float) -> bool:
         min_row_ratio = float(np.clip(
-            self._param('stop_line_detect_min_row_ratio', 0.55),
+            self._param('stop_line_detect_min_row_ratio', 0.25),
             0.0,
             1.0,
         ))
-        max_distance_m = float(self._param('stop_line_detect_max_distance_m', 4.20))
+        max_distance_m = float(self._param('stop_line_detect_max_distance_m', 5.25))
         if row_ratio < min_row_ratio:
             return False
         if max_distance_m > 0.0 and distance_m > max_distance_m:
@@ -364,26 +364,34 @@ class StopLineDetector:
             return True
 
         required_frames = max(int(self.node.get_parameter('stop_line_confirm_frames').value), 1)
-        if self.node.stop_line_confirm_count < required_frames:
-            return False
-        if not self.node.stop_line_detected:
+        row_ratio = self.node.stop_line_row_ratio
+        bottom_row_ratio = self.node.stop_line_bottom_row_ratio
+        distance_m = self.node.stop_line_distance_m
+        if self.node.stop_line_confirm_count < required_frames or not self.node.stop_line_detected:
+            memory_sec = max(float(self.node.get_parameter('stop_line_memory_sec').value), 0.0)
+            recently_seen = (
+                self.node.stop_line_last_seen_sec is not None
+                and time.monotonic() - self.node.stop_line_last_seen_sec <= memory_sec
+            )
+            if not recently_seen:
+                return False
+            row_ratio = self.node.stop_line_last_row_ratio
+            bottom_row_ratio = self.node.stop_line_last_bottom_row_ratio
+            distance_m = self.node.stop_line_last_distance_m
+        if distance_m is None:
             return False
 
         stop_distance = float(self.node.get_parameter('stop_line_stop_distance_m').value)
-        if (
-            stop_distance > 0.0
-            and self.node.stop_line_distance_m is not None
-            and self.node.stop_line_distance_m <= stop_distance
-        ):
-            return True
+        if stop_distance > 0.0:
+            return distance_m <= stop_distance
 
         stop_row_ratio = float(np.clip(
             self.node.get_parameter('stop_line_stop_row_ratio').value, 0.0, 1.0))
         stop_bottom_row_ratio = float(np.clip(
             self.node.get_parameter('stop_line_stop_bottom_row_ratio').value, 0.0, 1.0))
         return (
-            self.node.stop_line_row_ratio >= stop_row_ratio
-            and self.node.stop_line_bottom_row_ratio >= stop_bottom_row_ratio
+            row_ratio >= stop_row_ratio
+            and bottom_row_ratio >= stop_bottom_row_ratio
         )
 
     def log_text(self) -> str:

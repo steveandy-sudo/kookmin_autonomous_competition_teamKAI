@@ -30,7 +30,8 @@ class SchoolZoneBEVResult:
 
 def declare_school_zone_bev_parameters(node):
     node.declare_parameter('camera_topic', '/usb_cam/image_raw/front')
-    node.declare_parameter('school_zone_speed', 5.0)
+    node.declare_parameter('school_zone_speed', 5.5)
+    node.declare_parameter('school_zone_speed_limit_enabled', False)
     node.declare_parameter('school_zone_hold_sec', 1.5)
     node.declare_parameter('school_zone_debug_topic_prefix', '/track_drive/school_zone_debug')
     node.declare_parameter('school_zone_debug_log_period_sec', 0.5)
@@ -41,7 +42,7 @@ def declare_school_zone_bev_parameters(node):
     node.declare_parameter('school_zone_bev_src_top_half_width_ratio', 0.12)
     node.declare_parameter('school_zone_bev_src_bottom_half_width_ratio', 0.50)
     node.declare_parameter('school_zone_bev_center_shift_ratio', 0.0)
-    node.declare_parameter('school_zone_bev_front_top_ratio', 0.40)
+    node.declare_parameter('school_zone_bev_front_top_ratio', 0.38)
     node.declare_parameter('school_zone_bev_front_bottom_ratio', 1.00)
     node.declare_parameter('school_zone_bev_left_edge_max_ratio', 0.42)
     node.declare_parameter('school_zone_bev_right_edge_min_ratio', 0.58)
@@ -56,9 +57,9 @@ def declare_school_zone_bev_parameters(node):
     node.declare_parameter('school_zone_bev_max_row_width_ratio', 0.16)
     node.declare_parameter('school_zone_bev_min_left_ratio', 0.0015)
     node.declare_parameter('school_zone_bev_min_right_ratio', 0.0015)
-    node.declare_parameter('school_zone_bev_min_pair_row_ratio', 0.10)
-    node.declare_parameter('school_zone_bev_min_bottom_pair_row_ratio', 0.06)
-    node.declare_parameter('school_zone_bev_min_pair_rows', 5)
+    node.declare_parameter('school_zone_bev_min_pair_row_ratio', 0.085)
+    node.declare_parameter('school_zone_bev_min_bottom_pair_row_ratio', 0.05)
+    node.declare_parameter('school_zone_bev_min_pair_rows', 4)
     node.declare_parameter('school_zone_bev_min_separation_ratio', 0.38)
     node.declare_parameter('school_zone_bev_preslow_ratio', 0.50)
 
@@ -146,7 +147,7 @@ class BEVSchoolZoneDetector:
 
     def _evaluate_mask(self, mask: np.ndarray, bev: np.ndarray) -> SchoolZoneBEVResult:
         height, width = mask.shape[:2]
-        front_top = float(np.clip(self._param('school_zone_bev_front_top_ratio', 0.40), 0.0, 0.98))
+        front_top = float(np.clip(self._param('school_zone_bev_front_top_ratio', 0.38), 0.0, 0.98))
         front_bottom = float(np.clip(
             self._param('school_zone_bev_front_bottom_ratio', 1.00),
             front_top + 0.01,
@@ -305,9 +306,9 @@ class BEVSchoolZoneDetector:
             and right_pixels >= min_pixels
             and left_ratio >= float(self._param('school_zone_bev_min_left_ratio', 0.0015))
             and right_ratio >= float(self._param('school_zone_bev_min_right_ratio', 0.0015))
-            and pair_rows >= max(int(self._param('school_zone_bev_min_pair_rows', 5)), 1)
-            and pair_row_ratio >= float(self._param('school_zone_bev_min_pair_row_ratio', 0.10))
-            and bottom_pair_row_ratio >= float(self._param('school_zone_bev_min_bottom_pair_row_ratio', 0.06))
+            and pair_rows >= max(int(self._param('school_zone_bev_min_pair_rows', 4)), 1)
+            and pair_row_ratio >= float(self._param('school_zone_bev_min_pair_row_ratio', 0.085))
+            and bottom_pair_row_ratio >= float(self._param('school_zone_bev_min_bottom_pair_row_ratio', 0.05))
             and separation_ratio >= float(self._param('school_zone_bev_min_separation_ratio', 0.38))
         )
 
@@ -324,9 +325,9 @@ class BEVSchoolZoneDetector:
         return (
             left_pixels >= int(max(int(self._param('school_zone_bev_min_pixels', 45)), 1) * ratio)
             and right_pixels >= int(max(int(self._param('school_zone_bev_min_pixels', 45)), 1) * ratio)
-            and pair_rows >= max(2, int(max(int(self._param('school_zone_bev_min_pair_rows', 5)), 1) * ratio))
-            and pair_row_ratio >= float(self._param('school_zone_bev_min_pair_row_ratio', 0.10)) * ratio
-            and bottom_pair_row_ratio >= float(self._param('school_zone_bev_min_bottom_pair_row_ratio', 0.06)) * ratio
+            and pair_rows >= max(2, int(max(int(self._param('school_zone_bev_min_pair_rows', 4)), 1) * ratio))
+            and pair_row_ratio >= float(self._param('school_zone_bev_min_pair_row_ratio', 0.085)) * ratio
+            and bottom_pair_row_ratio >= float(self._param('school_zone_bev_min_bottom_pair_row_ratio', 0.05)) * ratio
             and separation_ratio >= float(self._param('school_zone_bev_min_separation_ratio', 0.38))
         )
 
@@ -369,6 +370,9 @@ class SchoolZoneDetector:
 
     def apply_speed_limit(self, speed: float) -> float:
         speed = float(speed)
+        if not bool(self.node.get_parameter('school_zone_speed_limit_enabled').value):
+            return speed
+
         speed_limit_active = self.node.school_zone_active or (
             self.node.school_zone_candidate_active
             and bool(self.node.get_parameter('school_zone_preslow_enabled').value)

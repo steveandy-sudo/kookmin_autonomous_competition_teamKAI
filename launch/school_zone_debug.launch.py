@@ -40,9 +40,9 @@ def generate_launch_description():
         DeclareLaunchArgument('school_zone_bev_src_bottom_half_width_ratio', default_value='0.50'),
         DeclareLaunchArgument('school_zone_bev_left_edge_max_ratio', default_value='0.42'),
         DeclareLaunchArgument('school_zone_bev_right_edge_min_ratio', default_value='0.58'),
-        DeclareLaunchArgument('school_zone_bev_min_pair_row_ratio', default_value='0.10'),
-        DeclareLaunchArgument('school_zone_bev_min_bottom_pair_row_ratio', default_value='0.06'),
-        DeclareLaunchArgument('school_zone_bev_min_pair_rows', default_value='5'),
+        DeclareLaunchArgument('school_zone_bev_min_pair_row_ratio', default_value='0.085'),
+        DeclareLaunchArgument('school_zone_bev_min_bottom_pair_row_ratio', default_value='0.05'),
+        DeclareLaunchArgument('school_zone_bev_min_pair_rows', default_value='4'),
         DeclareLaunchArgument('school_zone_bev_min_separation_ratio', default_value='0.38'),
         DeclareLaunchArgument('school_zone_hold_sec', default_value='1.5'),
         Node(

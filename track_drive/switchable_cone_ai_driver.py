@@ -15,6 +15,10 @@ class SwitchableConeAIDriver(ConeAIDriver):
         self.declare_parameter('enable_topic', '/cone_ai/enable')
         self.declare_parameter('start_enabled', False)
         self.declare_parameter('speed_limit_topic', '/cone_ai/speed_limit')
+        self.declare_parameter('turn_speed_limit_enabled', True)
+        self.declare_parameter('turn_speed', 11.0)
+        self.declare_parameter('turn_speed_start_steer_deg', 6.0)
+        self.declare_parameter('turn_speed_full_steer_deg', 35.0)
         self.enabled = bool(self.get_parameter('start_enabled').value)
         self.speed_limit = -1.0
         self._last_logged_speed_limit = None
@@ -43,9 +47,27 @@ class SwitchableConeAIDriver(ConeAIDriver):
             self.get_logger().info(f'speed_limit={text}')
 
     def drive(self, angle: float, speed: float):
+        speed = self._apply_turn_speed_limit(angle, speed)
         if self.speed_limit >= 0.0 and speed > 0.0:
             speed = min(float(speed), self.speed_limit)
         super().drive(angle, speed)
+
+    def _apply_turn_speed_limit(self, angle: float, speed: float) -> float:
+        if not bool(self.get_parameter('turn_speed_limit_enabled').value):
+            return speed
+        if speed <= 0.0:
+            return speed
+
+        start_steer = max(float(self.get_parameter('turn_speed_start_steer_deg').value), 0.0)
+        full_steer = max(float(self.get_parameter('turn_speed_full_steer_deg').value), start_steer + 1.0)
+        turn_speed = max(float(self.get_parameter('turn_speed').value), 0.0)
+        steer_abs = abs(float(angle))
+        if steer_abs < start_steer:
+            return speed
+
+        ratio = min(max((steer_abs - start_steer) / (full_steer - start_steer), 0.0), 1.0)
+        target_speed = float(speed) + (turn_speed - float(speed)) * ratio
+        return min(float(speed), target_speed)
 
     def control_once(self):
         if not self.enabled:
