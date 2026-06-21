@@ -8,6 +8,19 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
+    package_share = FindPackageShare('track_drive')
+    default_cone_model_path = PathJoinSubstitution([
+        package_share,
+        'assets',
+        'models',
+        'cone_bc_scripted_4.pt',
+    ])
+    default_yolo_model_path = PathJoinSubstitution([
+        package_share,
+        'assets',
+        'models',
+        'final.onnx',
+    ])
     camera_topic = LaunchConfiguration('camera_topic')
     scan_topic = LaunchConfiguration('scan_topic')
     motor_topic = LaunchConfiguration('motor_topic')
@@ -349,7 +362,7 @@ def generate_launch_description():
         DeclareLaunchArgument('motor_topic', default_value='xycar_motor'),
         DeclareLaunchArgument(
             'model_path',
-            default_value='/home/xytron/cone_bc_scripted_2.pt',
+            default_value=default_cone_model_path,
         ),
         DeclareLaunchArgument('speed', default_value='30.0'),
         DeclareLaunchArgument('ai_initial_speed', default_value='17.0'),
@@ -376,7 +389,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'rviz_config',
             default_value=PathJoinSubstitution([
-                FindPackageShare('track_drive'),
+                package_share,
                 'rviz',
                 'hybrid_stop_light_debug.rviz',
             ]),
@@ -581,8 +594,8 @@ def generate_launch_description():
         DeclareLaunchArgument('person_slow_release_after_school_sec', default_value='0.0'),
         DeclareLaunchArgument('person_slow_rearm_sec', default_value='0.5'),
         DeclareLaunchArgument('yolo_safety_enabled', default_value='true'),
-        DeclareLaunchArgument('yolo_person_model_path', default_value='/home/xytron/model/final.onnx'),
-        DeclareLaunchArgument('yolo_light_model_path', default_value='/home/xytron/model/final.onnx'),
+        DeclareLaunchArgument('yolo_person_model_path', default_value=default_yolo_model_path),
+        DeclareLaunchArgument('yolo_light_model_path', default_value=default_yolo_model_path),
         DeclareLaunchArgument('yolo_dnn_backend', default_value='auto'),
         DeclareLaunchArgument('yolo_dnn_target', default_value='auto'),
         DeclareLaunchArgument('yolo_light_input_size', default_value='640'),

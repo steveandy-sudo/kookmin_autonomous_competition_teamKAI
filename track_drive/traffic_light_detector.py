@@ -4,10 +4,12 @@
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 import cv2
 import numpy as np
+
+from track_drive.package_paths import default_yolo_model_path
 
 
 Box = Tuple[int, int, int, int]
@@ -45,7 +47,7 @@ def declare_traffic_light_parameters(node):
     node.declare_parameter('traffic_light_debug_topic', '/track_drive/traffic_light_debug/image')
     node.declare_parameter('traffic_light_state_topic', '/track_drive/traffic_light_debug/state')
     node.declare_parameter('traffic_light_log_period_sec', 0.5)
-    node.declare_parameter('yolo_light_model_path', '/home/xytron/model/final.onnx')
+    node.declare_parameter('yolo_light_model_path', default_yolo_model_path())
     node.declare_parameter('yolo_light_input_size', 640)
     node.declare_parameter('yolo_light_class_count', 6)
     node.declare_parameter('yolo_dnn_backend', 'auto')
@@ -77,6 +79,7 @@ class YoloTrafficLightDetector:
         self.node = node
         self.net = None
         self.net_path = ''
+        self.ort_sessions: Dict[Tuple[str, str, str], Tuple[object, str, str]] = {}
         self.class_scores: List[float] = []
         self.raw_shape = ''
 
@@ -144,16 +147,12 @@ class YoloTrafficLightDetector:
         )
 
     def _run_yolo(self, image: np.ndarray):
-        model_path = Path(str(self._param('yolo_light_model_path', '/home/xytron/model/final.onnx'))).expanduser()
+        model_path = Path(str(self._param('yolo_light_model_path', default_yolo_model_path()))).expanduser()
         if not model_path.exists():
             self._warn_once(f'YOLO light model not found: {model_path}')
             return []
 
         input_size = max(int(self._param('yolo_light_input_size', 640)), 32)
-        net = self._get_net(model_path)
-        if net is None:
-            return []
-
         padded, scale, pad_x, pad_y = self._letterbox_image(image, input_size)
         blob = cv2.dnn.blobFromImage(
             padded,
@@ -163,12 +162,17 @@ class YoloTrafficLightDetector:
             swapRB=True,
             crop=False,
         )
-        try:
-            net.setInput(blob)
-            output = net.forward()
-        except Exception as exc:
-            self._warn_once(f'YOLO light inference failed: {exc}')
-            return []
+        output = self._run_ort(model_path, blob)
+        if output is None:
+            net = self._get_net(model_path)
+            if net is None:
+                return []
+            try:
+                net.setInput(blob)
+                output = net.forward()
+            except Exception as exc:
+                self._warn_once(f'YOLO light inference failed: {exc}')
+                return []
 
         class_count = int(self._param('yolo_light_class_count', 6))
         self._cache_class_scores(output, class_count)
@@ -182,6 +186,62 @@ class YoloTrafficLightDetector:
             float(self._param('yolo_nms_threshold', 0.45)),
             class_count,
         )
+
+    def _run_ort(self, model_path: Path, blob: np.ndarray):
+        session_info = self._get_ort_session(model_path)
+        if session_info is None:
+            return None
+        session, input_name, provider_text = session_info
+        try:
+            outputs = session.run(None, {input_name: blob.astype(np.float32, copy=False)})
+            if not outputs:
+                return None
+            return outputs[0]
+        except Exception as exc:
+            self._warn_once(f'YOLO light ONNX Runtime failed ({provider_text}); falling back to OpenCV DNN: {exc}')
+            return None
+
+    def _get_ort_session(self, model_path: Path):
+        backend_name = str(self._param('yolo_dnn_backend', 'auto')).strip().lower()
+        target_name = str(self._param('yolo_dnn_target', 'auto')).strip().lower()
+        if backend_name not in ('auto', 'cuda', 'onnxruntime', 'ort') and target_name not in ('cuda', 'cuda_fp16', 'fp16'):
+            return None
+
+        key = (str(model_path), backend_name, target_name)
+        if key in self.ort_sessions:
+            return self.ort_sessions[key]
+
+        try:
+            import onnxruntime as ort
+        except Exception as exc:
+            self._warn_once(f'ONNX Runtime is not available; using OpenCV DNN: {exc}')
+            return None
+
+        available = set(ort.get_available_providers())
+        providers = []
+        if 'CUDAExecutionProvider' in available and backend_name in ('auto', 'cuda', 'onnxruntime', 'ort'):
+            providers.append('CUDAExecutionProvider')
+        if 'CPUExecutionProvider' in available and backend_name in ('auto', 'onnxruntime', 'ort'):
+            providers.append('CPUExecutionProvider')
+        if 'CPUExecutionProvider' in available and not providers and backend_name == 'cuda':
+            self._warn_once('ONNX Runtime CUDA provider is not available; using CPU provider')
+            providers.append('CPUExecutionProvider')
+        if not providers:
+            return None
+
+        try:
+            session = ort.InferenceSession(str(model_path), providers=providers)
+        except Exception as exc:
+            self._warn_once(f'YOLO light ONNX Runtime load failed; using OpenCV DNN: {exc}')
+            return None
+
+        active = session.get_providers()
+        input_name = session.get_inputs()[0].name
+        provider_text = '+'.join(active)
+        info = (session, input_name, provider_text)
+        self.ort_sessions[key] = info
+        self.node.get_logger().info(f'YOLO light model loaded: {model_path} | ort={provider_text}')
+        return info
 
     def _get_net(self, model_path: Path):
         path_text = str(model_path)

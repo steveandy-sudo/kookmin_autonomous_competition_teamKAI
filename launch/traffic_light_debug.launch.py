@@ -8,6 +8,7 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
+    package_share = FindPackageShare('track_drive')
     camera_topic = LaunchConfiguration('camera_topic')
     model_path = LaunchConfiguration('yolo_light_model_path')
     dnn_backend = LaunchConfiguration('yolo_dnn_backend')
@@ -26,7 +27,15 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('camera_topic', default_value='/usb_cam/image_raw/front'),
-        DeclareLaunchArgument('yolo_light_model_path', default_value='/home/xytron/model/final.onnx'),
+        DeclareLaunchArgument(
+            'yolo_light_model_path',
+            default_value=PathJoinSubstitution([
+                package_share,
+                'assets',
+                'models',
+                'final.onnx',
+            ]),
+        ),
         DeclareLaunchArgument('yolo_dnn_backend', default_value='auto'),
         DeclareLaunchArgument('yolo_dnn_target', default_value='auto'),
         DeclareLaunchArgument('yolo_light_conf_threshold', default_value='0.35'),
@@ -42,7 +51,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'rviz_config',
             default_value=PathJoinSubstitution([
-                FindPackageShare('track_drive'),
+                package_share,
                 'rviz',
                 'traffic_light_debug.rviz',
             ]),

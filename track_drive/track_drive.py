@@ -21,6 +21,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 from xycar_msgs.msg import XycarMotor
 
 from track_drive.intersection_decider import IntersectionDecider
+from track_drive.package_paths import default_cone_model_path, default_yolo_model_path
 from track_drive.safety_supervisor import SafetySupervisor
 from track_drive.school_zone_detector import SchoolZoneDetector
 from track_drive.stop_line_detector import StopLineDetector
@@ -180,7 +181,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('invert_steering', True)
 
         self.declare_parameter('ai_hybrid_enabled', True)
-        self.declare_parameter('ai_model_path', '/home/xytron/cone_bc_scripted_2.pt')
+        self.declare_parameter('ai_model_path', default_cone_model_path())
         self.declare_parameter('ai_speed', 30.0)
         self.declare_parameter('traffic_light_speed_limit_enabled', False)
         self.declare_parameter('traffic_light_speed', 20.0)
@@ -202,8 +203,8 @@ class TrackDriverNode(Node):
         self.declare_parameter('ai_speed_limit_topic', '/cone_ai/speed_limit')
         self.declare_parameter('ai_turn_speed_topic', '/cone_ai/turn_speed')
         self.declare_parameter('yolo_safety_enabled', True)
-        self.declare_parameter('yolo_person_model_path', '/home/xytron/model/final.onnx')
-        self.declare_parameter('yolo_light_model_path', '/home/xytron/model/final.onnx')
+        self.declare_parameter('yolo_person_model_path', default_yolo_model_path())
+        self.declare_parameter('yolo_light_model_path', default_yolo_model_path())
         self.declare_parameter('yolo_person_input_size', 640)
         self.declare_parameter('yolo_light_input_size', 640)
         self.declare_parameter('yolo_person_class_count', 6)
@@ -3179,8 +3180,6 @@ class TrackDriverNode(Node):
             return None
 
         active = session.get_providers()
-        if 'CUDAExecutionProvider' not in active and backend_name == 'auto':
-            return None
         input_name = session.get_inputs()[0].name
         provider_text = '+'.join(active)
         info = (session, input_name, provider_text)

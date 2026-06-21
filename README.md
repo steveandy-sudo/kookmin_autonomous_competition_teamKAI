@@ -20,6 +20,12 @@ ros2 run track_drive track_drive
 - Ubuntu 22.04
 - ROS2 Humble
 - (시뮬레이터 연동) 카메라, LiDAR, IMU 토픽 수신 + 모터 토픽 송신
+- YOLO ONNX 추론용 `onnxruntime` 또는 `onnxruntime-gpu`
+
+```bash
+python3 -m pip install onnxruntime-gpu
+# CUDA가 없는 PC는 대신: python3 -m pip install onnxruntime
+```
 
 ## 토픽 구성
 
@@ -43,7 +49,7 @@ ros2 run track_drive track_drive
 ros2 launch track_drive ai_direct_hybrid.launch.py
 ```
 
-기본 AI 모델 경로는 launch 파일 안의 `model_path` 기본값을 사용합니다. 모델 파일은 Git에 포함하지 않으므로, 다른 PC에서는 같은 경로에 모델을 복사하거나 `model_path:=/path/to/cone_bc_scripted.pt`로 지정하세요.
+기본 AI/YOLO 모델은 `assets/models/`에 포함되어 있고, launch 파일은 패키지 share 경로의 모델을 기본값으로 사용합니다. 다른 모델을 테스트할 때만 `model_path:=/path/to/cone_bc_scripted.pt` 또는 `yolo_light_model_path:=/path/to/final.onnx`처럼 직접 지정하세요.
 
 ## 미션 순서 (예선 기준)
 
@@ -68,7 +74,7 @@ ros2 launch track_drive ai_direct_hybrid.launch.py
 
 - `cone_il/`: 라바콘 구간 모방학습 데이터 수집, 키보드 조종, 학습, 추론 노드 패키지
 
-모방학습 데이터셋과 학습된 모델 파일은 용량이 커서 git에 포함하지 않습니다.
+모방학습 데이터셋과 학습 중간 산출물은 용량이 커서 git에 포함하지 않습니다. 시뮬레이터 실행에 필요한 runtime 모델만 `assets/models/`에 포함합니다.
 
 ## 팀 역할 (5인)
 

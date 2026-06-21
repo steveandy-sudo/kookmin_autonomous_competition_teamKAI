@@ -15,6 +15,7 @@ setup(
         # launch 파일을 설치
         (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
         (os.path.join('share', package_name, 'rviz'), glob('rviz/*.rviz')),
+        (os.path.join('share', package_name, 'assets', 'models'), glob('assets/models/*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

@@ -121,19 +121,19 @@ python3 ~/xycar_ws/src/cone_il/scripts/merge_cone_datasets.py \
   ~/cone_il_dataset_new
 ```
 
-데이터셋 폴더와 학습된 모델 파일(`*.pt`, `*.pth`, `*.onnx`)은 용량이 커서 git에 올리지 않습니다.
+데이터셋 폴더와 학습 중간 산출물(`*.pt`, `*.pth`, `*.onnx`)은 용량이 커서 git에 올리지 않습니다. 주행에 필요한 기본 runtime 모델은 저장소의 `assets/models/`에 포함되어 있습니다.
 
 ## 4. 모방학습 주행
 
 ```bash
 source ~/xycar_ws/install/setup.bash
-ros2 launch cone_il drive_cone_ai.launch.py model_path:=/home/xytron/cone_bc_scripted_2.pt
+ros2 launch cone_il drive_cone_ai.launch.py
 ```
 
 조향 방향이 반대로 꺾이면:
 
 ```bash
-ros2 launch cone_il drive_cone_ai.launch.py model_path:=/home/xytron/cone_bc_scripted_2.pt \
+ros2 launch cone_il drive_cone_ai.launch.py \
   --ros-args -p invert_steering:=true
 ```
 

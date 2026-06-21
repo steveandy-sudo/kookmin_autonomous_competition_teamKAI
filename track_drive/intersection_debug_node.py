@@ -13,6 +13,7 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32, String
 
+from track_drive.package_paths import default_yolo_model_path
 from track_drive.stop_line_detector import BEVStopLineDetector, declare_stop_line_bev_parameters
 from track_drive.traffic_light_detector import (
     TrafficLightResult,
@@ -69,7 +70,7 @@ class IntersectionDebugNode(Node):
         self.declare_parameter('traffic_light_debug_topic', '/track_drive/traffic_light_debug/image')
         self.declare_parameter('traffic_light_state_topic', '/track_drive/traffic_light_debug/state')
         self.declare_parameter('traffic_light_log_period_sec', 0.5)
-        self.declare_parameter('yolo_light_model_path', '/home/xytron/model/final.onnx')
+        self.declare_parameter('yolo_light_model_path', default_yolo_model_path())
         self.declare_parameter('yolo_light_input_size', 640)
         self.declare_parameter('yolo_light_class_count', 6)
         self.declare_parameter('yolo_dnn_backend', 'auto')

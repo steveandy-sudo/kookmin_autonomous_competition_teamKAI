@@ -1,11 +1,13 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
+    package_share = FindPackageShare('track_drive')
     camera_topic = LaunchConfiguration('camera_topic')
     yolo_light_model_path = LaunchConfiguration('yolo_light_model_path')
     light_debug_image_topic = LaunchConfiguration('light_debug_image_topic')
@@ -17,7 +19,15 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('camera_topic', default_value='/usb_cam/image_raw/front'),
-        DeclareLaunchArgument('yolo_light_model_path', default_value='/home/xytron/model/final.onnx'),
+        DeclareLaunchArgument(
+            'yolo_light_model_path',
+            default_value=PathJoinSubstitution([
+                package_share,
+                'assets',
+                'models',
+                'final.onnx',
+            ]),
+        ),
         DeclareLaunchArgument('light_debug_image_topic', default_value='/track_drive/light_debug_image'),
         DeclareLaunchArgument('control_rate_hz', default_value='100.0'),
         DeclareLaunchArgument('yolo_light_input_size', default_value='640'),

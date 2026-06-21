@@ -1,10 +1,12 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
+    package_share = FindPackageShare('track_drive')
     model_path = LaunchConfiguration('model_path')
     motor_topic = LaunchConfiguration('motor_topic')
     speed = LaunchConfiguration('speed')
@@ -12,7 +14,15 @@ def generate_launch_description():
     invert_steering = LaunchConfiguration('invert_steering')
 
     return LaunchDescription([
-        DeclareLaunchArgument('model_path', default_value='/home/xytron/cone_bc_scripted_2.pt'),
+        DeclareLaunchArgument(
+            'model_path',
+            default_value=PathJoinSubstitution([
+                package_share,
+                'assets',
+                'models',
+                'cone_bc_scripted_4.pt',
+            ]),
+        ),
         DeclareLaunchArgument('motor_topic', default_value='/xycar_motor'),
         DeclareLaunchArgument('speed', default_value='4.0'),
         DeclareLaunchArgument('max_steer_deg', default_value='70.0'),

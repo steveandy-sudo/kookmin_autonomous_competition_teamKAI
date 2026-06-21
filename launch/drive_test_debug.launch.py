@@ -24,7 +24,12 @@ def generate_launch_description():
         DeclareLaunchArgument('motor_topic', default_value='xycar_motor'),
         DeclareLaunchArgument(
             'model_path',
-            default_value='/home/xytron/cone_bc_scripted_2.pt',
+            default_value=PathJoinSubstitution([
+                package_share,
+                'assets',
+                'models',
+                'cone_bc_scripted_4.pt',
+            ]),
         ),
         DeclareLaunchArgument('speed', default_value='30.0'),
         DeclareLaunchArgument('intersection_left_turn_enabled', default_value='true'),
