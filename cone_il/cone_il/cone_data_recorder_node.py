@@ -15,7 +15,7 @@ import numpy as np
 import rclpy
 from cv_bridge import CvBridge
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import Image, LaserScan
 from xycar_msgs.msg import XycarMotor
 
@@ -143,7 +143,12 @@ class ConeDataRecorder(Node):
         motor_topic = str(self.get_parameter('motor_topic').value)
         fallback_motor_topic = str(self.get_parameter('fallback_motor_topic').value)
 
-        self.create_subscription(Image, image_topic, self.image_callback, qos_profile_sensor_data)
+        image_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
+        self.create_subscription(Image, image_topic, self.image_callback, image_qos)
         self.create_subscription(LaserScan, scan_topic, self.scan_callback, qos_profile_sensor_data)
         self.create_subscription(
             XycarMotor,

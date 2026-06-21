@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
+import time
+from collections import deque
 from pathlib import Path
-from typing import Optional
+from typing import Deque, Optional
 
 import cv2
 import numpy as np
 import rclpy
 from cv_bridge import CvBridge
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import Image, LaserScan
 from xycar_msgs.msg import XycarMotor
 
@@ -56,6 +58,8 @@ class ConeAIDriver(Node):
         self.motor_msg = XycarMotor()
         self.last_motor_subscription_count = -1
         self.last_status_sec = -1
+        self.image_receive_times: Deque[float] = deque()
+        self.image_stamp_times: Deque[float] = deque()
 
         model_path = str(Path(str(self.get_parameter('model_path').value)).expanduser())
         if not model_path:
@@ -73,7 +77,12 @@ class ConeAIDriver(Node):
         image_topic = str(self.get_parameter('image_topic').value)
         scan_topic = str(self.get_parameter('scan_topic').value)
         motor_topic = str(self.get_parameter('motor_topic').value)
-        self.create_subscription(Image, image_topic, self.image_callback, qos_profile_sensor_data)
+        image_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
+        self.create_subscription(Image, image_topic, self.image_callback, image_qos)
         self.create_subscription(LaserScan, scan_topic, self.scan_callback, qos_profile_sensor_data)
         self.motor_pub = self.create_publisher(XycarMotor, motor_topic, 10)
 
@@ -86,6 +95,7 @@ class ConeAIDriver(Node):
 
     def image_callback(self, msg: Image):
         try:
+            self._record_image_timing(msg)
             self.image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
         except Exception as exc:
             self.get_logger().warn(f'image conversion failed: {exc}')
@@ -194,7 +204,38 @@ class ConeAIDriver(Node):
         if now_sec == self.last_status_sec:
             return
         self.last_status_sec = now_sec
-        self.get_logger().info(text)
+        self.get_logger().info(f'{text}{self._image_hz_log_text()}')
+
+    def _record_image_timing(self, msg: Image):
+        now = time.monotonic()
+        self.image_receive_times.append(now)
+        stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        if stamp > 0.0:
+            self.image_stamp_times.append(float(stamp))
+        self._trim_timing_window(self.image_receive_times, now)
+        if self.image_stamp_times:
+            self._trim_timing_window(self.image_stamp_times, self.image_stamp_times[-1])
+
+    @staticmethod
+    def _trim_timing_window(times: Deque[float], now: float, window_sec: float = 3.0):
+        while len(times) > 1 and now - times[0] > window_sec:
+            times.popleft()
+
+    @staticmethod
+    def _hz_from_times(times: Deque[float]) -> Optional[float]:
+        if len(times) < 2:
+            return None
+        duration = times[-1] - times[0]
+        if duration <= 1e-6:
+            return None
+        return (len(times) - 1) / duration
+
+    def _image_hz_log_text(self) -> str:
+        receive_hz = self._hz_from_times(self.image_receive_times)
+        stamp_hz = self._hz_from_times(self.image_stamp_times)
+        receive_text = 'n/a' if receive_hz is None else f'{receive_hz:.1f}'
+        stamp_text = 'n/a' if stamp_hz is None else f'{stamp_hz:.1f}'
+        return f' image_hz recv={receive_text} stamp={stamp_text}'
 
 
 def main(args=None):

@@ -17,11 +17,14 @@ def generate_launch_description():
     max_steer_deg = LaunchConfiguration('max_steer_deg')
     ai_enable_topic = LaunchConfiguration('ai_enable_topic')
     ai_speed_limit_topic = LaunchConfiguration('ai_speed_limit_topic')
+    ai_turn_speed_topic = LaunchConfiguration('ai_turn_speed_topic')
     traffic_light_speed_limit_enabled = LaunchConfiguration('traffic_light_speed_limit_enabled')
     traffic_light_speed = LaunchConfiguration('traffic_light_speed')
     traffic_light_speed_hold_sec = LaunchConfiguration('traffic_light_speed_hold_sec')
     stop_line_speed_limit_enabled = LaunchConfiguration('stop_line_speed_limit_enabled')
     stop_line_speed = LaunchConfiguration('stop_line_speed')
+    stop_line_signal_memory_sec = LaunchConfiguration('stop_line_signal_memory_sec')
+    stop_line_speed_limit_hold_sec = LaunchConfiguration('stop_line_speed_limit_hold_sec')
     hybrid_trigger_topic = LaunchConfiguration('hybrid_trigger_topic')
     control_rate_hz = LaunchConfiguration('control_rate_hz')
     publish_light_debug_image = LaunchConfiguration('publish_light_debug_image')
@@ -32,6 +35,10 @@ def generate_launch_description():
     school_zone_update_period_sec = LaunchConfiguration('school_zone_update_period_sec')
     school_zone_speed = LaunchConfiguration('school_zone_speed')
     school_zone_speed_limit_enabled = LaunchConfiguration('school_zone_speed_limit_enabled')
+    school_zone_speed_limit_hold_sec = LaunchConfiguration('school_zone_speed_limit_hold_sec')
+    school_zone_boost_enabled = LaunchConfiguration('school_zone_boost_enabled')
+    school_zone_boost_speed = LaunchConfiguration('school_zone_boost_speed')
+    school_zone_boost_duration_sec = LaunchConfiguration('school_zone_boost_duration_sec')
     school_zone_roi_top_ratio = LaunchConfiguration('school_zone_roi_top_ratio')
     school_zone_left_edge_max_ratio = LaunchConfiguration('school_zone_left_edge_max_ratio')
     school_zone_right_edge_min_ratio = LaunchConfiguration('school_zone_right_edge_min_ratio')
@@ -90,8 +97,17 @@ def generate_launch_description():
     intersection_left_turn_second_speed = LaunchConfiguration('intersection_left_turn_second_speed')
     intersection_left_turn_steer_deg = LaunchConfiguration('intersection_left_turn_steer_deg')
     intersection_left_turn_duration_sec = LaunchConfiguration('intersection_left_turn_duration_sec')
+    intersection_left_turn_speed_limit_hold_sec = LaunchConfiguration(
+        'intersection_left_turn_speed_limit_hold_sec')
+    intersection_left_turn_stop_line_distance_m = LaunchConfiguration(
+        'intersection_left_turn_stop_line_distance_m')
     intersection_left_turn_repeat_enabled = LaunchConfiguration('intersection_left_turn_repeat_enabled')
     intersection_left_turn_repeat_delay_sec = LaunchConfiguration('intersection_left_turn_repeat_delay_sec')
+    intersection_left_turn_repeat_ai_speed_enabled = LaunchConfiguration(
+        'intersection_left_turn_repeat_ai_speed_enabled')
+    intersection_left_turn_repeat_ai_speed = LaunchConfiguration('intersection_left_turn_repeat_ai_speed')
+    intersection_left_turn_repeat_ai_speed_duration_sec = LaunchConfiguration(
+        'intersection_left_turn_repeat_ai_speed_duration_sec')
     intersection_left_turn_post_school_limit_sec = LaunchConfiguration(
         'intersection_left_turn_post_school_limit_sec')
     intersection_left_turn_post_school_ai_hold_sec = LaunchConfiguration(
@@ -315,7 +331,7 @@ def generate_launch_description():
         DeclareLaunchArgument('motor_topic', default_value='xycar_motor'),
         DeclareLaunchArgument(
             'model_path',
-            default_value='/home/xytron/cone_il_model_speed14_left_clean_epoch/cone_bc_scripted.pt',
+            default_value='/home/xytron/cone_bc_scripted_final.pt',
         ),
         DeclareLaunchArgument('speed', default_value='30.0'),
         DeclareLaunchArgument('ai_initial_speed', default_value='17.0'),
@@ -324,11 +340,14 @@ def generate_launch_description():
         DeclareLaunchArgument('max_steer_deg', default_value='100.0'),
         DeclareLaunchArgument('ai_enable_topic', default_value='/cone_ai/enable'),
         DeclareLaunchArgument('ai_speed_limit_topic', default_value='/cone_ai/speed_limit'),
+        DeclareLaunchArgument('ai_turn_speed_topic', default_value='/cone_ai/turn_speed'),
         DeclareLaunchArgument('traffic_light_speed_limit_enabled', default_value='true'),
         DeclareLaunchArgument('traffic_light_speed', default_value='20.0'),
         DeclareLaunchArgument('traffic_light_speed_hold_sec', default_value='0.12'),
         DeclareLaunchArgument('stop_line_speed_limit_enabled', default_value='true'),
-        DeclareLaunchArgument('stop_line_speed', default_value='15.0'),
+        DeclareLaunchArgument('stop_line_speed', default_value='10.0'),
+        DeclareLaunchArgument('stop_line_signal_memory_sec', default_value='1.0'),
+        DeclareLaunchArgument('stop_line_speed_limit_hold_sec', default_value='1.0'),
         DeclareLaunchArgument('hybrid_trigger_topic', default_value='/track_drive/hybrid_trigger'),
         DeclareLaunchArgument('control_rate_hz', default_value='20.0'),
         DeclareLaunchArgument('publish_light_debug_image', default_value='true'),
@@ -338,7 +357,11 @@ def generate_launch_description():
         DeclareLaunchArgument('stop_line_update_period_sec', default_value='0.07'),
         DeclareLaunchArgument('school_zone_update_period_sec', default_value='0.10'),
         DeclareLaunchArgument('school_zone_speed', default_value='5.5'),
-        DeclareLaunchArgument('school_zone_speed_limit_enabled', default_value='false'),
+        DeclareLaunchArgument('school_zone_speed_limit_enabled', default_value='true'),
+        DeclareLaunchArgument('school_zone_speed_limit_hold_sec', default_value='1.0'),
+        DeclareLaunchArgument('school_zone_boost_enabled', default_value='true'),
+        DeclareLaunchArgument('school_zone_boost_speed', default_value='30.0'),
+        DeclareLaunchArgument('school_zone_boost_duration_sec', default_value='0.5'),
         DeclareLaunchArgument('school_zone_roi_top_ratio', default_value='0.24'),
         DeclareLaunchArgument('school_zone_left_edge_max_ratio', default_value='0.38'),
         DeclareLaunchArgument('school_zone_right_edge_min_ratio', default_value='0.62'),
@@ -392,9 +415,14 @@ def generate_launch_description():
         DeclareLaunchArgument('intersection_left_turn_speed', default_value='9.0'),
         DeclareLaunchArgument('intersection_left_turn_second_speed', default_value='9.0'),
         DeclareLaunchArgument('intersection_left_turn_steer_deg', default_value='-100.0'),
-        DeclareLaunchArgument('intersection_left_turn_duration_sec', default_value='3.00'),
-        DeclareLaunchArgument('intersection_left_turn_repeat_enabled', default_value='true'),
-        DeclareLaunchArgument('intersection_left_turn_repeat_delay_sec', default_value='5.80'),
+        DeclareLaunchArgument('intersection_left_turn_duration_sec', default_value='2.50'),
+        DeclareLaunchArgument('intersection_left_turn_speed_limit_hold_sec', default_value='1.0'),
+        DeclareLaunchArgument('intersection_left_turn_stop_line_distance_m', default_value='2.00'),
+        DeclareLaunchArgument('intersection_left_turn_repeat_enabled', default_value='false'),
+        DeclareLaunchArgument('intersection_left_turn_repeat_delay_sec', default_value='5.30'),
+        DeclareLaunchArgument('intersection_left_turn_repeat_ai_speed_enabled', default_value='false'),
+        DeclareLaunchArgument('intersection_left_turn_repeat_ai_speed', default_value='12.0'),
+        DeclareLaunchArgument('intersection_left_turn_repeat_ai_speed_duration_sec', default_value='2.50'),
         DeclareLaunchArgument('intersection_left_turn_post_school_limit_sec', default_value='6.00'),
         DeclareLaunchArgument('intersection_left_turn_post_school_ai_hold_sec', default_value='0.45'),
         DeclareLaunchArgument('intersection_straight_hold_sec', default_value='2.00'),
@@ -522,7 +550,7 @@ def generate_launch_description():
         DeclareLaunchArgument('person_avoidance_min_steer_deg', default_value='0.0'),
         DeclareLaunchArgument('person_avoidance_steer_smoothing', default_value='0.0'),
         DeclareLaunchArgument('person_slow_until_school_passed_enabled', default_value='true'),
-        DeclareLaunchArgument('person_slow_speed', default_value='14.0'),
+        DeclareLaunchArgument('person_slow_speed', default_value='15.0'),
         DeclareLaunchArgument('person_slow_release_after_school_sec', default_value='0.0'),
         DeclareLaunchArgument('person_slow_rearm_sec', default_value='0.5'),
         DeclareLaunchArgument('yolo_safety_enabled', default_value='true'),
@@ -531,7 +559,7 @@ def generate_launch_description():
         DeclareLaunchArgument('yolo_dnn_backend', default_value='auto'),
         DeclareLaunchArgument('yolo_dnn_target', default_value='auto'),
         DeclareLaunchArgument('yolo_light_input_size', default_value='640'),
-        DeclareLaunchArgument('yolo_person_conf_threshold', default_value='0.15'),
+        DeclareLaunchArgument('yolo_person_conf_threshold', default_value='0.18'),
         DeclareLaunchArgument('yolo_safety_period_sec', default_value='0.05'),
         DeclareLaunchArgument('yolo_red_light_period_sec', default_value='0.10'),
         DeclareLaunchArgument('yolo_person_min_box_height_ratio', default_value='0.015'),
@@ -559,7 +587,7 @@ def generate_launch_description():
         DeclareLaunchArgument('stop_line_roi_bottom_ratio', default_value='1.00'),
         DeclareLaunchArgument('stop_line_stop_row_ratio', default_value='0.70'),
         DeclareLaunchArgument('stop_line_stop_bottom_row_ratio', default_value='0.75'),
-        DeclareLaunchArgument('stop_line_stop_distance_m', default_value='1.80'),
+        DeclareLaunchArgument('stop_line_stop_distance_m', default_value='3.00'),
         DeclareLaunchArgument('stop_line_distance_bottom_ratio', default_value='1.00'),
         DeclareLaunchArgument('stop_line_distance_scale_m', default_value='7.00'),
         DeclareLaunchArgument('stop_line_min_width_ratio', default_value='0.32'),
@@ -569,20 +597,20 @@ def generate_launch_description():
         DeclareLaunchArgument('stop_line_min_fill_ratio', default_value='0.35'),
         DeclareLaunchArgument('stop_line_confirm_frames', default_value='2'),
         DeclareLaunchArgument('stop_line_bev_gate_enabled', default_value='true'),
-        DeclareLaunchArgument('stop_line_bev_src_top_ratio', default_value='0.50'),
-        DeclareLaunchArgument('stop_line_bev_src_bottom_ratio', default_value='0.80'),
+        DeclareLaunchArgument('stop_line_bev_src_top_ratio', default_value='0.30'),
+        DeclareLaunchArgument('stop_line_bev_src_bottom_ratio', default_value='0.98'),
         DeclareLaunchArgument('stop_line_bev_src_top_half_width_ratio', default_value='0.075'),
         DeclareLaunchArgument('stop_line_bev_src_bottom_half_width_ratio', default_value='0.475'),
-        DeclareLaunchArgument('stop_line_bev_front_top_ratio', default_value='0.25'),
+        DeclareLaunchArgument('stop_line_bev_front_top_ratio', default_value='0.08'),
         DeclareLaunchArgument('stop_line_bev_front_bottom_ratio', default_value='1.00'),
-        DeclareLaunchArgument('stop_line_bev_min_width_ratio', default_value='0.40'),
+        DeclareLaunchArgument('stop_line_bev_min_width_ratio', default_value='0.38'),
         DeclareLaunchArgument('stop_line_bev_min_aspect_ratio', default_value='5.0'),
         DeclareLaunchArgument('stop_line_bev_min_fill_ratio', default_value='0.22'),
         DeclareLaunchArgument('stop_line_bev_min_row_run', default_value='3'),
-        DeclareLaunchArgument('stop_line_bev_min_solid_run_ratio', default_value='0.58'),
-        DeclareLaunchArgument('stop_line_bev_solid_col_min_fill_ratio', default_value='0.43'),
-        DeclareLaunchArgument('stop_line_detect_min_row_ratio', default_value='0.25'),
-        DeclareLaunchArgument('stop_line_detect_max_distance_m', default_value='5.25'),
+        DeclareLaunchArgument('stop_line_bev_min_solid_run_ratio', default_value='0.70'),
+        DeclareLaunchArgument('stop_line_bev_solid_col_min_fill_ratio', default_value='0.55'),
+        DeclareLaunchArgument('stop_line_detect_min_row_ratio', default_value='0.08'),
+        DeclareLaunchArgument('stop_line_detect_max_distance_m', default_value='7.00'),
         DeclareLaunchArgument('stop_line_memory_sec', default_value='1.50'),
         DeclareLaunchArgument('startup_light_check_enabled', default_value='true'),
         DeclareLaunchArgument('startup_light_check_timeout_sec', default_value='5.00'),
@@ -602,14 +630,18 @@ def generate_launch_description():
                 'motor_topic': motor_topic,
                 'model_path': model_path,
                 'speed': ParameterValue(speed, value_type=float),
+                'speed_limit_override_threshold': 30.0,
+                'speed_rise_limit_enabled': False,
+                'speed_rise_per_sec': 10.0,
                 'turn_speed_limit_enabled': True,
-                'turn_speed': 11.0,
+                'turn_speed': 10.0,
                 'turn_speed_start_steer_deg': 6.0,
                 'turn_speed_full_steer_deg': 35.0,
                 'max_steer_deg': ParameterValue(max_steer_deg, value_type=float),
                 'control_rate_hz': ParameterValue(control_rate_hz, value_type=float),
                 'enable_topic': ai_enable_topic,
                 'speed_limit_topic': ai_speed_limit_topic,
+                'turn_speed_override_topic': ai_turn_speed_topic,
                 'start_enabled': False,
                 'use_lidar_emergency_stop': False,
                 'require_orange_gate': False,
@@ -634,6 +666,10 @@ def generate_launch_description():
                 'stop_line_speed_limit_enabled': ParameterValue(
                     stop_line_speed_limit_enabled, value_type=bool),
                 'stop_line_speed': ParameterValue(stop_line_speed, value_type=float),
+                'stop_line_signal_memory_sec': ParameterValue(
+                    stop_line_signal_memory_sec, value_type=float),
+                'stop_line_speed_limit_hold_sec': ParameterValue(
+                    stop_line_speed_limit_hold_sec, value_type=float),
                 'ai_initial_speed': ParameterValue(ai_initial_speed, value_type=float),
                 'ai_initial_speed_duration_sec': ParameterValue(
                     ai_initial_speed_duration_sec, value_type=float),
@@ -649,6 +685,12 @@ def generate_launch_description():
                 'school_zone_speed': ParameterValue(school_zone_speed, value_type=float),
                 'school_zone_speed_limit_enabled': ParameterValue(
                     school_zone_speed_limit_enabled, value_type=bool),
+                'school_zone_speed_limit_hold_sec': ParameterValue(
+                    school_zone_speed_limit_hold_sec, value_type=float),
+                'school_zone_boost_enabled': ParameterValue(school_zone_boost_enabled, value_type=bool),
+                'school_zone_boost_speed': ParameterValue(school_zone_boost_speed, value_type=float),
+                'school_zone_boost_duration_sec': ParameterValue(
+                    school_zone_boost_duration_sec, value_type=float),
                 'school_zone_roi_top_ratio': ParameterValue(school_zone_roi_top_ratio, value_type=float),
                 'school_zone_left_edge_max_ratio': ParameterValue(
                     school_zone_left_edge_max_ratio, value_type=float),
@@ -739,10 +781,20 @@ def generate_launch_description():
                     intersection_left_turn_steer_deg, value_type=float),
                 'intersection_left_turn_duration_sec': ParameterValue(
                     intersection_left_turn_duration_sec, value_type=float),
+                'intersection_left_turn_speed_limit_hold_sec': ParameterValue(
+                    intersection_left_turn_speed_limit_hold_sec, value_type=float),
+                'intersection_left_turn_stop_line_distance_m': ParameterValue(
+                    intersection_left_turn_stop_line_distance_m, value_type=float),
                 'intersection_left_turn_repeat_enabled': ParameterValue(
                     intersection_left_turn_repeat_enabled, value_type=bool),
                 'intersection_left_turn_repeat_delay_sec': ParameterValue(
                     intersection_left_turn_repeat_delay_sec, value_type=float),
+                'intersection_left_turn_repeat_ai_speed_enabled': ParameterValue(
+                    intersection_left_turn_repeat_ai_speed_enabled, value_type=bool),
+                'intersection_left_turn_repeat_ai_speed': ParameterValue(
+                    intersection_left_turn_repeat_ai_speed, value_type=float),
+                'intersection_left_turn_repeat_ai_speed_duration_sec': ParameterValue(
+                    intersection_left_turn_repeat_ai_speed_duration_sec, value_type=float),
                 'intersection_left_turn_post_school_limit_sec': ParameterValue(
                     intersection_left_turn_post_school_limit_sec, value_type=float),
                 'intersection_left_turn_post_school_ai_hold_sec': ParameterValue(
@@ -756,6 +808,7 @@ def generate_launch_description():
                 'hybrid_standby_enabled': True,
                 'ai_enable_topic': ai_enable_topic,
                 'ai_speed_limit_topic': ai_speed_limit_topic,
+                'ai_turn_speed_topic': ai_turn_speed_topic,
                 'ai_hybrid_enabled': False,
                 'ai_passthrough_enabled': False,
                 'ai_command_passthrough_enabled': False,

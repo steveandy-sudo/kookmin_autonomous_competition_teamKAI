@@ -29,31 +29,31 @@ def declare_stop_line_bev_parameters(node):
     node.declare_parameter('camera_topic', '/usb_cam/image_raw/front')
     node.declare_parameter('stop_line_bev_width', 320)
     node.declare_parameter('stop_line_bev_height', 240)
-    node.declare_parameter('stop_line_bev_src_top_ratio', 0.50)
-    node.declare_parameter('stop_line_bev_src_bottom_ratio', 0.80)
+    node.declare_parameter('stop_line_bev_src_top_ratio', 0.30)
+    node.declare_parameter('stop_line_bev_src_bottom_ratio', 0.98)
     node.declare_parameter('stop_line_bev_src_top_half_width_ratio', 0.075)
     node.declare_parameter('stop_line_bev_src_bottom_half_width_ratio', 0.475)
     node.declare_parameter('stop_line_bev_center_shift_ratio', 0.0)
-    node.declare_parameter('stop_line_bev_front_top_ratio', 0.25)
+    node.declare_parameter('stop_line_bev_front_top_ratio', 0.08)
     node.declare_parameter('stop_line_bev_front_bottom_ratio', 1.00)
-    node.declare_parameter('stop_line_bev_min_width_ratio', 0.40)
+    node.declare_parameter('stop_line_bev_min_width_ratio', 0.38)
     node.declare_parameter('stop_line_bev_min_aspect_ratio', 5.0)
     node.declare_parameter('stop_line_bev_min_fill_ratio', 0.22)
     node.declare_parameter('stop_line_bev_min_row_run', 3)
-    node.declare_parameter('stop_line_bev_min_solid_run_ratio', 0.58)
-    node.declare_parameter('stop_line_bev_solid_col_min_fill_ratio', 0.43)
-    node.declare_parameter('stop_line_detect_min_row_ratio', 0.25)
-    node.declare_parameter('stop_line_detect_max_distance_m', 5.25)
+    node.declare_parameter('stop_line_bev_min_solid_run_ratio', 0.70)
+    node.declare_parameter('stop_line_bev_solid_col_min_fill_ratio', 0.55)
+    node.declare_parameter('stop_line_detect_min_row_ratio', 0.08)
+    node.declare_parameter('stop_line_detect_max_distance_m', 7.00)
     node.declare_parameter('stop_line_white_value_min', 200)
     node.declare_parameter('stop_line_white_sat_max', 80)
-    node.declare_parameter('stop_line_bev_close_width_ratio', 0.055)
+    node.declare_parameter('stop_line_bev_close_width_ratio', 0.025)
     node.declare_parameter('stop_line_bev_close_height', 3)
     node.declare_parameter('stop_line_bev_open_kernel', 3)
     node.declare_parameter('stop_line_distance_bottom_ratio', 1.0)
     node.declare_parameter('stop_line_distance_scale_m', 7.0)
     node.declare_parameter('stop_line_stop_row_ratio', 0.70)
     node.declare_parameter('stop_line_stop_bottom_row_ratio', 0.75)
-    node.declare_parameter('stop_line_stop_distance_m', 1.8)
+    node.declare_parameter('stop_line_stop_distance_m', 3.0)
     node.declare_parameter('stop_line_confirm_frames', 2)
     node.declare_parameter('stop_on_light_requires_stop_line', True)
 
@@ -197,7 +197,7 @@ class BEVStopLineDetector:
             np.array([0, 0, value_min], dtype=np.uint8),
             np.array([180, sat_max, 255], dtype=np.uint8),
         )
-        close_width = max(3, int(float(mask.shape[1]) * float(self._param('stop_line_bev_close_width_ratio', 0.055))))
+        close_width = max(3, int(float(mask.shape[1]) * float(self._param('stop_line_bev_close_width_ratio', 0.025))))
         if close_width % 2 == 0:
             close_width += 1
         close_height = max(1, int(self._param('stop_line_bev_close_height', 3)))
@@ -268,7 +268,7 @@ class BEVStopLineDetector:
 
         solid_run_ratio = self._longest_solid_column_run_ratio(band, bev_width)
         min_solid_run_ratio = float(np.clip(
-            self._param('stop_line_bev_min_solid_run_ratio', 0.58),
+            self._param('stop_line_bev_min_solid_run_ratio', 0.70),
             0.05,
             1.0,
         ))
@@ -282,7 +282,7 @@ class BEVStopLineDetector:
 
     def _longest_solid_column_run_ratio(self, band: np.ndarray, bev_width: int) -> float:
         min_fill_ratio = float(np.clip(
-            self._param('stop_line_bev_solid_col_min_fill_ratio', 0.43),
+            self._param('stop_line_bev_solid_col_min_fill_ratio', 0.55),
             0.05,
             1.0,
         ))
@@ -304,7 +304,7 @@ class BEVStopLineDetector:
             0.0,
             1.0,
         ))
-        max_distance_m = float(self._param('stop_line_detect_max_distance_m', 5.25))
+        max_distance_m = float(self._param('stop_line_detect_max_distance_m', 7.00))
         if row_ratio < min_row_ratio:
             return False
         if max_distance_m > 0.0 and distance_m > max_distance_m:

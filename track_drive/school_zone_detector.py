@@ -13,6 +13,7 @@ import numpy as np
 class SchoolZoneBEVResult:
     active: bool = False
     candidate: bool = False
+    speed_limit_active: bool = False
     left_ratio: float = 0.0
     right_ratio: float = 0.0
     pair_row_ratio: float = 0.0
@@ -31,7 +32,8 @@ class SchoolZoneBEVResult:
 def declare_school_zone_bev_parameters(node):
     node.declare_parameter('camera_topic', '/usb_cam/image_raw/front')
     node.declare_parameter('school_zone_speed', 5.5)
-    node.declare_parameter('school_zone_speed_limit_enabled', False)
+    node.declare_parameter('school_zone_speed_limit_enabled', True)
+    node.declare_parameter('school_zone_speed_limit_hold_sec', 1.0)
     node.declare_parameter('school_zone_hold_sec', 1.5)
     node.declare_parameter('school_zone_debug_topic_prefix', '/track_drive/school_zone_debug')
     node.declare_parameter('school_zone_debug_log_period_sec', 0.5)
@@ -259,6 +261,7 @@ class BEVSchoolZoneDetector:
         return SchoolZoneBEVResult(
             active=active,
             candidate=candidate,
+            speed_limit_active=raw_active,
             left_ratio=left_ratio,
             right_ratio=right_ratio,
             pair_row_ratio=pair_row_ratio,
@@ -353,9 +356,11 @@ class SchoolZoneDetector:
 
         if not bool(self._param('school_zone_bev_enabled', True)):
             self.node._update_school_zone_state(image)
+            self._update_speed_limit_hold(bool(self.node.school_zone_active))
             self.last_result = SchoolZoneBEVResult(
                 active=bool(self.node.school_zone_active),
                 candidate=bool(self.node.school_zone_candidate_active),
+                speed_limit_active=bool(self.node.school_zone_speed_limit_active),
                 left_ratio=float(self.node.school_zone_yellow_left_ratio),
                 right_ratio=float(self.node.school_zone_yellow_right_ratio),
                 pair_row_ratio=float(self.node.school_zone_yellow_pair_row_ratio),
@@ -373,10 +378,7 @@ class SchoolZoneDetector:
         if not bool(self.node.get_parameter('school_zone_speed_limit_enabled').value):
             return speed
 
-        speed_limit_active = self.node.school_zone_active or (
-            self.node.school_zone_candidate_active
-            and bool(self.node.get_parameter('school_zone_preslow_enabled').value)
-        )
+        speed_limit_active = bool(getattr(self.node, 'school_zone_speed_limit_active', False))
         if not speed_limit_active:
             return speed
 
@@ -395,6 +397,7 @@ class SchoolZoneDetector:
         now = time.monotonic()
         self.node.school_zone_active = bool(result.active)
         self.node.school_zone_candidate_active = bool(result.candidate)
+        self._update_speed_limit_hold(bool(result.speed_limit_active), now)
         self.node.school_zone_yellow_left_ratio = float(result.left_ratio)
         self.node.school_zone_yellow_right_ratio = float(result.right_ratio)
         self.node.school_zone_yellow_pair_row_ratio = float(result.pair_row_ratio)
@@ -414,10 +417,23 @@ class SchoolZoneDetector:
             self.node.school_zone_lost_count += 1
             self.node.school_zone_candidate_last_seen_sec = None
 
+    def _update_speed_limit_hold(self, detected: bool, now: Optional[float] = None):
+        if now is None:
+            now = time.monotonic()
+        hold_sec = max(float(self._param('school_zone_speed_limit_hold_sec', 1.0)), 0.0)
+        if detected:
+            self.node.school_zone_speed_limit_until_sec = now + hold_sec
+        self.node.school_zone_speed_limit_active = bool(
+            detected
+            or now <= float(getattr(self.node, 'school_zone_speed_limit_until_sec', 0.0))
+        )
+
     def _reset_state(self):
         self.last_result = SchoolZoneBEVResult()
         self.node.school_zone_active = False
         self.node.school_zone_candidate_active = False
+        self.node.school_zone_speed_limit_active = False
+        self.node.school_zone_speed_limit_until_sec = 0.0
         self.node.school_zone_yellow_left_ratio = 0.0
         self.node.school_zone_yellow_right_ratio = 0.0
         self.node.school_zone_yellow_pair_row_ratio = 0.0
