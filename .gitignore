@@ -240,8 +240,10 @@ simulator/
 *.engine
 !assets/
 !assets/models/
+!assets/models/cone_bc_scripted_2.pt
 !assets/models/cone_bc_scripted_3.pt
 !assets/models/cone_bc_scripted_4.pt
+!assets/models/cone_bc_scripted_5.pt
 !assets/models/final.onnx
 cone_il_dataset*/
 cone_il_model*/

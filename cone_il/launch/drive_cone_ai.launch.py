@@ -20,7 +20,7 @@ def generate_launch_description():
                 package_share,
                 'assets',
                 'models',
-                'cone_bc_scripted_3.pt',
+                'cone_bc_scripted_5.pt',
             ]),
         ),
         DeclareLaunchArgument('motor_topic', default_value='/xycar_motor'),

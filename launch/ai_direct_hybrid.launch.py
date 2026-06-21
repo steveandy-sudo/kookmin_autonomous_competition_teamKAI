@@ -13,7 +13,7 @@ def generate_launch_description():
         package_share,
         'assets',
         'models',
-        'cone_bc_scripted_3.pt',
+        'cone_bc_scripted_5.pt',
     ])
     default_yolo_model_path = PathJoinSubstitution([
         package_share,
@@ -266,6 +266,7 @@ def generate_launch_description():
     yolo_light_input_size = LaunchConfiguration('yolo_light_input_size')
     yolo_safety_period_sec = LaunchConfiguration('yolo_safety_period_sec')
     yolo_red_light_period_sec = LaunchConfiguration('yolo_red_light_period_sec')
+    yolo_cone_period_sec = LaunchConfiguration('yolo_cone_period_sec')
     yolo_person_min_box_height_ratio = LaunchConfiguration('yolo_person_min_box_height_ratio')
     yolo_person_min_box_bottom_ratio = LaunchConfiguration('yolo_person_min_box_bottom_ratio')
     yolo_light_conf_threshold = LaunchConfiguration('yolo_light_conf_threshold')
@@ -436,8 +437,8 @@ def generate_launch_description():
         DeclareLaunchArgument('intersection_route_enabled', default_value='true'),
         DeclareLaunchArgument('intersection_stop_line_trigger_row_ratio', default_value='0.30'),
         DeclareLaunchArgument('intersection_left_cone_min_count', default_value='1'),
-        DeclareLaunchArgument('intersection_left_no_cone_confirm_frames', default_value='3'),
-        DeclareLaunchArgument('intersection_left_cone_memory_sec', default_value='0.60'),
+        DeclareLaunchArgument('intersection_left_no_cone_confirm_frames', default_value='1'),
+        DeclareLaunchArgument('intersection_left_cone_memory_sec', default_value='0.12'),
         DeclareLaunchArgument('intersection_use_lidar_cones', default_value='false'),
         DeclareLaunchArgument('intersection_camera_cone_enabled', default_value='true'),
         DeclareLaunchArgument('intersection_camera_cone_class_ids', default_value='[0]'),
@@ -446,7 +447,7 @@ def generate_launch_description():
         DeclareLaunchArgument('intersection_camera_cone_left_max_ratio', default_value='0.72'),
         DeclareLaunchArgument('intersection_camera_cone_min_height_ratio', default_value='0.012'),
         DeclareLaunchArgument('intersection_camera_cone_min_bottom_ratio', default_value='0.12'),
-        DeclareLaunchArgument('intersection_left_decision_delay_sec', default_value='0.45'),
+        DeclareLaunchArgument('intersection_left_decision_delay_sec', default_value='0.12'),
         DeclareLaunchArgument('intersection_left_cone_min_x', default_value='0.20'),
         DeclareLaunchArgument('intersection_left_cone_max_x', default_value='5.50'),
         DeclareLaunchArgument('intersection_left_cone_min_y', default_value='0.18'),
@@ -602,6 +603,7 @@ def generate_launch_description():
         DeclareLaunchArgument('yolo_person_conf_threshold', default_value='0.18'),
         DeclareLaunchArgument('yolo_safety_period_sec', default_value='0.05'),
         DeclareLaunchArgument('yolo_red_light_period_sec', default_value='0.01'),
+        DeclareLaunchArgument('yolo_cone_period_sec', default_value='0.01'),
         DeclareLaunchArgument('yolo_person_min_box_height_ratio', default_value='0.015'),
         DeclareLaunchArgument('yolo_person_min_box_bottom_ratio', default_value='0.04'),
         DeclareLaunchArgument('yolo_light_conf_threshold', default_value='0.35'),
@@ -1058,6 +1060,7 @@ def generate_launch_description():
                 'yolo_person_conf_threshold': ParameterValue(yolo_person_conf_threshold, value_type=float),
                 'yolo_safety_period_sec': ParameterValue(yolo_safety_period_sec, value_type=float),
                 'yolo_red_light_period_sec': ParameterValue(yolo_red_light_period_sec, value_type=float),
+                'yolo_cone_period_sec': ParameterValue(yolo_cone_period_sec, value_type=float),
                 'yolo_person_min_box_height_ratio': ParameterValue(
                     yolo_person_min_box_height_ratio, value_type=float),
                 'yolo_person_min_box_bottom_ratio': ParameterValue(

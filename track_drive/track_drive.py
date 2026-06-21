@@ -237,6 +237,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('yolo_nms_threshold', 0.45)
         self.declare_parameter('yolo_safety_period_sec', 0.05)
         self.declare_parameter('yolo_red_light_period_sec', 0.01)
+        self.declare_parameter('yolo_cone_period_sec', 0.01)
         self.declare_parameter('stop_on_red_light_enabled', True)
         self.declare_parameter('red_light_confirm_frames', 2)
         self.declare_parameter('red_light_stop_line_confirm_frames', 1)
@@ -518,8 +519,8 @@ class TrackDriverNode(Node):
         self.declare_parameter('intersection_stop_line_trigger_row_ratio', 0.30)
         self.declare_parameter('intersection_left_turn_stop_line_distance_m', 3.50)
         self.declare_parameter('intersection_left_cone_min_count', 1)
-        self.declare_parameter('intersection_left_no_cone_confirm_frames', 3)
-        self.declare_parameter('intersection_left_cone_memory_sec', 0.60)
+        self.declare_parameter('intersection_left_no_cone_confirm_frames', 1)
+        self.declare_parameter('intersection_left_cone_memory_sec', 0.12)
         self.declare_parameter('intersection_use_lidar_cones', False)
         self.declare_parameter('intersection_camera_cone_enabled', True)
         self.declare_parameter('intersection_camera_cone_class_ids', [0])
@@ -528,7 +529,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('intersection_camera_cone_left_max_ratio', 0.72)
         self.declare_parameter('intersection_camera_cone_min_height_ratio', 0.012)
         self.declare_parameter('intersection_camera_cone_min_bottom_ratio', 0.12)
-        self.declare_parameter('intersection_left_decision_delay_sec', 0.45)
+        self.declare_parameter('intersection_left_decision_delay_sec', 0.12)
         self.declare_parameter('intersection_left_cone_min_x', 0.20)
         self.declare_parameter('intersection_left_cone_max_x', 5.50)
         self.declare_parameter('intersection_left_cone_min_y', 0.18)
@@ -2895,7 +2896,8 @@ class TrackDriverNode(Node):
         now = time.monotonic()
         safety_due = now >= self.next_yolo_safety_check_sec
         light_enabled = bool(self.get_parameter('stop_on_red_light_enabled').value)
-        light_due = light_enabled and now >= self.next_yolo_light_check_sec
+        cone_enabled = bool(self.get_parameter('intersection_camera_cone_enabled').value)
+        light_due = (light_enabled or cone_enabled) and now >= self.next_yolo_light_check_sec
         if not safety_due and not light_due:
             return
 
@@ -2961,7 +2963,12 @@ class TrackDriverNode(Node):
                 self.vehicle_tracks.clear()
 
         if light_due:
-            period = max(float(self.get_parameter('yolo_red_light_period_sec').value), 0.01)
+            period_candidates = []
+            if light_enabled:
+                period_candidates.append(max(float(self.get_parameter('yolo_red_light_period_sec').value), 0.01))
+            if cone_enabled:
+                period_candidates.append(max(float(self.get_parameter('yolo_cone_period_sec').value), 0.01))
+            period = min(period_candidates) if period_candidates else 0.01
             self.next_yolo_light_check_sec = now + period
             self.yolo_light_checked_once = True
             self.yolo_light_last_check_sec = now

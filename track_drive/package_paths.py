@@ -18,7 +18,7 @@ def package_model_path(filename: str) -> str:
 
 
 def default_cone_model_path() -> str:
-    return package_model_path('cone_bc_scripted_3.pt')
+    return package_model_path('cone_bc_scripted_5.pt')
 
 
 def default_yolo_model_path() -> str:

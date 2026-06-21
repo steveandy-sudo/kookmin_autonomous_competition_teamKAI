@@ -256,7 +256,7 @@ torch.jit.load(model_path, map_location=device)
 
 ```bash
 cd ~/xycar_ws/src
-cp ~/cone_il_model_run01/cone_bc_scripted.pt assets/models/cone_bc_scripted_3.pt
+cp ~/cone_il_model_run01/cone_bc_scripted.pt assets/models/cone_bc_scripted_5.pt
 ```
 
 기본 모델로 쓰려면 다음 파일들의 모델명을 맞춥니다.
@@ -269,7 +269,7 @@ cone_il/launch/drive_cone_ai.launch.py
 .gitignore
 ```
 
-현재 구조에서는 `assets/models/cone_bc_scripted_3.pt`가 기본 cone AI 모델입니다.
+현재 구조에서는 `assets/models/cone_bc_scripted_5.pt`가 기본 cone AI 모델입니다.
 
 빌드합니다.
 
@@ -295,7 +295,7 @@ cd ~/xycar_ws/src
 python3 - <<'PY'
 import torch
 
-path = 'assets/models/cone_bc_scripted_3.pt'
+path = 'assets/models/cone_bc_scripted_5.pt'
 model = torch.jit.load(path, map_location='cpu')
 model.eval()
 print('torchscript_ok', path)
@@ -309,7 +309,7 @@ cd ~/xycar_ws/src
 python3 - <<'PY'
 import torch
 
-path = 'assets/models/cone_bc_scripted_3.pt'
+path = 'assets/models/cone_bc_scripted_5.pt'
 model = torch.jit.load(path, map_location='cpu')
 model.eval()
 x = torch.zeros(1, 3, 90, 160)
@@ -343,7 +343,7 @@ ros2 launch track_drive ai_direct_hybrid.launch.py
 
 ```bash
 ros2 launch track_drive ai_direct_hybrid.launch.py \
-  model_path:=/home/xytron/xycar_ws/src/assets/models/cone_bc_scripted_3.pt
+  model_path:=/home/xytron/xycar_ws/src/assets/models/cone_bc_scripted_5.pt
 ```
 
 ## 13. 자주 보는 문제
