@@ -83,7 +83,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('camera_topic', '/usb_cam/image_raw/front')
         self.declare_parameter('scan_topic', '/scan')
         self.declare_parameter('motor_topic', 'xycar_motor')
-        self.declare_parameter('control_rate_hz', 20.0)
+        self.declare_parameter('control_rate_hz', 100.0)
         self.declare_parameter('publish_debug_visualization', True)
         self.declare_parameter('viz_frame_id', 'map')
         self.declare_parameter('viz_marker_lifetime_sec', 1.0)
@@ -93,7 +93,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('publish_drive_debug_image', True)
         self.declare_parameter('drive_debug_image_topic', '/track_drive/drive_debug_image')
         self.declare_parameter('drive_debug_publish_rate_hz', 4.0)
-        self.declare_parameter('stop_line_update_period_sec', 0.07)
+        self.declare_parameter('stop_line_update_period_sec', 0.01)
         self.declare_parameter('school_zone_update_period_sec', 0.10)
 
         self.declare_parameter('base_speed', 5.0)
@@ -180,13 +180,13 @@ class TrackDriverNode(Node):
         self.declare_parameter('invert_steering', True)
 
         self.declare_parameter('ai_hybrid_enabled', True)
-        self.declare_parameter('ai_model_path', '/home/xytron/cone_bc_scripted_final.pt')
+        self.declare_parameter('ai_model_path', '/home/xytron/cone_bc_scripted_2.pt')
         self.declare_parameter('ai_speed', 30.0)
-        self.declare_parameter('traffic_light_speed_limit_enabled', True)
+        self.declare_parameter('traffic_light_speed_limit_enabled', False)
         self.declare_parameter('traffic_light_speed', 20.0)
         self.declare_parameter('traffic_light_speed_hold_sec', 0.12)
         self.declare_parameter('stop_line_speed_limit_enabled', True)
-        self.declare_parameter('stop_line_speed', 10.0)
+        self.declare_parameter('stop_line_speed', 7.0)
         self.declare_parameter('stop_line_signal_memory_sec', 1.0)
         self.declare_parameter('stop_line_speed_limit_hold_sec', 1.0)
         self.declare_parameter('ai_initial_speed_limit_enabled', True)
@@ -235,7 +235,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('yolo_light_max_box_bottom_ratio', 0.98)
         self.declare_parameter('yolo_nms_threshold', 0.45)
         self.declare_parameter('yolo_safety_period_sec', 0.05)
-        self.declare_parameter('yolo_red_light_period_sec', 0.10)
+        self.declare_parameter('yolo_red_light_period_sec', 0.01)
         self.declare_parameter('stop_on_red_light_enabled', True)
         self.declare_parameter('red_light_confirm_frames', 2)
         self.declare_parameter('red_light_stop_line_confirm_frames', 1)
@@ -253,7 +253,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('stop_line_roi_bottom_ratio', 1.00)
         self.declare_parameter('stop_line_stop_row_ratio', 0.70)
         self.declare_parameter('stop_line_stop_bottom_row_ratio', 0.75)
-        self.declare_parameter('stop_line_stop_distance_m', 3.00)
+        self.declare_parameter('stop_line_stop_distance_m', 5.50)
         self.declare_parameter('stop_line_distance_bottom_ratio', 1.00)
         self.declare_parameter('stop_line_distance_scale_m', 7.00)
         self.declare_parameter('stop_line_min_width_ratio', 0.32)
@@ -261,30 +261,44 @@ class TrackDriverNode(Node):
         self.declare_parameter('stop_line_min_rows', 2)
         self.declare_parameter('stop_line_min_aspect_ratio', 5.0)
         self.declare_parameter('stop_line_min_fill_ratio', 0.35)
-        self.declare_parameter('stop_line_confirm_frames', 2)
+        self.declare_parameter('stop_line_confirm_frames', 1)
         self.declare_parameter('stop_line_bev_gate_enabled', True)
         self.declare_parameter('stop_line_bev_width', 320)
         self.declare_parameter('stop_line_bev_height', 240)
-        self.declare_parameter('stop_line_bev_src_top_ratio', 0.30)
+        self.declare_parameter('stop_line_bev_src_top_ratio', 0.46)
         self.declare_parameter('stop_line_bev_src_bottom_ratio', 0.98)
-        self.declare_parameter('stop_line_bev_src_top_half_width_ratio', 0.075)
+        self.declare_parameter('stop_line_bev_src_top_half_width_ratio', 0.080)
         self.declare_parameter('stop_line_bev_src_bottom_half_width_ratio', 0.475)
         self.declare_parameter('stop_line_bev_center_shift_ratio', 0.0)
-        self.declare_parameter('stop_line_bev_front_top_ratio', 0.08)
+        self.declare_parameter('stop_line_bev_front_top_ratio', 0.14)
         self.declare_parameter('stop_line_bev_front_bottom_ratio', 1.00)
-        self.declare_parameter('stop_line_bev_min_width_ratio', 0.38)
+        self.declare_parameter('stop_line_bev_min_width_ratio', 0.30)
         self.declare_parameter('stop_line_bev_min_aspect_ratio', 5.0)
-        self.declare_parameter('stop_line_bev_min_fill_ratio', 0.22)
-        self.declare_parameter('stop_line_bev_min_row_run', 3)
-        self.declare_parameter('stop_line_bev_min_solid_run_ratio', 0.70)
-        self.declare_parameter('stop_line_bev_solid_col_min_fill_ratio', 0.55)
-        self.declare_parameter('stop_line_detect_min_row_ratio', 0.08)
-        self.declare_parameter('stop_line_detect_max_distance_m', 7.00)
-        self.declare_parameter('stop_line_white_value_min', 200)
-        self.declare_parameter('stop_line_white_sat_max', 80)
-        self.declare_parameter('stop_line_bev_close_width_ratio', 0.025)
-        self.declare_parameter('stop_line_bev_close_height', 3)
-        self.declare_parameter('stop_line_bev_open_kernel', 3)
+        self.declare_parameter('stop_line_bev_min_fill_ratio', 0.14)
+        self.declare_parameter('stop_line_bev_min_row_run', 1)
+        self.declare_parameter('stop_line_bev_min_solid_run_ratio', 0.52)
+        self.declare_parameter('stop_line_bev_solid_col_min_fill_ratio', 0.30)
+        self.declare_parameter('stop_line_bev_reject_repeating_bands', True)
+        self.declare_parameter('stop_line_bev_repeating_min_bands', 3)
+        self.declare_parameter('stop_line_bev_repeating_min_gap_ratio', 0.030)
+        self.declare_parameter('stop_line_bev_reject_fragmented_band', True)
+        self.declare_parameter('stop_line_bev_fragment_min_runs', 4)
+        self.declare_parameter('stop_line_bev_fragment_max_solid_run_ratio', 0.35)
+        self.declare_parameter('stop_line_bev_fragment_col_min_fill_ratio', 0.25)
+        self.declare_parameter('stop_line_detect_min_row_ratio', 0.10)
+        self.declare_parameter('stop_line_detect_max_distance_m', 8.50)
+        self.declare_parameter('stop_line_original_min_y_ratio', 0.52)
+        self.declare_parameter('stop_line_white_value_min', 185)
+        self.declare_parameter('stop_line_white_sat_max', 95)
+        self.declare_parameter('stop_line_bev_close_width_ratio', 0.035)
+        self.declare_parameter('stop_line_bev_close_height', 2)
+        self.declare_parameter('stop_line_bev_open_kernel', 1)
+        self.declare_parameter('stop_line_reverse_enabled', True)
+        self.declare_parameter('stop_line_reverse_trigger_distance_m', 3.00)
+        self.declare_parameter('stop_line_reverse_release_distance_m', 3.60)
+        self.declare_parameter('stop_line_reverse_speed', -4.0)
+        self.declare_parameter('stop_line_reverse_max_sec', 1.20)
+        self.declare_parameter('stop_line_reverse_cooldown_sec', 2.0)
         self.declare_parameter('stop_line_memory_sec', 1.50)
         self.declare_parameter('startup_light_check_enabled', True)
         self.declare_parameter('startup_light_check_timeout_sec', 5.00)
@@ -501,7 +515,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('cone_seed_neighbor_radius', 1.80)
         self.declare_parameter('intersection_route_enabled', True)
         self.declare_parameter('intersection_stop_line_trigger_row_ratio', 0.30)
-        self.declare_parameter('intersection_left_turn_stop_line_distance_m', 2.00)
+        self.declare_parameter('intersection_left_turn_stop_line_distance_m', 3.50)
         self.declare_parameter('intersection_left_cone_min_count', 1)
         self.declare_parameter('intersection_left_no_cone_confirm_frames', 3)
         self.declare_parameter('intersection_left_cone_memory_sec', 0.60)
@@ -580,6 +594,7 @@ class TrackDriverNode(Node):
         self.last_command_steer = 0.0
         self.last_external_speed_limit: Optional[float] = None
         self.last_external_speed_limit_reasons: List[str] = []
+        self.traffic_light_speed_limit_until_sec = 0.0
         self.image_receive_times: Deque[float] = deque()
         self.image_stamp_times: Deque[float] = deque()
         self.red_light_confirm_count = 0
@@ -638,6 +653,8 @@ class TrackDriverNode(Node):
         self.stop_line_last_distance_m: Optional[float] = None
         self.stop_line_speed_signal_last_seen_sec: Optional[float] = None
         self.stop_line_speed_limit_hold_until_sec = 0.0
+        self.stop_line_reverse_until_sec = 0.0
+        self.stop_line_reverse_cooldown_until_sec = 0.0
         self.startup_light_gate_released = False
         self.school_zone_active = False
         self.school_zone_speed_limit_active = False
@@ -813,13 +830,17 @@ class TrackDriverNode(Node):
             (
                 not left_turn_ai_speed_active
                 and (
+                    self._traffic_light_speed_limit_active()
+                    or
                     self._stop_line_speed_limit_active()
                     or self._intersection_left_turn_approach_speed_limit_active()
                 )
             )
             and speed > 0.0
         ):
-            speed = min(float(speed), max(float(self.get_parameter('stop_line_speed').value), 0.0))
+            external_limit = self._current_external_speed_limit()
+            if external_limit is not None:
+                speed = min(float(speed), max(float(external_limit), 0.0))
         if left_turn_ai_speed_active and speed > 0.0:
             speed = min(
                 float(speed),
@@ -883,6 +904,68 @@ class TrackDriverNode(Node):
             self.stop_line_speed_signal_last_seen_sec is not None
             and now - self.stop_line_speed_signal_last_seen_sec <= memory_sec
         )
+
+    def _stop_line_reverse_requested(self, safety_reason: str) -> bool:
+        if not bool(self.get_parameter('stop_line_reverse_enabled').value):
+            self.stop_line_reverse_until_sec = 0.0
+            self.stop_line_reverse_cooldown_until_sec = 0.0
+            return False
+
+        now = time.monotonic()
+        if self._green_light_visible():
+            self.stop_line_reverse_until_sec = 0.0
+            return False
+
+        signal_active = (
+            safety_reason == 'stop_red_light'
+            or self._red_light_signal_visible()
+            or self._left_turn_signal_visible()
+        )
+        if not signal_active:
+            self.stop_line_reverse_until_sec = 0.0
+            return False
+
+        distance_m = self._stop_line_distance_for_reverse()
+        trigger_distance = max(
+            float(self.get_parameter('stop_line_reverse_trigger_distance_m').value),
+            0.0,
+        )
+        release_distance = max(
+            float(self.get_parameter('stop_line_reverse_release_distance_m').value),
+            trigger_distance + 0.05,
+        )
+
+        if now < self.stop_line_reverse_until_sec:
+            if distance_m is not None and distance_m >= release_distance:
+                self.stop_line_reverse_until_sec = 0.0
+                self.stop_line_reverse_cooldown_until_sec = now + max(
+                    float(self.get_parameter('stop_line_reverse_cooldown_sec').value),
+                    0.0,
+                )
+                return False
+            return True
+
+        if now < self.stop_line_reverse_cooldown_until_sec:
+            return False
+        if distance_m is None or distance_m > trigger_distance:
+            return False
+
+        max_sec = max(float(self.get_parameter('stop_line_reverse_max_sec').value), 0.05)
+        self.stop_line_reverse_until_sec = now + max_sec
+        return True
+
+    def _stop_line_distance_for_reverse(self) -> Optional[float]:
+        if self.stop_line_detected and self.stop_line_distance_m is not None:
+            return float(self.stop_line_distance_m)
+
+        memory_sec = max(float(self.get_parameter('stop_line_memory_sec').value), 0.0)
+        if (
+            self.stop_line_last_seen_sec is not None
+            and self.stop_line_last_distance_m is not None
+            and time.monotonic() - self.stop_line_last_seen_sec <= memory_sec
+        ):
+            return float(self.stop_line_last_distance_m)
+        return None
 
     def _intersection_left_turn_approach_speed_limit_active(self) -> bool:
         now = time.monotonic()
@@ -1122,6 +1205,8 @@ class TrackDriverNode(Node):
             and self._school_zone_speed_limit_active()
         ):
             limits.append(('school', max(float(self.get_parameter('school_zone_speed').value), 0.0)))
+        if self._traffic_light_speed_limit_active():
+            limits.append(('traffic_light', max(float(self.get_parameter('traffic_light_speed').value), 0.0)))
         left_turn_ai_speed_active = self._intersection_left_turn_repeat_ai_speed_limit_active()
         if left_turn_ai_speed_active:
             limits.append((
@@ -1137,6 +1222,22 @@ class TrackDriverNode(Node):
         if self._person_slow_speed_limit_active():
             limits.append(('person', max(float(self.get_parameter('person_slow_speed').value), 0.0)))
         return limits
+
+    def _traffic_light_speed_limit_active(self) -> bool:
+        if not bool(self.get_parameter('traffic_light_speed_limit_enabled').value):
+            self.traffic_light_speed_limit_until_sec = 0.0
+            return False
+
+        now = time.monotonic()
+        if self._traffic_light_visible():
+            hold_sec = max(float(self.get_parameter('traffic_light_speed_hold_sec').value), 0.0)
+            self.traffic_light_speed_limit_until_sec = max(
+                self.traffic_light_speed_limit_until_sec,
+                now + hold_sec,
+            )
+            return True
+
+        return now <= self.traffic_light_speed_limit_until_sec
 
     def _mark_ai_initial_speed_started(self):
         if not bool(self.get_parameter('ai_initial_speed_limit_enabled').value):
@@ -1233,6 +1334,16 @@ class TrackDriverNode(Node):
         self.publish_ai_speed_limit()
         safety_stop = safety_decision.should_stop
         safety_reason = safety_decision.reason
+        if self._stop_line_reverse_requested(safety_reason):
+            if standby_enabled:
+                self.publish_ai_enable(False)
+            steer = 0.0
+            speed = -abs(float(self.get_parameter('stop_line_reverse_speed').value))
+            self.prev_steer *= 0.5
+            self.last_mode = 'reverse_stop_line_close'
+            self.drive(angle=steer, speed=speed)
+            self._log_status(self.last_mode, speed, steer, 0, None, 0, nearest_obstacle)
+            return
         if safety_stop:
             if standby_enabled:
                 self.publish_ai_enable(False)
@@ -2849,7 +2960,7 @@ class TrackDriverNode(Node):
                 self.vehicle_tracks.clear()
 
         if light_due:
-            period = max(float(self.get_parameter('yolo_red_light_period_sec').value), 0.05)
+            period = max(float(self.get_parameter('yolo_red_light_period_sec').value), 0.01)
             self.next_yolo_light_check_sec = now + period
             self.yolo_light_checked_once = True
             self.yolo_light_last_check_sec = now

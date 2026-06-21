@@ -19,11 +19,11 @@ def generate_launch_description():
         DeclareLaunchArgument('camera_topic', default_value='/usb_cam/image_raw/front'),
         DeclareLaunchArgument('yolo_light_model_path', default_value='/home/xytron/model/final.onnx'),
         DeclareLaunchArgument('light_debug_image_topic', default_value='/track_drive/light_debug_image'),
-        DeclareLaunchArgument('control_rate_hz', default_value='20.0'),
+        DeclareLaunchArgument('control_rate_hz', default_value='100.0'),
         DeclareLaunchArgument('yolo_light_input_size', default_value='640'),
         DeclareLaunchArgument('yolo_light_conf_threshold', default_value='0.10'),
         DeclareLaunchArgument('yolo_stop_light_conf_threshold', default_value='0.80'),
-        DeclareLaunchArgument('yolo_red_light_period_sec', default_value='0.10'),
+        DeclareLaunchArgument('yolo_red_light_period_sec', default_value='0.01'),
 
         Node(
             package='track_drive',

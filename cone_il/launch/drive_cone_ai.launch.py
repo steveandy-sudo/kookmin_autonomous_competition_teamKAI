@@ -12,7 +12,7 @@ def generate_launch_description():
     invert_steering = LaunchConfiguration('invert_steering')
 
     return LaunchDescription([
-        DeclareLaunchArgument('model_path', default_value='~/cone_il_model/cone_bc_scripted.pt'),
+        DeclareLaunchArgument('model_path', default_value='/home/xytron/cone_bc_scripted_2.pt'),
         DeclareLaunchArgument('motor_topic', default_value='/xycar_motor'),
         DeclareLaunchArgument('speed', default_value='4.0'),
         DeclareLaunchArgument('max_steer_deg', default_value='70.0'),

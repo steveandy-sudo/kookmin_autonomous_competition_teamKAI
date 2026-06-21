@@ -24,7 +24,7 @@ def generate_launch_description():
         DeclareLaunchArgument('motor_topic', default_value='xycar_motor'),
         DeclareLaunchArgument(
             'model_path',
-            default_value='/home/xytron/cone_il_model_speed14_left_clean_epoch/cone_bc_scripted.pt',
+            default_value='/home/xytron/cone_bc_scripted_2.pt',
         ),
         DeclareLaunchArgument('speed', default_value='30.0'),
         DeclareLaunchArgument('intersection_left_turn_enabled', default_value='true'),
@@ -54,7 +54,7 @@ def generate_launch_description():
                 'drive_debug_image_topic': '/track_drive/drive_debug_image',
                 'publish_light_debug_image': 'false',
                 'drive_debug_publish_rate_hz': '4.0',
-                'stop_line_update_period_sec': '0.07',
+                'stop_line_update_period_sec': '0.01',
                 'school_zone_update_period_sec': '0.10',
                 'startup_light_check_enabled': 'true',
                 'startup_light_ignore_stop_line': 'true',

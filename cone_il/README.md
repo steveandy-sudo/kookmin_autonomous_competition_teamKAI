@@ -127,13 +127,13 @@ python3 ~/xycar_ws/src/cone_il/scripts/merge_cone_datasets.py \
 
 ```bash
 source ~/xycar_ws/install/setup.bash
-ros2 launch cone_il drive_cone_ai.launch.py model_path:=~/cone_il_model/cone_bc_scripted.pt
+ros2 launch cone_il drive_cone_ai.launch.py model_path:=/home/xytron/cone_bc_scripted_2.pt
 ```
 
 조향 방향이 반대로 꺾이면:
 
 ```bash
-ros2 launch cone_il drive_cone_ai.launch.py model_path:=~/cone_il_model/cone_bc_scripted.pt \
+ros2 launch cone_il drive_cone_ai.launch.py model_path:=/home/xytron/cone_bc_scripted_2.pt \
   --ros-args -p invert_steering:=true
 ```
 

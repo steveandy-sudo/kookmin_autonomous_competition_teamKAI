@@ -1,8 +1,10 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
-from launch.substitutions import EnvironmentVariable, LaunchConfiguration
+from launch.conditions import IfCondition
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
@@ -31,6 +33,8 @@ def generate_launch_description():
     publish_drive_debug_image = LaunchConfiguration('publish_drive_debug_image')
     drive_debug_image_topic = LaunchConfiguration('drive_debug_image_topic')
     drive_debug_publish_rate_hz = LaunchConfiguration('drive_debug_publish_rate_hz')
+    use_rviz = LaunchConfiguration('use_rviz')
+    rviz_config = LaunchConfiguration('rviz_config')
     stop_line_update_period_sec = LaunchConfiguration('stop_line_update_period_sec')
     school_zone_update_period_sec = LaunchConfiguration('school_zone_update_period_sec')
     school_zone_speed = LaunchConfiguration('school_zone_speed')
@@ -299,9 +303,23 @@ def generate_launch_description():
     stop_line_bev_min_row_run = LaunchConfiguration('stop_line_bev_min_row_run')
     stop_line_bev_min_solid_run_ratio = LaunchConfiguration('stop_line_bev_min_solid_run_ratio')
     stop_line_bev_solid_col_min_fill_ratio = LaunchConfiguration('stop_line_bev_solid_col_min_fill_ratio')
+    stop_line_bev_reject_repeating_bands = LaunchConfiguration('stop_line_bev_reject_repeating_bands')
+    stop_line_bev_repeating_min_bands = LaunchConfiguration('stop_line_bev_repeating_min_bands')
+    stop_line_bev_repeating_min_gap_ratio = LaunchConfiguration('stop_line_bev_repeating_min_gap_ratio')
+    stop_line_bev_reject_fragmented_band = LaunchConfiguration('stop_line_bev_reject_fragmented_band')
+    stop_line_bev_fragment_min_runs = LaunchConfiguration('stop_line_bev_fragment_min_runs')
+    stop_line_bev_fragment_max_solid_run_ratio = LaunchConfiguration('stop_line_bev_fragment_max_solid_run_ratio')
+    stop_line_bev_fragment_col_min_fill_ratio = LaunchConfiguration('stop_line_bev_fragment_col_min_fill_ratio')
     stop_line_detect_min_row_ratio = LaunchConfiguration('stop_line_detect_min_row_ratio')
     stop_line_detect_max_distance_m = LaunchConfiguration('stop_line_detect_max_distance_m')
+    stop_line_original_min_y_ratio = LaunchConfiguration('stop_line_original_min_y_ratio')
     stop_line_memory_sec = LaunchConfiguration('stop_line_memory_sec')
+    stop_line_reverse_enabled = LaunchConfiguration('stop_line_reverse_enabled')
+    stop_line_reverse_trigger_distance_m = LaunchConfiguration('stop_line_reverse_trigger_distance_m')
+    stop_line_reverse_release_distance_m = LaunchConfiguration('stop_line_reverse_release_distance_m')
+    stop_line_reverse_speed = LaunchConfiguration('stop_line_reverse_speed')
+    stop_line_reverse_max_sec = LaunchConfiguration('stop_line_reverse_max_sec')
+    stop_line_reverse_cooldown_sec = LaunchConfiguration('stop_line_reverse_cooldown_sec')
     startup_light_check_enabled = LaunchConfiguration('startup_light_check_enabled')
     startup_light_check_timeout_sec = LaunchConfiguration('startup_light_check_timeout_sec')
     startup_light_check_min_sec = LaunchConfiguration('startup_light_check_min_sec')
@@ -331,7 +349,7 @@ def generate_launch_description():
         DeclareLaunchArgument('motor_topic', default_value='xycar_motor'),
         DeclareLaunchArgument(
             'model_path',
-            default_value='/home/xytron/cone_bc_scripted_final.pt',
+            default_value='/home/xytron/cone_bc_scripted_2.pt',
         ),
         DeclareLaunchArgument('speed', default_value='30.0'),
         DeclareLaunchArgument('ai_initial_speed', default_value='17.0'),
@@ -341,20 +359,29 @@ def generate_launch_description():
         DeclareLaunchArgument('ai_enable_topic', default_value='/cone_ai/enable'),
         DeclareLaunchArgument('ai_speed_limit_topic', default_value='/cone_ai/speed_limit'),
         DeclareLaunchArgument('ai_turn_speed_topic', default_value='/cone_ai/turn_speed'),
-        DeclareLaunchArgument('traffic_light_speed_limit_enabled', default_value='true'),
+        DeclareLaunchArgument('traffic_light_speed_limit_enabled', default_value='false'),
         DeclareLaunchArgument('traffic_light_speed', default_value='20.0'),
         DeclareLaunchArgument('traffic_light_speed_hold_sec', default_value='0.12'),
         DeclareLaunchArgument('stop_line_speed_limit_enabled', default_value='true'),
-        DeclareLaunchArgument('stop_line_speed', default_value='10.0'),
+        DeclareLaunchArgument('stop_line_speed', default_value='7.0'),
         DeclareLaunchArgument('stop_line_signal_memory_sec', default_value='1.0'),
         DeclareLaunchArgument('stop_line_speed_limit_hold_sec', default_value='1.0'),
         DeclareLaunchArgument('hybrid_trigger_topic', default_value='/track_drive/hybrid_trigger'),
-        DeclareLaunchArgument('control_rate_hz', default_value='20.0'),
+        DeclareLaunchArgument('control_rate_hz', default_value='100.0'),
         DeclareLaunchArgument('publish_light_debug_image', default_value='true'),
         DeclareLaunchArgument('publish_drive_debug_image', default_value='true'),
         DeclareLaunchArgument('drive_debug_image_topic', default_value='/track_drive/drive_debug_image'),
         DeclareLaunchArgument('drive_debug_publish_rate_hz', default_value='4.0'),
-        DeclareLaunchArgument('stop_line_update_period_sec', default_value='0.07'),
+        DeclareLaunchArgument('use_rviz', default_value='true'),
+        DeclareLaunchArgument(
+            'rviz_config',
+            default_value=PathJoinSubstitution([
+                FindPackageShare('track_drive'),
+                'rviz',
+                'hybrid_stop_light_debug.rviz',
+            ]),
+        ),
+        DeclareLaunchArgument('stop_line_update_period_sec', default_value='0.01'),
         DeclareLaunchArgument('school_zone_update_period_sec', default_value='0.10'),
         DeclareLaunchArgument('school_zone_speed', default_value='5.5'),
         DeclareLaunchArgument('school_zone_speed_limit_enabled', default_value='true'),
@@ -417,7 +444,7 @@ def generate_launch_description():
         DeclareLaunchArgument('intersection_left_turn_steer_deg', default_value='-100.0'),
         DeclareLaunchArgument('intersection_left_turn_duration_sec', default_value='2.50'),
         DeclareLaunchArgument('intersection_left_turn_speed_limit_hold_sec', default_value='1.0'),
-        DeclareLaunchArgument('intersection_left_turn_stop_line_distance_m', default_value='2.00'),
+        DeclareLaunchArgument('intersection_left_turn_stop_line_distance_m', default_value='3.50'),
         DeclareLaunchArgument('intersection_left_turn_repeat_enabled', default_value='false'),
         DeclareLaunchArgument('intersection_left_turn_repeat_delay_sec', default_value='5.30'),
         DeclareLaunchArgument('intersection_left_turn_repeat_ai_speed_enabled', default_value='false'),
@@ -561,7 +588,7 @@ def generate_launch_description():
         DeclareLaunchArgument('yolo_light_input_size', default_value='640'),
         DeclareLaunchArgument('yolo_person_conf_threshold', default_value='0.18'),
         DeclareLaunchArgument('yolo_safety_period_sec', default_value='0.05'),
-        DeclareLaunchArgument('yolo_red_light_period_sec', default_value='0.10'),
+        DeclareLaunchArgument('yolo_red_light_period_sec', default_value='0.01'),
         DeclareLaunchArgument('yolo_person_min_box_height_ratio', default_value='0.015'),
         DeclareLaunchArgument('yolo_person_min_box_bottom_ratio', default_value='0.04'),
         DeclareLaunchArgument('yolo_light_conf_threshold', default_value='0.35'),
@@ -587,7 +614,7 @@ def generate_launch_description():
         DeclareLaunchArgument('stop_line_roi_bottom_ratio', default_value='1.00'),
         DeclareLaunchArgument('stop_line_stop_row_ratio', default_value='0.70'),
         DeclareLaunchArgument('stop_line_stop_bottom_row_ratio', default_value='0.75'),
-        DeclareLaunchArgument('stop_line_stop_distance_m', default_value='3.00'),
+        DeclareLaunchArgument('stop_line_stop_distance_m', default_value='5.50'),
         DeclareLaunchArgument('stop_line_distance_bottom_ratio', default_value='1.00'),
         DeclareLaunchArgument('stop_line_distance_scale_m', default_value='7.00'),
         DeclareLaunchArgument('stop_line_min_width_ratio', default_value='0.32'),
@@ -595,23 +622,37 @@ def generate_launch_description():
         DeclareLaunchArgument('stop_line_min_rows', default_value='2'),
         DeclareLaunchArgument('stop_line_min_aspect_ratio', default_value='5.0'),
         DeclareLaunchArgument('stop_line_min_fill_ratio', default_value='0.35'),
-        DeclareLaunchArgument('stop_line_confirm_frames', default_value='2'),
+        DeclareLaunchArgument('stop_line_confirm_frames', default_value='1'),
         DeclareLaunchArgument('stop_line_bev_gate_enabled', default_value='true'),
-        DeclareLaunchArgument('stop_line_bev_src_top_ratio', default_value='0.30'),
+        DeclareLaunchArgument('stop_line_bev_src_top_ratio', default_value='0.46'),
         DeclareLaunchArgument('stop_line_bev_src_bottom_ratio', default_value='0.98'),
-        DeclareLaunchArgument('stop_line_bev_src_top_half_width_ratio', default_value='0.075'),
+        DeclareLaunchArgument('stop_line_bev_src_top_half_width_ratio', default_value='0.080'),
         DeclareLaunchArgument('stop_line_bev_src_bottom_half_width_ratio', default_value='0.475'),
-        DeclareLaunchArgument('stop_line_bev_front_top_ratio', default_value='0.08'),
+        DeclareLaunchArgument('stop_line_bev_front_top_ratio', default_value='0.14'),
         DeclareLaunchArgument('stop_line_bev_front_bottom_ratio', default_value='1.00'),
-        DeclareLaunchArgument('stop_line_bev_min_width_ratio', default_value='0.38'),
+        DeclareLaunchArgument('stop_line_bev_min_width_ratio', default_value='0.30'),
         DeclareLaunchArgument('stop_line_bev_min_aspect_ratio', default_value='5.0'),
-        DeclareLaunchArgument('stop_line_bev_min_fill_ratio', default_value='0.22'),
-        DeclareLaunchArgument('stop_line_bev_min_row_run', default_value='3'),
-        DeclareLaunchArgument('stop_line_bev_min_solid_run_ratio', default_value='0.70'),
-        DeclareLaunchArgument('stop_line_bev_solid_col_min_fill_ratio', default_value='0.55'),
-        DeclareLaunchArgument('stop_line_detect_min_row_ratio', default_value='0.08'),
-        DeclareLaunchArgument('stop_line_detect_max_distance_m', default_value='7.00'),
+        DeclareLaunchArgument('stop_line_bev_min_fill_ratio', default_value='0.14'),
+        DeclareLaunchArgument('stop_line_bev_min_row_run', default_value='1'),
+        DeclareLaunchArgument('stop_line_bev_min_solid_run_ratio', default_value='0.52'),
+        DeclareLaunchArgument('stop_line_bev_solid_col_min_fill_ratio', default_value='0.30'),
+        DeclareLaunchArgument('stop_line_bev_reject_repeating_bands', default_value='true'),
+        DeclareLaunchArgument('stop_line_bev_repeating_min_bands', default_value='3'),
+        DeclareLaunchArgument('stop_line_bev_repeating_min_gap_ratio', default_value='0.030'),
+        DeclareLaunchArgument('stop_line_bev_reject_fragmented_band', default_value='true'),
+        DeclareLaunchArgument('stop_line_bev_fragment_min_runs', default_value='4'),
+        DeclareLaunchArgument('stop_line_bev_fragment_max_solid_run_ratio', default_value='0.35'),
+        DeclareLaunchArgument('stop_line_bev_fragment_col_min_fill_ratio', default_value='0.25'),
+        DeclareLaunchArgument('stop_line_detect_min_row_ratio', default_value='0.10'),
+        DeclareLaunchArgument('stop_line_detect_max_distance_m', default_value='8.50'),
+        DeclareLaunchArgument('stop_line_original_min_y_ratio', default_value='0.52'),
         DeclareLaunchArgument('stop_line_memory_sec', default_value='1.50'),
+        DeclareLaunchArgument('stop_line_reverse_enabled', default_value='true'),
+        DeclareLaunchArgument('stop_line_reverse_trigger_distance_m', default_value='3.00'),
+        DeclareLaunchArgument('stop_line_reverse_release_distance_m', default_value='3.60'),
+        DeclareLaunchArgument('stop_line_reverse_speed', default_value='-4.0'),
+        DeclareLaunchArgument('stop_line_reverse_max_sec', default_value='1.20'),
+        DeclareLaunchArgument('stop_line_reverse_cooldown_sec', default_value='2.0'),
         DeclareLaunchArgument('startup_light_check_enabled', default_value='true'),
         DeclareLaunchArgument('startup_light_check_timeout_sec', default_value='5.00'),
         DeclareLaunchArgument('startup_light_check_min_sec', default_value='0.35'),
@@ -1081,11 +1122,37 @@ def generate_launch_description():
                     stop_line_bev_min_solid_run_ratio, value_type=float),
                 'stop_line_bev_solid_col_min_fill_ratio': ParameterValue(
                     stop_line_bev_solid_col_min_fill_ratio, value_type=float),
+                'stop_line_bev_reject_repeating_bands': ParameterValue(
+                    stop_line_bev_reject_repeating_bands, value_type=bool),
+                'stop_line_bev_repeating_min_bands': ParameterValue(
+                    stop_line_bev_repeating_min_bands, value_type=int),
+                'stop_line_bev_repeating_min_gap_ratio': ParameterValue(
+                    stop_line_bev_repeating_min_gap_ratio, value_type=float),
+                'stop_line_bev_reject_fragmented_band': ParameterValue(
+                    stop_line_bev_reject_fragmented_band, value_type=bool),
+                'stop_line_bev_fragment_min_runs': ParameterValue(
+                    stop_line_bev_fragment_min_runs, value_type=int),
+                'stop_line_bev_fragment_max_solid_run_ratio': ParameterValue(
+                    stop_line_bev_fragment_max_solid_run_ratio, value_type=float),
+                'stop_line_bev_fragment_col_min_fill_ratio': ParameterValue(
+                    stop_line_bev_fragment_col_min_fill_ratio, value_type=float),
                 'stop_line_detect_min_row_ratio': ParameterValue(
                     stop_line_detect_min_row_ratio, value_type=float),
                 'stop_line_detect_max_distance_m': ParameterValue(
                     stop_line_detect_max_distance_m, value_type=float),
+                'stop_line_original_min_y_ratio': ParameterValue(
+                    stop_line_original_min_y_ratio, value_type=float),
                 'stop_line_memory_sec': ParameterValue(stop_line_memory_sec, value_type=float),
+                'stop_line_reverse_enabled': ParameterValue(
+                    stop_line_reverse_enabled, value_type=bool),
+                'stop_line_reverse_trigger_distance_m': ParameterValue(
+                    stop_line_reverse_trigger_distance_m, value_type=float),
+                'stop_line_reverse_release_distance_m': ParameterValue(
+                    stop_line_reverse_release_distance_m, value_type=float),
+                'stop_line_reverse_speed': ParameterValue(stop_line_reverse_speed, value_type=float),
+                'stop_line_reverse_max_sec': ParameterValue(stop_line_reverse_max_sec, value_type=float),
+                'stop_line_reverse_cooldown_sec': ParameterValue(
+                    stop_line_reverse_cooldown_sec, value_type=float),
                 'startup_light_check_enabled': ParameterValue(startup_light_check_enabled, value_type=bool),
                 'startup_light_check_timeout_sec': ParameterValue(
                     startup_light_check_timeout_sec, value_type=float),
@@ -1096,5 +1163,13 @@ def generate_launch_description():
                     startup_light_require_signal, value_type=bool),
                 'safety_stop_hold_sec': ParameterValue(safety_stop_hold_sec, value_type=float),
             }],
+        ),
+        Node(
+            package='rviz2',
+            executable='rviz2',
+            name='rviz2',
+            output='screen',
+            arguments=['-d', rviz_config],
+            condition=IfCondition(use_rviz),
         ),
     ])
