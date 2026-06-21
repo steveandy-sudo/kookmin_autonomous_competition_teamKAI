@@ -13,7 +13,7 @@ def generate_launch_description():
         package_share,
         'assets',
         'models',
-        'cone_bc_scripted_4.pt',
+        'cone_bc_scripted_3.pt',
     ])
     default_yolo_model_path = PathJoinSubstitution([
         package_share,
