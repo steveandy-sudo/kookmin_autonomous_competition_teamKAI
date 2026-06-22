@@ -82,6 +82,7 @@ class TrackDriverNode(Node):
         super().__init__('driver')
 
         self.declare_parameter('camera_topic', '/usb_cam/image_raw/front')
+        self.declare_parameter('camera_qos_depth', 1)
         self.declare_parameter('scan_topic', '/scan')
         self.declare_parameter('motor_topic', 'xycar_motor')
         self.declare_parameter('control_rate_hz', 100.0)
@@ -100,12 +101,12 @@ class TrackDriverNode(Node):
         self.declare_parameter('base_speed', 5.0)
         self.declare_parameter('min_speed', 3.0)
         self.declare_parameter('school_zone_enabled', True)
-        self.declare_parameter('school_zone_speed', 5.5)
+        self.declare_parameter('school_zone_speed', 18.0)
         self.declare_parameter('school_zone_speed_limit_enabled', True)
         self.declare_parameter('school_zone_speed_limit_hold_sec', 1.0)
-        self.declare_parameter('school_zone_boost_enabled', True)
+        self.declare_parameter('school_zone_boost_enabled', False)
         self.declare_parameter('school_zone_boost_speed', 30.0)
-        self.declare_parameter('school_zone_boost_duration_sec', 0.5)
+        self.declare_parameter('school_zone_boost_duration_sec', 0.0)
         self.declare_parameter('school_zone_roi_top_ratio', 0.24)
         self.declare_parameter('school_zone_left_edge_max_ratio', 0.38)
         self.declare_parameter('school_zone_right_edge_min_ratio', 0.62)
@@ -191,7 +192,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('stop_line_signal_memory_sec', 1.0)
         self.declare_parameter('stop_line_speed_limit_hold_sec', 1.0)
         self.declare_parameter('ai_initial_speed_limit_enabled', True)
-        self.declare_parameter('ai_initial_speed', 17.0)
+        self.declare_parameter('ai_initial_speed', 21.0)
         self.declare_parameter('ai_initial_speed_duration_sec', 5.0)
         self.declare_parameter('ai_fixed_speed_enabled', False)
         self.declare_parameter('ai_passthrough_enabled', True)
@@ -237,7 +238,6 @@ class TrackDriverNode(Node):
         self.declare_parameter('yolo_nms_threshold', 0.45)
         self.declare_parameter('yolo_safety_period_sec', 0.05)
         self.declare_parameter('yolo_red_light_period_sec', 0.01)
-        self.declare_parameter('yolo_cone_period_sec', 0.01)
         self.declare_parameter('stop_on_red_light_enabled', True)
         self.declare_parameter('red_light_confirm_frames', 2)
         self.declare_parameter('red_light_stop_line_confirm_frames', 1)
@@ -255,7 +255,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('stop_line_roi_bottom_ratio', 1.00)
         self.declare_parameter('stop_line_stop_row_ratio', 0.70)
         self.declare_parameter('stop_line_stop_bottom_row_ratio', 0.75)
-        self.declare_parameter('stop_line_stop_distance_m', 5.50)
+        self.declare_parameter('stop_line_stop_distance_m', 1.00)
         self.declare_parameter('stop_line_distance_bottom_ratio', 1.00)
         self.declare_parameter('stop_line_distance_scale_m', 7.00)
         self.declare_parameter('stop_line_min_width_ratio', 0.32)
@@ -295,7 +295,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('stop_line_bev_close_width_ratio', 0.035)
         self.declare_parameter('stop_line_bev_close_height', 2)
         self.declare_parameter('stop_line_bev_open_kernel', 1)
-        self.declare_parameter('stop_line_reverse_enabled', True)
+        self.declare_parameter('stop_line_reverse_enabled', False)
         self.declare_parameter('stop_line_reverse_trigger_distance_m', 3.00)
         self.declare_parameter('stop_line_reverse_release_distance_m', 3.60)
         self.declare_parameter('stop_line_reverse_speed', -4.0)
@@ -516,8 +516,9 @@ class TrackDriverNode(Node):
         self.declare_parameter('cone_boundary_min_points', 2)
         self.declare_parameter('cone_seed_neighbor_radius', 1.80)
         self.declare_parameter('intersection_route_enabled', True)
+        self.declare_parameter('intersection_straight_only_test_enabled', False)
         self.declare_parameter('intersection_stop_line_trigger_row_ratio', 0.30)
-        self.declare_parameter('intersection_left_turn_stop_line_distance_m', 3.50)
+        self.declare_parameter('intersection_left_turn_stop_line_distance_m', 1.00)
         self.declare_parameter('intersection_left_cone_min_count', 1)
         self.declare_parameter('intersection_left_no_cone_confirm_frames', 1)
         self.declare_parameter('intersection_left_cone_memory_sec', 0.12)
@@ -739,9 +740,10 @@ class TrackDriverNode(Node):
         self.marker_pub = self.create_publisher(MarkerArray, '/track_drive/markers', 10)
         self.light_debug_pub = self.create_publisher(Image, light_debug_image_topic, 10)
         self.drive_debug_pub = self.create_publisher(Image, drive_debug_image_topic, 10)
+        camera_qos_depth = max(int(self.get_parameter('camera_qos_depth').value), 1)
         image_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
-            depth=10,
+            depth=camera_qos_depth,
             reliability=ReliabilityPolicy.RELIABLE,
         )
         self.create_subscription(Image, camera_topic, self.cam_callback, image_qos)
@@ -1669,6 +1671,9 @@ class TrackDriverNode(Node):
         min_count = max(int(self.get_parameter('intersection_left_cone_min_count').value), 1)
         cooldown_sec = max(float(self.get_parameter('intersection_route_cooldown_sec').value), 0.0)
 
+        if bool(self.get_parameter('intersection_straight_only_test_enabled').value):
+            return self._intersection_straight_only_test_command(now, cooldown_sec)
+
         if self._intersection_left_cone_present(cones, now, min_count):
             if not self._green_light_visible():
                 self.intersection_last_decision = 'straight_wait_green'
@@ -1732,29 +1737,13 @@ class TrackDriverNode(Node):
             return False, None
 
         cooldown_sec = max(float(self.get_parameter('intersection_route_cooldown_sec').value), 0.0)
+        if bool(self.get_parameter('intersection_straight_only_test_enabled').value):
+            return True, self._intersection_straight_only_test_command(now, cooldown_sec)
+
         if self.intersection_last_decision == 'left_wait_signal':
             if not self._intersection_left_turn_enabled():
                 return True, self._skip_intersection_left_turn(now, cooldown_sec)
 
-            min_count = max(int(self.get_parameter('intersection_left_cone_min_count').value), 1)
-            if self._intersection_left_cone_present(cones, now, min_count):
-                self.intersection_last_decision = 'straight_wait_green'
-                self.intersection_left_turn_speed_limit_hold_until_sec = 0.0
-                if self._green_light_visible():
-                    self.intersection_last_decision = 'straight'
-                    self.intersection_left_turn_speed_limit_hold_until_sec = 0.0
-                    hold_sec = max(float(self.get_parameter('intersection_straight_hold_sec').value), 0.0)
-                    self.intersection_straight_until_sec = now + hold_sec
-                    self.intersection_route_cooldown_until_sec = now + max(hold_sec, cooldown_sec)
-                    self.intersection_trigger_seen_since_sec = None
-                    self.intersection_signal_wait_until_sec = 0.0
-                    self.intersection_left_turn_repeat_start_sec = 0.0
-                    self.intersection_left_turn_repeat_ai_speed_until_sec = 0.0
-                    self.intersection_post_left_school_limit_start_sec = 0.0
-                    self.intersection_post_left_school_limit_until_sec = 0.0
-                    self.intersection_post_left_ai_hold_until_sec = 0.0
-                    return True, None
-                return True, ('intersection_wait_green', 0.0, 0.0)
             if self._left_turn_signal_visible():
                 if not self._left_turn_stop_line_position_ready():
                     self.intersection_last_decision = 'left_wait_stop_line'
@@ -1787,6 +1776,37 @@ class TrackDriverNode(Node):
             self.intersection_post_left_ai_hold_until_sec = 0.0
             return True, None
         return True, ('intersection_wait_green', 0.0, 0.0)
+
+    def _intersection_straight_only_test_command(
+        self,
+        now: float,
+        cooldown_sec: float,
+    ) -> Optional[Tuple[str, float, float]]:
+        if (
+            not self._green_light_visible()
+            or self._red_light_signal_visible()
+            or self._left_turn_signal_visible()
+        ):
+            self.intersection_last_decision = 'straight_wait_green'
+            self.intersection_left_turn_speed_limit_hold_until_sec = 0.0
+            self.intersection_signal_wait_until_sec = self._intersection_signal_wait_until(now)
+            return ('intersection_wait_green', 0.0, 0.0)
+
+        self.intersection_last_decision = 'straight'
+        self.intersection_left_turn_speed_limit_hold_until_sec = 0.0
+        hold_sec = max(float(self.get_parameter('intersection_straight_hold_sec').value), 0.0)
+        self.intersection_straight_until_sec = now + hold_sec
+        self.intersection_route_cooldown_until_sec = now + max(hold_sec, cooldown_sec)
+        self.intersection_trigger_seen_since_sec = None
+        self.intersection_signal_wait_until_sec = 0.0
+        self.intersection_left_turn_repeat_start_sec = 0.0
+        self.intersection_left_turn_repeat_ai_speed_until_sec = 0.0
+        self.intersection_post_left_school_limit_start_sec = 0.0
+        self.intersection_post_left_school_limit_until_sec = 0.0
+        self.intersection_post_left_ai_hold_until_sec = 0.0
+        self.intersection_left_no_cone_confirm_count = 0
+        self.intersection_left_cone_last_seen_sec = None
+        return None
 
     def _pending_intersection_left_turn_repeat_command(
         self,
@@ -2896,8 +2916,7 @@ class TrackDriverNode(Node):
         now = time.monotonic()
         safety_due = now >= self.next_yolo_safety_check_sec
         light_enabled = bool(self.get_parameter('stop_on_red_light_enabled').value)
-        cone_enabled = bool(self.get_parameter('intersection_camera_cone_enabled').value)
-        light_due = (light_enabled or cone_enabled) and now >= self.next_yolo_light_check_sec
+        light_due = light_enabled and now >= self.next_yolo_light_check_sec
         if not safety_due and not light_due:
             return
 
@@ -2963,12 +2982,7 @@ class TrackDriverNode(Node):
                 self.vehicle_tracks.clear()
 
         if light_due:
-            period_candidates = []
-            if light_enabled:
-                period_candidates.append(max(float(self.get_parameter('yolo_red_light_period_sec').value), 0.01))
-            if cone_enabled:
-                period_candidates.append(max(float(self.get_parameter('yolo_cone_period_sec').value), 0.01))
-            period = min(period_candidates) if period_candidates else 0.01
+            period = max(float(self.get_parameter('yolo_red_light_period_sec').value), 0.01)
             self.next_yolo_light_check_sec = now + period
             self.yolo_light_checked_once = True
             self.yolo_light_last_check_sec = now

@@ -28,6 +28,7 @@ class ConeAIDriver(Node):
         super().__init__('cone_ai_driver')
 
         self.declare_parameter('image_topic', '/usb_cam/image_raw/front')
+        self.declare_parameter('image_qos_depth', 1)
         self.declare_parameter('scan_topic', '/scan')
         self.declare_parameter('motor_topic', 'xycar_motor')
         self.declare_parameter('model_path', '')
@@ -77,9 +78,10 @@ class ConeAIDriver(Node):
         image_topic = str(self.get_parameter('image_topic').value)
         scan_topic = str(self.get_parameter('scan_topic').value)
         motor_topic = str(self.get_parameter('motor_topic').value)
+        image_qos_depth = max(int(self.get_parameter('image_qos_depth').value), 1)
         image_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
-            depth=10,
+            depth=image_qos_depth,
             reliability=ReliabilityPolicy.RELIABLE,
         )
         self.create_subscription(Image, image_topic, self.image_callback, image_qos)

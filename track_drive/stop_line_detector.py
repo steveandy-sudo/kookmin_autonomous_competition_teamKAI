@@ -62,7 +62,7 @@ def declare_stop_line_bev_parameters(node):
     node.declare_parameter('stop_line_distance_scale_m', 7.0)
     node.declare_parameter('stop_line_stop_row_ratio', 0.70)
     node.declare_parameter('stop_line_stop_bottom_row_ratio', 0.75)
-    node.declare_parameter('stop_line_stop_distance_m', 5.5)
+    node.declare_parameter('stop_line_stop_distance_m', 1.0)
     node.declare_parameter('stop_line_confirm_frames', 1)
     node.declare_parameter('stop_on_light_requires_stop_line', True)
 
