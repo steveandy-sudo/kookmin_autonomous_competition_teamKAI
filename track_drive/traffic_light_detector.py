@@ -36,6 +36,7 @@ class TrafficLightResult:
     debug_image: Optional[np.ndarray] = None
 
     def __post_init__(self):
+        # 데이터클래스 생성 뒤 파생 필드나 기본 상태를 정리한다.
         if self.detections is None:
             self.detections = []
         if self.class_scores is None:
@@ -43,6 +44,7 @@ class TrafficLightResult:
 
 
 def declare_traffic_light_parameters(node):
+    # 신호등 검출에서 사용하는 ROS 파라미터 기본값을 선언한다.
     node.declare_parameter('camera_topic', '/usb_cam/image_raw/front')
     node.declare_parameter('traffic_light_debug_topic', '/track_drive/traffic_light_debug/image')
     node.declare_parameter('traffic_light_state_topic', '/track_drive/traffic_light_debug/state')
@@ -76,6 +78,7 @@ class YoloTrafficLightDetector:
     """Standalone YOLO traffic-light detector for debug/test nodes."""
 
     def __init__(self, node):
+        # YoloTrafficLightDetector 객체를 초기화하고 필요한 파라미터와 내부 상태를 준비한다.
         self.node = node
         self.net = None
         self.net_path = ''
@@ -84,6 +87,7 @@ class YoloTrafficLightDetector:
         self.raw_shape = ''
 
     def detect(self, image: Optional[np.ndarray]) -> TrafficLightResult:
+        # 입력 데이터에서 detect 조건을 감지한다.
         if image is None or image.size == 0:
             return TrafficLightResult()
 
@@ -147,6 +151,7 @@ class YoloTrafficLightDetector:
         )
 
     def _run_yolo(self, image: np.ndarray):
+        # 신호등 검출 처리 파이프라인을 실행하고 결과를 반환한다.
         model_path = Path(str(self._param('yolo_light_model_path', default_yolo_model_path()))).expanduser()
         if not model_path.exists():
             self._warn_once(f'YOLO light model not found: {model_path}')
@@ -188,6 +193,7 @@ class YoloTrafficLightDetector:
         )
 
     def _run_ort(self, model_path: Path, blob: np.ndarray):
+        # 신호등 검출 처리 파이프라인을 실행하고 결과를 반환한다.
         session_info = self._get_ort_session(model_path)
         if session_info is None:
             return None
@@ -202,6 +208,7 @@ class YoloTrafficLightDetector:
             return None
 
     def _get_ort_session(self, model_path: Path):
+        # get ort session 값을 현재 상태에서 계산하거나 조회한다.
         backend_name = str(self._param('yolo_dnn_backend', 'auto')).strip().lower()
         target_name = str(self._param('yolo_dnn_target', 'auto')).strip().lower()
         if backend_name not in ('auto', 'cuda', 'onnxruntime', 'ort') and target_name not in ('cuda', 'cuda_fp16', 'fp16'):
@@ -244,6 +251,7 @@ class YoloTrafficLightDetector:
         return info
 
     def _get_net(self, model_path: Path):
+        # get net 값을 현재 상태에서 계산하거나 조회한다.
         path_text = str(model_path)
         if self.net is not None and self.net_path == path_text:
             return self.net
@@ -259,6 +267,7 @@ class YoloTrafficLightDetector:
         return net
 
     def _configure_dnn_net(self, net):
+        # 신호등 검출의 configure dnn net 로직을 수행한다.
         backend_name = str(self._param('yolo_dnn_backend', 'auto')).strip().lower()
         target_name = str(self._param('yolo_dnn_target', 'auto')).strip().lower()
         cuda_requested = backend_name == 'cuda' or target_name in ('cuda', 'cuda_fp16', 'fp16')
@@ -279,6 +288,7 @@ class YoloTrafficLightDetector:
 
     @staticmethod
     def _opencv_dnn_cuda_available() -> bool:
+        # 신호등 검출의 opencv dnn cuda available 로직을 수행한다.
         if not hasattr(cv2.dnn, 'DNN_BACKEND_CUDA') or not hasattr(cv2.dnn, 'DNN_TARGET_CUDA'):
             return False
         try:
@@ -287,6 +297,7 @@ class YoloTrafficLightDetector:
             return False
 
     def _cache_class_scores(self, output, class_count: int):
+        # 신호등 검출의 캐시 클래스 scores 로직을 수행한다.
         self.class_scores = []
         self.raw_shape = ''
         if class_count <= 0:
@@ -320,6 +331,7 @@ class YoloTrafficLightDetector:
 
     @staticmethod
     def _letterbox_image(image: np.ndarray, input_size: int):
+        # 신호등 검출의 letterbox 이미지 로직을 수행한다.
         height, width = image.shape[:2]
         scale = min(input_size / max(width, 1), input_size / max(height, 1))
         new_width = max(int(round(width * scale)), 1)
@@ -342,6 +354,7 @@ class YoloTrafficLightDetector:
         nms_threshold: float,
         class_count: Optional[int] = None,
     ):
+        # 신호등 검출의 decode YOLO output 로직을 수행한다.
         predictions = np.asarray(output)
         if predictions.ndim == 3:
             predictions = predictions[0]
@@ -422,6 +435,7 @@ class YoloTrafficLightDetector:
         ]
 
     def _valid_light_detection(self, image: np.ndarray, box: Box) -> bool:
+        # valid 신호등 detection 후보가 유효한 조건을 만족하는지 검사한다.
         image_height, image_width = image.shape[:2]
         x0, y0, x1, y1 = box
         box_width = max(x1 - x0, 0)
@@ -443,6 +457,7 @@ class YoloTrafficLightDetector:
         )
 
     def _red_light_box_metrics(self, image: np.ndarray, box: Box) -> Tuple[bool, float, float, float]:
+        # 신호등 상태 중 빨간불 신호등 박스 metrics 조건을 판단한다.
         x0, y0, x1, y1 = box
         pad = 4
         x0 = max(x0 - pad, 0)
@@ -455,6 +470,7 @@ class YoloTrafficLightDetector:
         return self._red_light_color_metrics(crop)
 
     def _red_light_color_metrics(self, image: np.ndarray) -> Tuple[bool, float, float, float]:
+        # 신호등 상태 중 빨간불 신호등 color metrics 조건을 판단한다.
         height, width = image.shape[:2]
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         red_mask = cv2.inRange(hsv, np.array([0, 90, 80], dtype=np.uint8), np.array([10, 255, 255], dtype=np.uint8))
@@ -491,6 +507,7 @@ class YoloTrafficLightDetector:
         return False, red_ratio, green_ratio, yellow_ratio
 
     def _score_fallback(self, class_ids: Optional[Set[int]], threshold: float) -> bool:
+        # score fallback 후보의 점수나 보조 판정값을 계산한다.
         return any(
             0 <= int(class_id) < len(self.class_scores)
             and float(self.class_scores[int(class_id)]) >= threshold
@@ -498,6 +515,7 @@ class YoloTrafficLightDetector:
         )
 
     def _state_from_flags(self, red: bool, go: bool, left: bool, yellow: bool, best_label: str) -> str:
+        # 신호등 검출의 상태 from flags 로직을 수행한다.
         if go and not red:
             return 'green'
         if left:
@@ -511,6 +529,7 @@ class YoloTrafficLightDetector:
         return 'none'
 
     def _draw_debug(self, image: np.ndarray, state: str, detections: Sequence[TrafficLightDetection]) -> np.ndarray:
+        # draw 디버그 정보를 디버그 이미지 위에 그린다.
         debug = image.copy()
         color = {
             'green': (0, 220, 0),
@@ -553,6 +572,7 @@ class YoloTrafficLightDetector:
         return debug
 
     def _int_set_parameter(self, name: str) -> Optional[Set[int]]:
+        # 리스트형 ROS 파라미터를 정수 집합으로 변환한다.
         value = self._param(name, None)
         if value is None:
             return None
@@ -570,10 +590,12 @@ class YoloTrafficLightDetector:
 
     @staticmethod
     def _class_id_allowed(class_id: int, allowed_class_ids: Optional[Set[int]]) -> bool:
+        # 검출 클래스 ID가 허용 목록에 포함되는지 확인한다.
         return allowed_class_ids is None or int(class_id) in allowed_class_ids
 
     @staticmethod
     def _light_class_name(class_id: int) -> str:
+        # 신호등 검출의 신호등 클래스 name 로직을 수행한다.
         names = {
             0: 'cone',
             1: 'green',
@@ -585,12 +607,14 @@ class YoloTrafficLightDetector:
         return names.get(int(class_id), f'class{int(class_id)}')
 
     def _param(self, name: str, default):
+        # ROS 파라미터 값을 읽고 없으면 기본값을 사용한다.
         try:
             return self.node.get_parameter(name).value
         except Exception:
             return default
 
     def _warn_once(self, reason: str):
+        # 신호등 검출의 warn once 로직을 수행한다.
         now_sec = self.node.get_clock().now().nanoseconds // 1_000_000_000
         if getattr(self, '_last_warn_sec', None) == now_sec:
             return
@@ -607,23 +631,30 @@ class TrafficLightDetector:
     """
 
     def __init__(self, node):
+        # TrafficLightDetector 객체를 초기화하고 필요한 파라미터와 내부 상태를 준비한다.
         self.node = node
 
     def update(self, image: Optional[np.ndarray]):
+        # 최신 입력을 기준으로 update 관련 캐시와 상태를 갱신한다.
         if bool(self.node.get_parameter('yolo_safety_enabled').value):
             self.node._update_yolo_safety_cache(image)
 
     def red_stop_requested(self, image: Optional[np.ndarray]) -> bool:
+        # 신호등 검출의 빨간불 정지 requested 로직을 수행한다.
         return self.node._detect_red_light(image)
 
     def startup_check_pending(self) -> bool:
+        # 신호등 검출의 startup check pending 로직을 수행한다.
         return self.node._startup_light_check_pending()
 
     def startup_allows_stop_without_line(self) -> bool:
+        # 신호등 검출의 startup allows 정지 without line 로직을 수행한다.
         return self.node._startup_light_allows_stop_without_line()
 
     def visible(self) -> bool:
+        # 신호등 검출의 가시 상태 로직을 수행한다.
         return self.node._traffic_light_visible()
 
     def publish_cached_debug_image(self):
+        # publish cached 디버그 이미지 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         self.node._publish_cached_light_debug_image()

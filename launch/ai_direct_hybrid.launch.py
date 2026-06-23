@@ -399,7 +399,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument('stop_line_update_period_sec', default_value='0.01'),
         DeclareLaunchArgument('school_zone_update_period_sec', default_value='0.10'),
-        DeclareLaunchArgument('school_zone_speed', default_value='18.0'),
+        DeclareLaunchArgument('school_zone_speed', default_value='17.5'),
         DeclareLaunchArgument('school_zone_speed_limit_enabled', default_value='true'),
         DeclareLaunchArgument('school_zone_speed_limit_hold_sec', default_value='1.0'),
         DeclareLaunchArgument('school_zone_boost_enabled', default_value='false'),

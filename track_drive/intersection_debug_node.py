@@ -25,6 +25,7 @@ class IntersectionDebugNode(Node):
     """Debug stop-line + traffic-light + left-cone intersection decisions."""
 
     def __init__(self):
+        # IntersectionDebugNode 객체를 초기화하고 필요한 파라미터와 내부 상태를 준비한다.
         super().__init__('intersection_debug')
 
         declare_stop_line_bev_parameters(self)
@@ -52,6 +53,7 @@ class IntersectionDebugNode(Node):
         )
 
     def _declare_intersection_parameters(self):
+        # 교차로 디버그 노드의 declare 교차로 parameters 로직을 수행한다.
         self.declare_parameter('intersection_debug_topic_prefix', '/track_drive/intersection_debug')
         self.declare_parameter('intersection_debug_log_period_sec', 0.5)
         self.declare_parameter('intersection_left_cone_min_count', 1)
@@ -67,6 +69,7 @@ class IntersectionDebugNode(Node):
         self.declare_parameter('intersection_straight_steer_deg', 0.0)
 
     def _declare_traffic_light_parameters(self):
+        # 교차로 디버그 노드의 declare 교통 신호등 parameters 로직을 수행한다.
         self.declare_parameter('traffic_light_debug_topic', '/track_drive/traffic_light_debug/image')
         self.declare_parameter('traffic_light_state_topic', '/track_drive/traffic_light_debug/state')
         self.declare_parameter('traffic_light_log_period_sec', 0.5)
@@ -95,6 +98,7 @@ class IntersectionDebugNode(Node):
         self.declare_parameter('red_light_min_circularity', 0.10)
 
     def image_callback(self, msg: Image):
+        # ROS 토픽 콜백으로 들어온 메시지를 내부 상태에 반영한다.
         try:
             frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         except Exception as exc:
@@ -119,11 +123,13 @@ class IntersectionDebugNode(Node):
         self._log_result(stop_result.detected, light_flags, left_cone_count, route, state, speed, steer)
 
     def _route_from_left_cones(self, left_cone_count: int) -> str:
+        # 교차로 디버그 노드의 경로 선택 from 왼쪽/좌회전 콘 로직을 수행한다.
         min_count = max(int(self.get_parameter('intersection_left_cone_min_count').value), 1)
         # Current course rule: left-side cone present blocks the left route.
         return 'straight' if left_cone_count >= min_count else 'left'
 
     def _decision(self, stop_line_ready: bool, route: str, flags):
+        # 교차로 디버그 노드의 decision 로직을 수행한다.
         red, green, left, yellow = flags
         if not stop_line_ready:
             return 'APPROACH_STOP_LINE', 0.0, 0.0
@@ -146,6 +152,7 @@ class IntersectionDebugNode(Node):
         return 'WAIT_GREEN_LIGHT', 0.0, 0.0
 
     def _left_cone_count(self, image: np.ndarray, light_result: TrafficLightResult) -> int:
+        # 교차로 디버그 노드의 왼쪽/좌회전 콘 count 로직을 수행한다.
         height, width = image.shape[:2]
         class_ids = self._int_set_parameter('intersection_camera_cone_class_ids')
         min_score = max(float(self.get_parameter('intersection_camera_cone_min_score').value), 0.0)
@@ -180,6 +187,7 @@ class IntersectionDebugNode(Node):
         return count
 
     def _light_flags(self, light_result: TrafficLightResult):
+        # 교차로 디버그 노드의 신호등 flags 로직을 수행한다.
         red = any(item.red_present for item in light_result.detections)
         green = any(
             item.valid and self._class_id_allowed(item.class_id, self._int_set_parameter('yolo_go_light_class_ids'))
@@ -213,6 +221,7 @@ class IntersectionDebugNode(Node):
         speed: float,
         steer: float,
     ) -> np.ndarray:
+        # draw 디버그 정보를 디버그 이미지 위에 그린다.
         debug = light_result.debug_image.copy() if light_result.debug_image is not None else image.copy()
         height, width = debug.shape[:2]
         left_min = float(np.clip(self.get_parameter('intersection_camera_cone_left_min_ratio').value, 0.0, 1.0))
@@ -259,6 +268,7 @@ class IntersectionDebugNode(Node):
         return debug
 
     def _log_result(self, stop_line: bool, flags, left_cone_count: int, route: str, state: str, speed: float, steer: float):
+        # 로그 result 정보를 사람이 읽기 쉬운 로그 문자열로 만든다.
         now = time.monotonic()
         period = max(float(self.get_parameter('intersection_debug_log_period_sec').value), 0.0)
         if period > 0.0 and now - self.last_log_sec < period:
@@ -271,6 +281,7 @@ class IntersectionDebugNode(Node):
         )
 
     def _publish_image(self, pub, image, encoding: str, source_msg: Image):
+        # publish 이미지 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         if image is None:
             return
         try:
@@ -283,17 +294,20 @@ class IntersectionDebugNode(Node):
 
     @staticmethod
     def _publish_string(pub, value: str):
+        # publish string 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         msg = String()
         msg.data = str(value)
         pub.publish(msg)
 
     @staticmethod
     def _publish_float(pub, value: float):
+        # publish float 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         msg = Float32()
         msg.data = float(value)
         pub.publish(msg)
 
     def _int_set_parameter(self, name: str) -> Optional[Set[int]]:
+        # 리스트형 ROS 파라미터를 정수 집합으로 변환한다.
         value = self.get_parameter(name).value
         if value is None:
             return None
@@ -311,10 +325,12 @@ class IntersectionDebugNode(Node):
 
     @staticmethod
     def _class_id_allowed(class_id: int, allowed_class_ids: Optional[Set[int]]) -> bool:
+        # 검출 클래스 ID가 허용 목록에 포함되는지 확인한다.
         return allowed_class_ids is None or int(class_id) in allowed_class_ids
 
 
 def main(args=None):
+    # ROS2 노드를 초기화하고 실행 루프를 시작한다.
     rclpy.init(args=args)
     node = IntersectionDebugNode()
     try:

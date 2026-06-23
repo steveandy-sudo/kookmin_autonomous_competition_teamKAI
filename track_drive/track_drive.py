@@ -79,6 +79,7 @@ class VehicleBehavior:
 
 class TrackDriverNode(Node):
     def __init__(self):
+        # TrackDriverNode 객체를 초기화하고 필요한 파라미터와 내부 상태를 준비한다.
         super().__init__('driver')
 
         self.declare_parameter('camera_topic', '/usb_cam/image_raw/front')
@@ -101,7 +102,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('base_speed', 5.0)
         self.declare_parameter('min_speed', 3.0)
         self.declare_parameter('school_zone_enabled', True)
-        self.declare_parameter('school_zone_speed', 18.0)
+        self.declare_parameter('school_zone_speed', 17.5)
         self.declare_parameter('school_zone_speed_limit_enabled', True)
         self.declare_parameter('school_zone_speed_limit_hold_sec', 1.0)
         self.declare_parameter('school_zone_boost_enabled', False)
@@ -535,7 +536,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('intersection_left_cone_max_x', 5.50)
         self.declare_parameter('intersection_left_cone_min_y', 0.18)
         self.declare_parameter('intersection_left_cone_max_y', 2.50)
-        self.declare_parameter('intersection_left_turn_enabled', True)
+        self.declare_parameter('intersection_left_turn_enabled', False)
         self.declare_parameter('intersection_left_turn_speed', 9.0)
         self.declare_parameter('intersection_left_turn_second_speed', 9.0)
         self.declare_parameter('intersection_left_turn_steer_deg', -100.0)
@@ -759,6 +760,7 @@ class TrackDriverNode(Node):
         )
 
     def _load_ai_model(self):
+        # 메인 자율주행의 load AI 모델 로직을 수행한다.
         if not bool(self.get_parameter('ai_hybrid_enabled').value):
             return
 
@@ -779,6 +781,7 @@ class TrackDriverNode(Node):
             self.get_logger().warn(f'AI model load failed: {exc} | using rule fallback')
 
     def cam_callback(self, data: Image):
+        # ROS 토픽 콜백으로 들어온 메시지를 내부 상태에 반영한다.
         try:
             self._record_image_timing(data)
             self.image = self.bridge.imgmsg_to_cv2(data, 'bgr8')
@@ -787,12 +790,15 @@ class TrackDriverNode(Node):
             self.get_logger().warn(f'camera conversion failed: {exc}')
 
     def lidar_callback(self, msg: LaserScan):
+        # ROS 토픽 콜백으로 들어온 메시지를 내부 상태에 반영한다.
         self.scan_msg = msg
 
     def hybrid_trigger_callback(self, msg: Bool):
+        # ROS 토픽 콜백으로 들어온 메시지를 내부 상태에 반영한다.
         self.hybrid_trigger_active = bool(msg.data)
 
     def person_avoidance_enable_callback(self, msg: Bool):
+        # ROS 토픽 콜백으로 들어온 메시지를 내부 상태에 반영한다.
         enabled = bool(msg.data)
         if self.person_stop_enabled != enabled:
             state = 'enabled' if enabled else 'disabled'
@@ -802,11 +808,13 @@ class TrackDriverNode(Node):
             self._reset_person_wait_state()
 
     def ai_motor_callback(self, msg: XycarMotor):
+        # ROS 토픽 콜백으로 들어온 메시지를 내부 상태에 반영한다.
         self.last_ai_motor_msg = msg
         if self._can_relay_ai_motor_immediately():
             self.drive(angle=msg.angle, speed=msg.speed)
 
     def drive(self, angle: float, speed: float):
+        # 메인 자율주행의 주행 로직을 수행한다.
         if not rclpy.ok():
             return
 
@@ -824,6 +832,7 @@ class TrackDriverNode(Node):
                 self.get_logger().warn(f'motor publish failed: {exc}')
 
     def _apply_context_speed_limit(self, speed: float) -> float:
+        # apply context 속도 limit 조건을 현재 명령이나 상태에 적용한다.
         school_boost_active = self._school_zone_boost_active()
         if school_boost_active and speed > 0.0:
             speed = max(float(speed), self._school_zone_boost_speed())
@@ -857,6 +866,7 @@ class TrackDriverNode(Node):
         return speed
 
     def _stop_line_speed_limit_active(self) -> bool:
+        # 정지선 처리에서 정지 line 속도 limit active 조건이나 값을 계산한다.
         if not bool(self.get_parameter('stop_line_speed_limit_enabled').value):
             self.stop_line_speed_limit_hold_until_sec = 0.0
             return False
@@ -876,6 +886,7 @@ class TrackDriverNode(Node):
         return now <= self.stop_line_speed_limit_hold_until_sec
 
     def _hold_stop_line_speed_limit(self, now: Optional[float] = None):
+        # 메인 자율주행의 hold 정지 line 속도 limit 로직을 수행한다.
         hold_sec = max(float(self.get_parameter('stop_line_speed_limit_hold_sec').value), 0.0)
         if hold_sec <= 0.0:
             return
@@ -887,6 +898,7 @@ class TrackDriverNode(Node):
         )
 
     def _stop_line_recent_for_control(self) -> bool:
+        # 정지선 처리에서 정지 line recent for 제어 조건이나 값을 계산한다.
         if bool(self.stop_line_detected):
             return True
         memory_sec = max(float(self.get_parameter('stop_line_memory_sec').value), 0.0)
@@ -896,6 +908,7 @@ class TrackDriverNode(Node):
         )
 
     def _stop_line_speed_limit_signal_active(self) -> bool:
+        # 정지선 처리에서 정지 line 속도 limit signal active 조건이나 값을 계산한다.
         now = time.monotonic()
         if self._red_light_signal_visible() or self._left_turn_signal_visible():
             self.stop_line_speed_signal_last_seen_sec = now
@@ -910,6 +923,7 @@ class TrackDriverNode(Node):
         )
 
     def _stop_line_reverse_requested(self, safety_reason: str) -> bool:
+        # 정지선 처리에서 정지 line reverse requested 조건이나 값을 계산한다.
         if not bool(self.get_parameter('stop_line_reverse_enabled').value):
             self.stop_line_reverse_until_sec = 0.0
             self.stop_line_reverse_cooldown_until_sec = 0.0
@@ -959,6 +973,7 @@ class TrackDriverNode(Node):
         return True
 
     def _stop_line_distance_for_reverse(self) -> Optional[float]:
+        # 정지선 처리에서 정지 line 거리 for reverse 조건이나 값을 계산한다.
         if self.stop_line_detected and self.stop_line_distance_m is not None:
             return float(self.stop_line_distance_m)
 
@@ -972,6 +987,7 @@ class TrackDriverNode(Node):
         return None
 
     def _intersection_left_turn_approach_speed_limit_active(self) -> bool:
+        # 교차로 좌회전 판단/대기 중에는 급가속하지 않도록 접근 속도 제한이 필요한지 판단한다.
         now = time.monotonic()
         if not bool(self.get_parameter('stop_line_speed_limit_enabled').value):
             self.intersection_left_turn_speed_limit_hold_until_sec = 0.0
@@ -1000,6 +1016,7 @@ class TrackDriverNode(Node):
         return now <= self.intersection_left_turn_speed_limit_hold_until_sec
 
     def _intersection_left_turn_limit_decision_active(self) -> bool:
+        # 좌회전 여부를 아직 결정 중이거나 좌회전 신호/정지선 대기 중인 상태인지 확인한다.
         return self.intersection_last_decision in (
             'left_cone_check',
             'left_wait_signal',
@@ -1007,6 +1024,7 @@ class TrackDriverNode(Node):
         )
 
     def _hold_intersection_left_turn_speed_limit(self, now: Optional[float] = None):
+        # 좌회전 관련 대기 상태가 잠깐 끊겨도 지정 시간 동안 속도 제한을 유지한다.
         hold_sec = max(
             float(self.get_parameter('intersection_left_turn_speed_limit_hold_sec').value),
             0.0,
@@ -1021,6 +1039,7 @@ class TrackDriverNode(Node):
         )
 
     def _intersection_left_turn_repeat_wait_active(self) -> bool:
+        # 첫 좌회전 이후 반복 좌회전이 예약되어 있고 아직 시작 전인지 확인한다.
         now = time.monotonic()
         return (
             self.intersection_left_turn_repeat_start_sec > now
@@ -1029,6 +1048,7 @@ class TrackDriverNode(Node):
         )
 
     def _apply_school_zone_speed_limit(self, speed: float) -> float:
+        # apply 어린이 보호구역 구역 속도 limit 조건을 현재 명령이나 상태에 적용한다.
         if not bool(self.get_parameter('school_zone_speed_limit_enabled').value):
             return speed
         speed = self.school_zone_detector.apply_speed_limit(speed)
@@ -1037,6 +1057,7 @@ class TrackDriverNode(Node):
         return speed
 
     def _forced_school_zone_speed_limit_active(self) -> bool:
+        # 메인 자율주행의 forced 어린이 보호구역 구역 속도 limit active 로직을 수행한다.
         now = time.monotonic()
         in_forced_window = (
             self.intersection_post_left_school_limit_start_sec > 0.0
@@ -1046,12 +1067,14 @@ class TrackDriverNode(Node):
         return in_forced_window and bool(getattr(self, 'school_zone_speed_limit_active', False))
 
     def _school_zone_speed_limit_active(self) -> bool:
+        # 어린이 보호구역 처리에서 어린이 보호구역 구역 속도 limit active 조건이나 값을 계산한다.
         return (
             bool(getattr(self, 'school_zone_speed_limit_active', False))
             or self._forced_school_zone_speed_limit_active()
         )
 
     def _update_school_zone_boost_state(self):
+        # 최신 입력을 기준으로 update 어린이 보호구역 구역 boost 상태 관련 캐시와 상태를 갱신한다.
         if not bool(self.get_parameter('school_zone_boost_enabled').value):
             self.school_zone_boost_until_sec = 0.0
             self.school_zone_boost_latched = False
@@ -1075,15 +1098,18 @@ class TrackDriverNode(Node):
             self.school_zone_boost_latched = False
 
     def _school_zone_boost_active(self) -> bool:
+        # 어린이 보호구역 처리에서 어린이 보호구역 구역 boost active 조건이나 값을 계산한다.
         return (
             bool(self.get_parameter('school_zone_boost_enabled').value)
             and time.monotonic() <= float(getattr(self, 'school_zone_boost_until_sec', 0.0))
         )
 
     def _school_zone_boost_speed(self) -> float:
+        # 어린이 보호구역 처리에서 어린이 보호구역 구역 boost 속도 조건이나 값을 계산한다.
         return max(float(self.get_parameter('school_zone_boost_speed').value), 0.0)
 
     def _update_person_slow_speed_limit_state(self):
+        # 최신 입력을 기준으로 update 보행자 slow 속도 limit 상태 관련 캐시와 상태를 갱신한다.
         if not bool(self.get_parameter('person_slow_until_school_passed_enabled').value):
             self.person_slow_speed_limit_active = False
             self.person_slow_seen_school_zone = False
@@ -1134,9 +1160,11 @@ class TrackDriverNode(Node):
                 self.person_slow_seen_school_zone = True
 
     def _school_zone_detected_for_person_slow_release(self) -> bool:
+        # 어린이 보호구역 처리에서 어린이 보호구역 구역 detected for 보행자 slow release 조건이나 값을 계산한다.
         return bool(self.school_zone_active or self.school_zone_candidate_active)
 
     def _person_slow_trigger_visible(self) -> bool:
+        # 보행자 대응에서 보행자 slow trigger 가시 상태 조건이나 명령을 계산한다.
         return bool(
             self.cached_yolo_person
             or self.cached_yolo_person_box is not None
@@ -1146,6 +1174,7 @@ class TrackDriverNode(Node):
         )
 
     def _school_zone_passed_after_person_slow(self, now: float) -> bool:
+        # 어린이 보호구역 처리에서 어린이 보호구역 구역 passed after 보행자 slow 조건이나 값을 계산한다.
         if self._school_zone_speed_limit_active():
             return False
         last_seen_sec = self.school_zone_last_seen_sec
@@ -1163,6 +1192,7 @@ class TrackDriverNode(Node):
         return now - last_seen_sec > release_delay_sec
 
     def publish_ai_enable(self, enabled: bool):
+        # publish AI enable 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         self.last_ai_enable = bool(enabled)
         if enabled:
             self._mark_ai_initial_speed_started()
@@ -1172,6 +1202,7 @@ class TrackDriverNode(Node):
         self.ai_enable_pub.publish(msg)
 
     def publish_ai_speed_limit(self):
+        # publish AI 속도 limit 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         msg = Float32()
         speed_limit_items = self._current_external_speed_limit_items()
         speed_limit = min((limit for _, limit in speed_limit_items), default=None)
@@ -1187,6 +1218,7 @@ class TrackDriverNode(Node):
         self.publish_ai_turn_speed_override()
 
     def publish_ai_turn_speed_override(self):
+        # publish AI 회전 속도 override 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         msg = Float32()
         if self._person_slow_speed_limit_active():
             msg.data = max(float(self.get_parameter('person_slow_speed').value), 0.0)
@@ -1195,10 +1227,12 @@ class TrackDriverNode(Node):
         self.ai_turn_speed_pub.publish(msg)
 
     def _current_external_speed_limit(self) -> Optional[float]:
+        # 메인 자율주행의 current external 속도 limit 로직을 수행한다.
         limits = [limit for _, limit in self._current_external_speed_limit_items()]
         return min(limits) if limits else None
 
     def _current_external_speed_limit_items(self) -> List[Tuple[str, float]]:
+        # 메인 자율주행의 current external 속도 limit items 로직을 수행한다.
         limits: List[Tuple[str, float]] = []
         school_boost_active = self._school_zone_boost_active()
         if school_boost_active:
@@ -1228,6 +1262,7 @@ class TrackDriverNode(Node):
         return limits
 
     def _traffic_light_speed_limit_active(self) -> bool:
+        # 신호등 상태 중 교통 신호등 속도 limit active 조건을 판단한다.
         if not bool(self.get_parameter('traffic_light_speed_limit_enabled').value):
             self.traffic_light_speed_limit_until_sec = 0.0
             return False
@@ -1244,6 +1279,7 @@ class TrackDriverNode(Node):
         return now <= self.traffic_light_speed_limit_until_sec
 
     def _mark_ai_initial_speed_started(self):
+        # 메인 자율주행의 mark AI initial 속도 started 로직을 수행한다.
         if not bool(self.get_parameter('ai_initial_speed_limit_enabled').value):
             return
         if self.ai_initial_speed_limit_done:
@@ -1252,6 +1288,7 @@ class TrackDriverNode(Node):
             self.ai_initial_speed_start_sec = time.monotonic()
 
     def _ai_initial_speed_limit_active(self) -> bool:
+        # 메인 자율주행의 AI initial 속도 limit active 로직을 수행한다.
         if not bool(self.get_parameter('ai_initial_speed_limit_enabled').value):
             return False
         if self.ai_initial_speed_limit_done:
@@ -1267,12 +1304,14 @@ class TrackDriverNode(Node):
         return False
 
     def _person_slow_speed_limit_active(self) -> bool:
+        # 보행자 대응에서 보행자 slow 속도 limit active 조건이나 명령을 계산한다.
         return (
             bool(self.get_parameter('person_slow_until_school_passed_enabled').value)
             and self.person_slow_speed_limit_active
         )
 
     def _intersection_left_turn_repeat_ai_speed_limit_active(self) -> bool:
+        # 반복 좌회전 직후 AI 주행 속도를 잠시 제한해야 하는 구간인지 판단한다.
         if not bool(self.get_parameter('intersection_left_turn_repeat_ai_speed_enabled').value):
             return False
 
@@ -1283,6 +1322,7 @@ class TrackDriverNode(Node):
         return False
 
     def main_loop(self):
+        # 메인 자율주행의 main loop 로직을 수행한다.
         self.get_logger().info('START DRIVING: lane/cone local lattice planner enabled')
 
         rate_hz = max(float(self.get_parameter('control_rate_hz').value), 1.0)
@@ -1298,6 +1338,7 @@ class TrackDriverNode(Node):
                 time.sleep(period - elapsed)
 
     def control_once(self):
+        # 메인 자율주행의 제어 once 로직을 수행한다.
         self.safety_supervisor.update_perception(self.image)
         self._update_school_zone_boost_state()
         self._update_person_slow_speed_limit_state()
@@ -1601,6 +1642,7 @@ class TrackDriverNode(Node):
             len(raw_cones), nearest_obstacle)
 
     def _should_use_hybrid_mode(self, nearest_obstacle: Optional[float]) -> bool:
+        # should use hybrid mode 동작이 필요한지 판단한다.
         if self.hybrid_trigger_active:
             return True
 
@@ -1614,6 +1656,8 @@ class TrackDriverNode(Node):
         return nearest_obstacle < trigger_distance
 
     def _intersection_route_command(self, cones: Sequence[Point]) -> Optional[Tuple[str, float, float]]:
+        # 교차로 전체 라우팅의 중심 함수다.
+        # 정지선/신호등이 준비된 뒤 왼쪽 콘 유무로 직진 또는 좌회전 대기/실행을 결정한다.
         if not bool(self.get_parameter('intersection_route_enabled').value):
             self.intersection_left_turn_until_sec = 0.0
             self.intersection_left_turn_current_speed = 0.0
@@ -1723,6 +1767,8 @@ class TrackDriverNode(Node):
         now: float,
         cones: Sequence[Point],
     ) -> Tuple[bool, Optional[Tuple[str, float, float]]]:
+        # 이미 직진 대기/좌회전 신호 대기/정지선 대기에 들어간 상태를 유지하고 다음 조건을 확인한다.
+        # 좌회전 대기에 들어간 뒤에는 뒤늦게 콘이 보여도 직진 대기로 되돌리지 않는다.
         if self.intersection_last_decision not in (
             'left_wait_signal',
             'left_wait_stop_line',
@@ -1782,6 +1828,7 @@ class TrackDriverNode(Node):
         now: float,
         cooldown_sec: float,
     ) -> Optional[Tuple[str, float, float]]:
+        # 좌회전 테스트를 잠그고 직진 신호에서만 통과시키는 시험용 분기다.
         if (
             not self._green_light_visible()
             or self._red_light_signal_visible()
@@ -1812,6 +1859,7 @@ class TrackDriverNode(Node):
         self,
         now: float,
     ) -> Tuple[bool, Optional[Tuple[str, float, float]]]:
+        # 첫 좌회전 뒤 추가 좌회전이 예약되어 있으면 시작 시점까지 기다리거나 실행한다.
         if self.intersection_left_turn_repeat_start_sec <= 0.0:
             return False, None
         if now < self.intersection_left_turn_repeat_start_sec:
@@ -1825,6 +1873,7 @@ class TrackDriverNode(Node):
         return True, None
 
     def _intersection_signal_wait_until(self, now: float) -> float:
+        # 교차로에서 신호를 기다릴 수 있는 종료 시각을 계산한다. 0 이하이면 무기한 대기한다.
         timeout_sec = float(self.get_parameter('intersection_signal_wait_timeout_sec').value)
         if timeout_sec <= 0.0:
             return float('inf')
@@ -1836,6 +1885,7 @@ class TrackDriverNode(Node):
         cooldown_sec: float,
         schedule_repeat: bool = True,
     ) -> Optional[Tuple[str, float, float]]:
+        # 좌회전 실행 상태를 시작하고, 회전 시간/속도/조향각/쿨다운/반복 예약 상태를 설정한다.
         if not self._intersection_left_turn_enabled():
             return self._skip_intersection_left_turn(now, cooldown_sec)
         if schedule_repeat and not self._left_turn_stop_line_position_ready():
@@ -1901,6 +1951,7 @@ class TrackDriverNode(Node):
         )
 
     def _current_intersection_left_turn_speed(self) -> float:
+        # 현재 좌회전 명령에 사용할 속도를 계산한다. 어린이 보호구역 제한이 활성화되면 더 낮은 값을 쓴다.
         speed = self.intersection_left_turn_current_speed
         if speed <= 0.0:
             speed = max(float(self.get_parameter('intersection_left_turn_speed').value), 0.0)
@@ -1915,6 +1966,7 @@ class TrackDriverNode(Node):
         return speed
 
     def _school_zone_limit_for_intersection_turn_active(self) -> bool:
+        # 좌회전 중에도 어린이 보호구역 제한을 유지해야 하는지 최근 인식 상태까지 포함해 판단한다.
         if self._school_zone_speed_limit_active():
             return True
 
@@ -1926,6 +1978,7 @@ class TrackDriverNode(Node):
         )
 
     def _intersection_left_turn_enabled(self) -> bool:
+        # 좌회전 실행 허용 스위치다. false면 좌회전 후보가 나와도 실행하지 않고 스킵한다.
         return bool(self.get_parameter('intersection_left_turn_enabled').value)
 
     def _skip_intersection_left_turn(
@@ -1933,6 +1986,7 @@ class TrackDriverNode(Node):
         now: float,
         cooldown_sec: float,
     ) -> Optional[Tuple[str, float, float]]:
+        # 좌회전이 비활성화된 상태에서 좌회전 후보가 나왔을 때 관련 상태를 모두 정리하고 통과시킨다.
         self.intersection_last_decision = 'left_disabled_ai'
         self.intersection_left_turn_until_sec = 0.0
         self.intersection_left_turn_current_speed = 0.0
@@ -1956,6 +2010,8 @@ class TrackDriverNode(Node):
         now: float,
         min_count: int,
     ) -> bool:
+        # 교차로 왼쪽에 콘이 있는지 LiDAR/카메라 감지를 합산해 판단한다.
+        # 콘이 있으면 직진 후보, 콘이 없으면 좌회전 후보로 넘어간다.
         use_lidar_cones = bool(self.get_parameter('intersection_use_lidar_cones').value)
         left_cones = self._intersection_left_cones(cones) if use_lidar_cones else []
         camera_left_count = self._intersection_camera_left_cone_count()
@@ -1978,12 +2034,14 @@ class TrackDriverNode(Node):
         return False
 
     def _reset_intersection_left_cone_state(self):
+        # 교차로 조건이 사라졌을 때 왼쪽 콘 판단 카운터와 메모리를 초기화한다.
         self.intersection_left_cone_count = 0
         self.intersection_camera_left_cone_count = 0
         self.intersection_left_no_cone_confirm_count = 0
         self.intersection_left_cone_last_seen_sec = None
 
     def _intersection_trigger_ready(self) -> bool:
+        # 교차로 판단을 시작할 수 있는지 확인한다. 기본적으로 신호등과 정지선 위치가 필요하다.
         if not self._traffic_light_visible():
             return False
         if not bool(self.get_parameter('stop_on_light_requires_stop_line').value):
@@ -1992,6 +2050,7 @@ class TrackDriverNode(Node):
         return self._left_turn_stop_line_position_ready()
 
     def _traffic_light_visible(self) -> bool:
+        # YOLO 캐시나 디버그 검출 결과에서 어떤 종류든 신호등이 보이는지 확인한다.
         if (
             self.cached_yolo_go_light
             or self.cached_yolo_red_light
@@ -2015,6 +2074,7 @@ class TrackDriverNode(Node):
         return False
 
     def _left_turn_signal_visible(self) -> bool:
+        # 좌회전 신호 클래스가 충분한 점수로 잡혔는지 확인한다.
         if self.cached_yolo_left_light:
             return True
 
@@ -2029,6 +2089,7 @@ class TrackDriverNode(Node):
         )
 
     def _red_light_signal_visible(self) -> bool:
+        # 빨간불 또는 정지 신호가 보이는지 확인해 정지/대기 판단에 사용한다.
         if (
             self.cached_yolo_red_light
             or getattr(self, 'cached_yolo_raw_red_light', False)
@@ -2055,6 +2116,7 @@ class TrackDriverNode(Node):
         return False
 
     def _left_turn_stop_line_position_ready(self) -> bool:
+        # 좌회전을 시작해도 되는 정지선 거리 안에 들어왔는지 확인한다.
         if not bool(self.get_parameter('stop_on_light_requires_stop_line').value):
             return True
         distance_m = self._stop_line_distance_for_intersection()
@@ -2069,6 +2131,7 @@ class TrackDriverNode(Node):
         return distance_m <= trigger_distance
 
     def _stop_line_distance_for_intersection(self) -> Optional[float]:
+        # 현재 또는 최근에 인식한 정지선 거리 값을 교차로 판단용으로 가져온다.
         required_frames = max(int(self.get_parameter('stop_line_confirm_frames').value), 1)
         if self.stop_line_detected and self.stop_line_confirm_count >= required_frames:
             return self.stop_line_distance_m
@@ -2082,6 +2145,7 @@ class TrackDriverNode(Node):
         return None
 
     def _green_light_visible(self) -> bool:
+        # 일반 초록/파란 직진 신호가 보이는지 확인한다.
         if self.cached_yolo_go_light:
             return True
 
@@ -2104,6 +2168,7 @@ class TrackDriverNode(Node):
         return False
 
     def _intersection_left_cones(self, cones: Sequence[Point]) -> List[Point]:
+        # LiDAR 콘 목록 중 좌회전 판단에 쓰는 왼쪽 영역 안의 콘만 골라낸다.
         min_x = max(float(self.get_parameter('intersection_left_cone_min_x').value), 0.0)
         max_x = max(float(self.get_parameter('intersection_left_cone_max_x').value), min_x)
         min_y = max(float(self.get_parameter('intersection_left_cone_min_y').value), 0.0)
@@ -2114,6 +2179,7 @@ class TrackDriverNode(Node):
         ]
 
     def _intersection_camera_left_cone_count(self) -> int:
+        # 카메라 YOLO 검출 결과 중 왼쪽 콘 영역에 들어온 cone class 개수를 센다.
         if not bool(self.get_parameter('intersection_camera_cone_enabled').value):
             return 0
         if self.image is None:
@@ -2156,12 +2222,14 @@ class TrackDriverNode(Node):
         return count
 
     def _school_zone_takeover_requested(self) -> bool:
+        # 어린이 보호구역 처리에서 어린이 보호구역 구역 takeover requested 조건이나 값을 계산한다.
         return (
             self.school_zone_active
             and bool(self.get_parameter('school_zone_takeover_enabled').value)
         )
 
     def _can_relay_ai_motor_immediately(self) -> bool:
+        # can relay AI 모터 immediately 동작을 수행할 수 있는 상태인지 확인한다.
         if not bool(self.get_parameter('ai_command_passthrough_enabled').value):
             return False
         if self.hybrid_trigger_active:
@@ -2171,6 +2239,7 @@ class TrackDriverNode(Node):
         return not bool(self.get_parameter('hybrid_on_obstacle_enabled').value)
 
     def _target_ai_speed(self, steer: float, cones: Sequence[Point], min_clearance: float) -> float:
+        # 메인 자율주행의 target AI 속도 로직을 수행한다.
         straight_speed = max(float(self.get_parameter('ai_speed').value), 0.0)
         if bool(self.get_parameter('ai_fixed_speed_enabled').value):
             speed = straight_speed
@@ -2204,6 +2273,7 @@ class TrackDriverNode(Node):
         return speed
 
     def _target_person_avoidance_speed(self, nearest_obstacle: Optional[float]) -> float:
+        # 메인 자율주행의 target 보행자 avoidance 속도 로직을 수행한다.
         close_stop = max(float(self.get_parameter('person_avoidance_close_stop_distance').value), 0.0)
         if close_stop > 0.0 and nearest_obstacle is not None and nearest_obstacle < close_stop:
             return 0.0
@@ -2217,6 +2287,7 @@ class TrackDriverNode(Node):
         return max(float(self.get_parameter('person_avoidance_speed').value), 0.0)
 
     def _predict_ai_steer(self, image: Optional[np.ndarray], passthrough: bool = False) -> Optional[float]:
+        # 메인 자율주행의 predict AI 조향 로직을 수행한다.
         if self.ai_model is None or self.ai_torch is None:
             return None
         if image is None:
@@ -2254,6 +2325,7 @@ class TrackDriverNode(Node):
         return steer
 
     def _preprocess_ai_image(self, image_bgr: np.ndarray) -> np.ndarray:
+        # 메인 자율주행의 preprocess AI 이미지 로직을 수행한다.
         height, _ = image_bgr.shape[:2]
         roi_top_ratio = float(self.get_parameter('ai_roi_top_ratio').value)
         roi_top = int(np.clip(roi_top_ratio, 0.0, 0.9) * height)
@@ -2268,6 +2340,7 @@ class TrackDriverNode(Node):
         return np.transpose(rgb.astype(np.float32) / 255.0, (2, 0, 1))
 
     def _log_ai_warning(self, reason: str):
+        # 로그 AI warning 정보를 사람이 읽기 쉬운 로그 문자열로 만든다.
         now_sec = self.get_clock().now().nanoseconds // 1_000_000_000
         if now_sec == self._ai_last_warn_sec:
             return
@@ -2275,6 +2348,7 @@ class TrackDriverNode(Node):
         self.get_logger().info(f'AI fallback to rule: {reason}')
 
     def _extract_cones_from_scan(self, msg: Optional[LaserScan]) -> List[Point]:
+        # 메인 자율주행의 extract 콘 from 스캔 로직을 수행한다.
         if msg is None or not msg.ranges:
             return []
 
@@ -2334,11 +2408,13 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _nearest_obstacle_distance(points: Sequence[Point]) -> Optional[float]:
+        # 메인 자율주행의 nearest 장애물 거리 로직을 수행한다.
         if not points:
             return None
         return min(math.hypot(x, y) for x, y in points)
 
     def _nearest_scan_obstacle_distance(self, msg: Optional[LaserScan]) -> Optional[float]:
+        # 메인 자율주행의 nearest 스캔 장애물 거리 로직을 수행한다.
         if msg is None or not msg.ranges:
             return None
 
@@ -2370,11 +2446,13 @@ class TrackDriverNode(Node):
         return nearest
 
     def _publish_nearest_obstacle_distance(self, distance: Optional[float]):
+        # publish nearest 장애물 거리 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         msg = Float32()
         msg.data = -1.0 if distance is None else float(distance)
         self.nearest_obstacle_pub.publish(msg)
 
     def _detect_safety_stop(self) -> Tuple[bool, str]:
+        # 입력 데이터에서 detect safety 정지 조건을 감지한다.
         now = time.monotonic()
         detected_reason = None
 
@@ -2411,6 +2489,7 @@ class TrackDriverNode(Node):
         return False, ''
 
     def _startup_light_check_pending(self) -> bool:
+        # 메인 자율주행의 startup 신호등 check pending 로직을 수행한다.
         if self.startup_light_gate_released:
             return False
         if not bool(self.get_parameter('startup_light_check_enabled').value):
@@ -2458,6 +2537,7 @@ class TrackDriverNode(Node):
         return 0 < self.red_light_confirm_count < required_frames
 
     def _startup_light_allows_stop_without_line(self) -> bool:
+        # 메인 자율주행의 startup 신호등 allows 정지 without line 로직을 수행한다.
         if not bool(self.get_parameter('startup_light_ignore_stop_line').value):
             return False
         if not bool(self.get_parameter('startup_light_check_enabled').value):
@@ -2489,18 +2569,21 @@ class TrackDriverNode(Node):
         return True
 
     def _person_stop_enabled(self) -> bool:
+        # 보행자 대응에서 보행자 정지 enabled 조건이나 명령을 계산한다.
         enabled = getattr(self, 'person_stop_enabled', None)
         if enabled is None:
             return bool(self.get_parameter('stop_on_person_enabled').value)
         return bool(enabled)
 
     def _person_slow_monitoring_enabled(self) -> bool:
+        # 보행자 대응에서 보행자 slow monitoring enabled 조건이나 명령을 계산한다.
         return (
             bool(self.get_parameter('person_slow_until_school_passed_enabled').value)
             and not self.person_slow_completed
         )
 
     def _person_avoidance_requested(self) -> bool:
+        # 보행자 대응에서 보행자 avoidance requested 조건이나 명령을 계산한다.
         if not bool(self.get_parameter('person_avoidance_enabled').value):
             return False
         if not self._person_stop_enabled():
@@ -2549,6 +2632,7 @@ class TrackDriverNode(Node):
         return False
 
     def _person_wait_release_ready(self) -> bool:
+        # 보행자 대응에서 보행자 wait release ready 조건이나 명령을 계산한다.
         left_y = float(self.get_parameter('person_wait_release_left_y').value)
         point = self.person_fusion_point
         if point is not None and point[1] >= left_y:
@@ -2561,6 +2645,7 @@ class TrackDriverNode(Node):
         return False
 
     def _person_reverse_requested(self, person_detected: bool) -> bool:
+        # 보행자 대응에서 보행자 reverse requested 조건이나 명령을 계산한다.
         if not bool(self.get_parameter('person_reverse_enabled').value):
             self.person_reverse_until_sec = 0.0
             return False
@@ -2598,6 +2683,7 @@ class TrackDriverNode(Node):
         return False
 
     def _reset_person_wait_state(self):
+        # reset 보행자 wait 상태 관련 내부 상태와 카운터를 초기화한다.
         self.person_avoidance_until_sec = 0.0
         self.person_avoidance_active = False
         self.person_avoidance_started_sec = None
@@ -2608,6 +2694,7 @@ class TrackDriverNode(Node):
         self.person_wait_last_seen_sec = None
 
     def _detect_red_light(self, image: Optional[np.ndarray]) -> bool:
+        # 입력 데이터에서 detect 빨간불 신호등 조건을 감지한다.
         if not bool(self.get_parameter('stop_on_red_light_enabled').value):
             return False
         if image is None:
@@ -2633,9 +2720,11 @@ class TrackDriverNode(Node):
         return stop_ready and self._red_light_color_present(roi)
 
     def _stop_line_ready_for_light_stop(self) -> bool:
+        # 정지선 처리에서 정지 line ready for 신호등 정지 조건이나 값을 계산한다.
         return self.stop_line_detector.ready_for_light_stop()
 
     def _startup_light_stop_without_line_active(self) -> bool:
+        # 메인 자율주행의 startup 신호등 정지 without line active 로직을 수행한다.
         return (
             bool(self.get_parameter('startup_light_ignore_stop_line').value)
             and bool(self.get_parameter('startup_light_check_enabled').value)
@@ -2644,12 +2733,14 @@ class TrackDriverNode(Node):
         )
 
     def _estimate_stop_line_distance(self, row_ratio: float) -> float:
+        # estimate 정지 line 거리 값을 입력 특징으로부터 추정한다.
         bottom_ratio = float(np.clip(
             self.get_parameter('stop_line_distance_bottom_ratio').value, 0.0, 1.0))
         scale_m = max(float(self.get_parameter('stop_line_distance_scale_m').value), 0.01)
         return max(0.0, (bottom_ratio - float(row_ratio)) * scale_m)
 
     def _stop_line_bird_eye_front_ready(self, image: np.ndarray) -> bool:
+        # 정지선 처리에서 정지 line bird eye 전방 ready 조건이나 값을 계산한다.
         height, width = image.shape[:2]
         bev_width = 320
         bev_height = 240
@@ -2739,6 +2830,7 @@ class TrackDriverNode(Node):
         return True
 
     def _update_stop_line_state(self, image: Optional[np.ndarray]):
+        # 최신 입력을 기준으로 update 정지 line 상태 관련 캐시와 상태를 갱신한다.
         self.stop_line_detected = False
         self.stop_line_row_ratio = 0.0
         self.stop_line_bottom_row_ratio = 0.0
@@ -2843,6 +2935,7 @@ class TrackDriverNode(Node):
             self.stop_line_confirm_count = 0
 
     def _detect_person(self, image: Optional[np.ndarray], scan: Optional[LaserScan]) -> bool:
+        # 입력 데이터에서 detect 보행자 조건을 감지한다.
         if not self._person_stop_enabled():
             return False
 
@@ -2869,6 +2962,7 @@ class TrackDriverNode(Node):
         return False
 
     def _detect_vehicle(self, image: Optional[np.ndarray]) -> bool:
+        # 입력 데이터에서 detect 차량 조건을 감지한다.
         if not self._vehicle_processing_enabled():
             return False
         if not bool(self.get_parameter('stop_on_vehicle_enabled').value):
@@ -2880,6 +2974,7 @@ class TrackDriverNode(Node):
         return self.cached_yolo_vehicle
 
     def _vehicle_rule_requested(self) -> bool:
+        # 차량 대응에서 차량 rule requested 조건이나 명령을 계산한다.
         if not bool(self.get_parameter('yolo_safety_enabled').value):
             return False
         if not self._vehicle_processing_enabled():
@@ -2887,6 +2982,7 @@ class TrackDriverNode(Node):
         return self.cached_yolo_vehicle or self._has_yolo_confirmed_vehicle_track()
 
     def _vehicle_processing_enabled(self) -> bool:
+        # 차량 대응에서 차량 processing enabled 조건이나 명령을 계산한다.
         return (
             bool(self.get_parameter('stop_on_vehicle_enabled').value)
             or bool(self.get_parameter('vehicle_overtake_enabled').value)
@@ -2894,6 +2990,7 @@ class TrackDriverNode(Node):
         )
 
     def _update_yolo_safety_cache(self, image: Optional[np.ndarray]):
+        # 최신 입력을 기준으로 update YOLO safety 캐시 관련 캐시와 상태를 갱신한다.
         if image is None:
             self.cached_yolo_person = False
             self.cached_yolo_person_detections = []
@@ -3119,6 +3216,7 @@ class TrackDriverNode(Node):
         image: np.ndarray,
         class_count: Optional[int] = None,
     ):
+        # 메인 자율주행 처리 파이프라인을 실행하고 결과를 반환한다.
         model_path = Path(model_path_value).expanduser()
         if not model_path.exists():
             self._warn_yolo_once(name, f'YOLO model not found: {model_path}')
@@ -3156,6 +3254,7 @@ class TrackDriverNode(Node):
         return detections
 
     def _run_yolo_ort(self, name: str, model_path: Path, blob: np.ndarray):
+        # 메인 자율주행 처리 파이프라인을 실행하고 결과를 반환한다.
         session_info = self._get_yolo_ort_session(name, model_path)
         if session_info is None:
             return None
@@ -3170,6 +3269,7 @@ class TrackDriverNode(Node):
             return None
 
     def _get_yolo_ort_session(self, name: str, model_path: Path):
+        # get YOLO ort session 값을 현재 상태에서 계산하거나 조회한다.
         backend_name = str(self.get_parameter('yolo_dnn_backend').value).strip().lower()
         target_name = str(self.get_parameter('yolo_dnn_target').value).strip().lower()
         if backend_name not in ('auto', 'cuda', 'onnxruntime', 'ort') and target_name not in ('cuda', 'cuda_fp16', 'fp16'):
@@ -3209,6 +3309,7 @@ class TrackDriverNode(Node):
         return info
 
     def _cache_yolo_light_score_debug(self, output, class_count: Optional[int]):
+        # 메인 자율주행의 캐시 YOLO 신호등 score 디버그 로직을 수행한다.
         self.cached_yolo_light_class_scores = []
         self.cached_yolo_light_raw_shape = ''
         class_count = int(class_count) if class_count is not None and int(class_count) > 0 else 0
@@ -3243,6 +3344,7 @@ class TrackDriverNode(Node):
             self._warn_yolo_once('light_score_debug', f'YOLO light score debug failed: {exc}')
 
     def _stop_light_score_fallback(self) -> Tuple[float, float]:
+        # 메인 자율주행의 정지 신호등 score fallback 로직을 수행한다.
         scores = getattr(self, 'cached_yolo_light_class_scores', [])
         if not scores:
             return 0.0, 0.0
@@ -3260,6 +3362,7 @@ class TrackDriverNode(Node):
         return stop_score, go_score
 
     def _int_set_parameter(self, name: str) -> Optional[Set[int]]:
+        # 리스트형 ROS 파라미터를 정수 집합으로 변환한다.
         value = self.get_parameter(name).value
         if value is None:
             return None
@@ -3277,9 +3380,11 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _class_id_allowed(class_id: int, allowed_class_ids: Optional[Set[int]]) -> bool:
+        # 검출 클래스 ID가 허용 목록에 포함되는지 확인한다.
         return allowed_class_ids is None or int(class_id) in allowed_class_ids
 
     def _get_yolo_net(self, name: str, model_path: Path):
+        # get YOLO net 값을 현재 상태에서 계산하거나 조회한다.
         key = (name, str(model_path))
         if key in self.yolo_nets:
             return self.yolo_nets[key]
@@ -3296,6 +3401,7 @@ class TrackDriverNode(Node):
         return net
 
     def _configure_yolo_dnn_net(self, net):
+        # 메인 자율주행의 configure YOLO dnn net 로직을 수행한다.
         backend_name = str(self.get_parameter('yolo_dnn_backend').value).strip().lower()
         target_name = str(self.get_parameter('yolo_dnn_target').value).strip().lower()
         cuda_requested = backend_name == 'cuda' or target_name in ('cuda', 'cuda_fp16', 'fp16')
@@ -3316,6 +3422,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _opencv_dnn_cuda_available() -> bool:
+        # 메인 자율주행의 opencv dnn cuda available 로직을 수행한다.
         if not hasattr(cv2.dnn, 'DNN_BACKEND_CUDA') or not hasattr(cv2.dnn, 'DNN_TARGET_CUDA'):
             return False
         try:
@@ -3325,6 +3432,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _letterbox_image(image: np.ndarray, input_size: int):
+        # 메인 자율주행의 letterbox 이미지 로직을 수행한다.
         height, width = image.shape[:2]
         scale = min(input_size / max(width, 1), input_size / max(height, 1))
         new_width = max(int(round(width * scale)), 1)
@@ -3347,6 +3455,7 @@ class TrackDriverNode(Node):
         nms_threshold: float,
         class_count: Optional[int] = None,
     ):
+        # 메인 자율주행의 decode YOLO output 로직을 수행한다.
         predictions = np.asarray(output)
         if predictions.ndim == 3:
             predictions = predictions[0]
@@ -3428,6 +3537,7 @@ class TrackDriverNode(Node):
         return detections
 
     def _box_contains_red_light(self, image: np.ndarray, box: Tuple[int, int, int, int]) -> bool:
+        # 메인 자율주행의 박스 contains 빨간불 신호등 로직을 수행한다.
         return self._red_light_box_metrics(image, box)[0]
 
     def _red_light_box_metrics(
@@ -3435,6 +3545,7 @@ class TrackDriverNode(Node):
         image: np.ndarray,
         box: Tuple[int, int, int, int],
     ) -> Tuple[bool, float, float, float]:
+        # 신호등 상태 중 빨간불 신호등 박스 metrics 조건을 판단한다.
         x0, y0, x1, y1 = box
         pad = 4
         x0 = max(x0 - pad, 0)
@@ -3447,6 +3558,7 @@ class TrackDriverNode(Node):
         return self._red_light_color_metrics(crop)
 
     def _valid_person_detection(self, image: np.ndarray, box: Tuple[int, int, int, int]) -> bool:
+        # valid 보행자 detection 후보가 유효한 조건을 만족하는지 검사한다.
         image_height, image_width = image.shape[:2]
         x0, y0, x1, y1 = box
         box_height = max(y1 - y0, 0)
@@ -3462,6 +3574,7 @@ class TrackDriverNode(Node):
         )
 
     def _valid_vehicle_detection(self, image: np.ndarray, box: Tuple[int, int, int, int]) -> bool:
+        # valid 차량 detection 후보가 유효한 조건을 만족하는지 검사한다.
         image_height, image_width = image.shape[:2]
         x0, y0, x1, y1 = box
         box_height = max(y1 - y0, 0)
@@ -3484,6 +3597,7 @@ class TrackDriverNode(Node):
         scan: Optional[LaserScan],
         detections: Sequence[Tuple[Tuple[int, int, int, int], float, int]],
     ):
+        # 최신 입력을 기준으로 update 차량 tracks 관련 캐시와 상태를 갱신한다.
         now = time.monotonic()
         matched_ids: Set[int] = set()
         detections = sorted(detections, key=lambda item: item[1], reverse=True)
@@ -3507,6 +3621,7 @@ class TrackDriverNode(Node):
         matched_ids: Set[int],
         box: Optional[Tuple[int, int, int, int]] = None,
     ) -> VehicleTrack:
+        # 메인 자율주행의 upsert 차량 track 로직을 수행한다.
         track = self._match_vehicle_track(point, int(class_id), now, matched_ids)
         if track is None:
             track_id = self.next_vehicle_track_id
@@ -3549,6 +3664,7 @@ class TrackDriverNode(Node):
         now: float,
         matched_ids: Set[int],
     ) -> Optional[VehicleTrack]:
+        # 메인 자율주행의 match 차량 track 로직을 수행한다.
         timeout = max(float(self.get_parameter('vehicle_track_timeout_sec').value), 0.05)
         max_distance = max(float(self.get_parameter('vehicle_track_match_distance').value), 0.10)
         best_track = None
@@ -3574,6 +3690,7 @@ class TrackDriverNode(Node):
         return best_track
 
     def _prune_vehicle_tracks(self, now: Optional[float] = None):
+        # 메인 자율주행의 prune 차량 tracks 로직을 수행한다.
         now = time.monotonic() if now is None else now
         timeout = max(float(self.get_parameter('vehicle_track_timeout_sec').value), 0.05)
         yolo_timeout = max(float(self.get_parameter('vehicle_yolo_required_timeout_sec').value), 0.02)
@@ -3600,6 +3717,7 @@ class TrackDriverNode(Node):
         scan: Optional[LaserScan],
         box: Tuple[int, int, int, int],
     ) -> Optional[Point]:
+        # 차량 대응에서 차량 point for detection 조건이나 명령을 계산한다.
         point = self._vehicle_lidar_point_for_camera_box(scan, box)
         if point is not None:
             return point
@@ -3613,6 +3731,7 @@ class TrackDriverNode(Node):
         msg: Optional[LaserScan],
         box: Tuple[int, int, int, int],
     ) -> Optional[Point]:
+        # 차량 대응에서 차량 LiDAR point for 카메라 박스 조건이나 명령을 계산한다.
         if msg is None or not msg.ranges or self.image is None:
             return None
 
@@ -3671,6 +3790,7 @@ class TrackDriverNode(Node):
         image: np.ndarray,
         box: Tuple[int, int, int, int],
     ) -> Optional[Point]:
+        # 차량 대응에서 차량 point from 박스 조건이나 명령을 계산한다.
         image_height, image_width = image.shape[:2]
         x0, y0, x1, y1 = box
         box_height = max(y1 - y0, 1)
@@ -3688,6 +3808,7 @@ class TrackDriverNode(Node):
         return distance * math.cos(angle), distance * math.sin(angle)
 
     def _update_vehicle_lidar_fallback(self, scan: Optional[LaserScan]):
+        # 최신 입력을 기준으로 update 차량 LiDAR fallback 관련 캐시와 상태를 갱신한다.
         if not bool(self.get_parameter('vehicle_lidar_fallback_enabled').value):
             return
         if not (
@@ -3719,6 +3840,7 @@ class TrackDriverNode(Node):
         self._update_existing_vehicle_track(track, point, now)
 
     def _yolo_seeded_vehicle_tracks(self, now: float) -> List[VehicleTrack]:
+        # 메인 자율주행의 YOLO seeded 차량 tracks 로직을 수행한다.
         timeout = max(float(self.get_parameter('vehicle_track_timeout_sec').value), 0.05)
         yolo_timeout = max(float(self.get_parameter('vehicle_yolo_required_timeout_sec').value), 0.02)
         vehicle_class_ids = self._int_set_parameter('yolo_vehicle_class_ids')
@@ -3730,6 +3852,7 @@ class TrackDriverNode(Node):
         ]
 
     def _has_yolo_confirmed_vehicle_track(self) -> bool:
+        # 메인 자율주행의 has YOLO confirmed 차량 track 로직을 수행한다.
         return bool(self._yolo_seeded_vehicle_tracks(time.monotonic()))
 
     def _match_yolo_seeded_track_for_lidar(
@@ -3738,6 +3861,7 @@ class TrackDriverNode(Node):
         tracks: Sequence[VehicleTrack],
         now: float,
     ) -> Optional[VehicleTrack]:
+        # 메인 자율주행의 match YOLO seeded track for LiDAR 로직을 수행한다.
         max_distance = max(float(self.get_parameter('vehicle_track_match_distance').value), 0.10)
         best_track = None
         best_distance = float('inf')
@@ -3759,6 +3883,7 @@ class TrackDriverNode(Node):
         point: Point,
         now: float,
     ):
+        # 최신 입력을 기준으로 update existing 차량 track 관련 캐시와 상태를 갱신한다.
         dt = now - track.last_seen_sec
         if 0.04 <= dt <= 1.50:
             raw_vx = (point[0] - track.x) / dt
@@ -3773,6 +3898,7 @@ class TrackDriverNode(Node):
         track.seen_count += 1
 
     def _front_lidar_vehicle_point(self, msg: Optional[LaserScan]) -> Optional[Point]:
+        # 메인 자율주행의 전방 LiDAR 차량 point 로직을 수행한다.
         if msg is None or not msg.ranges:
             return None
 
@@ -3843,6 +3969,7 @@ class TrackDriverNode(Node):
         center_path: Sequence[Point],
         nearest_obstacle: Optional[float],
     ) -> Optional[VehicleBehavior]:
+        # 차량 대응에서 차량 behavior 조건이나 명령을 계산한다.
         follow_enabled = bool(self.get_parameter('vehicle_follow_enabled').value)
         if not follow_enabled:
             self.vehicle_follow_track_id = None
@@ -3888,6 +4015,7 @@ class TrackDriverNode(Node):
         self,
         tracks: Sequence[VehicleTrack],
     ) -> Optional[VehicleTrack]:
+        # 메인 자율주행의 select slow follow 차량 track 로직을 수행한다.
         if not tracks:
             return None
 
@@ -3915,12 +4043,14 @@ class TrackDriverNode(Node):
         return best
 
     def _lead_vehicle_track(self, center_path: Sequence[Point], now: float) -> Optional[VehicleTrack]:
+        # 메인 자율주행의 lead 차량 track 로직을 수행한다.
         candidates = self._vehicle_track_candidates(center_path, now)
         if not candidates:
             return None
         return min(candidates, key=lambda track: track.x)
 
     def _vehicle_track_candidates(self, center_path: Sequence[Point], now: float) -> List[VehicleTrack]:
+        # 차량 대응에서 차량 track candidates 조건이나 명령을 계산한다.
         timeout = max(float(self.get_parameter('vehicle_track_timeout_sec').value), 0.05)
         yolo_timeout = max(float(self.get_parameter('vehicle_yolo_required_timeout_sec').value), 0.02)
         lateral_limit = max(float(self.get_parameter('vehicle_current_lane_lateral_limit').value), 0.05)
@@ -3949,6 +4079,7 @@ class TrackDriverNode(Node):
         self,
         tracks: Sequence[VehicleTrack],
     ) -> Tuple[Optional[VehicleTrack], Optional[VehicleTrack]]:
+        # 메인 자율주행의 select fast and slow 차량 tracks 로직을 수행한다.
         if not tracks:
             return None, None
 
@@ -3961,6 +4092,7 @@ class TrackDriverNode(Node):
         self,
         tracks: Sequence[VehicleTrack],
     ) -> Optional[VehicleTrack]:
+        # 메인 자율주행의 select fast follow 차량 track 로직을 수행한다.
         if not tracks:
             return None
 
@@ -3978,6 +4110,7 @@ class TrackDriverNode(Node):
         fast_target: Optional[VehicleTrack],
         now: float,
     ) -> bool:
+        # 최신 입력을 기준으로 update fast follow 상태 관련 캐시와 상태를 갱신한다.
         if fast_target is None:
             self.vehicle_fast_follow_track_id = None
             self.vehicle_fast_follow_started_sec = None
@@ -3992,6 +4125,7 @@ class TrackDriverNode(Node):
         return now - started >= min_sec
 
     def _vehicle_speed_score(self, track: VehicleTrack) -> Tuple[float, float, int]:
+        # 차량 대응에서 차량 속도 score 조건이나 명령을 계산한다.
         return (float(track.vx), float(track.x), int(track.seen_count))
 
     def _vehicle_is_slow_overtake_candidate(
@@ -3999,6 +4133,7 @@ class TrackDriverNode(Node):
         track: VehicleTrack,
         fast_track: Optional[VehicleTrack] = None,
     ) -> bool:
+        # 차량 대응에서 차량 is slow overtake candidate 조건이나 명령을 계산한다.
         trigger_distance = max(float(self.get_parameter('vehicle_overtake_trigger_distance').value), 0.50)
         slow_threshold = float(self.get_parameter('vehicle_slow_relative_speed_threshold').value)
         speed_gap = max(float(self.get_parameter('vehicle_fast_slow_speed_gap').value), 0.0)
@@ -4017,6 +4152,7 @@ class TrackDriverNode(Node):
         )
 
     def _target_vehicle_follow_speed(self, track: VehicleTrack) -> float:
+        # 메인 자율주행의 target 차량 follow 속도 로직을 수행한다.
         base_speed = max(float(self.get_parameter('base_speed').value), 0.0)
         min_speed = max(float(self.get_parameter('min_speed').value), 0.0)
         max_speed = max(float(self.get_parameter('vehicle_follow_max_speed').value), min_speed)
@@ -4059,6 +4195,7 @@ class TrackDriverNode(Node):
         center_path: Sequence[Point],
         track: VehicleTrack,
     ) -> List[Point]:
+        # 메인 자율주행의 build 차량 follow 경로 로직을 수행한다.
         if len(center_path) < 2:
             return []
 
@@ -4071,6 +4208,7 @@ class TrackDriverNode(Node):
         center_path: Sequence[Point],
         track: VehicleTrack,
     ) -> float:
+        # 메인 자율주행의 smoothed 차량 follow offset 로직을 수행한다.
         desired = self._vehicle_lane_offset_for_track(center_path, track)
         lateral_gain = float(np.clip(
             self.get_parameter('vehicle_follow_lateral_gain').value,
@@ -4109,6 +4247,7 @@ class TrackDriverNode(Node):
         center_path: Sequence[Point],
         track: VehicleTrack,
     ) -> float:
+        # 차량 대응에서 차량 return 차선 offset 조건이나 명령을 계산한다.
         if not bool(self.get_parameter('vehicle_overtake_return_to_slow_lane_enabled').value):
             return 0.0
         return self._vehicle_lane_offset_for_track(center_path, track)
@@ -4118,19 +4257,23 @@ class TrackDriverNode(Node):
         center_path: Sequence[Point],
         track: VehicleTrack,
     ) -> float:
+        # 차량 대응에서 차량 차선 offset for track 조건이나 명령을 계산한다.
         lane_y = self._path_y_at_x(center_path, track.x) if center_path else 0.0
         offset = track.y - lane_y
         return self._clamp_vehicle_lane_offset(offset)
 
     def _vehicle_overtake_edge_offset(self, sign: float) -> float:
+        # 차량 대응에서 차량 overtake edge offset 조건이나 명령을 계산한다.
         requested = max(float(self.get_parameter('vehicle_overtake_offset').value), 0.0)
         return math.copysign(min(requested, self._vehicle_lane_center_offset_limit()), sign)
 
     def _clamp_vehicle_lane_offset(self, offset: float) -> float:
+        # 메인 자율주행의 clamp 차량 차선 offset 로직을 수행한다.
         limit = self._vehicle_lane_center_offset_limit()
         return float(np.clip(offset, -limit, limit))
 
     def _vehicle_lane_center_offset_limit(self) -> float:
+        # 차량 대응에서 차량 차선 center offset limit 조건이나 명령을 계산한다.
         lane_half_width = 0.5 * max(float(self.get_parameter('lane_width').value), 0.20)
         if not bool(self.get_parameter('vehicle_lane_edge_follow_enabled').value):
             return lane_half_width
@@ -4142,6 +4285,7 @@ class TrackDriverNode(Node):
         self,
         current_white_lane_path: Optional[Sequence[Point]],
     ) -> Optional[List[Point]]:
+        # 메인 자율주행의 차선 guard reference 경로 로직을 수행한다.
         if current_white_lane_path is not None and len(current_white_lane_path) >= 2:
             return list(current_white_lane_path)
 
@@ -4158,6 +4302,7 @@ class TrackDriverNode(Node):
         path: Sequence[Point],
         center_path: Sequence[Point],
     ) -> List[Point]:
+        # 메인 자율주행의 clamp 경로 to white 차선 로직을 수행한다.
         if not bool(self.get_parameter('vehicle_lane_edge_follow_enabled').value):
             return list(path)
         limit = self._vehicle_lane_center_offset_limit()
@@ -4169,6 +4314,7 @@ class TrackDriverNode(Node):
         center_path: Sequence[Point],
         limit: float,
     ) -> List[Point]:
+        # 메인 자율주행의 clamp 경로 to guard 로직을 수행한다.
         if len(path) < 2 or len(center_path) < 2:
             return list(path)
         limit = max(float(limit), 0.05)
@@ -4183,6 +4329,7 @@ class TrackDriverNode(Node):
         track: VehicleTrack,
         nearest_obstacle: Optional[float],
     ) -> float:
+        # 메인 자율주행의 target 차량 overtake 속도 로직을 수행한다.
         base_speed = max(float(self.get_parameter('vehicle_overtake_speed').value), 0.0)
         max_speed = max(float(self.get_parameter('vehicle_overtake_max_speed').value), base_speed)
         relative_gain = max(float(self.get_parameter('vehicle_overtake_relative_speed_gain').value), 0.0)
@@ -4194,6 +4341,7 @@ class TrackDriverNode(Node):
         return float(np.clip(speed, base_speed, max_speed))
 
     def _predicted_vehicle_x(self, track: VehicleTrack) -> float:
+        # 메인 자율주행의 predicted 차량 x 로직을 수행한다.
         prediction_sec = max(float(self.get_parameter('vehicle_overtake_prediction_sec').value), 0.0)
         predicted_x = track.x + track.vx * prediction_sec
         if track.vx < 0.0:
@@ -4203,6 +4351,7 @@ class TrackDriverNode(Node):
         return float(predicted_x)
 
     def _boost_vehicle_overtake_steer(self, steer: float, path: Sequence[Point]) -> float:
+        # 메인 자율주행의 boost 차량 overtake 조향 로직을 수행한다.
         gain = max(float(self.get_parameter('vehicle_overtake_steer_gain').value), 1.0)
         max_steer = max(float(self.get_parameter('vehicle_overtake_max_steer_deg').value), 1.0)
         min_steer = max(float(self.get_parameter('vehicle_overtake_min_steer_deg').value), 0.0)
@@ -4215,6 +4364,7 @@ class TrackDriverNode(Node):
         return float(np.clip(boosted, -max_steer, max_steer))
 
     def _boost_vehicle_follow_steer(self, steer: float, path: Sequence[Point]) -> float:
+        # 메인 자율주행의 boost 차량 follow 조향 로직을 수행한다.
         gain = max(float(self.get_parameter('vehicle_follow_steer_gain').value), 1.0)
         max_steer = max(float(self.get_parameter('vehicle_follow_max_steer_deg').value), 1.0)
         min_steer = max(float(self.get_parameter('vehicle_follow_min_steer_deg').value), 0.0)
@@ -4239,6 +4389,7 @@ class TrackDriverNode(Node):
         path: Sequence[Point],
         lane_center_path: Optional[Sequence[Point]],
     ) -> float:
+        # 메인 자율주행의 차선 edge 조향 guard 로직을 수행한다.
         if (
             lane_center_path is None
             or len(path) < 2
@@ -4277,6 +4428,7 @@ class TrackDriverNode(Node):
         return float(outward_sign * min(abs(steer), allowed))
 
     def _vehicle_overtake_steer_sign(self, path: Sequence[Point]) -> float:
+        # 차량 대응에서 차량 overtake 조향 sign 조건이나 명령을 계산한다.
         lookahead = self._lookahead_distance()
         target_y = self._path_y_at_x(path, min(lookahead, 2.0))
         sign = 1.0 if target_y >= 0.0 else -1.0
@@ -4290,6 +4442,7 @@ class TrackDriverNode(Node):
         track: VehicleTrack,
         final_offset: Optional[float] = None,
     ) -> List[Point]:
+        # 메인 자율주행의 build 차량 overtake 경로 로직을 수행한다.
         if len(center_path) < 2:
             return []
 
@@ -4352,6 +4505,7 @@ class TrackDriverNode(Node):
         hold_end: float,
         return_end: float,
     ) -> float:
+        # 차량 대응에서 차량 차선 change offset profile 조건이나 명령을 계산한다.
         if s <= shift_start:
             return start_offset
         if s < shift_end:
@@ -4370,6 +4524,7 @@ class TrackDriverNode(Node):
         slow_track: Optional[VehicleTrack] = None,
         fast_track: Optional[VehicleTrack] = None,
     ) -> float:
+        # 차량 대응에서 차량 overtake offset sign 조건이나 명령을 계산한다.
         if (
             fast_track is not None
             and center_path
@@ -4387,6 +4542,7 @@ class TrackDriverNode(Node):
         return -1.0 if bool(self.get_parameter('vehicle_overtake_prefer_right').value) else 1.0
 
     def _reset_vehicle_overtake_state(self):
+        # reset 차량 overtake 상태 관련 내부 상태와 카운터를 초기화한다.
         self.vehicle_overtake_track_id = None
         self.vehicle_overtake_started_sec = None
         self.vehicle_slow_confirm_start_sec = None
@@ -4401,6 +4557,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _vehicle_class_name(class_id: int) -> str:
+        # 차량 대응에서 차량 클래스 name 조건이나 명령을 계산한다.
         if int(class_id) == 0:
             return 'bcar'
         if int(class_id) == 2:
@@ -4410,6 +4567,7 @@ class TrackDriverNode(Node):
         return f'class{int(class_id)}'
 
     def _valid_light_detection(self, image: np.ndarray, box: Tuple[int, int, int, int]) -> bool:
+        # valid 신호등 detection 후보가 유효한 조건을 만족하는지 검사한다.
         image_height, image_width = image.shape[:2]
         x0, y0, x1, y1 = box
         box_width = max(x1 - x0, 0)
@@ -4438,9 +4596,11 @@ class TrackDriverNode(Node):
         )
 
     def _red_light_color_present(self, image: np.ndarray) -> bool:
+        # 신호등 상태 중 빨간불 신호등 color present 조건을 판단한다.
         return self._red_light_color_metrics(image)[0]
 
     def _red_light_color_metrics(self, image: np.ndarray) -> Tuple[bool, float, float, float]:
+        # 신호등 상태 중 빨간불 신호등 color metrics 조건을 판단한다.
         height, width = image.shape[:2]
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         lower_red1 = np.array([0, 90, 80], dtype=np.uint8)
@@ -4494,6 +4654,7 @@ class TrackDriverNode(Node):
         return False, red_ratio, green_ratio, yellow_ratio
 
     def _publish_drive_debug_image(self):
+        # publish 주행 디버그 이미지 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         if not bool(self.get_parameter('publish_drive_debug_image').value):
             return
         if self.image is None or not rclpy.ok():
@@ -4527,6 +4688,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _letterbox_debug_image(image: np.ndarray, target_w: int, target_h: int):
+        # 메인 자율주행의 letterbox 디버그 이미지 로직을 수행한다.
         height, width = image.shape[:2]
         scale = min(target_w / float(max(width, 1)), target_h / float(max(height, 1)))
         resized_w = max(1, int(round(width * scale)))
@@ -4539,6 +4701,7 @@ class TrackDriverNode(Node):
         return canvas, scale, pad_x, pad_y
 
     def _draw_drive_light_boxes(self, frame: np.ndarray, scale: float, pad_x: int, pad_y: int):
+        # draw 주행 신호등 boxes 정보를 디버그 이미지 위에 그린다.
         for box, score, class_id, valid, red_present, red_ratio, green_ratio, yellow_ratio in self.cached_light_debug:
             x0, y0, x1, y1 = box
             sx0 = int(round(x0 * scale + pad_x))
@@ -4579,6 +4742,7 @@ class TrackDriverNode(Node):
             )
 
     def _drive_debug_control_label(self) -> str:
+        # 메인 자율주행의 주행 디버그 제어 label 로직을 수행한다.
         mode = str(self.last_mode or 'unknown')
         if mode == 'ai_direct_standby' and self.last_ai_enable is True:
             return 'AI_DIRECT'
@@ -4603,12 +4767,14 @@ class TrackDriverNode(Node):
         return 'UNKNOWN'
 
     def _drive_debug_speed_limit_text(self) -> str:
+        # 주행 디버그 속도 limit text 정보를 사람이 읽기 쉬운 로그 문자열로 만든다.
         if self.last_external_speed_limit is None:
             return 'limit=OFF'
         reasons = '+'.join(self.last_external_speed_limit_reasons) or 'unknown'
         return f'limit={self.last_external_speed_limit:.1f} reason={reasons}'
 
     def _stop_line_seen_recent_for_debug(self) -> bool:
+        # 정지선 처리에서 정지 line seen recent for 디버그 조건이나 값을 계산한다.
         if bool(self.stop_line_detected):
             return True
         if self.stop_line_last_seen_sec is None:
@@ -4617,6 +4783,7 @@ class TrackDriverNode(Node):
         return time.monotonic() - self.stop_line_last_seen_sec <= memory_sec
 
     def _drive_debug_stop_line_policy_text(self) -> str:
+        # 주행 디버그 정지 line policy text 정보를 사람이 읽기 쉬운 로그 문자열로 만든다.
         if not self._stop_line_seen_recent_for_debug():
             return 'stop_line=none'
 
@@ -4636,6 +4803,7 @@ class TrackDriverNode(Node):
         return f'stop_line {distance_text} no_red_left->30'
 
     def _drive_debug_school_speed_limit_text(self) -> str:
+        # 주행 디버그 어린이 보호구역 속도 limit text 정보를 사람이 읽기 쉬운 로그 문자열로 만든다.
         hold = 0.0
         if self.school_zone_speed_limit_active:
             hold = max(float(self.school_zone_speed_limit_until_sec) - time.monotonic(), 0.0)
@@ -4647,6 +4815,7 @@ class TrackDriverNode(Node):
         )
 
     def _draw_drive_status_overlay(self, canvas: np.ndarray):
+        # draw 주행 status overlay 정보를 디버그 이미지 위에 그린다.
         ai_state = 'ON' if self.last_ai_enable else ('OFF' if self.last_ai_enable is not None else '?')
         control = self._drive_debug_control_label()
         light_state = self._drive_debug_light_state()
@@ -4679,6 +4848,7 @@ class TrackDriverNode(Node):
         self._put_debug_lines(canvas, lines[1:], (18, 58), (235, 235, 235), 0.52, 22)
 
     def _draw_drive_debug_panel(self, canvas: np.ndarray, y0: int):
+        # draw 주행 디버그 panel 정보를 디버그 이미지 위에 그린다.
         cv2.rectangle(canvas, (0, y0), (canvas.shape[1] - 1, canvas.shape[0] - 1), (24, 24, 24), thickness=-1)
         stop_result = getattr(self.stop_line_detector, 'last_result', None)
         school_result = getattr(self.school_zone_detector, 'last_result', None)
@@ -4705,6 +4875,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _debug_thumbnail(image: Optional[np.ndarray], width: int, height: int, label: str) -> np.ndarray:
+        # 메인 자율주행의 디버그 thumbnail 로직을 수행한다.
         thumb = np.zeros((height, width, 3), dtype=np.uint8)
         if image is not None and image.size > 0:
             source = image
@@ -4724,6 +4895,7 @@ class TrackDriverNode(Node):
         scale: float,
         line_height: int,
     ):
+        # 메인 자율주행의 put 디버그 lines 로직을 수행한다.
         x, y = origin
         for idx, line in enumerate(lines):
             cv2.putText(
@@ -4738,6 +4910,7 @@ class TrackDriverNode(Node):
             )
 
     def _drive_debug_light_state(self) -> str:
+        # 메인 자율주행의 주행 디버그 신호등 상태 로직을 수행한다.
         states = []
         if self.cached_yolo_red_light:
             states.append('stop')
@@ -4752,6 +4925,7 @@ class TrackDriverNode(Node):
         return '+'.join(states)
 
     def _publish_light_debug_image(self, image: np.ndarray, light_debug):
+        # publish 신호등 디버그 이미지 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         if not bool(self.get_parameter('publish_light_debug_image').value):
             return
 
@@ -4896,6 +5070,7 @@ class TrackDriverNode(Node):
             self._warn_yolo_once('light_debug', f'light debug image publish failed: {exc}')
 
     def _publish_cached_light_debug_image(self):
+        # publish cached 신호등 디버그 이미지 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         if self.image is None:
             return
         if not bool(self.get_parameter('publish_light_debug_image').value):
@@ -4912,6 +5087,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _light_class_name(class_id: int) -> str:
+        # 메인 자율주행의 신호등 클래스 name 로직을 수행한다.
         names = {
             0: 'cone',
             1: 'green',
@@ -4923,6 +5099,7 @@ class TrackDriverNode(Node):
         return names.get(int(class_id), f'class{int(class_id)}')
 
     def _warn_yolo_once(self, name: str, reason: str):
+        # 메인 자율주행의 warn YOLO once 로직을 수행한다.
         now_sec = self.get_clock().now().nanoseconds // 1_000_000_000
         if self.yolo_last_warn_sec.get(name) == now_sec:
             return
@@ -4930,6 +5107,7 @@ class TrackDriverNode(Node):
         self.get_logger().warn(reason)
 
     def _detect_person_from_camera_lidar(self, msg: Optional[LaserScan]) -> bool:
+        # 입력 데이터에서 detect 보행자 from 카메라 LiDAR 조건을 감지한다.
         if msg is None or not msg.ranges or self.image is None:
             self.person_fusion_distance = None
             self.person_fusion_point = None
@@ -4955,6 +5133,7 @@ class TrackDriverNode(Node):
         return False
 
     def _detect_person_from_yolo_far_box(self, image: Optional[np.ndarray]) -> bool:
+        # 입력 데이터에서 detect 보행자 from YOLO far 박스 조건을 감지한다.
         if not bool(self.get_parameter('person_yolo_far_stop_enabled').value):
             return False
         if image is None or self.cached_yolo_person_box is None:
@@ -4979,6 +5158,7 @@ class TrackDriverNode(Node):
         msg: LaserScan,
         box: Tuple[int, int, int, int],
     ) -> Optional[Point]:
+        # 메인 자율주행의 LiDAR point for 카메라 박스 로직을 수행한다.
         image_height, image_width = self.image.shape[:2]
         x0, _, x1, _ = box
         center_x = 0.5 * (x0 + x1)
@@ -5027,6 +5207,7 @@ class TrackDriverNode(Node):
         return min(hits, key=lambda point: point[0])
 
     def _update_person_motion(self, point: Point):
+        # 최신 입력을 기준으로 update 보행자 motion 관련 캐시와 상태를 갱신한다.
         now = time.monotonic()
         vx = 0.0
         vy = 0.0
@@ -5062,6 +5243,7 @@ class TrackDriverNode(Node):
             self.person_predicted_point = point
 
     def _refresh_person_prediction(self, now: float):
+        # 메인 자율주행의 refresh 보행자 prediction 로직을 수행한다.
         if (
             not bool(self.get_parameter('person_dynamic_enabled').value)
             or self.prev_person_fusion_point is None
@@ -5077,6 +5259,7 @@ class TrackDriverNode(Node):
         )
 
     def _update_person_image_motion(self, box: Tuple[int, int, int, int], image_width: int):
+        # 최신 입력을 기준으로 update 보행자 이미지 motion 관련 캐시와 상태를 갱신한다.
         if image_width <= 0:
             return
 
@@ -5101,6 +5284,7 @@ class TrackDriverNode(Node):
         self.prev_person_image_time_sec = now
 
     def _detect_person_from_scan(self, msg: Optional[LaserScan]) -> bool:
+        # 입력 데이터에서 detect 보행자 from 스캔 조건을 감지한다.
         if msg is None or not msg.ranges:
             return False
 
@@ -5132,6 +5316,7 @@ class TrackDriverNode(Node):
         return False
 
     def _detect_person_from_image(self, image: Optional[np.ndarray]) -> bool:
+        # 입력 데이터에서 detect 보행자 from 이미지 조건을 감지한다.
         if image is None:
             return False
 
@@ -5160,6 +5345,7 @@ class TrackDriverNode(Node):
         return any(float(weight) >= min_weight for weight in weights)
 
     def _build_person_avoidance_path(self, center_path: Sequence[Point]) -> List[Point]:
+        # 메인 자율주행의 build 보행자 avoidance 경로 로직을 수행한다.
         if len(center_path) < 2:
             return []
 
@@ -5196,6 +5382,7 @@ class TrackDriverNode(Node):
         return out_path
 
     def _person_local_obstacle(self, total_s: float) -> LocalObstacle:
+        # 보행자 대응에서 보행자 local 장애물 조건이나 명령을 계산한다.
         point = self.person_predicted_point or self.person_fusion_point
         if point is None:
             x = self._person_avoidance_obstacle_x(total_s)
@@ -5218,6 +5405,7 @@ class TrackDriverNode(Node):
         )
 
     def _person_lateral_from_image(self, obstacle_x: float) -> float:
+        # 보행자 대응에서 보행자 lateral from 이미지 조건이나 명령을 계산한다.
         if self.person_image_center_ratio is None:
             return 0.0
 
@@ -5226,6 +5414,7 @@ class TrackDriverNode(Node):
         return obstacle_x * math.tan(camera_angle)
 
     def _person_lattice_obstacle_half_x(self) -> float:
+        # 보행자 대응에서 보행자 lattice 장애물 half x 조건이나 명령을 계산한다.
         obstacle_half_x = max(float(self.get_parameter('person_avoidance_obstacle_half_x').value), 2.0)
         if bool(self.get_parameter('person_dynamic_enabled').value):
             prediction_sec = max(float(self.get_parameter('person_dynamic_prediction_sec').value), 0.0)
@@ -5234,6 +5423,7 @@ class TrackDriverNode(Node):
         return obstacle_half_x
 
     def _person_lattice_fixed_offset(self) -> float:
+        # 보행자 대응에서 보행자 lattice fixed offset 조건이나 명령을 계산한다.
         one_lane_shift = max(float(self.get_parameter('person_avoidance_offset').value), 0.0)
         two_lane_shift = max(
             float(self.get_parameter('person_avoidance_two_lane_offset').value),
@@ -5252,6 +5442,7 @@ class TrackDriverNode(Node):
         force_obs_x: float = -100.0,
         force_obs_half_x: float = 2.0,
     ) -> Tuple[bool, List[Point], bool, float, float]:
+        # 메인 자율주행의 lattice plan 로직을 수행한다.
         should_stop = False
         selected_offset = 0.0
         recommended_speed = 0.0
@@ -5325,6 +5516,7 @@ class TrackDriverNode(Node):
         obstacle_half_x: float,
         allow_return: bool,
     ) -> List[Point]:
+        # 메인 자율주행의 build lattice 차선 change 경로 로직을 수행한다.
         if len(center_path) < 2:
             return []
 
@@ -5364,11 +5556,13 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _point_to_path_distance(px: float, py: float, path: Sequence[Point]) -> float:
+        # 메인 자율주행의 point to 경로 거리 로직을 수행한다.
         if not path:
             return float('inf')
         return min(math.hypot(point[0] - px, point[1] - py) for point in path)
 
     def _person_avoidance_obstacle_x(self, total_s: float) -> float:
+        # 보행자 대응에서 보행자 avoidance 장애물 x 조건이나 명령을 계산한다.
         default_x = float(self.get_parameter('person_avoidance_obstacle_x').value)
         obstacle_x = default_x
 
@@ -5392,10 +5586,12 @@ class TrackDriverNode(Node):
         return float(np.clip(obstacle_x, 0.0, max(total_s, 0.0)))
 
     def _person_avoidance_offset_sign(self) -> float:
+        # 보행자 대응에서 보행자 avoidance offset sign 조건이나 명령을 계산한다.
         return -1.0 if bool(self.get_parameter('person_avoidance_prefer_right').value) else 1.0
 
     @staticmethod
     def _build_arc_path(path: Sequence[Point], spacing: float) -> List[Tuple[float, float, float, float]]:
+        # 메인 자율주행의 build arc 경로 로직을 수행한다.
         if len(path) < 2:
             return []
 
@@ -5433,6 +5629,7 @@ class TrackDriverNode(Node):
         return_end: float,
         allow_return: bool,
     ) -> float:
+        # 메인 자율주행의 avoidance offset profile 로직을 수행한다.
         if s <= shift_start:
             return 0.0
         if s < shift_end:
@@ -5447,11 +5644,13 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _quintic_blend(t: float) -> float:
+        # 메인 자율주행의 quintic blend 로직을 수행한다.
         t = float(np.clip(t, 0.0, 1.0))
         return 6.0 * t ** 5 - 15.0 * t ** 4 + 10.0 * t ** 3
 
     @staticmethod
     def _sanitize_forward_path(path: Sequence[Point]) -> List[Point]:
+        # 메인 자율주행의 sanitize forward 경로 로직을 수행한다.
         out: List[Point] = []
         last_x = -float('inf')
         for point in path:
@@ -5466,6 +5665,7 @@ class TrackDriverNode(Node):
         return out
 
     def _filter_track_cones(self, cones: Sequence[Point]) -> List[Point]:
+        # 메인 자율주행의 filter track 콘 로직을 수행한다.
         if len(cones) < 2:
             return []
 
@@ -5490,6 +5690,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _unique_points(points: Sequence[Point]) -> List[Point]:
+        # 메인 자율주행의 unique points 로직을 수행한다.
         unique: List[Point] = []
         seen = set()
         for point in points:
@@ -5501,6 +5702,7 @@ class TrackDriverNode(Node):
         return sorted(unique, key=lambda p: p[0])
 
     def _build_lane_center_path(self, image: Optional[np.ndarray]) -> Optional[List[Point]]:
+        # 메인 자율주행의 build 차선 center 경로 로직을 수행한다.
         if image is None:
             return None
 
@@ -5577,6 +5779,7 @@ class TrackDriverNode(Node):
         return path
 
     def _build_school_zone_center_path(self, image: Optional[np.ndarray]) -> Optional[List[Point]]:
+        # 메인 자율주행의 build 어린이 보호구역 구역 center 경로 로직을 수행한다.
         if (
             image is None
             or not self.school_zone_active
@@ -5676,6 +5879,7 @@ class TrackDriverNode(Node):
         return path
 
     def _recent_school_zone_path(self) -> Optional[List[Point]]:
+        # 메인 자율주행의 recent 어린이 보호구역 구역 경로 로직을 수행한다.
         if self.last_school_zone_path_seen_sec is None or len(self.last_school_zone_path) < 2:
             return None
         memory_sec = max(float(self.get_parameter('school_zone_center_memory_sec').value), 0.0)
@@ -5684,6 +5888,7 @@ class TrackDriverNode(Node):
         return list(self.last_school_zone_path)
 
     def _remember_school_zone_path(self, path: Sequence[Point]):
+        # 메인 자율주행의 remember 어린이 보호구역 구역 경로 로직을 수행한다.
         if len(path) < 2:
             return
         self.last_school_zone_path = list(path)
@@ -5695,6 +5900,7 @@ class TrackDriverNode(Node):
         secondary_path: Sequence[Point],
         secondary_weight: float,
     ) -> List[Point]:
+        # 메인 자율주행의 blend paths 로직을 수행한다.
         if len(primary_path) < 2 or len(secondary_path) < 2:
             return list(primary_path)
         weight = float(np.clip(secondary_weight, 0.0, 1.0))
@@ -5708,6 +5914,7 @@ class TrackDriverNode(Node):
         yellow_mask: np.ndarray,
         image_width: int,
     ) -> Optional[List[Point]]:
+        # 메인 자율주행의 build 어린이 보호구역 구역 edge center 경로 from 마스크 로직을 수행한다.
         left_edge_max = float(np.clip(
             self.get_parameter('school_zone_left_edge_max_ratio').value, 0.05, 0.49))
         right_edge_min = float(np.clip(
@@ -5743,6 +5950,7 @@ class TrackDriverNode(Node):
         image_width: int,
         curvature_gain: float,
     ) -> List[Point]:
+        # 메인 자율주행의 경로 from 카메라 center pixels 로직을 수행한다.
         ordered = sorted(center_pixels, key=lambda p: p[0], reverse=True)
         bottom_center = ordered[0][1]
         upper_center = ordered[-1][1]
@@ -5767,6 +5975,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _median_x_near_y(xs: np.ndarray, ys: np.ndarray, yq: float) -> Optional[float]:
+        # 메인 자율주행의 median x near y 로직을 수행한다.
         if len(xs) == 0:
             return None
         band = np.abs(ys - yq) < 22.0
@@ -5775,6 +5984,7 @@ class TrackDriverNode(Node):
         return float(np.median(xs[band]))
 
     def _build_cone_center_path(self, cones: Sequence[Point]) -> Optional[List[Point]]:
+        # 메인 자율주행의 build 콘 center 경로 로직을 수행한다.
         if len(cones) < 2:
             return None
 
@@ -5810,6 +6020,7 @@ class TrackDriverNode(Node):
         return self._smooth_path(path, iterations=2)
 
     def _split_front_cones_by_side(self, cones: Sequence[Point]) -> Tuple[List[Point], List[Point]]:
+        # 메인 자율주행의 split 전방 콘 by side 로직을 수행한다.
         side_min_y = float(self.get_parameter('cone_side_min_y').value)
         lateral_limit = float(self.get_parameter('cone_boundary_lateral_limit').value)
 
@@ -5830,6 +6041,7 @@ class TrackDriverNode(Node):
         left: Sequence[Point],
         right: Sequence[Point],
     ) -> List[Point]:
+        # 메인 자율주행의 midpoint waypoints from 콘 pairs 로직을 수행한다.
         if not left or not right:
             return []
 
@@ -5875,6 +6087,7 @@ class TrackDriverNode(Node):
         return sorted(waypoints, key=lambda p: p[0])
 
     def _split_cones_into_boundaries(self, cones: Sequence[Point]) -> Tuple[List[Point], List[Point]]:
+        # 메인 자율주행의 split 콘 into boundaries 로직을 수행한다.
         side_min_y = float(self.get_parameter('cone_side_min_y').value)
         boundary_lateral_limit = float(self.get_parameter('cone_boundary_lateral_limit').value)
         center_ignore_x = float(self.get_parameter('cone_center_ignore_x').value)
@@ -5925,6 +6138,7 @@ class TrackDriverNode(Node):
         return self._sort_boundary(left), self._sort_boundary(right)
 
     def _select_boundary_seed(self, points: Sequence[Point], side: int) -> Optional[Point]:
+        # 메인 자율주행의 select boundary seed 로직을 수행한다.
         side_min_y = float(self.get_parameter('cone_side_min_y').value)
         neighbor_radius = float(self.get_parameter('cone_seed_neighbor_radius').value)
         if side > 0:
@@ -5949,14 +6163,17 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _point_key(point: Point) -> Tuple[int, int]:
+        # 메인 자율주행의 point key 로직을 수행한다.
         return (round(point[0] * 100), round(point[1] * 100))
 
     @staticmethod
     def _sort_boundary(points: Sequence[Point]) -> List[Point]:
+        # 메인 자율주행의 sort boundary 로직을 수행한다.
         return sorted(points, key=lambda p: (math.hypot(p[0], p[1]), p[0]))
 
     @staticmethod
     def _boundary_assign_cost(point: Point, boundary: Sequence[Point], link_max: float) -> float:
+        # 메인 자율주행의 boundary assign cost 로직을 수행한다.
         if not boundary:
             return float('inf')
 
@@ -5976,12 +6193,14 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _sort_cones_by_vehicle_distance(points: Sequence[Point]) -> List[Point]:
+        # 메인 자율주행의 sort 콘 by 차량 거리 로직을 수행한다.
         return sorted(
             [p for p in points if p[0] > 0.05],
             key=lambda p: (math.hypot(p[0], p[1]), p[0]),
         )
 
     def _ranked_cone_midpoint_waypoints(self, left: Sequence[Point], right: Sequence[Point]) -> List[Point]:
+        # 메인 자율주행의 ranked 콘 midpoint waypoints 로직을 수행한다.
         if not left or not right:
             return []
 
@@ -6034,6 +6253,7 @@ class TrackDriverNode(Node):
         return [midpoint for _, midpoint in selected]
 
     def _centerline_from_boundaries(self, left: Sequence[Point], right: Sequence[Point]) -> List[Point]:
+        # 메인 자율주행의 centerline from boundaries 로직을 수행한다.
         if len(left) < 2 or len(right) < 2:
             return []
 
@@ -6067,6 +6287,7 @@ class TrackDriverNode(Node):
         return self._sanitize_waypoints(center_points)
 
     def _offset_side_to_center(self, side_points: Sequence[Point], side: str, lane_width: float) -> List[Point]:
+        # 메인 자율주행의 offset side to center 로직을 수행한다.
         points = self._sort_cones_by_vehicle_distance(side_points)
         if len(points) < 2:
             return []
@@ -6092,6 +6313,7 @@ class TrackDriverNode(Node):
         return center_points
 
     def _update_school_zone_state(self, image: Optional[np.ndarray]):
+        # 최신 입력을 기준으로 update 어린이 보호구역 구역 상태 관련 캐시와 상태를 갱신한다.
         self.school_zone_yellow_left_ratio = 0.0
         self.school_zone_yellow_right_ratio = 0.0
         self.school_zone_yellow_pair_row_ratio = 0.0
@@ -6256,6 +6478,7 @@ class TrackDriverNode(Node):
             self.school_zone_active = False
 
     def _mask_school_zone_vehicle_boxes(self, mask: np.ndarray, roi_y0: int):
+        # 메인 자율주행의 마스크 어린이 보호구역 구역 차량 boxes 로직을 수행한다.
         if not bool(self.get_parameter('school_zone_mask_vehicle_boxes').value):
             return
 
@@ -6283,6 +6506,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _sanitize_waypoints(points: Sequence[Point]) -> List[Point]:
+        # 메인 자율주행의 sanitize waypoints 로직을 수행한다.
         waypoints: List[Point] = []
         for point in points:
             if point[0] < 0.10:
@@ -6294,6 +6518,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _order_forward_points(points: Sequence[Point]) -> List[Point]:
+        # 메인 자율주행의 order forward points 로직을 수행한다.
         ordered = sorted([p for p in points if p[0] > 0.05], key=lambda p: (p[0], abs(p[1])))
         if not ordered:
             return []
@@ -6310,6 +6535,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _resample_polyline(points: Sequence[Point], spacing: float, target_length: float) -> List[Point]:
+        # 메인 자율주행의 resample polyline 로직을 수행한다.
         if len(points) < 2:
             return list(points)
 
@@ -6351,6 +6577,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _path_y_at_x(path: Sequence[Point], x_query: float) -> float:
+        # 메인 자율주행의 경로 y at x 로직을 수행한다.
         if not path:
             return 0.0
         if len(path) == 1:
@@ -6372,6 +6599,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _heading_at(path: Sequence[Point], idx: int) -> float:
+        # 메인 자율주행의 heading at 로직을 수행한다.
         if len(path) < 2:
             return 0.0
 
@@ -6382,6 +6610,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _heading_at_arc(path: Sequence[Point], arc_query: float) -> float:
+        # 메인 자율주행의 heading at arc 로직을 수행한다.
         if len(path) < 2:
             return 0.0
 
@@ -6398,6 +6627,7 @@ class TrackDriverNode(Node):
         return TrackDriverNode._heading_at(path, target_idx)
 
     def _legacy_cone_center_path(self, left: Sequence[Point], right: Sequence[Point]) -> Optional[List[Point]]:
+        # 메인 자율주행의 legacy 콘 center 경로 로직을 수행한다.
         lane_width = float(self.get_parameter('lane_width').value)
         center_points: List[Point] = []
         if left and right:
@@ -6424,6 +6654,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _interp_side_y(points: Sequence[Point], x_query: float) -> Optional[float]:
+        # 메인 자율주행의 interp side y 로직을 수행한다.
         near = [p for p in points if abs(p[0] - x_query) < 1.5]
         if near:
             weights = [1.0 / max(abs(p[0] - x_query), 0.15) for p in near]
@@ -6445,6 +6676,7 @@ class TrackDriverNode(Node):
         lane_path: Optional[List[Point]],
         cone_path: Optional[List[Point]],
     ) -> List[Point]:
+        # 메인 자율주행의 fuse center paths 로직을 수행한다.
         if lane_path is not None and cone_path is not None:
             cone_weight = float(np.clip(self.get_parameter('cone_path_weight').value, 0.0, 1.0))
             fused = []
@@ -6469,6 +6701,7 @@ class TrackDriverNode(Node):
         return self.last_center_path if len(self.last_center_path) >= 2 else self._straight_path()
 
     def _make_lattice_candidates(self, center_path: Sequence[Point]) -> List[PathCandidate]:
+        # 메인 자율주행의 make lattice candidates 로직을 수행한다.
         offset_param = 'cone_lattice_offsets' if 'cone' in self.last_mode else 'lattice_offsets'
         offsets = [float(v) for v in self.get_parameter(offset_param).value]
         candidates: List[PathCandidate] = []
@@ -6486,6 +6719,7 @@ class TrackDriverNode(Node):
         candidates: Sequence[PathCandidate],
         cones: Sequence[Point],
     ) -> Optional[PathCandidate]:
+        # 메인 자율주행의 select best candidate 로직을 수행한다.
         if not candidates:
             return None
 
@@ -6521,6 +6755,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _min_distance_to_points(path: Sequence[Point], points: Sequence[Point]) -> float:
+        # 메인 자율주행의 min 거리 to points 로직을 수행한다.
         if not points:
             return float('inf')
         best = float('inf')
@@ -6531,6 +6766,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _point_to_segment_distance(point: Point, p0: Point, p1: Point) -> float:
+        # 메인 자율주행의 point to segment 거리 로직을 수행한다.
         vx = p1[0] - p0[0]
         vy = p1[1] - p0[1]
         wx = point[0] - p0[0]
@@ -6544,6 +6780,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _path_curvature_cost(path: Sequence[Point]) -> float:
+        # 메인 자율주행의 경로 curvature cost 로직을 수행한다.
         if len(path) < 3:
             return 0.0
         total = 0.0
@@ -6560,6 +6797,7 @@ class TrackDriverNode(Node):
         smoothing_override: Optional[float] = None,
         lookahead_scale_override: Optional[float] = None,
     ) -> float:
+        # 메인 자율주행의 pure pursuit 조향 로직을 수행한다.
         if len(path) < 2:
             return 0.0
 
@@ -6615,6 +6853,7 @@ class TrackDriverNode(Node):
         return (1.0 - smoothing) * steer_deg + smoothing * self.prev_steer
 
     def _boost_person_avoidance_steer(self, steer: float, path: Sequence[Point]) -> float:
+        # 메인 자율주행의 boost 보행자 avoidance 조향 로직을 수행한다.
         gain = max(float(self.get_parameter('person_avoidance_steer_gain').value), 1.0)
         max_steer = max(float(self.get_parameter('person_avoidance_max_steer_deg').value), 1.0)
         min_steer = max(float(self.get_parameter('person_avoidance_min_steer_deg').value), 0.0)
@@ -6627,6 +6866,7 @@ class TrackDriverNode(Node):
         return float(np.clip(boosted, -max_steer, max_steer))
 
     def _person_avoidance_steer_sign(self, path: Sequence[Point]) -> float:
+        # 보행자 대응에서 보행자 avoidance 조향 sign 조건이나 명령을 계산한다.
         lookahead = self._lookahead_distance()
         target_y = self._path_y_at_x(path, min(lookahead, 2.0))
         sign = 1.0 if target_y >= 0.0 else -1.0
@@ -6635,6 +6875,7 @@ class TrackDriverNode(Node):
         return sign
 
     def _target_speed(self, steer: float, cones: Sequence[Point], min_clearance: float) -> float:
+        # 메인 자율주행의 target 속도 로직을 수행한다.
         base_speed = float(self.get_parameter('base_speed').value)
         min_speed = float(self.get_parameter('min_speed').value)
         max_steer = max(float(self.get_parameter('max_steer_deg').value), 1.0)
@@ -6659,6 +6900,7 @@ class TrackDriverNode(Node):
         return max(0.0, speed)
 
     def _lookahead_distance(self) -> float:
+        # 메인 자율주행의 lookahead 거리 로직을 수행한다.
         min_ld = float(self.get_parameter('lookahead_min').value)
         max_ld = float(self.get_parameter('lookahead_max').value)
         base_speed = float(self.get_parameter('base_speed').value)
@@ -6668,6 +6910,7 @@ class TrackDriverNode(Node):
         return float(np.clip(lookahead, min_ld, max_ld))
 
     def _offset_path(self, path: Sequence[Point], offset: float) -> List[Point]:
+        # 메인 자율주행의 offset 경로 로직을 수행한다.
         if len(path) < 2:
             return []
 
@@ -6689,9 +6932,11 @@ class TrackDriverNode(Node):
         return self._smooth_path(out, iterations=1)
 
     def _straight_path(self) -> List[Point]:
+        # 메인 자율주행의 straight 경로 로직을 수행한다.
         return [(x, 0.0) for x in self._path_x_samples()]
 
     def _path_x_samples(self) -> List[float]:
+        # 메인 자율주행의 경로 x samples 로직을 수행한다.
         length = float(self.get_parameter('path_length').value)
         spacing = max(float(self.get_parameter('path_spacing').value), 0.10)
         count = max(3, int(length / spacing) + 1)
@@ -6699,6 +6944,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _smooth_path(path: Sequence[Point], iterations: int = 2) -> List[Point]:
+        # 메인 자율주행의 smooth 경로 로직을 수행한다.
         if len(path) < 5:
             return list(path)
 
@@ -6724,6 +6970,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _normalize_angle(angle: float) -> float:
+        # 메인 자율주행의 normalize angle 로직을 수행한다.
         while angle > math.pi:
             angle -= 2.0 * math.pi
         while angle < -math.pi:
@@ -6739,6 +6986,7 @@ class TrackDriverNode(Node):
         center_path: Sequence[Point],
         selected_path: Optional[Sequence[Point]],
     ):
+        # publish 디버그 visualization 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         if not bool(self.get_parameter('publish_debug_visualization').value):
             return
 
@@ -6771,6 +7019,7 @@ class TrackDriverNode(Node):
         stamp,
         lifetime_sec: float,
     ) -> int:
+        # 메인 자율주행의 append 어린이 보호구역 구역 디버그 marker 로직을 수행한다.
         if not self.school_zone_active:
             return marker_id
         return self._append_text_marker(
@@ -6786,6 +7035,7 @@ class TrackDriverNode(Node):
         stamp,
         lifetime_sec: float,
     ) -> int:
+        # 메인 자율주행의 append 보행자 디버그 markers 로직을 수행한다.
         if self.image is None:
             return marker_id
 
@@ -6830,6 +7080,7 @@ class TrackDriverNode(Node):
         stamp,
         lifetime_sec: float,
     ) -> int:
+        # 메인 자율주행의 append 차량 디버그 markers 로직을 수행한다.
         if self.image is not None:
             for box, score, class_id in self.cached_yolo_vehicle_detections:
                 point = (
@@ -6875,6 +7126,7 @@ class TrackDriverNode(Node):
         image: np.ndarray,
         box: Tuple[int, int, int, int],
     ) -> Optional[Point]:
+        # 보행자 대응에서 보행자 point from 박스 조건이나 명령을 계산한다.
         image_height, image_width = image.shape[:2]
         x0, y0, x1, y1 = box
         box_height = max(y1 - y0, 1)
@@ -6902,6 +7154,7 @@ class TrackDriverNode(Node):
         size: float,
         lifetime_sec: float,
     ) -> int:
+        # 메인 자율주행의 append sphere markers 로직을 수행한다.
         for x, y in points:
             marker = Marker()
             marker.header.frame_id = frame_id
@@ -6938,6 +7191,7 @@ class TrackDriverNode(Node):
         width: float,
         lifetime_sec: float,
     ) -> int:
+        # 메인 자율주행의 append line marker 로직을 수행한다.
         if len(points) < 2:
             return marker_id
 
@@ -6979,6 +7233,7 @@ class TrackDriverNode(Node):
         marker_type: int,
         lifetime_sec: float,
     ) -> int:
+        # 메인 자율주행의 append object marker 로직을 수행한다.
         marker = Marker()
         marker.header.frame_id = frame_id
         marker.header.stamp = stamp
@@ -7013,6 +7268,7 @@ class TrackDriverNode(Node):
         color: Tuple[float, float, float, float],
         lifetime_sec: float,
     ) -> int:
+        # 메인 자율주행의 append text marker 로직을 수행한다.
         marker = Marker()
         marker.header.frame_id = frame_id
         marker.header.stamp = stamp
@@ -7046,6 +7302,7 @@ class TrackDriverNode(Node):
         color: Tuple[float, float, float, float],
         lifetime_sec: float,
     ) -> int:
+        # 메인 자율주행의 append arrow marker 로직을 수행한다.
         if math.hypot(end[0] - start[0], end[1] - start[1]) < 0.05:
             return marker_id
 
@@ -7080,6 +7337,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _vehicle_marker_color(class_id: int, alpha: float = 1.0) -> Tuple[float, float, float, float]:
+        # 차량 대응에서 차량 marker color 조건이나 명령을 계산한다.
         if int(class_id) == 0:
             return (0.10, 0.45, 1.00, alpha)
         if int(class_id) == 2:
@@ -7088,6 +7346,7 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _set_marker_lifetime(marker: Marker, lifetime_sec: float):
+        # set marker lifetime 값을 내부 상태에 설정한다.
         sec = int(lifetime_sec)
         marker.lifetime.sec = sec
         marker.lifetime.nanosec = int((lifetime_sec - sec) * 1_000_000_000)
@@ -7102,6 +7361,7 @@ class TrackDriverNode(Node):
         raw_cone_count: Optional[int] = None,
         nearest_obstacle: Optional[float] = None,
     ):
+        # 로그 status 정보를 사람이 읽기 쉬운 로그 문자열로 만든다.
         now_ns = self.get_clock().now().nanoseconds
         if now_ns // 1_000_000_000 == getattr(self, '_last_log_sec', -1):
             return
@@ -7141,12 +7401,14 @@ class TrackDriverNode(Node):
         )
 
     def _speed_limit_log_text(self) -> str:
+        # 속도 limit 로그 text 정보를 사람이 읽기 쉬운 로그 문자열로 만든다.
         if self.last_external_speed_limit is None:
             return ' speed_limit=off'
         reasons = '+'.join(self.last_external_speed_limit_reasons) or 'unknown'
         return f' speed_limit={self.last_external_speed_limit:.1f}({reasons})'
 
     def _record_image_timing(self, msg: Image):
+        # 메인 자율주행의 record 이미지 timing 로직을 수행한다.
         now = time.monotonic()
         self.image_receive_times.append(now)
         stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
@@ -7158,11 +7420,13 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _trim_timing_window(times: Deque[float], now: float, window_sec: float = 3.0):
+        # 메인 자율주행의 trim timing window 로직을 수행한다.
         while len(times) > 1 and now - times[0] > window_sec:
             times.popleft()
 
     @staticmethod
     def _hz_from_times(times: Deque[float]) -> Optional[float]:
+        # 메인 자율주행의 hz from times 로직을 수행한다.
         if len(times) < 2:
             return None
         duration = times[-1] - times[0]
@@ -7171,6 +7435,7 @@ class TrackDriverNode(Node):
         return (len(times) - 1) / duration
 
     def _image_hz_log_text(self) -> str:
+        # 이미지 hz 로그 text 정보를 사람이 읽기 쉬운 로그 문자열로 만든다.
         receive_hz = self._hz_from_times(self.image_receive_times)
         stamp_hz = self._hz_from_times(self.image_stamp_times)
         receive_text = 'n/a' if receive_hz is None else f'{receive_hz:.1f}'
@@ -7179,11 +7444,13 @@ class TrackDriverNode(Node):
 
     @staticmethod
     def _format_nearest_obstacle(distance: Optional[float]) -> str:
+        # 메인 자율주행의 format nearest 장애물 로직을 수행한다.
         if distance is None:
             return 'none'
         return f'{distance:.2f}m'
 
     def _school_zone_log_text(self) -> str:
+        # 어린이 보호구역 구역 로그 text 정보를 사람이 읽기 쉬운 로그 문자열로 만든다.
         slow_text = ''
         if self._person_slow_speed_limit_active():
             state = 'seen_zone' if self.person_slow_seen_school_zone else 'waiting_zone'
@@ -7202,6 +7469,7 @@ class TrackDriverNode(Node):
         return zone_text + slow_text
 
     def _stop_line_log_text(self) -> str:
+        # 정지 line 로그 text 정보를 사람이 읽기 쉬운 로그 문자열로 만든다.
         if not self.stop_line_detected and self.stop_line_last_seen_sec is None:
             return ''
         now = time.monotonic()
@@ -7231,6 +7499,7 @@ class TrackDriverNode(Node):
         )
 
     def _intersection_log_text(self) -> str:
+        # 교차로 판단 결과와 왼쪽 콘 감지 수를 상태 로그에 붙일 문자열로 만든다.
         if (
             not self.intersection_last_decision
             and self.intersection_left_cone_count == 0
@@ -7244,6 +7513,7 @@ class TrackDriverNode(Node):
         )
 
     def _vehicle_log_text(self) -> str:
+        # 차량 로그 text 정보를 사람이 읽기 쉬운 로그 문자열로 만든다.
         if not self._vehicle_processing_enabled():
             return ''
 
@@ -7297,6 +7567,7 @@ class TrackDriverNode(Node):
 
 
 def main(args=None):
+    # ROS2 노드를 초기화하고 실행 루프를 시작한다.
     rclpy.init(args=args)
     node = TrackDriverNode()
 

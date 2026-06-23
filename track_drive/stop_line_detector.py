@@ -27,6 +27,7 @@ class StopLineBEVResult:
 
 
 def declare_stop_line_bev_parameters(node):
+    # 정지선 검출에서 사용하는 ROS 파라미터 기본값을 선언한다.
     node.declare_parameter('camera_topic', '/usb_cam/image_raw/front')
     node.declare_parameter('stop_line_bev_width', 320)
     node.declare_parameter('stop_line_bev_height', 240)
@@ -71,10 +72,12 @@ class BEVStopLineDetector:
     """Detect the white horizontal stop line in a bird's-eye front band."""
 
     def __init__(self, node):
+        # BEVStopLineDetector 객체를 초기화하고 필요한 파라미터와 내부 상태를 준비한다.
         self.node = node
         self.last_reject_reason = ''
 
     def detect(self, image: Optional[np.ndarray]) -> StopLineBEVResult:
+        # 입력 데이터에서 detect 조건을 감지한다.
         if image is None or image.size == 0:
             return StopLineBEVResult()
 
@@ -209,6 +212,7 @@ class BEVStopLineDetector:
         )
 
     def _source_points(self, width: int, height: int) -> np.ndarray:
+        # 원본 카메라 좌표와 BEV 변환에 필요한 기준점을 계산한다.
         top_ratio = float(np.clip(self._param('stop_line_bev_src_top_ratio', 0.46), 0.05, 0.95))
         bottom_ratio = float(np.clip(
             self._param('stop_line_bev_src_bottom_ratio', 0.98),
@@ -234,6 +238,7 @@ class BEVStopLineDetector:
         return points
 
     def _raw_white_mask(self, bev: np.ndarray) -> np.ndarray:
+        # 정지선 검출의 raw white 마스크 로직을 수행한다.
         hsv = cv2.cvtColor(bev, cv2.COLOR_BGR2HSV)
         value_min = int(np.clip(self._param('stop_line_white_value_min', 185), 0, 255))
         sat_max = int(np.clip(self._param('stop_line_white_sat_max', 95), 0, 255))
@@ -244,6 +249,7 @@ class BEVStopLineDetector:
         )
 
     def _smooth_white_mask(self, mask: np.ndarray) -> np.ndarray:
+        # 정지선 검출의 smooth white 마스크 로직을 수행한다.
         close_width = max(3, int(float(mask.shape[1]) * float(self._param('stop_line_bev_close_width_ratio', 0.035))))
         if close_width % 2 == 0:
             close_width += 1
@@ -254,6 +260,7 @@ class BEVStopLineDetector:
         return mask
 
     def _best_horizontal_line(self, front_mask: np.ndarray, raw_front_mask: np.ndarray, bev_width: int):
+        # 정지선 검출의 best horizontal line 로직을 수행한다.
         self.last_reject_reason = ''
         if front_mask.size == 0:
             return None
@@ -295,6 +302,7 @@ class BEVStopLineDetector:
         return x, y, box_w, box_h, width_ratio, solid_run_ratio, fill_ratio
 
     def _row_runs(self, values: np.ndarray):
+        # 정지선 검출의 row runs 로직을 수행한다.
         runs = []
         start = None
         for idx, valid in enumerate(values):
@@ -307,6 +315,7 @@ class BEVStopLineDetector:
         return runs
 
     def _repeating_band_rejected(self, row_runs, front_height: int) -> bool:
+        # 정지선 검출의 repeating band rejected 로직을 수행한다.
         if not bool(self._param('stop_line_bev_reject_repeating_bands', True)):
             return False
 
@@ -339,6 +348,7 @@ class BEVStopLineDetector:
         min_aspect_ratio: float,
         min_fill_ratio: float,
     ):
+        # score row band 후보의 점수나 보조 판정값을 계산한다.
         band = mask[y0:y1, :]
         nonzero_y, nonzero_x = band.nonzero()
         if len(nonzero_x) == 0:
@@ -376,6 +386,7 @@ class BEVStopLineDetector:
         return score, x0, y0, box_w, box_h, width_ratio, solid_run_ratio, fill_ratio
 
     def _fragmented_band_rejected(self, raw_mask: np.ndarray, y0: int, y1: int, x0: int, x1: int) -> bool:
+        # 정지선 검출의 fragmented band rejected 로직을 수행한다.
         if not bool(self._param('stop_line_bev_reject_fragmented_band', True)):
             return False
         if raw_mask.size == 0:
@@ -425,6 +436,7 @@ class BEVStopLineDetector:
         return longest_ratio < max_solid_ratio
 
     def _longest_solid_column_run_ratio(self, band: np.ndarray, bev_width: int) -> float:
+        # 정지선 검출의 longest solid column run ratio 로직을 수행한다.
         min_fill_ratio = float(np.clip(
             self._param('stop_line_bev_solid_col_min_fill_ratio', 0.30),
             0.05,
@@ -443,6 +455,7 @@ class BEVStopLineDetector:
         return float(longest) / float(max(bev_width, 1))
 
     def _close_enough_to_detect(self, row_ratio: float, distance_m: float) -> bool:
+        # 정지선 검출의 close enough to detect 로직을 수행한다.
         min_row_ratio = float(np.clip(
             self._param('stop_line_detect_min_row_ratio', 0.10),
             0.0,
@@ -456,6 +469,7 @@ class BEVStopLineDetector:
         return True
 
     def _source_row_ratio(self, inverse_matrix: np.ndarray, bev_x: float, bev_y: float, image_height: int) -> float:
+        # 원본 카메라 좌표와 BEV 변환에 필요한 기준점을 계산한다.
         if image_height <= 0:
             return 0.0
         point = np.array([[[float(bev_x), float(bev_y)]]], dtype=np.float32)
@@ -466,17 +480,20 @@ class BEVStopLineDetector:
         return float(np.clip(mapped[1] / float(image_height), 0.0, 1.0))
 
     def _source_row_guard(self, source_row_ratio: Optional[float]) -> bool:
+        # 원본 카메라 좌표와 BEV 변환에 필요한 기준점을 계산한다.
         if source_row_ratio is None:
             return False
         min_y = float(np.clip(self._param('stop_line_original_min_y_ratio', 0.52), 0.0, 1.0))
         return float(source_row_ratio) >= min_y
 
     def _estimate_distance(self, row_ratio: float) -> float:
+        # estimate 거리 값을 입력 특징으로부터 추정한다.
         bottom_ratio = float(np.clip(self._param('stop_line_distance_bottom_ratio', 1.0), 0.0, 1.0))
         scale_m = max(float(self._param('stop_line_distance_scale_m', 7.0)), 0.01)
         return max(0.0, (bottom_ratio - float(row_ratio)) * scale_m)
 
     def _param(self, name: str, default):
+        # ROS 파라미터 값을 읽고 없으면 기본값을 사용한다.
         try:
             return self.node.get_parameter(name).value
         except Exception:
@@ -487,11 +504,13 @@ class StopLineDetector:
     """Stop-line perception boundary for TrackDriverNode."""
 
     def __init__(self, node):
+        # StopLineDetector 객체를 초기화하고 필요한 파라미터와 내부 상태를 준비한다.
         self.node = node
         self.bev_detector = BEVStopLineDetector(node)
         self.last_result = StopLineBEVResult()
 
     def update(self, image: Optional[np.ndarray]):
+        # 최신 입력을 기준으로 update 관련 캐시와 상태를 갱신한다.
         self._reset_current_state()
         if image is None or not bool(self.node.get_parameter('stop_on_light_requires_stop_line').value):
             self.node.stop_line_confirm_count = 0
@@ -520,6 +539,7 @@ class StopLineDetector:
         self.node.stop_line_confirm_count += 1
 
     def ready_for_light_stop(self) -> bool:
+        # 정지선 검출의 ready for 신호등 정지 로직을 수행한다.
         if not bool(self.node.get_parameter('stop_on_light_requires_stop_line').value):
             return True
 
@@ -555,9 +575,11 @@ class StopLineDetector:
         )
 
     def log_text(self) -> str:
+        # 로그 text 정보를 사람이 읽기 쉬운 로그 문자열로 만든다.
         return self.node._stop_line_log_text()
 
     def _reset_current_state(self):
+        # reset current 상태 관련 내부 상태와 카운터를 초기화한다.
         self.node.stop_line_detected = False
         self.node.stop_line_row_ratio = 0.0
         self.node.stop_line_bottom_row_ratio = 0.0

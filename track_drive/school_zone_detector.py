@@ -30,6 +30,7 @@ class SchoolZoneBEVResult:
 
 
 def declare_school_zone_bev_parameters(node):
+    # 어린이 보호구역 검출에서 사용하는 ROS 파라미터 기본값을 선언한다.
     node.declare_parameter('camera_topic', '/usb_cam/image_raw/front')
     node.declare_parameter('school_zone_speed', 5.5)
     node.declare_parameter('school_zone_speed_limit_enabled', True)
@@ -70,11 +71,13 @@ class BEVSchoolZoneDetector:
     """Detect school-zone yellow side lane markings in bird's-eye view."""
 
     def __init__(self, node):
+        # BEVSchoolZoneDetector 객체를 초기화하고 필요한 파라미터와 내부 상태를 준비한다.
         self.node = node
         self.active_until_sec = 0.0
         self.candidate_until_sec = 0.0
 
     def detect(self, image: Optional[np.ndarray]) -> SchoolZoneBEVResult:
+        # 입력 데이터에서 detect 조건을 감지한다.
         if image is None or image.size == 0:
             return SchoolZoneBEVResult()
 
@@ -106,6 +109,7 @@ class BEVSchoolZoneDetector:
         return result
 
     def _source_points(self, width: int, height: int) -> np.ndarray:
+        # 원본 카메라 좌표와 BEV 변환에 필요한 기준점을 계산한다.
         top_ratio = float(np.clip(self._param('school_zone_bev_src_top_ratio', 0.50), 0.05, 0.95))
         bottom_ratio = float(np.clip(
             self._param('school_zone_bev_src_bottom_ratio', 0.90),
@@ -131,6 +135,7 @@ class BEVSchoolZoneDetector:
         return points
 
     def _yellow_mask(self, bev: np.ndarray) -> np.ndarray:
+        # 어린이 보호구역 검출의 yellow 마스크 로직을 수행한다.
         hsv = cv2.cvtColor(bev, cv2.COLOR_BGR2HSV)
         h_min = int(np.clip(self._param('school_zone_yellow_h_min', 15), 0, 179))
         h_max = int(np.clip(self._param('school_zone_yellow_h_max', 40), h_min, 179))
@@ -148,6 +153,7 @@ class BEVSchoolZoneDetector:
         return mask
 
     def _evaluate_mask(self, mask: np.ndarray, bev: np.ndarray) -> SchoolZoneBEVResult:
+        # 어린이 보호구역 검출의 evaluate 마스크 로직을 수행한다.
         height, width = mask.shape[:2]
         front_top = float(np.clip(self._param('school_zone_bev_front_top_ratio', 0.38), 0.0, 0.98))
         front_bottom = float(np.clip(
@@ -275,6 +281,7 @@ class BEVSchoolZoneDetector:
         )
 
     def _apply_hold(self, raw_active: bool, raw_candidate: bool) -> Tuple[bool, bool, float]:
+        # apply hold 조건을 현재 명령이나 상태에 적용한다.
         now = time.monotonic()
         hold_sec = max(float(self._param('school_zone_hold_sec', 1.5)), 0.0)
         if raw_active:
@@ -303,6 +310,7 @@ class BEVSchoolZoneDetector:
         bottom_pair_row_ratio: float,
         separation_ratio: float,
     ) -> bool:
+        # 어린이 보호구역 검출의 active 로직을 수행한다.
         min_pixels = max(int(self._param('school_zone_bev_min_pixels', 45)), 1)
         return (
             left_pixels >= min_pixels
@@ -324,6 +332,7 @@ class BEVSchoolZoneDetector:
         bottom_pair_row_ratio: float,
         separation_ratio: float,
     ) -> bool:
+        # candidate 동작을 수행할 수 있는 상태인지 확인한다.
         ratio = float(np.clip(self._param('school_zone_bev_preslow_ratio', 0.50), 0.25, 1.0))
         return (
             left_pixels >= int(max(int(self._param('school_zone_bev_min_pixels', 45)), 1) * ratio)
@@ -335,6 +344,7 @@ class BEVSchoolZoneDetector:
         )
 
     def _param(self, name: str, default):
+        # ROS 파라미터 값을 읽고 없으면 기본값을 사용한다.
         try:
             return self.node.get_parameter(name).value
         except Exception:
@@ -345,11 +355,13 @@ class SchoolZoneDetector:
     """School-zone perception and speed-limit boundary for TrackDriverNode."""
 
     def __init__(self, node):
+        # SchoolZoneDetector 객체를 초기화하고 필요한 파라미터와 내부 상태를 준비한다.
         self.node = node
         self.bev_detector = BEVSchoolZoneDetector(node)
         self.last_result = SchoolZoneBEVResult()
 
     def update(self, image: Optional[np.ndarray]):
+        # 최신 입력을 기준으로 update 관련 캐시와 상태를 갱신한다.
         if image is None or not bool(self.node.get_parameter('school_zone_enabled').value):
             self._reset_state()
             return
@@ -374,6 +386,7 @@ class SchoolZoneDetector:
         self._apply_bev_result(result)
 
     def apply_speed_limit(self, speed: float) -> float:
+        # apply 속도 limit 조건을 현재 명령이나 상태에 적용한다.
         speed = float(speed)
         if not bool(self.node.get_parameter('school_zone_speed_limit_enabled').value):
             return speed
@@ -388,12 +401,15 @@ class SchoolZoneDetector:
         return speed
 
     def takeover_requested(self) -> bool:
+        # 어린이 보호구역 검출의 takeover requested 로직을 수행한다.
         return self.node._school_zone_takeover_requested()
 
     def log_text(self) -> str:
+        # 로그 text 정보를 사람이 읽기 쉬운 로그 문자열로 만든다.
         return self.node._school_zone_log_text()
 
     def _apply_bev_result(self, result: SchoolZoneBEVResult):
+        # apply BEV result 조건을 현재 명령이나 상태에 적용한다.
         now = time.monotonic()
         self.node.school_zone_active = bool(result.active)
         self.node.school_zone_candidate_active = bool(result.candidate)
@@ -418,6 +434,7 @@ class SchoolZoneDetector:
             self.node.school_zone_candidate_last_seen_sec = None
 
     def _update_speed_limit_hold(self, detected: bool, now: Optional[float] = None):
+        # 최신 입력을 기준으로 update 속도 limit hold 관련 캐시와 상태를 갱신한다.
         if now is None:
             now = time.monotonic()
         hold_sec = max(float(self._param('school_zone_speed_limit_hold_sec', 1.0)), 0.0)
@@ -429,6 +446,7 @@ class SchoolZoneDetector:
         )
 
     def _reset_state(self):
+        # reset 상태 관련 내부 상태와 카운터를 초기화한다.
         self.last_result = SchoolZoneBEVResult()
         self.node.school_zone_active = False
         self.node.school_zone_candidate_active = False
@@ -445,6 +463,7 @@ class SchoolZoneDetector:
         self.node.school_zone_candidate_last_seen_sec = None
 
     def _param(self, name: str, default):
+        # ROS 파라미터 값을 읽고 없으면 기본값을 사용한다.
         try:
             return self.node.get_parameter(name).value
         except Exception:

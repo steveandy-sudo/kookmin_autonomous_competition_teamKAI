@@ -14,10 +14,12 @@ class PerceptionModule:
     """카메라 프레임에서 필요한 초기 인지 결과를 계산한다."""
 
     def __init__(self) -> None:
+        # PerceptionModule 객체를 초기화하고 필요한 파라미터와 내부 상태를 준비한다.
         self.bridge = CvBridge()
 
     def image_msg_to_bgr(self, image_msg: Optional[Image]) -> Optional[np.ndarray]:
         """ROS Image 메시지를 OpenCV BGR 이미지로 안전 변환한다."""
+        # 카메라 인식의 이미지 msg to bgr 로직을 수행한다.
         if image_msg is None:
             return None
 
@@ -28,6 +30,7 @@ class PerceptionModule:
 
     def detect_green_traffic_light(self, bgr: Optional[np.ndarray]) -> bool:
         """HSV 임계값 기반 초록불 감지(스타터 버전)."""
+        # 입력 데이터에서 detect 초록불 교통 신호등 조건을 감지한다.
         if bgr is None or bgr.size == 0:
             return False
 
@@ -41,6 +44,7 @@ class PerceptionModule:
 
     def detect_lane_center(self, bgr: Optional[np.ndarray]) -> Optional[float]:
         """하단 ROI에서 단순 차선 중심 x 좌표를 추정한다."""
+        # 입력 데이터에서 detect 차선 center 조건을 감지한다.
         if bgr is None or bgr.size == 0:
             return None
 
@@ -61,6 +65,7 @@ class PerceptionModule:
 
     def detect_school_zone(self, bgr: Optional[np.ndarray]) -> bool:
         """스쿨존 텍스트/노면표시 감지 Placeholder."""
+        # 입력 데이터에서 detect 어린이 보호구역 구역 조건을 감지한다.
         if bgr is None or bgr.size == 0:
             return False
 
@@ -69,6 +74,7 @@ class PerceptionModule:
 
     def detect_left_turn_signal(self, bgr: Optional[np.ndarray]) -> bool:
         """좌회전 신호/표지 감지 Placeholder."""
+        # 입력 데이터에서 detect 왼쪽/좌회전 회전 signal 조건을 감지한다.
         if bgr is None or bgr.size == 0:
             return False
 
@@ -77,6 +83,7 @@ class PerceptionModule:
 
     def run(self, image_msg: Optional[Image]) -> Dict[str, Any]:
         """현재 프레임으로 인지 결과를 계산한다."""
+        # 카메라 인식 처리 파이프라인을 실행하고 결과를 반환한다.
         bgr = self.image_msg_to_bgr(image_msg)
         lane_center_x = self.detect_lane_center(bgr)
 

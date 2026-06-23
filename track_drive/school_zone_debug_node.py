@@ -20,6 +20,7 @@ class SchoolZoneDebugNode(Node):
     """Publish BEV school-zone debug images without motor control."""
 
     def __init__(self):
+        # SchoolZoneDebugNode 객체를 초기화하고 필요한 파라미터와 내부 상태를 준비한다.
         super().__init__('school_zone_debug')
 
         declare_school_zone_bev_parameters(self)
@@ -47,6 +48,7 @@ class SchoolZoneDebugNode(Node):
         )
 
     def image_callback(self, msg: Image):
+        # ROS 토픽 콜백으로 들어온 메시지를 내부 상태에 반영한다.
         try:
             frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         except Exception as exc:
@@ -70,6 +72,7 @@ class SchoolZoneDebugNode(Node):
         self._log_result(result)
 
     def _publish_image(self, pub, image, encoding: str, source_msg: Image):
+        # publish 이미지 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         if image is None:
             return
         try:
@@ -82,17 +85,20 @@ class SchoolZoneDebugNode(Node):
 
     @staticmethod
     def _publish_bool(pub, value: bool):
+        # publish bool 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         msg = Bool()
         msg.data = bool(value)
         pub.publish(msg)
 
     @staticmethod
     def _publish_float(pub, value: float):
+        # publish float 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         msg = Float32()
         msg.data = float(value)
         pub.publish(msg)
 
     def _log_result(self, result):
+        # 로그 result 정보를 사람이 읽기 쉬운 로그 문자열로 만든다.
         now = time.monotonic()
         period = max(float(self.get_parameter('school_zone_debug_log_period_sec').value), 0.0)
         if period > 0.0 and now - self.last_log_sec < period:
@@ -108,6 +114,7 @@ class SchoolZoneDebugNode(Node):
 
 
 def main(args=None):
+    # ROS2 노드를 초기화하고 실행 루프를 시작한다.
     rclpy.init(args=args)
     node = SchoolZoneDebugNode()
     try:

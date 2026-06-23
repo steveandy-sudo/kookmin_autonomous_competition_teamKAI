@@ -20,6 +20,7 @@ class TrafficLightDebugNode(Node):
     """Run traffic-light recognition only and publish RViz-friendly debug output."""
 
     def __init__(self):
+        # TrafficLightDebugNode 객체를 초기화하고 필요한 파라미터와 내부 상태를 준비한다.
         super().__init__('traffic_light_debug')
 
         declare_traffic_light_parameters(self)
@@ -40,6 +41,7 @@ class TrafficLightDebugNode(Node):
         )
 
     def image_callback(self, msg: Image):
+        # ROS 토픽 콜백으로 들어온 메시지를 내부 상태에 반영한다.
         try:
             frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         except Exception as exc:
@@ -52,6 +54,7 @@ class TrafficLightDebugNode(Node):
         self._log_result(result)
 
     def _publish_debug_image(self, image, source_msg: Image):
+        # publish 디버그 이미지 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         if image is None:
             return
         try:
@@ -63,11 +66,13 @@ class TrafficLightDebugNode(Node):
             self.get_logger().warn(f'traffic-light debug image publish failed: {exc}')
 
     def _publish_state(self, state: str):
+        # publish 상태 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         msg = String()
         msg.data = str(state)
         self.state_pub.publish(msg)
 
     def _log_result(self, result):
+        # 로그 result 정보를 사람이 읽기 쉬운 로그 문자열로 만든다.
         now = time.monotonic()
         period = max(float(self.get_parameter('traffic_light_log_period_sec').value), 0.0)
         if period > 0.0 and now - self.last_log_sec < period:
@@ -80,6 +85,7 @@ class TrafficLightDebugNode(Node):
 
 
 def main(args=None):
+    # ROS2 노드를 초기화하고 실행 루프를 시작한다.
     rclpy.init(args=args)
     node = TrafficLightDebugNode()
     try:
