@@ -249,3 +249,11 @@ cone_il_dataset*/
 cone_il_model*/
 *.npy
 *:Zone.Identifier
+!assets/models/cone_bc_scripted_0.pt
+!assets/models/cone_bc_scripted_00.pt
+!assets/models/cone_bc_scripted_1.pt
+!assets/models/cone_bc_scripted_6.pt
+!assets/models/cone_bc_scripted_7.pt
+!assets/models/cone_bc_scripted_8.pt
+!assets/models/cone_bc_scripted_9.pt
+!assets/models/cone_bc_scripted_10.pt
