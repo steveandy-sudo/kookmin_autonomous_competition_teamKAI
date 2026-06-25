@@ -95,8 +95,8 @@ kookmin_autonomous_competition_teamKAI/
 
 ### cone_il 패키지
 
-- `cone_il/cone_il/cone_ai_driver_node.py`: 전방 카메라 이미지를 CNN 모델에 입력해 조향각을 예측하고 `/xycar_motor` 명령을 발행한다.
-- `cone_il/cone_il/preprocess.py`: 카메라 이미지를 crop, resize, RGB 변환, 정규화, CHW 텐서 형태로 바꾸는 전처리를 수행한다.
+- `cone_il/cone_il/cone_ai_driver_node.py`: 이미지를 CNN 모델에 입력해 조향각을 예측하고 `/xycar_motor`를 발행한다.
+- `cone_il/cone_il/preprocess.py`: 이미지를 crop, resize, RGB 변환, 정규화, CHW 텐서 형태로 전처리를 수행한다.
 - `cone_il/cone_il/model.py`: CNN 조향 모델 구조를 정의한다.
 - `cone_il/cone_il/cone_data_recorder_node.py`: 주행 데이터 수집용 노드이다.
 - `cone_il/cone_il/xycar_*_teleop_node.py`: 데이터 수집 또는 수동 조작에 사용하는 키보드 teleop 노드이다.
@@ -107,9 +107,7 @@ kookmin_autonomous_competition_teamKAI/
 
 ### CNN End-to-End 조향 모델
 
-`assets/models/cone_bc_scripted_*.pt` 파일은 전방 카메라 이미지를 입력으로 받아 조향각을 출력하는 TorchScript CNN 모델이다. 입력 이미지는 하단 도로 영역을 중심으로 crop하고, 고정 크기로 resize한 뒤, RGB 변환과 0~1 정규화를 거쳐 CHW 형태의 float32 텐서로 변환된다.
-
-학습은 사람이 주행하거나 기존 주행 로직으로 얻은 카메라 이미지와 조향각 데이터를 짝지어 진행한다. 모델은 이미지에서 라바콘 배치와 도로 진행 방향을 학습하고, 실제 주행 중에는 매 프레임 조향각을 예측한다. 주행 안정성을 위해 예측 조향각에는 smoothing, 최대 조향각 제한, 조향각 기반 속도 제한을 함께 적용한다.
+`assets/models/cone_bc_scripted_*.pt` 파일은 전방 카메라 이미지를 입력으로 받아 조향각을 출력하는 TorchScript CNN 모델이다. 입력 이미지는 하단 도로 영역을 중심으로 crop하고, 고정 크기로 resize한 뒤, RGB 변환과 0~1 정규화를 거쳐 CHW 형태의 float32 텐서로 변환된다. 학습은 사람이 주행하거나 기존 주행 로직으로 얻은 카메라 이미지와 조향각 데이터를 짝지어 진행한다. 모델은 이미지에서 라바콘 배치와 도로 진행 방향을 학습하고, 실제 주행 중에는 매 프레임 조향각을 예측한다. 주행 안정성을 위해 예측 조향각에는 smoothing, 최대 조향각 제한, 조향각 기반 속도 제한을 함께 적용한다.
 
 ### 객체 인식 모델
 
