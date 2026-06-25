@@ -95,7 +95,7 @@ kookmin_autonomous_competition_teamKAI/
 
 ### cone_il 패키지
 
-- `cone_il/cone_il/cone_ai_driver_node.py`: 이미지를 CNN 모델에 입력해 조향각을 예측하고 `/xycar_motor`를 발행한다.
+- `cone_il/cone_il/cone_ai_driver_node.py`: 이미지를 모델에 입력해 조향각을 예측하고 `/xycar_motor`를 발행한다.
 - `cone_il/cone_il/preprocess.py`: 이미지를 crop, resize, RGB 변환, 정규화, CHW 텐서 형태로 전처리를 수행한다.
 - `cone_il/cone_il/model.py`: CNN 조향 모델 구조를 정의한다.
 - `cone_il/cone_il/cone_data_recorder_node.py`: 주행 데이터 수집용 노드이다.
