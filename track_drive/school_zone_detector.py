@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+# 전방 카메라 이미지에서 어린이보호구역 노면 표시를 검출하는 모듈이다.
+# BEV 변환과 노란색 차선/표식 분석으로 보호구역 진입, 유지, 이탈 상태를 판단한다.
 import time
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -9,6 +11,7 @@ import cv2
 import numpy as np
 
 
+# BEV 기반 어린이보호구역 검출 결과와 디버그 지표를 담는 구조체이다.
 @dataclass
 class SchoolZoneBEVResult:
     active: bool = False
@@ -29,10 +32,11 @@ class SchoolZoneBEVResult:
     debug_image: Optional[np.ndarray] = None
 
 
+# launch에서 전달받을 어린이보호구역 검출 파라미터를 ROS 파라미터로 선언한다.
 def declare_school_zone_bev_parameters(node):
     # 어린이 보호구역 검출에서 사용하는 ROS 파라미터 기본값을 선언한다.
     node.declare_parameter('camera_topic', '/usb_cam/image_raw/front')
-    node.declare_parameter('school_zone_speed', 5.5)
+    node.declare_parameter('school_zone_speed', 5.0)
     node.declare_parameter('school_zone_speed_limit_enabled', True)
     node.declare_parameter('school_zone_speed_limit_hold_sec', 1.0)
     node.declare_parameter('school_zone_hold_sec', 1.5)
@@ -67,6 +71,7 @@ def declare_school_zone_bev_parameters(node):
     node.declare_parameter('school_zone_bev_preslow_ratio', 0.50)
 
 
+# 원근 변환된 도로 영역에서 노란색 보호구역 표시를 찾아내는 검출기이다.
 class BEVSchoolZoneDetector:
     """Detect school-zone yellow side lane markings in bird's-eye view."""
 
@@ -76,14 +81,18 @@ class BEVSchoolZoneDetector:
         self.active_until_sec = 0.0
         self.candidate_until_sec = 0.0
 
+    # 카메라 이미지를 BEV로 변환하고 노란색 마스크를 평가해 보호구역 여부를 판단한다.
     def detect(self, image: Optional[np.ndarray]) -> SchoolZoneBEVResult:
+        # 노란색 표식의 좌우 분포와 행 방향 패턴을 분석해 보호구역 후보를 판단한다.
         # 입력 데이터에서 detect 조건을 감지한다.
         if image is None or image.size == 0:
             return SchoolZoneBEVResult()
 
+        # 원본 이미지 크기를 기준으로 사다리꼴 ROI를 만들고 BEV 변환 크기를 결정한다.
         height, width = image.shape[:2]
         bev_width = max(int(self._param('school_zone_bev_width', 320)), 16)
         bev_height = max(int(self._param('school_zone_bev_height', 240)), 16)
+        # 카메라 시점의 도로 바닥 사다리꼴을 위에서 내려다본 직사각형 영역으로 펼친다.
         src = self._source_points(width, height)
         dst = np.float32([
             [0.0, 0.0],
@@ -101,6 +110,7 @@ class BEVSchoolZoneDetector:
         except cv2.error:
             return SchoolZoneBEVResult(roi_debug_image=roi_debug)
 
+        # BEV 이미지에서 노란색 차선/표식 후보만 남겨 보호구역 패턴 분석에 사용한다.
         yellow_mask = self._yellow_mask(bev)
         result = self._evaluate_mask(yellow_mask, bev)
         result.roi_debug_image = roi_debug
@@ -108,6 +118,7 @@ class BEVSchoolZoneDetector:
         result.mask_image = yellow_mask
         return result
 
+    # 원본 이미지에서 도로 바닥에 해당하는 사다리꼴 ROI를 잡는다.
     def _source_points(self, width: int, height: int) -> np.ndarray:
         # 원본 카메라 좌표와 BEV 변환에 필요한 기준점을 계산한다.
         top_ratio = float(np.clip(self._param('school_zone_bev_src_top_ratio', 0.50), 0.05, 0.95))
@@ -134,8 +145,10 @@ class BEVSchoolZoneDetector:
         points[:, 1] = np.clip(points[:, 1], 0.0, max(float(height - 1), 0.0))
         return points
 
+    # HSV 색공간에서 노란색 차선/노면 표시 후보만 추출한다.
     def _yellow_mask(self, bev: np.ndarray) -> np.ndarray:
         # 어린이 보호구역 검출의 yellow 마스크 로직을 수행한다.
+        # 노란색은 HSV hue 범위로 분리하고, saturation/value 조건으로 어두운 잡음을 줄인다.
         hsv = cv2.cvtColor(bev, cv2.COLOR_BGR2HSV)
         h_min = int(np.clip(self._param('school_zone_yellow_h_min', 15), 0, 179))
         h_max = int(np.clip(self._param('school_zone_yellow_h_max', 40), h_min, 179))
@@ -152,6 +165,7 @@ class BEVSchoolZoneDetector:
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((close_size, close_size), np.uint8))
         return mask
 
+    # 노란색 픽셀 비율, 행 분포, 좌우 쌍 형태를 이용해 보호구역 표식을 판정한다.
     def _evaluate_mask(self, mask: np.ndarray, bev: np.ndarray) -> SchoolZoneBEVResult:
         # 어린이 보호구역 검출의 evaluate 마스크 로직을 수행한다.
         height, width = mask.shape[:2]
@@ -280,6 +294,7 @@ class BEVSchoolZoneDetector:
             debug_image=debug,
         )
 
+    # 검출이 순간적으로 끊겨도 일정 시간 상태를 유지해 판단 흔들림을 줄인다.
     def _apply_hold(self, raw_active: bool, raw_candidate: bool) -> Tuple[bool, bool, float]:
         # apply hold 조건을 현재 명령이나 상태에 적용한다.
         now = time.monotonic()
@@ -351,6 +366,7 @@ class BEVSchoolZoneDetector:
             return default
 
 
+# BEV 검출 결과를 실제 주행 속도 제한 상태로 변환하는 상위 래퍼이다.
 class SchoolZoneDetector:
     """School-zone perception and speed-limit boundary for TrackDriverNode."""
 
@@ -360,6 +376,7 @@ class SchoolZoneDetector:
         self.bev_detector = BEVSchoolZoneDetector(node)
         self.last_result = SchoolZoneBEVResult()
 
+    # 현재 이미지로 보호구역 상태를 갱신하고 속도 제한 hold 시간을 관리한다.
     def update(self, image: Optional[np.ndarray]):
         # 최신 입력을 기준으로 update 관련 캐시와 상태를 갱신한다.
         if image is None or not bool(self.node.get_parameter('school_zone_enabled').value):
@@ -385,9 +402,12 @@ class SchoolZoneDetector:
         self.last_result = result
         self._apply_bev_result(result)
 
+    # 보호구역 안이거나 hold 시간이 남아 있으면 목표 속도를 제한한다.
     def apply_speed_limit(self, speed: float) -> float:
+        # 보호구역이 활성화된 동안 주행 속도를 제한하고, 필요하면 진입 boost 속도를 적용한다.
         # apply 속도 limit 조건을 현재 명령이나 상태에 적용한다.
         speed = float(speed)
+        # 보호구역 속도 제한 옵션이 꺼져 있으면 검출은 유지하되 속도 명령은 건드리지 않는다.
         if not bool(self.node.get_parameter('school_zone_speed_limit_enabled').value):
             return speed
 

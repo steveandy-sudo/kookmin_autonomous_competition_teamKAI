@@ -19,6 +19,7 @@ from track_drive.school_zone_detector import (
 class SchoolZoneDebugNode(Node):
     """Publish BEV school-zone debug images without motor control."""
 
+    # 설명: 어린이보호구역 디버그 노드의 구독, 발행, 검출기를 초기화한다.
     def __init__(self):
         # SchoolZoneDebugNode 객체를 초기화하고 필요한 파라미터와 내부 상태를 준비한다.
         super().__init__('school_zone_debug')
@@ -47,6 +48,7 @@ class SchoolZoneDebugNode(Node):
             f'School-zone BEV debug ready | image={camera_topic}, topics={prefix}/roi,bev,mask,debug'
         )
 
+    # 설명: 수신한 ROS 메시지를 내부 최신 상태로 반영한다.
     def image_callback(self, msg: Image):
         # ROS 토픽 콜백으로 들어온 메시지를 내부 상태에 반영한다.
         try:
@@ -71,6 +73,7 @@ class SchoolZoneDebugNode(Node):
         self._publish_image(self.debug_pub, result.debug_image, 'bgr8', msg)
         self._log_result(result)
 
+    # 설명: 계산된 결과나 디버그 정보를 ROS 토픽으로 발행한다.
     def _publish_image(self, pub, image, encoding: str, source_msg: Image):
         # publish 이미지 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         if image is None:
@@ -83,6 +86,7 @@ class SchoolZoneDebugNode(Node):
         except Exception as exc:
             self.get_logger().warn(f'debug image publish failed: {exc}')
 
+    # 설명: 계산된 결과나 디버그 정보를 ROS 토픽으로 발행한다.
     @staticmethod
     def _publish_bool(pub, value: bool):
         # publish bool 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
@@ -90,6 +94,7 @@ class SchoolZoneDebugNode(Node):
         msg.data = bool(value)
         pub.publish(msg)
 
+    # 설명: 계산된 결과나 디버그 정보를 ROS 토픽으로 발행한다.
     @staticmethod
     def _publish_float(pub, value: float):
         # publish float 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
@@ -97,6 +102,7 @@ class SchoolZoneDebugNode(Node):
         msg.data = float(value)
         pub.publish(msg)
 
+    # 설명: 검출 결과 요약을 로그로 출력한다.
     def _log_result(self, result):
         # 로그 result 정보를 사람이 읽기 쉬운 로그 문자열로 만든다.
         now = time.monotonic()
@@ -113,6 +119,7 @@ class SchoolZoneDebugNode(Node):
         )
 
 
+# 설명: ROS 노드나 스크립트 실행을 시작하는 진입점이다.
 def main(args=None):
     # ROS2 노드를 초기화하고 실행 루프를 시작한다.
     rclpy.init(args=args)

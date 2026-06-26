@@ -25,6 +25,7 @@ class MissionStateMachine:
 
     state: MissionState = MissionState.WAIT_TRAFFIC_LIGHT
 
+    # 설명: 새 센서 입력을 반영해 모듈의 감지 상태를 갱신한다.
     def update(self, perception: Dict[str, Any], obstacles: Dict[str, Any]) -> MissionState:
         """센서 결과를 바탕으로 상태를 갱신한다.
 

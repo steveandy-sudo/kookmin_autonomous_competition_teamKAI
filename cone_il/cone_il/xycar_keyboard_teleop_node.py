@@ -27,6 +27,7 @@ No OpenCV window is used.
 
 
 class KeyboardTeleop(Node):
+    # 설명: 키보드 입력을 차량 제어 명령과 학습 라벨 토픽으로 내보내는 노드를 초기화한다.
     def __init__(self):
         super().__init__('xycar_keyboard_teleop')
         self.declare_parameter('motor_topic', 'xycar_motor')
@@ -60,6 +61,7 @@ class KeyboardTeleop(Node):
         )
         print(HELP)
 
+    # 설명: 현재 키보드 조작 상태를 모터 명령으로 발행한다.
     def publish_cmd(self):
         if not rclpy.ok():
             return
@@ -75,6 +77,7 @@ class KeyboardTeleop(Node):
             if rclpy.ok():
                 self.get_logger().warn(f'publish failed: {exc}')
 
+    # 설명: 키보드 입력을 지속적으로 읽어 조향과 속도 명령을 갱신한다.
     def keyboard_loop(self):
         old_settings = termios.tcgetattr(sys.stdin)
         try:
@@ -86,6 +89,7 @@ class KeyboardTeleop(Node):
         finally:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
+    # 설명: 입력 키를 주행 조작 명령으로 변환한다.
     def handle_key(self, key: str):
         key = key.lower()
         speed_step = float(self.get_parameter('speed_step').value)
@@ -122,6 +126,7 @@ class KeyboardTeleop(Node):
 
         self.log_cmd_if_changed()
 
+    # 설명: 키 입력이 끊긴 경우 조작 유지 시간을 기준으로 명령을 완화한다.
     def apply_hold_timeout(self):
         steer_timeout = float(self.get_parameter('steer_hold_timeout_sec').value)
         now = time.monotonic()
@@ -136,6 +141,7 @@ class KeyboardTeleop(Node):
         if changed:
             self.log_cmd_if_changed()
 
+    # 설명: 주행 명령이 바뀌었을 때만 로그를 남긴다.
     def log_cmd_if_changed(self):
         cmd = (round(float(self.steer), 1), round(float(self.speed), 1))
         if cmd == self.last_logged_cmd:
@@ -143,6 +149,7 @@ class KeyboardTeleop(Node):
         self.last_logged_cmd = cmd
         print(f'angle={self.steer:6.1f}, speed={self.speed:5.1f}', flush=True)
 
+    # 설명: 텔레오퍼레이션 종료 시 차량 정지 명령과 자원 정리를 수행한다.
     def stop(self):
         self.speed = 0.0
         self.steer = 0.0
@@ -153,6 +160,7 @@ class KeyboardTeleop(Node):
             time.sleep(0.02)
 
 
+# 설명: ROS 노드나 스크립트 실행을 시작하는 진입점이다.
 def main(args=None):
     rclpy.init(args=args)
     node = KeyboardTeleop()

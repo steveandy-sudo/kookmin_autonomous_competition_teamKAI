@@ -24,6 +24,7 @@ class ConeAIDriver(Node):
     driver node publishing to the same motor topic at the same time.
     """
 
+    # 설명: 학습된 콘 주행 모델을 불러오고 카메라/라이다 기반 추론 주행 노드를 초기화한다.
     def __init__(self):
         super().__init__('cone_ai_driver')
 
@@ -95,6 +96,7 @@ class ConeAIDriver(Node):
             f'Cone AI driver ready | model={model_path}, device={self.device}, image={image_topic}, motor={motor_topic}'
         )
 
+    # 설명: 수신한 ROS 메시지를 내부 최신 상태로 반영한다.
     def image_callback(self, msg: Image):
         try:
             self._record_image_timing(msg)
@@ -102,9 +104,11 @@ class ConeAIDriver(Node):
         except Exception as exc:
             self.get_logger().warn(f'image conversion failed: {exc}')
 
+    # 설명: 수신한 ROS 메시지를 내부 최신 상태로 반영한다.
     def scan_callback(self, msg: LaserScan):
         self.scan = msg
 
+    # 설명: 현재 센서 상태를 이용해 한 주기의 AI 주행 제어를 수행한다.
     def control_once(self):
         if self.image is None:
             self._log_status_once('waiting_for_image')
@@ -132,6 +136,7 @@ class ConeAIDriver(Node):
         self.drive(steer, speed)
         self._log_status_once(f'cmd angle={steer:.1f}, speed={speed:.1f}')
 
+    # 설명: 전처리된 카메라 이미지로 학습 모델의 조향각을 예측한다.
     def predict_angle(self, image_bgr: np.ndarray) -> float:
         tensor_np = preprocess_image_bgr(
             image_bgr,
@@ -152,6 +157,7 @@ class ConeAIDriver(Node):
         steer = (1.0 - smoothing) * steer + smoothing * self.prev_steer
         return steer
 
+    # 설명: 전방 라이다에서 가장 가까운 장애물 거리를 계산한다.
     def nearest_front_obstacle(self) -> Optional[float]:
         msg = self.scan
         if msg is None or not msg.ranges:
@@ -181,6 +187,7 @@ class ConeAIDriver(Node):
                 nearest = float(x)
         return nearest
 
+    # 설명: 계산된 조향각과 속도를 차량 모터 명령으로 발행한다.
     def drive(self, angle: float, speed: float):
         if not rclpy.ok():
             return
@@ -201,6 +208,7 @@ class ConeAIDriver(Node):
             self.last_motor_subscription_count = count
             self.get_logger().info(f'{self.get_parameter("motor_topic").value} subscribers={count}')
 
+    # 설명: 상태 로그가 너무 자주 출력되지 않도록 같은 내용을 한 번만 기록한다.
     def _log_status_once(self, text: str):
         now_sec = self.get_clock().now().nanoseconds // 1_000_000_000
         if now_sec == self.last_status_sec:
@@ -208,6 +216,7 @@ class ConeAIDriver(Node):
         self.last_status_sec = now_sec
         self.get_logger().info(f'{text}{self._image_hz_log_text()}')
 
+    # 설명: 이미지 수신 시각을 기록해 카메라 FPS 계산에 사용한다.
     def _record_image_timing(self, msg: Image):
         now = time.monotonic()
         self.image_receive_times.append(now)
@@ -218,11 +227,13 @@ class ConeAIDriver(Node):
         if self.image_stamp_times:
             self._trim_timing_window(self.image_stamp_times, self.image_stamp_times[-1])
 
+    # 설명: FPS 계산용 시간 기록에서 오래된 값을 제거한다.
     @staticmethod
     def _trim_timing_window(times: Deque[float], now: float, window_sec: float = 3.0):
         while len(times) > 1 and now - times[0] > window_sec:
             times.popleft()
 
+    # 설명: 최근 수신 시각 목록으로 주파수를 계산한다.
     @staticmethod
     def _hz_from_times(times: Deque[float]) -> Optional[float]:
         if len(times) < 2:
@@ -232,6 +243,7 @@ class ConeAIDriver(Node):
             return None
         return (len(times) - 1) / duration
 
+    # 설명: 현재 모듈 상태를 로그에 넣기 좋은 짧은 문자열로 만든다.
     def _image_hz_log_text(self) -> str:
         receive_hz = self._hz_from_times(self.image_receive_times)
         stamp_hz = self._hz_from_times(self.image_stamp_times)
@@ -240,6 +252,7 @@ class ConeAIDriver(Node):
         return f' image_hz recv={receive_text} stamp={stamp_text}'
 
 
+# 설명: ROS 노드나 스크립트 실행을 시작하는 진입점이다.
 def main(args=None):
     rclpy.init(args=args)
     node = None

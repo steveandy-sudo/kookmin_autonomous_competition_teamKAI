@@ -19,6 +19,7 @@ from track_drive.traffic_light_detector import (
 class TrafficLightDebugNode(Node):
     """Run traffic-light recognition only and publish RViz-friendly debug output."""
 
+    # 설명: 신호등 검출 결과를 디버그 이미지와 상태 토픽으로 내보내는 노드를 초기화한다.
     def __init__(self):
         # TrafficLightDebugNode 객체를 초기화하고 필요한 파라미터와 내부 상태를 준비한다.
         super().__init__('traffic_light_debug')
@@ -40,6 +41,7 @@ class TrafficLightDebugNode(Node):
             f'Traffic-light debug ready | image={camera_topic}, debug={image_topic}, state={state_topic}'
         )
 
+    # 설명: 수신한 ROS 메시지를 내부 최신 상태로 반영한다.
     def image_callback(self, msg: Image):
         # ROS 토픽 콜백으로 들어온 메시지를 내부 상태에 반영한다.
         try:
@@ -53,6 +55,7 @@ class TrafficLightDebugNode(Node):
         self._publish_debug_image(result.debug_image, msg)
         self._log_result(result)
 
+    # 설명: 디버그 이미지를 ROS 이미지 메시지로 변환해 발행한다.
     def _publish_debug_image(self, image, source_msg: Image):
         # publish 디버그 이미지 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         if image is None:
@@ -65,12 +68,14 @@ class TrafficLightDebugNode(Node):
         except Exception as exc:
             self.get_logger().warn(f'traffic-light debug image publish failed: {exc}')
 
+    # 설명: 현재 감지 상태 문자열을 ROS 토픽으로 발행한다.
     def _publish_state(self, state: str):
         # publish 상태 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         msg = String()
         msg.data = str(state)
         self.state_pub.publish(msg)
 
+    # 설명: 검출 결과 요약을 로그로 출력한다.
     def _log_result(self, result):
         # 로그 result 정보를 사람이 읽기 쉬운 로그 문자열로 만든다.
         now = time.monotonic()
@@ -84,6 +89,7 @@ class TrafficLightDebugNode(Node):
         )
 
 
+# 설명: ROS 노드나 스크립트 실행을 시작하는 진입점이다.
 def main(args=None):
     # ROS2 노드를 초기화하고 실행 루프를 시작한다.
     rclpy.init(args=args)

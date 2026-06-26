@@ -12,6 +12,7 @@ from xycar_msgs.msg import XycarMotor
 
 
 class CvKeyboardTeleop(Node):
+    # 설명: OpenCV 창 기반 키보드 조작 노드의 상태와 표시 화면을 초기화한다.
     def __init__(self):
         super().__init__('xycar_cv_keyboard_teleop')
 
@@ -46,6 +47,7 @@ class CvKeyboardTeleop(Node):
         cv2.resizeWindow(self.window_name, 640, 360)
         self.get_logger().info(f'CV keyboard teleop publishing to {self.motor_topic}')
 
+    # 설명: OpenCV 조작 창의 화면 위치를 설정한다.
     def _position_window(self):
         try:
             cv2.resizeWindow(self.window_name, 640, 360)
@@ -55,6 +57,7 @@ class CvKeyboardTeleop(Node):
                 self.window_position_warning_logged = True
                 self.get_logger().warn(f'failed to position teleop window: {exc}')
 
+    # 설명: 입력 키를 주행 조작 명령으로 변환한다.
     def handle_key(self, key_code: int):
         if key_code < 0:
             return
@@ -108,6 +111,7 @@ class CvKeyboardTeleop(Node):
 
         self.log_cmd_if_changed()
 
+    # 설명: 키 입력이 끊긴 경우 조작 유지 시간을 기준으로 명령을 완화한다.
     def apply_hold_timeout(self):
         mode = str(self.get_parameter('drive_mode').value).lower()
         if mode not in ('arcade', 'hold'):
@@ -135,6 +139,7 @@ class CvKeyboardTeleop(Node):
         if changed:
             self.log_cmd_if_changed()
 
+    # 설명: 주행 명령이 바뀌었을 때만 로그를 남긴다.
     def log_cmd_if_changed(self):
         cmd = (round(float(self.steer), 1), round(float(self.speed), 1))
         if cmd == self.last_logged_cmd:
@@ -142,6 +147,7 @@ class CvKeyboardTeleop(Node):
         self.last_logged_cmd = cmd
         self.get_logger().info(f'cmd angle={self.steer:.1f}, speed={self.speed:.1f}')
 
+    # 설명: 현재 키보드 조작 상태를 모터 명령으로 발행한다.
     def publish_cmd(self):
         if not rclpy.ok():
             return
@@ -164,6 +170,7 @@ class CvKeyboardTeleop(Node):
             self.last_subscription_count = count
             self.get_logger().info(f'{self.motor_topic} subscribers={count}')
 
+    # 설명: 키보드 조작 상태를 보여주는 OpenCV 안내 화면을 그린다.
     def render(self):
         img = np.full((360, 640, 3), 245, dtype=np.uint8)
         lines = [
@@ -196,6 +203,7 @@ class CvKeyboardTeleop(Node):
             self._position_window()
             self.window_positioned = True
 
+    # 설명: 텔레오퍼레이션 종료 시 차량 정지 명령과 자원 정리를 수행한다.
     def stop(self):
         self.speed = 0.0
         self.steer = 0.0
@@ -206,6 +214,7 @@ class CvKeyboardTeleop(Node):
             time.sleep(0.02)
 
 
+# 설명: ROS 노드나 스크립트 실행을 시작하는 진입점이다.
 def main(args=None):
     rclpy.init(args=args)
     node = CvKeyboardTeleop()

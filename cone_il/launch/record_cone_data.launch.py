@@ -4,6 +4,7 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
+# 설명: ROS 2 launch 실행에 필요한 노드와 파라미터 구성을 만든다.
 def generate_launch_description():
     dataset_dir = LaunchConfiguration('dataset_dir')
 

@@ -5,6 +5,7 @@ from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 
+# 설명: ROS 2 launch 실행에 필요한 노드와 파라미터 구성을 만든다.
 def generate_launch_description():
     package_share = FindPackageShare('track_drive')
     model_path = LaunchConfiguration('model_path')
@@ -25,7 +26,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument('motor_topic', default_value='/xycar_motor'),
         DeclareLaunchArgument('speed', default_value='4.0'),
-        DeclareLaunchArgument('max_steer_deg', default_value='70.0'),
+        DeclareLaunchArgument('max_steer_deg', default_value='100.0'),
         DeclareLaunchArgument('invert_steering', default_value='false'),
 
         Node(

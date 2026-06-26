@@ -12,6 +12,7 @@ FIELDNAMES = [
 ]
 
 
+# 설명: 여러 학습 데이터셋의 이미지, 스캔, 라벨 CSV를 하나의 데이터셋으로 합친다.
 def merge_datasets(sources, output_dir: Path):
     if output_dir.exists():
         raise RuntimeError(f'output directory already exists: {output_dir}')
@@ -82,6 +83,7 @@ def merge_datasets(sources, output_dir: Path):
     return len(out_rows), skipped
 
 
+# 설명: ROS 노드나 스크립트 실행을 시작하는 진입점이다.
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output-dir', required=True)

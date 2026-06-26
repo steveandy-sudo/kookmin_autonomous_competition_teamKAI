@@ -13,6 +13,7 @@ REQUIRED_FILES = [
 ]
 
 
+# 설명: ROS 노드나 스크립트 실행을 시작하는 진입점이다.
 def main() -> int:
     """필수 파일 체크리스트를 출력한다."""
     root = Path(__file__).resolve().parent.parent

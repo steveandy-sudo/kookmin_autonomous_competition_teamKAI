@@ -1,0 +1,10 @@
+# Python dependencies installed with pip.
+# ROS2 Humble packages such as rclpy, cv_bridge, sensor_msgs, launch, and launch_ros
+# are intentionally excluded because they are provided by the ROS environment.
+
+numpy
+opencv-python
+onnxruntime
+torch
+torchvision
+tqdm

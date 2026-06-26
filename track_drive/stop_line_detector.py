@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+# 전방 카메라 이미지에서 정지선을 검출하는 모듈이다.
+# BEV 변환 후 흰색 가로선 후보를 평가해 신호등 정지와 교차로 정지 위치 판단에 사용한다.
 import time
 from dataclasses import dataclass
 from typing import Optional, Tuple
@@ -9,6 +11,7 @@ import cv2
 import numpy as np
 
 
+# BEV 정지선 검출 결과와 거리/신뢰도 정보를 담는 구조체이다.
 @dataclass
 class StopLineBEVResult:
     detected: bool = False
@@ -26,6 +29,7 @@ class StopLineBEVResult:
     debug_image: Optional[np.ndarray] = None
 
 
+# 정지선 검출에 필요한 ROI, threshold, 거리 추정 파라미터를 선언한다.
 def declare_stop_line_bev_parameters(node):
     # 정지선 검출에서 사용하는 ROS 파라미터 기본값을 선언한다.
     node.declare_parameter('camera_topic', '/usb_cam/image_raw/front')
@@ -68,6 +72,7 @@ def declare_stop_line_bev_parameters(node):
     node.declare_parameter('stop_on_light_requires_stop_line', True)
 
 
+# 전방 카메라 이미지를 BEV로 변환해 흰색 가로 정지선 후보를 찾는 검출기이다.
 class BEVStopLineDetector:
     """Detect the white horizontal stop line in a bird's-eye front band."""
 
@@ -76,11 +81,14 @@ class BEVStopLineDetector:
         self.node = node
         self.last_reject_reason = ''
 
+    # 흰색 마스크와 가로선 형태 점수를 이용해 정지선 존재 여부와 거리를 추정한다.
     def detect(self, image: Optional[np.ndarray]) -> StopLineBEVResult:
+        # BEV 이미지에서 흰색 가로선 후보를 찾아 정지선 여부와 추정 거리를 반환한다.
         # 입력 데이터에서 detect 조건을 감지한다.
         if image is None or image.size == 0:
             return StopLineBEVResult()
 
+        # 원본 이미지 크기를 이용해 정지선이 나타나는 도로 하단 ROI를 BEV로 변환한다.
         height, width = image.shape[:2]
         bev_width = max(int(self._param('stop_line_bev_width', 320)), 16)
         bev_height = max(int(self._param('stop_line_bev_height', 240)), 16)
@@ -102,6 +110,7 @@ class BEVStopLineDetector:
         except cv2.error:
             return StopLineBEVResult(roi_debug_image=roi_debug)
 
+        # 흰색 후보를 먼저 넓게 추출한 뒤 morphology로 끊긴 선분을 보정한다.
         raw_mask = self._raw_white_mask(bev)
         mask = self._smooth_white_mask(raw_mask)
         debug = bev.copy()
@@ -237,6 +246,7 @@ class BEVStopLineDetector:
         points[:, 1] = np.clip(points[:, 1], 0.0, max(float(height - 1), 0.0))
         return points
 
+    # 밝기와 채도 조건으로 흰색 정지선 후보 픽셀을 1차 추출한다.
     def _raw_white_mask(self, bev: np.ndarray) -> np.ndarray:
         # 정지선 검출의 raw white 마스크 로직을 수행한다.
         hsv = cv2.cvtColor(bev, cv2.COLOR_BGR2HSV)
@@ -248,6 +258,7 @@ class BEVStopLineDetector:
             np.array([180, sat_max, 255], dtype=np.uint8),
         )
 
+    # morphology 연산으로 끊어진 흰색 후보를 이어 검출 안정성을 높인다.
     def _smooth_white_mask(self, mask: np.ndarray) -> np.ndarray:
         # 정지선 검출의 smooth white 마스크 로직을 수행한다.
         close_width = max(3, int(float(mask.shape[1]) * float(self._param('stop_line_bev_close_width_ratio', 0.035))))
@@ -259,6 +270,7 @@ class BEVStopLineDetector:
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((open_size, open_size), np.uint8))
         return mask
 
+    # BEV 마스크에서 가장 정지선다운 가로 band를 찾아 점수화한다.
     def _best_horizontal_line(self, front_mask: np.ndarray, raw_front_mask: np.ndarray, bev_width: int):
         # 정지선 검출의 best horizontal line 로직을 수행한다.
         self.last_reject_reason = ''
@@ -314,6 +326,7 @@ class BEVStopLineDetector:
                 start = None
         return runs
 
+    # 체크무늬나 반복 패턴을 정지선으로 오인하지 않도록 반복 band를 걸러낸다.
     def _repeating_band_rejected(self, row_runs, front_height: int) -> bool:
         # 정지선 검출의 repeating band rejected 로직을 수행한다.
         if not bool(self._param('stop_line_bev_reject_repeating_bands', True)):
@@ -500,6 +513,7 @@ class BEVStopLineDetector:
             return default
 
 
+# 저수준 BEV 결과를 신호등 정지 판단에 사용할 수 있는 상태로 관리한다.
 class StopLineDetector:
     """Stop-line perception boundary for TrackDriverNode."""
 
@@ -509,6 +523,7 @@ class StopLineDetector:
         self.bev_detector = BEVStopLineDetector(node)
         self.last_result = StopLineBEVResult()
 
+    # 정지선 검출 결과를 갱신하고 최근 감지 상태를 유지한다.
     def update(self, image: Optional[np.ndarray]):
         # 최신 입력을 기준으로 update 관련 캐시와 상태를 갱신한다.
         self._reset_current_state()
@@ -538,6 +553,7 @@ class StopLineDetector:
         self.node.stop_line_last_seen_sec = time.monotonic()
         self.node.stop_line_confirm_count += 1
 
+    # 신호등 정지를 시작할 만큼 정지선이 충분히 신뢰 가능한지 판단한다.
     def ready_for_light_stop(self) -> bool:
         # 정지선 검출의 ready for 신호등 정지 로직을 수행한다.
         if not bool(self.node.get_parameter('stop_on_light_requires_stop_line').value):

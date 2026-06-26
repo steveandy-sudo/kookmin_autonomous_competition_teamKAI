@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+# ONNX 객체 인식 모델과 색상 기반 보조 판단으로 신호등 상태를 추정하는 모듈이다.
+# 빨간불, 초록불, 좌회전 신호 검출 결과를 메인 주행 로직에 제공한다.
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,12 +11,13 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 import cv2
 import numpy as np
 
-from track_drive.package_paths import default_yolo_model_path
+from .model_paths import default_yolo_model_path
 
 
 Box = Tuple[int, int, int, int]
 
 
+# YOLO에서 검출한 개별 신호등 박스와 색상 상태를 담는 구조체이다.
 @dataclass
 class TrafficLightDetection:
     box: Box
@@ -27,6 +30,7 @@ class TrafficLightDetection:
     yellow_ratio: float
 
 
+# 한 프레임에서 신호등 전체 상태를 요약한 결과 구조체이다.
 @dataclass
 class TrafficLightResult:
     state: str = 'unknown'
@@ -43,6 +47,7 @@ class TrafficLightResult:
             self.class_scores = []
 
 
+# 신호등 검출 threshold, 클래스 id, 디버그 이미지 관련 ROS 파라미터를 선언한다.
 def declare_traffic_light_parameters(node):
     # 신호등 검출에서 사용하는 ROS 파라미터 기본값을 선언한다.
     node.declare_parameter('camera_topic', '/usb_cam/image_raw/front')
@@ -74,6 +79,7 @@ def declare_traffic_light_parameters(node):
     node.declare_parameter('red_light_min_circularity', 0.10)
 
 
+# ONNXRuntime 또는 OpenCV DNN으로 신호등/미션 객체를 검출하는 저수준 검출기이다.
 class YoloTrafficLightDetector:
     """Standalone YOLO traffic-light detector for debug/test nodes."""
 
@@ -86,12 +92,16 @@ class YoloTrafficLightDetector:
         self.class_scores: List[float] = []
         self.raw_shape = ''
 
+    # YOLO 출력과 색상 보조 지표를 조합해 빨강/노랑/초록/좌회전 상태를 판단한다.
     def detect(self, image: Optional[np.ndarray]) -> TrafficLightResult:
+        # 입력 이미지에서 신호등 후보를 검출하고 red/green/left 상태를 정리한다.
         # 입력 데이터에서 detect 조건을 감지한다.
         if image is None or image.size == 0:
             return TrafficLightResult()
 
+        # 먼저 객체 검출 모델로 신호등 후보 박스를 찾고, 이후 색상/크기 조건으로 보정한다.
         detections = self._run_yolo(image)
+        # launch에서 지정한 클래스 id만 신호등 후보로 인정해 다른 객체 검출 결과를 배제한다.
         allowed_ids = self._int_set_parameter('yolo_light_class_ids')
         red_ids = self._int_set_parameter('yolo_red_light_class_ids')
         go_ids = self._int_set_parameter('yolo_go_light_class_ids')
@@ -107,10 +117,13 @@ class YoloTrafficLightDetector:
         best_label = 'unknown'
         best_score = 0.0
 
+        # 각 후보 box마다 기하 조건과 색상 조건을 확인해 red/go/left/yellow 플래그를 만든다.
         for box, score, class_id in detections:
             if not self._class_id_allowed(class_id, allowed_ids):
                 continue
+            # 너무 작거나 화면 하단에 있는 box는 실제 신호등이 아닐 가능성이 높아 제외한다.
             valid = self._valid_light_detection(image, box)
+            # class id가 애매할 때를 대비해 box 내부 색상 비율로 빨강/초록/노랑을 보조 판단한다.
             red_color, red_ratio, green_ratio, yellow_ratio = self._red_light_box_metrics(image, box)
             class_red = valid and score >= stop_threshold and self._class_id_allowed(class_id, red_ids)
             class_go = valid and self._class_id_allowed(class_id, go_ids)
@@ -150,8 +163,11 @@ class YoloTrafficLightDetector:
             debug_image=debug,
         )
 
+    # 모델 입력 전처리, 추론, 후보 박스 디코딩을 한 번에 수행한다.
     def _run_yolo(self, image: np.ndarray):
+        # 사용 가능한 추론 backend를 선택해 ONNX 모델을 실행한다.
         # 신호등 검출 처리 파이프라인을 실행하고 결과를 반환한다.
+        # 제출 폴더에 포함된 ONNX 모델 경로를 ROS 파라미터에서 받아온다.
         model_path = Path(str(self._param('yolo_light_model_path', default_yolo_model_path()))).expanduser()
         if not model_path.exists():
             self._warn_once(f'YOLO light model not found: {model_path}')
@@ -192,6 +208,7 @@ class YoloTrafficLightDetector:
             class_count,
         )
 
+    # ONNXRuntime 세션을 이용해 GPU 또는 CPU로 YOLO 추론을 실행한다.
     def _run_ort(self, model_path: Path, blob: np.ndarray):
         # 신호등 검출 처리 파이프라인을 실행하고 결과를 반환한다.
         session_info = self._get_ort_session(model_path)
@@ -344,6 +361,7 @@ class YoloTrafficLightDetector:
         return padded, scale, pad_x, pad_y
 
     @staticmethod
+    # YOLO raw output을 실제 이미지 좌표의 bounding box와 class confidence로 변환한다.
     def _decode_yolo_output(
         output,
         image_shape: Tuple[int, int],
@@ -434,6 +452,7 @@ class YoloTrafficLightDetector:
             for idx in np.asarray(indices).reshape(-1)
         ]
 
+    # 너무 작거나 화면 위치가 맞지 않는 박스를 제거해 오검출을 줄인다.
     def _valid_light_detection(self, image: np.ndarray, box: Box) -> bool:
         # valid 신호등 detection 후보가 유효한 조건을 만족하는지 검사한다.
         image_height, image_width = image.shape[:2]
@@ -514,6 +533,7 @@ class YoloTrafficLightDetector:
             for class_id in (class_ids or set())
         )
 
+    # 개별 색상 flag를 사람이 읽기 쉬운 신호 상태 문자열로 합친다.
     def _state_from_flags(self, red: bool, go: bool, left: bool, yellow: bool, best_label: str) -> str:
         # 신호등 검출의 상태 from flags 로직을 수행한다.
         if go and not red:
@@ -522,6 +542,7 @@ class YoloTrafficLightDetector:
             return 'left'
         if red:
             return 'red'
+        # 노란불은 곧 정지/좌회전 신호로 바뀔 수 있어 감속 판단에 활용할 수 있다.
         if yellow:
             return 'yellow'
         if best_label != 'unknown':
@@ -622,6 +643,7 @@ class YoloTrafficLightDetector:
         self.node.get_logger().warn(reason)
 
 
+# 신호등 검출 결과를 캐싱하고 정지/출발 판단에 필요한 API를 제공하는 상위 래퍼이다.
 class TrafficLightDetector:
     """Traffic-light perception boundary for TrackDriverNode.
 
@@ -634,6 +656,7 @@ class TrafficLightDetector:
         # TrafficLightDetector 객체를 초기화하고 필요한 파라미터와 내부 상태를 준비한다.
         self.node = node
 
+    # 현재 프레임의 신호등 상태를 갱신하고 필요하면 디버그 이미지를 저장한다.
     def update(self, image: Optional[np.ndarray]):
         # 최신 입력을 기준으로 update 관련 캐시와 상태를 갱신한다.
         if bool(self.node.get_parameter('yolo_safety_enabled').value):

@@ -62,6 +62,7 @@ class ConeDataRecorder(Node):
         scans/000000.npy
     """
 
+    # 설명: 학습 데이터 수집 노드의 파라미터, 구독 토픽, 저장 경로, 타이머를 초기화한다.
     def __init__(self, enable_keyboard_default: bool = False):
         super().__init__('cone_data_recorder')
 
@@ -175,6 +176,7 @@ class ConeDataRecorder(Node):
         if bool(self.get_parameter('enable_keyboard_control').value):
             self._start_keyboard_control()
 
+    # 설명: 기존 저장 파일을 확인해 다음 학습 데이터 샘플 번호를 정한다.
     def _next_index(self) -> int:
         existing = sorted(self.image_dir.glob('*.jpg'))
         if not existing:
@@ -184,6 +186,7 @@ class ConeDataRecorder(Node):
         except ValueError:
             return len(existing)
 
+    # 설명: 수신한 ROS 메시지를 내부 최신 상태로 반영한다.
     def image_callback(self, msg: Image):
         try:
             self.latest_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
@@ -191,10 +194,12 @@ class ConeDataRecorder(Node):
         except Exception as exc:
             self.get_logger().warn(f'image conversion failed: {exc}')
 
+    # 설명: 수신한 ROS 메시지를 내부 최신 상태로 반영한다.
     def scan_callback(self, msg: LaserScan):
         self.latest_scan = msg
         self.latest_scan_time = time.monotonic()
 
+    # 설명: 수신한 ROS 메시지를 내부 최신 상태로 반영한다.
     def motor_callback(self, msg: XycarMotor, source: str):
         eps = float(self.get_parameter('zero_command_epsilon').value)
         is_zero = abs(float(msg.angle)) <= eps and abs(float(msg.speed)) <= eps
@@ -216,6 +221,7 @@ class ConeDataRecorder(Node):
                 f'speed={float(msg.speed):.1f}, count={self.received_label_count}'
             )
 
+    # 설명: 학습 데이터 수집 중 키보드 수동 조작을 시작한다.
     def _start_keyboard_control(self):
         drive_topic = str(self.get_parameter('drive_motor_topic').value)
         self.keyboard_pub = self.create_publisher(XycarMotor, drive_topic, 10)
@@ -234,6 +240,7 @@ class ConeDataRecorder(Node):
         self.get_logger().info(f'Keyboard recorder publishing drive commands to {drive_topic}')
         print(KEYBOARD_HELP)
 
+    # 설명: 별도 스레드 없이 키보드 조작 입력을 받을 준비를 한다.
     def start_keyboard_control_no_thread(self):
         drive_topic = str(self.get_parameter('drive_motor_topic').value)
         self.keyboard_pub = self.create_publisher(XycarMotor, drive_topic, 10)
@@ -241,6 +248,7 @@ class ConeDataRecorder(Node):
         self.get_logger().info(f'Keyboard recorder publishing drive commands to {drive_topic}')
         print(KEYBOARD_HELP)
 
+    # 설명: 라인 입력 방식의 키보드 조작 모드를 시작한다.
     def start_keyboard_control_line_mode(self):
         drive_topic = str(self.get_parameter('drive_motor_topic').value)
         self.keyboard_pub = self.create_publisher(XycarMotor, drive_topic, 10)
@@ -250,6 +258,7 @@ class ConeDataRecorder(Node):
         self.get_logger().info(f'Line keyboard recorder publishing drive commands to {drive_topic}')
         print(LINE_KEYBOARD_HELP)
 
+    # 설명: 현재 키보드 조작 상태를 차량 제어 명령으로 발행한다.
     def _publish_keyboard_cmd(self):
         if self.keyboard_pub is None:
             return
@@ -260,6 +269,7 @@ class ConeDataRecorder(Node):
         self.keyboard_pub.publish(msg)
         self.motor_callback(msg, 'keyboard')
 
+    # 설명: 터미널 키 입력을 계속 읽어 수동 주행 명령으로 변환한다.
     def _keyboard_loop(self):
         old_settings = termios.tcgetattr(sys.stdin)
         try:
@@ -270,6 +280,7 @@ class ConeDataRecorder(Node):
         finally:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
+    # 설명: 라인 단위 키 입력을 읽어 수동 주행 명령으로 변환한다.
     def _keyboard_line_loop(self):
         while self.keyboard_running and rclpy.ok():
             try:
@@ -285,6 +296,7 @@ class ConeDataRecorder(Node):
             for ch in line.rstrip('\n'):
                 self._handle_keyboard_key(ch)
 
+    # 설명: 입력 키 하나를 속도와 조향 변화 명령으로 해석한다.
     def _handle_keyboard_key(self, key: str):
         key = key.lower()
         korean_key_map = {
@@ -326,6 +338,7 @@ class ConeDataRecorder(Node):
             flush=True,
         )
 
+    # 설명: 터미널에서 키 입력을 한 번 확인하고 주행 명령에 반영한다.
     def poll_keyboard_once(self):
         if not self.keyboard_running:
             return
@@ -339,6 +352,7 @@ class ConeDataRecorder(Node):
         except Exception as exc:
             self.get_logger().warn(f'keyboard input failed: {exc}')
 
+    # 설명: 키보드 입력을 즉시 읽을 수 있도록 터미널 모드를 설정한다.
     def open_keyboard_tty(self) -> bool:
         try:
             self.keyboard_input_fd = os.open('/dev/tty', os.O_RDONLY | os.O_NONBLOCK)
@@ -352,6 +366,7 @@ class ConeDataRecorder(Node):
             self.keyboard_input_old_settings = None
             return False
 
+    # 설명: 키보드 입력용 터미널 설정을 원래 상태로 복구한다.
     def close_keyboard_tty(self):
         if self.keyboard_input_fd is None:
             return
@@ -371,11 +386,13 @@ class ConeDataRecorder(Node):
         self.keyboard_input_fd = None
         self.keyboard_input_old_settings = None
 
+    # 설명: 최근 수신된 데이터인지 시간 차이를 기준으로 확인한다.
     def _fresh(self, t: Optional[float]) -> bool:
         if t is None:
             return False
         return time.monotonic() - t <= float(self.get_parameter('max_data_age_sec').value)
 
+    # 설명: 현재 이미지, 라이다, 조향/속도 라벨을 한 샘플의 학습 데이터로 저장한다.
     def save_once(self):
         if self.latest_image is None or self.latest_motor is None:
             return
@@ -442,6 +459,7 @@ class ConeDataRecorder(Node):
                 f'speed={speed:.1f}, source={self.latest_motor_source}'
             )
 
+    # 설명: 노드 종료 시 파일과 터미널 상태 같은 자원을 정리한다.
     def destroy_node(self):
         self.keyboard_running = False
         if self.keyboard_pub is not None and rclpy.ok():
@@ -462,6 +480,7 @@ class ConeDataRecorder(Node):
         super().destroy_node()
 
 
+# 설명: ROS 노드나 스크립트 실행을 시작하는 진입점이다.
 def main(args=None):
     rclpy.init(args=args)
     node = ConeDataRecorder()
@@ -480,6 +499,7 @@ if __name__ == '__main__':
     main()
 
 
+# 설명: 원시 키 입력 방식 데이터 수집 노드를 실행하는 진입점이다.
 def raw_keyboard_main(args=None):
     rclpy.init(args=args)
     node = ConeDataRecorder(enable_keyboard_default=False)
@@ -515,6 +535,7 @@ def raw_keyboard_main(args=None):
             rclpy.shutdown()
 
 
+# 설명: 키보드 조작을 포함한 데이터 수집 노드를 실행하는 진입점이다.
 def keyboard_main(args=None):
     rclpy.init(args=args)
     node = ConeDataRecorder(enable_keyboard_default=False)

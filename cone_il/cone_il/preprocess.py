@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 
 
+# 설명: 카메라 BGR 이미지를 모델 입력 크기와 관심영역 기준으로 전처리한다.
 def preprocess_image_bgr(
     image_bgr: np.ndarray,
     roi_top_ratio: float = 0.45,
@@ -31,6 +32,7 @@ def preprocess_image_bgr(
     return chw
 
 
+# 설명: 학습과 추론에 같은 입력을 쓰도록 전처리된 이미지를 파일로 저장한다.
 def save_preprocessed_image_bgr(
     image_bgr: np.ndarray,
     path: str,
@@ -52,6 +54,7 @@ def save_preprocessed_image_bgr(
     cv2.imwrite(path, resized)
 
 
+# 설명: 저장된 학습 이미지를 RGB 텐서 형식으로 불러온다.
 def load_saved_image_as_tensor(path: str) -> np.ndarray:
     """Read preprocessed JPG and return RGB CHW float32 tensor."""
     image_bgr = cv2.imread(path, cv2.IMREAD_COLOR)
@@ -61,6 +64,7 @@ def load_saved_image_as_tensor(path: str) -> np.ndarray:
     return np.transpose(rgb.astype(np.float32) / 255.0, (2, 0, 1))
 
 
+# 설명: 이미지 관심영역에서 주황색 콘 색상 비율을 계산한다.
 def orange_ratio_bgr(image_bgr: np.ndarray, roi_top_ratio: float = 0.45) -> float:
     """Approximate orange/labacon pixel ratio in the lower image ROI."""
     if image_bgr is None or image_bgr.size == 0:
@@ -79,6 +83,7 @@ def orange_ratio_bgr(image_bgr: np.ndarray, roi_top_ratio: float = 0.45) -> floa
     return float(np.count_nonzero(mask)) / float(mask.size)
 
 
+# 설명: 전방 라이다 거리값을 고정 길이 벡터로 변환해 학습/추론에 쓰기 쉽게 만든다.
 def front_scan_vector(
     ranges,
     angle_min: float,

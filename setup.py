@@ -27,6 +27,7 @@ setup(
     entry_points={
         'console_scripts': [
             'track_drive = track_drive.track_drive:main',
+            'ai_drive_switch = track_drive.ai_drive_switch:main',
             'switchable_cone_ai_driver = track_drive.switchable_cone_ai_driver:main',
             'stop_line_bev_debug = track_drive.stop_line_bev_debug_node:main',
             'traffic_light_debug = track_drive.traffic_light_debug_node:main',

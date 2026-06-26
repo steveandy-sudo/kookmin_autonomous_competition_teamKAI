@@ -10,6 +10,7 @@ from cone_il.cone_ai_driver_node import ConeAIDriver
 
 
 class SwitchableConeAIDriver(ConeAIDriver):
+    # 설명: AI 주행과 수동/외부 제어를 전환할 수 있는 콘 주행 노드를 초기화한다.
     def __init__(self):
         # SwitchableConeAIDriver 객체를 초기화하고 필요한 파라미터와 내부 상태를 준비한다.
         super().__init__()
@@ -44,6 +45,7 @@ class SwitchableConeAIDriver(ConeAIDriver):
             f'turn_speed_override_topic={turn_speed_override_topic}, start_enabled={self.enabled}'
         )
 
+    # 설명: 수신한 ROS 메시지를 내부 최신 상태로 반영한다.
     def enable_callback(self, msg: Bool):
         # ROS 토픽 콜백으로 들어온 메시지를 내부 상태에 반영한다.
         enabled = bool(msg.data)
@@ -51,6 +53,7 @@ class SwitchableConeAIDriver(ConeAIDriver):
             self._log_status_once('enabled' if enabled else 'disabled')
         self.enabled = enabled
 
+    # 설명: 수신한 ROS 메시지를 내부 최신 상태로 반영한다.
     def speed_limit_callback(self, msg: Float32):
         # ROS 토픽 콜백으로 들어온 메시지를 내부 상태에 반영한다.
         self.speed_limit = float(msg.data)
@@ -60,6 +63,7 @@ class SwitchableConeAIDriver(ConeAIDriver):
             text = 'off' if self.speed_limit < 0.0 else f'{self.speed_limit:.1f}'
             self.get_logger().info(f'speed_limit={text}')
 
+    # 설명: 수신한 ROS 메시지를 내부 최신 상태로 반영한다.
     def turn_speed_override_callback(self, msg: Float32):
         # ROS 토픽 콜백으로 들어온 메시지를 내부 상태에 반영한다.
         self.turn_speed_override = float(msg.data)
@@ -69,6 +73,7 @@ class SwitchableConeAIDriver(ConeAIDriver):
             text = 'default' if self.turn_speed_override < 0.0 else f'{self.turn_speed_override:.1f}'
             self.get_logger().info(f'turn_speed_override={text}')
 
+    # 설명: 계산된 조향각과 속도를 차량 모터 명령으로 발행한다.
     def drive(self, angle: float, speed: float):
         # 전환 가능한 콘 AI 주행의 주행 로직을 수행한다.
         speed = self._apply_turn_speed_limit(angle, speed)
@@ -85,6 +90,7 @@ class SwitchableConeAIDriver(ConeAIDriver):
         self.last_output_speed = float(speed)
         super().drive(angle, speed)
 
+    # 설명: 상황에 맞는 목표 속도나 속도 제한 값을 계산한다.
     def _apply_speed_rise_limit(self, speed: float) -> float:
         # apply 속도 rise limit 조건을 현재 명령이나 상태에 적용한다.
         if not bool(self.get_parameter('speed_rise_limit_enabled').value):
@@ -109,6 +115,7 @@ class SwitchableConeAIDriver(ConeAIDriver):
         self.last_speed_ramp_sec = now
         return min(float(speed), float(self.last_output_speed) + rise_per_sec * dt)
 
+    # 설명: 상태 로그가 너무 자주 출력되지 않도록 같은 내용을 한 번만 기록한다.
     def _log_status_once(self, text: str):
         # 로그 status once 정보를 사람이 읽기 쉬운 로그 문자열로 만든다.
         if text.startswith('cmd angle=') and ', speed=' in text:
@@ -116,6 +123,7 @@ class SwitchableConeAIDriver(ConeAIDriver):
             text = f'{prefix}, speed={self.last_output_speed:.1f}'
         super()._log_status_once(text)
 
+    # 설명: 상황에 맞는 목표 속도나 속도 제한 값을 계산한다.
     def _apply_turn_speed_limit(self, angle: float, speed: float) -> float:
         # apply 회전 속도 limit 조건을 현재 명령이나 상태에 적용한다.
         if not bool(self.get_parameter('turn_speed_limit_enabled').value):
@@ -134,12 +142,14 @@ class SwitchableConeAIDriver(ConeAIDriver):
         target_speed = float(speed) + (turn_speed - float(speed)) * ratio
         return min(float(speed), target_speed)
 
+    # 설명: 상황에 맞는 목표 속도나 속도 제한 값을 계산한다.
     def _current_turn_speed(self) -> float:
         # 전환 가능한 콘 AI 주행의 current 회전 속도 로직을 수행한다.
         if self.turn_speed_override >= 0.0:
             return max(float(self.turn_speed_override), 0.0)
         return max(float(self.get_parameter('turn_speed').value), 0.0)
 
+    # 설명: 현재 센서 상태를 이용해 한 주기의 AI 주행 제어를 수행한다.
     def control_once(self):
         # 전환 가능한 콘 AI 주행의 제어 once 로직을 수행한다.
         if not self.enabled:
@@ -150,6 +160,7 @@ class SwitchableConeAIDriver(ConeAIDriver):
         super().control_once()
 
 
+# 설명: ROS 노드나 스크립트 실행을 시작하는 진입점이다.
 def main(args=None):
     # ROS2 노드를 초기화하고 실행 루프를 시작한다.
     rclpy.init(args=args)

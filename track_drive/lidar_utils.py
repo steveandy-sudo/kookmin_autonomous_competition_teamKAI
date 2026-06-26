@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 from sensor_msgs.msg import LaserScan
 
 
+# 설명: LaserScan 거리 배열에서 NaN, Inf, 0 이하 값을 제거하고 유효 거리만 모은다.
 def _clean_ranges(scan: Optional[LaserScan]) -> List[float]:
     """LaserScan ranges에서 유효한 거리값만 추출한다."""
     # LiDAR 유틸리티의 clean ranges 로직을 수행한다.
@@ -26,6 +27,7 @@ def _clean_ranges(scan: Optional[LaserScan]) -> List[float]:
     return cleaned
 
 
+# 설명: 스캔 배열의 지정된 비율 구간에서 유효한 최소 거리를 계산한다.
 def _sector_min(scan: Optional[LaserScan], start_ratio: float, end_ratio: float) -> float:
     """스캔 배열의 비율 구간에서 최소 거리를 계산한다."""
     # LiDAR 유틸리티의 sector min 로직을 수행한다.
@@ -49,12 +51,14 @@ def _sector_min(scan: Optional[LaserScan], start_ratio: float, end_ratio: float)
     return min(values)
 
 
+# 설명: 점, 경로, 객체 사이의 거리를 계산한다.
 def get_front_obstacle_distance(scan: Optional[LaserScan]) -> float:
     """전방 장애물 최소 거리(정면 중심 기준)를 반환한다."""
     # get 전방 장애물 거리 값을 현재 상태에서 계산하거나 조회한다.
     return _sector_min(scan, 0.45, 0.55)
 
 
+# 설명: 점, 경로, 객체 사이의 거리를 계산한다.
 def get_left_right_obstacle_distance(scan: Optional[LaserScan]) -> Dict[str, float]:
     """좌/우 측면 장애물 최소 거리를 반환한다."""
     # get 왼쪽/좌회전 right 장애물 거리 값을 현재 상태에서 계산하거나 조회한다.
@@ -64,6 +68,7 @@ def get_left_right_obstacle_distance(scan: Optional[LaserScan]) -> Dict[str, flo
     }
 
 
+# 설명: 센서 입력에서 대상 상태나 객체를 감지한다.
 def detect_cone_like_objects(scan: Optional[LaserScan]) -> Dict[str, bool]:
     """라바콘 유사 패턴 감지 Placeholder.
 
@@ -76,6 +81,7 @@ def detect_cone_like_objects(scan: Optional[LaserScan]) -> Dict[str, bool]:
     }
 
 
+# 설명: 센서 입력에서 대상 상태나 객체를 감지한다.
 def detect_pedestrian_vehicle_obstacles(scan: Optional[LaserScan]) -> Dict[str, bool]:
     """보행자/차량 장애물 감지 Placeholder.
 

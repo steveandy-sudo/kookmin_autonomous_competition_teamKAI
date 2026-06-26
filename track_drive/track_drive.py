@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+# 과제 1 전체 주행을 담당하는 통합 ROS2 노드이다.
+# 카메라, 라이다, 객체 인식, 정지선, 신호등, 어린이보호구역, 보행자, 차량 추월 판단을 하나의 제어 흐름으로 묶는다.
+# 최종 주행 명령은 /xycar_motor 토픽으로 발행한다.
 import math
 import time
 from collections import deque
@@ -20,17 +23,18 @@ from std_msgs.msg import Bool, Float32
 from visualization_msgs.msg import Marker, MarkerArray
 from xycar_msgs.msg import XycarMotor
 
-from track_drive.intersection_decider import IntersectionDecider
-from track_drive.package_paths import default_cone_model_path, default_yolo_model_path
-from track_drive.safety_supervisor import SafetySupervisor
-from track_drive.school_zone_detector import SchoolZoneDetector
-from track_drive.stop_line_detector import StopLineDetector
-from track_drive.traffic_light_detector import TrafficLightDetector
+from .intersection_decider import IntersectionDecider
+from .model_paths import default_cone_model_path, default_yolo_model_path
+from .safety_supervisor import SafetySupervisor
+from .school_zone_detector import SchoolZoneDetector
+from .stop_line_detector import StopLineDetector
+from .traffic_light_detector import TrafficLightDetector
 
 
 Point = Tuple[float, float]
 
 
+# 라이다 기반 회피 경로 후보와 비용을 저장하는 구조체이다.
 @dataclass
 class PathCandidate:
     offset: float
@@ -39,6 +43,7 @@ class PathCandidate:
     min_clearance: float
 
 
+# 마커/라이다에서 추정한 주변 장애물 정보를 차량 좌표계 기준으로 저장한다.
 @dataclass
 class LocalObstacle:
     track_id: float = -1.0
@@ -53,6 +58,7 @@ class LocalObstacle:
     motion_state: float = 0.0
 
 
+# 차량 객체를 프레임 간 추적하기 위한 위치, 속도, 마지막 관측 정보를 저장한다.
 @dataclass
 class VehicleTrack:
     track_id: int
@@ -67,6 +73,7 @@ class VehicleTrack:
     box: Optional[Tuple[int, int, int, int]] = None
 
 
+# 추월/회피 상황에서 선택한 경로와 속도 제약을 함께 담는 구조체이다.
 @dataclass
 class VehicleBehavior:
     mode: str
@@ -77,8 +84,12 @@ class VehicleBehavior:
     lookahead_scale: Optional[float] = None
 
 
+# 센서 입력, 미션 판단, AI 조향 결과를 통합해 최종 차량 제어를 수행하는 메인 노드이다.
 class TrackDriverNode(Node):
+    """과제 1의 모든 미션 판단과 주행 제어를 수행하는 메인 노드이다."""
+
     def __init__(self):
+        # ROS 파라미터, 센서 구독, 제어 토픽, 미션별 내부 상태를 초기화한다.
         # TrackDriverNode 객체를 초기화하고 필요한 파라미터와 내부 상태를 준비한다.
         super().__init__('driver')
 
@@ -87,24 +98,28 @@ class TrackDriverNode(Node):
         self.declare_parameter('scan_topic', '/scan')
         self.declare_parameter('motor_topic', 'xycar_motor')
         self.declare_parameter('control_rate_hz', 100.0)
-        self.declare_parameter('publish_debug_visualization', True)
+        self.declare_parameter('publish_debug_visualization', False)
         self.declare_parameter('viz_frame_id', 'map')
         self.declare_parameter('viz_marker_lifetime_sec', 1.0)
-        self.declare_parameter('publish_light_debug_image', True)
+        self.declare_parameter('publish_light_debug_image', False)
         self.declare_parameter('light_debug_image_topic', '/track_drive/light_debug_image')
-        self.declare_parameter('light_debug_publish_rate_hz', 10.0)
-        self.declare_parameter('publish_drive_debug_image', True)
+        self.declare_parameter('light_debug_publish_rate_hz', 0.0)
+        self.declare_parameter('publish_drive_debug_image', False)
         self.declare_parameter('drive_debug_image_topic', '/track_drive/drive_debug_image')
-        self.declare_parameter('drive_debug_publish_rate_hz', 4.0)
+        self.declare_parameter('drive_debug_publish_rate_hz', 0.0)
         self.declare_parameter('stop_line_update_period_sec', 0.01)
         self.declare_parameter('school_zone_update_period_sec', 0.10)
 
         self.declare_parameter('base_speed', 5.0)
         self.declare_parameter('min_speed', 3.0)
+        # 어린이보호구역 파라미터 묶음: 노면 표식 검출, 속도 제한, 구역 이탈 hold 시간을 제어한다.
         self.declare_parameter('school_zone_enabled', True)
-        self.declare_parameter('school_zone_speed', 17.5)
+        self.declare_parameter('school_zone_speed', 17.0)
         self.declare_parameter('school_zone_speed_limit_enabled', True)
         self.declare_parameter('school_zone_speed_limit_hold_sec', 1.0)
+        self.declare_parameter('school_zone_post_turn_speed_enabled', True)
+        self.declare_parameter('school_zone_post_turn_speed', 21.0)
+        self.declare_parameter('school_zone_post_turn_speed_duration_sec', 6.0)
         self.declare_parameter('school_zone_boost_enabled', False)
         self.declare_parameter('school_zone_boost_speed', 30.0)
         self.declare_parameter('school_zone_boost_duration_sec', 0.0)
@@ -205,6 +220,7 @@ class TrackDriverNode(Node):
         self.declare_parameter('ai_speed_limit_topic', '/cone_ai/speed_limit')
         self.declare_parameter('ai_turn_speed_topic', '/cone_ai/turn_speed')
         self.declare_parameter('yolo_safety_enabled', True)
+        # YOLO 안전 인식 파라미터 묶음: 보행자, 차량, 신호등 후보를 같은 객체 인식 모델에서 가져온다.
         self.declare_parameter('yolo_person_model_path', default_yolo_model_path())
         self.declare_parameter('yolo_light_model_path', default_yolo_model_path())
         self.declare_parameter('yolo_person_input_size', 640)
@@ -308,8 +324,10 @@ class TrackDriverNode(Node):
         self.declare_parameter('startup_light_check_min_sec', 0.35)
         self.declare_parameter('startup_light_ignore_stop_line', True)
         self.declare_parameter('startup_light_require_signal', True)
+        # 안전 정지 파라미터 묶음: 보행자/차량/신호등 상황에서 규칙 기반 정지를 수행할지 결정한다.
         self.declare_parameter('stop_on_person_enabled', False)
         self.declare_parameter('stop_on_vehicle_enabled', False)
+        # 방해차량 파라미터 묶음: 전방 차량 추적, 차간거리 유지, 우회 경로 생성을 설정한다.
         self.declare_parameter('vehicle_overtake_enabled', False)
         self.declare_parameter('vehicle_follow_enabled', False)
         self.declare_parameter('vehicle_camera_fallback_enabled', False)
@@ -657,12 +675,15 @@ class TrackDriverNode(Node):
         self.stop_line_last_distance_m: Optional[float] = None
         self.stop_line_speed_signal_last_seen_sec: Optional[float] = None
         self.stop_line_speed_limit_hold_until_sec = 0.0
+        self.red_light_stop_release_pending = False
         self.stop_line_reverse_until_sec = 0.0
         self.stop_line_reverse_cooldown_until_sec = 0.0
         self.startup_light_gate_released = False
         self.school_zone_active = False
         self.school_zone_speed_limit_active = False
         self.school_zone_speed_limit_until_sec = 0.0
+        self.school_zone_post_turn_speed_until_sec = 0.0
+        self.school_zone_post_turn_speed_prev_active = False
         self.school_zone_boost_until_sec = 0.0
         self.school_zone_boost_latched = False
         self.school_zone_yellow_left_ratio = 0.0
@@ -760,6 +781,7 @@ class TrackDriverNode(Node):
         )
 
     def _load_ai_model(self):
+        # 메인 노드에서 직접 AI 조향을 사용할 때를 대비해 TorchScript 모델을 로드한다.
         # 메인 자율주행의 load AI 모델 로직을 수행한다.
         if not bool(self.get_parameter('ai_hybrid_enabled').value):
             return
@@ -780,7 +802,9 @@ class TrackDriverNode(Node):
             self.ai_model = None
             self.get_logger().warn(f'AI model load failed: {exc} | using rule fallback')
 
+    # 최신 카메라 이미지를 OpenCV 형식으로 변환해 모든 영상 기반 판단에서 공유한다.
     def cam_callback(self, data: Image):
+        # 전방 카메라 이미지를 OpenCV 형식으로 변환하고 수신 주기를 기록한다.
         # ROS 토픽 콜백으로 들어온 메시지를 내부 상태에 반영한다.
         try:
             self._record_image_timing(data)
@@ -789,7 +813,9 @@ class TrackDriverNode(Node):
         except Exception as exc:
             self.get_logger().warn(f'camera conversion failed: {exc}')
 
+    # 최신 라이다 스캔을 저장해 장애물 거리와 회피 경로 계산에 사용한다.
     def lidar_callback(self, msg: LaserScan):
+        # 라이다 스캔을 최신 장애물 판단에 사용할 수 있도록 보관한다.
         # ROS 토픽 콜백으로 들어온 메시지를 내부 상태에 반영한다.
         self.scan_msg = msg
 
@@ -807,6 +833,7 @@ class TrackDriverNode(Node):
         if not enabled:
             self._reset_person_wait_state()
 
+    # AI 주행 노드가 계산한 조향/속도 명령을 받아 필요 시 최종 제어에 relay한다.
     def ai_motor_callback(self, msg: XycarMotor):
         # ROS 토픽 콜백으로 들어온 메시지를 내부 상태에 반영한다.
         self.last_ai_motor_msg = msg
@@ -814,6 +841,7 @@ class TrackDriverNode(Node):
             self.drive(angle=msg.angle, speed=msg.speed)
 
     def drive(self, angle: float, speed: float):
+        # 계산된 조향각과 속도를 XycarMotor 메시지로 변환해 차량 제어 토픽에 발행한다.
         # 메인 자율주행의 주행 로직을 수행한다.
         if not rclpy.ok():
             return
@@ -831,7 +859,9 @@ class TrackDriverNode(Node):
             if rclpy.ok():
                 self.get_logger().warn(f'motor publish failed: {exc}')
 
+    # 신호등, 정지선, 보호구역, 보행자 등 현재 문맥에서 필요한 속도 제한을 차례로 적용한다.
     def _apply_context_speed_limit(self, speed: float) -> float:
+        # 정지선, 신호등, 어린이보호구역, 보행자, 교차로 상태에 따라 최종 속도 제한을 적용한다.
         # apply context 속도 limit 조건을 현재 명령이나 상태에 적용한다.
         school_boost_active = self._school_zone_boost_active()
         if school_boost_active and speed > 0.0:
@@ -910,10 +940,21 @@ class TrackDriverNode(Node):
     def _stop_line_speed_limit_signal_active(self) -> bool:
         # 정지선 처리에서 정지 line 속도 limit signal active 조건이나 값을 계산한다.
         now = time.monotonic()
-        if self._red_light_signal_visible() or self._left_turn_signal_visible():
+        stop_or_left_signal_visible = (
+            self._red_light_signal_visible()
+            or self._left_turn_signal_visible()
+        )
+        if stop_or_left_signal_visible:
             self.stop_line_speed_signal_last_seen_sec = now
             return True
         if self._green_light_visible():
+            self.red_light_stop_release_pending = False
+            self.stop_line_speed_signal_last_seen_sec = None
+            return False
+        if self.red_light_stop_release_pending:
+            self.red_light_stop_release_pending = False
+            self.stop_line_speed_signal_last_seen_sec = None
+            self.stop_line_speed_limit_hold_until_sec = 0.0
             return False
 
         memory_sec = max(float(self.get_parameter('stop_line_signal_memory_sec').value), 0.0)
@@ -995,6 +1036,7 @@ class TrackDriverNode(Node):
         if self._green_light_visible():
             self.intersection_left_turn_speed_limit_hold_until_sec = 0.0
             return False
+        # 좌회전 실행 중에는 센서 판단이 잠시 흔들려도 일정 시간 조향 명령을 유지한다.
         if now < self.intersection_left_turn_until_sec:
             return now <= self.intersection_left_turn_speed_limit_hold_until_sec
         if self._intersection_left_turn_repeat_wait_active():
@@ -1047,7 +1089,9 @@ class TrackDriverNode(Node):
             and self.intersection_last_decision == 'left'
         )
 
+    # 어린이보호구역 진입/유지 상태일 때 목표 속도를 안전 속도로 낮춘다.
     def _apply_school_zone_speed_limit(self, speed: float) -> float:
+        # 어린이보호구역 검출 상태가 유지되는 동안 지정 속도 이하로 제한한다.
         # apply 어린이 보호구역 구역 속도 limit 조건을 현재 명령이나 상태에 적용한다.
         if not bool(self.get_parameter('school_zone_speed_limit_enabled').value):
             return speed
@@ -1071,6 +1115,40 @@ class TrackDriverNode(Node):
         return (
             bool(getattr(self, 'school_zone_speed_limit_active', False))
             or self._forced_school_zone_speed_limit_active()
+        )
+
+    def _update_school_zone_post_turn_speed(self):
+        # 어린이보호구역 속도 제한이 끝난 직후 일정 시간 동안 AI 코너 속도 제한을 완화한다.
+        active = self._school_zone_speed_limit_active()
+        if not bool(self.get_parameter('school_zone_post_turn_speed_enabled').value):
+            self.school_zone_post_turn_speed_prev_active = active
+            self.school_zone_post_turn_speed_until_sec = 0.0
+            return
+
+        now = time.monotonic()
+        if active:
+            self.school_zone_post_turn_speed_prev_active = True
+            return
+
+        if self.school_zone_post_turn_speed_prev_active:
+            duration_sec = max(
+                float(self.get_parameter('school_zone_post_turn_speed_duration_sec').value),
+                0.0,
+            )
+            if duration_sec > 0.0:
+                self.school_zone_post_turn_speed_until_sec = now + duration_sec
+                turn_speed = max(float(self.get_parameter('school_zone_post_turn_speed').value), 0.0)
+                self.get_logger().info(
+                    f'school zone passed: turn_speed_override={turn_speed:.1f} '
+                    f'for {duration_sec:.1f}s'
+                )
+        self.school_zone_post_turn_speed_prev_active = False
+
+    def _school_zone_post_turn_speed_active(self) -> bool:
+        return (
+            bool(self.get_parameter('school_zone_post_turn_speed_enabled').value)
+            and not self._school_zone_speed_limit_active()
+            and time.monotonic() <= float(getattr(self, 'school_zone_post_turn_speed_until_sec', 0.0))
         )
 
     def _update_school_zone_boost_state(self):
@@ -1191,7 +1269,9 @@ class TrackDriverNode(Node):
         )
         return now - last_seen_sec > release_delay_sec
 
+    # AI 주행 노드를 켜거나 끄는 제어 신호를 발행한다.
     def publish_ai_enable(self, enabled: bool):
+        # AI 조향 노드의 활성 여부를 토픽으로 알려 주행 모드를 전환한다.
         # publish AI enable 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         self.last_ai_enable = bool(enabled)
         if enabled:
@@ -1201,7 +1281,9 @@ class TrackDriverNode(Node):
         msg.data = bool(enabled)
         self.ai_enable_pub.publish(msg)
 
+    # AI 주행 노드가 사용할 외부 속도 제한값을 전달한다.
     def publish_ai_speed_limit(self):
+        # 메인 노드에서 계산한 외부 속도 제한을 AI 조향 노드에 전달한다.
         # publish AI 속도 limit 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
         msg = Float32()
         speed_limit_items = self._current_external_speed_limit_items()
@@ -1219,9 +1301,12 @@ class TrackDriverNode(Node):
 
     def publish_ai_turn_speed_override(self):
         # publish AI 회전 속도 override 결과를 ROS 토픽이나 디버그 출력으로 발행한다.
+        self._update_school_zone_post_turn_speed()
         msg = Float32()
         if self._person_slow_speed_limit_active():
             msg.data = max(float(self.get_parameter('person_slow_speed').value), 0.0)
+        elif self._school_zone_post_turn_speed_active():
+            msg.data = max(float(self.get_parameter('school_zone_post_turn_speed').value), 0.0)
         else:
             msg.data = -1.0
         self.ai_turn_speed_pub.publish(msg)
@@ -1322,6 +1407,7 @@ class TrackDriverNode(Node):
         return False
 
     def main_loop(self):
+        # 설정된 제어 주기마다 control_once를 호출해 주행 판단과 명령 발행을 반복한다.
         # 메인 자율주행의 main loop 로직을 수행한다.
         self.get_logger().info('START DRIVING: lane/cone local lattice planner enabled')
 
@@ -1337,13 +1423,17 @@ class TrackDriverNode(Node):
             if elapsed < period:
                 time.sleep(period - elapsed)
 
+    # 한 제어 주기마다 센서 상태를 읽고 현재 모드에 맞는 최종 차량 명령을 결정한다.
     def control_once(self):
+        # 한 주기의 센서 상태를 종합해 안전 정지, AI 주행, 교차로, 회피 주행 중 어떤 제어를 적용할지 결정한다.
         # 메인 자율주행의 제어 once 로직을 수행한다.
+        # 한 제어 주기 시작 시 perception 결과를 먼저 갱신해 이후 모든 분기가 같은 최신 상태를 보도록 한다.
         self.safety_supervisor.update_perception(self.image)
         self._update_school_zone_boost_state()
         self._update_person_slow_speed_limit_state()
         self.publish_ai_speed_limit()
 
+        # AI passthrough가 가능하면 CNN 노드의 최신 명령을 그대로 통과시켜 지연을 최소화한다.
         command_passthrough_enabled = bool(self.get_parameter('ai_command_passthrough_enabled').value)
         if command_passthrough_enabled and self._can_relay_ai_motor_immediately():
             self.last_mode = 'ai_command_passthrough'
@@ -1355,9 +1445,11 @@ class TrackDriverNode(Node):
                     self.last_ai_motor_msg.angle, 0, None, 0, None)
             return
 
+        # 라이다 최근접 장애물 거리는 안전 정지, hybrid 전환, 디버그 토픽에 공통으로 사용된다.
         nearest_obstacle = self._nearest_scan_obstacle_distance(self.scan_msg)
         self._publish_nearest_obstacle_distance(nearest_obstacle)
         standby_enabled = bool(self.get_parameter('hybrid_standby_enabled').value)
+        # 라이다 기반 라바콘 후보는 교차로 좌측 차단 여부와 로컬 회피 경로 판단에 쓰인다.
         raw_cones = self._extract_cones_from_scan(self.scan_msg)
         pre_safety_intersection_command = self.intersection_decider.route_command(raw_cones)
         self.publish_ai_speed_limit()
@@ -1374,11 +1466,13 @@ class TrackDriverNode(Node):
             return
 
         force_rule_hybrid = False
+        # 신호등/정지선/차량/보행자 안전 정지는 일반 주행보다 우선순위가 높다.
         safety_decision = self.safety_supervisor.detect_safety_stop()
         self._update_person_slow_speed_limit_state()
         self.publish_ai_speed_limit()
         safety_stop = safety_decision.should_stop
         safety_reason = safety_decision.reason
+        # 정지선을 너무 지나친 특수 상황에서는 짧은 후진 보정 명령을 낼 수 있다.
         if self._stop_line_reverse_requested(safety_reason):
             if standby_enabled:
                 self.publish_ai_enable(False)
@@ -1655,9 +1749,12 @@ class TrackDriverNode(Node):
         trigger_distance = max(float(self.get_parameter('hybrid_obstacle_distance').value), 0.0)
         return nearest_obstacle < trigger_distance
 
+    # 신호등과 좌측 라바콘 상태를 바탕으로 직진 대기/좌회전/정지 명령을 결정한다.
     def _intersection_route_command(self, cones: Sequence[Point]) -> Optional[Tuple[str, float, float]]:
+        # 신호등과 좌측 라바콘 존재 여부를 바탕으로 교차로에서 직진/대기/좌회전 명령을 선택한다.
         # 교차로 전체 라우팅의 중심 함수다.
         # 정지선/신호등이 준비된 뒤 왼쪽 콘 유무로 직진 또는 좌회전 대기/실행을 결정한다.
+        # 교차로 기능을 끄면 좌회전 관련 latch와 속도 제한 상태를 모두 초기화한다.
         if not bool(self.get_parameter('intersection_route_enabled').value):
             self.intersection_left_turn_until_sec = 0.0
             self.intersection_left_turn_current_speed = 0.0
@@ -1694,6 +1791,7 @@ class TrackDriverNode(Node):
         if repeat_handled:
             return repeat_command
 
+        # 이미 직진/좌회전 대기 상태에 들어간 경우에는 새 판단보다 latch 상태를 우선한다.
         wait_handled, wait_command = self._latched_intersection_wait_command(now, cones)
         if wait_handled:
             return wait_command
@@ -1701,6 +1799,7 @@ class TrackDriverNode(Node):
         if now < self.intersection_route_cooldown_until_sec:
             return None
 
+        # 신호등과 정지선 준비가 안 됐으면 교차로 판단을 시작하지 않고 일반 주행을 유지한다.
         if not self._intersection_trigger_ready() or not self._traffic_light_visible():
             self._reset_intersection_left_cone_state()
             self.intersection_trigger_seen_since_sec = None
@@ -1718,6 +1817,7 @@ class TrackDriverNode(Node):
         if bool(self.get_parameter('intersection_straight_only_test_enabled').value):
             return self._intersection_straight_only_test_command(now, cooldown_sec)
 
+        # 좌측 라바콘이 있으면 좌회전 경로가 막힌 것으로 보고 초록불 직진을 기다린다.
         if self._intersection_left_cone_present(cones, now, min_count):
             if not self._green_light_visible():
                 self.intersection_last_decision = 'straight_wait_green'
@@ -1738,6 +1838,7 @@ class TrackDriverNode(Node):
             self.intersection_post_left_ai_hold_until_sec = 0.0
             return None
 
+        # 좌측 콘이 없는 프레임을 누적해 순간적인 검출 누락을 좌회전 가능으로 오판하지 않게 한다.
         self.intersection_left_no_cone_confirm_count += 1
         required_no_cone_frames = max(
             int(self.get_parameter('intersection_left_no_cone_confirm_frames').value),
@@ -1879,6 +1980,7 @@ class TrackDriverNode(Node):
             return float('inf')
         return now + timeout_sec
 
+    # 좌회전이 확정되면 일정 시간 동안 AI 대신 고정 조향/속도 명령으로 회전을 시작한다.
     def _start_intersection_left_turn(
         self,
         now: float,
@@ -2012,6 +2114,7 @@ class TrackDriverNode(Node):
     ) -> bool:
         # 교차로 왼쪽에 콘이 있는지 LiDAR/카메라 감지를 합산해 판단한다.
         # 콘이 있으면 직진 후보, 콘이 없으면 좌회전 후보로 넘어간다.
+        # 좌측 콘 판단은 라이다 후보와 카메라 후보를 합산하고, 짧은 memory로 깜빡임을 완화한다.
         use_lidar_cones = bool(self.get_parameter('intersection_use_lidar_cones').value)
         left_cones = self._intersection_left_cones(cones) if use_lidar_cones else []
         camera_left_count = self._intersection_camera_left_cone_count()
@@ -2041,7 +2144,9 @@ class TrackDriverNode(Node):
         self.intersection_left_cone_last_seen_sec = None
 
     def _intersection_trigger_ready(self) -> bool:
+        # 신호등과 정지선이 충분히 확인됐을 때만 교차로 경로 판단을 시작한다.
         # 교차로 판단을 시작할 수 있는지 확인한다. 기본적으로 신호등과 정지선 위치가 필요하다.
+        # 신호등이 보이지 않으면 좌회전/직진 교차로 분기를 만들지 않는다.
         if not self._traffic_light_visible():
             return False
         if not bool(self.get_parameter('stop_on_light_requires_stop_line').value):
@@ -2049,6 +2154,7 @@ class TrackDriverNode(Node):
 
         return self._left_turn_stop_line_position_ready()
 
+    # 최근 신호등 검출 결과가 아직 유효한지 확인한다.
     def _traffic_light_visible(self) -> bool:
         # YOLO 캐시나 디버그 검출 결과에서 어떤 종류든 신호등이 보이는지 확인한다.
         if (
@@ -2073,6 +2179,7 @@ class TrackDriverNode(Node):
                 return True
         return False
 
+    # 좌회전 신호가 최근에 감지되었는지 판단한다.
     def _left_turn_signal_visible(self) -> bool:
         # 좌회전 신호 클래스가 충분한 점수로 잡혔는지 확인한다.
         if self.cached_yolo_left_light:
@@ -2088,6 +2195,7 @@ class TrackDriverNode(Node):
             for class_id in class_ids
         )
 
+    # 빨간불 상태가 최근에 감지되었는지 판단한다.
     def _red_light_signal_visible(self) -> bool:
         # 빨간불 또는 정지 신호가 보이는지 확인해 정지/대기 판단에 사용한다.
         if (
@@ -2115,6 +2223,7 @@ class TrackDriverNode(Node):
                 return True
         return False
 
+    # 좌회전 대기 또는 출발을 판단할 수 있을 만큼 정지선 위치에 가까운지 확인한다.
     def _left_turn_stop_line_position_ready(self) -> bool:
         # 좌회전을 시작해도 되는 정지선 거리 안에 들어왔는지 확인한다.
         if not bool(self.get_parameter('stop_on_light_requires_stop_line').value):
@@ -2451,6 +2560,7 @@ class TrackDriverNode(Node):
         msg.data = -1.0 if distance is None else float(distance)
         self.nearest_obstacle_pub.publish(msg)
 
+    # 보행자, 신호등, 정지선 등 즉시 정지해야 하는 상황을 통합 검사한다.
     def _detect_safety_stop(self) -> Tuple[bool, str]:
         # 입력 데이터에서 detect safety 정지 조건을 감지한다.
         now = time.monotonic()
@@ -2459,6 +2569,7 @@ class TrackDriverNode(Node):
         if bool(self.get_parameter('yolo_safety_enabled').value):
             self._update_yolo_safety_cache(self.image)
 
+        # 빨간불 감지는 정지선/교차로 판단보다 먼저 안전 정지 사유로 등록된다.
         if self._detect_red_light(self.image):
             close_delay_sec = max(float(self.get_parameter('red_light_close_stop_delay_sec').value), 0.0)
             apply_close_delay = close_delay_sec > 0.0 and bool(self.startup_light_gate_released)
@@ -2476,6 +2587,7 @@ class TrackDriverNode(Node):
             self.red_light_close_ready_since_sec = None
             self.red_light_close_stop_waiting = False
 
+        # 신호등 정지 사유가 없을 때만 전방 차량 정지를 검사해 우선순위를 명확히 한다.
         if detected_reason is None and self._detect_vehicle(self.image):
             detected_reason = 'stop_vehicle'
 
@@ -2483,13 +2595,17 @@ class TrackDriverNode(Node):
             hold_sec = max(float(self.get_parameter('safety_stop_hold_sec').value), 0.0)
             self.safety_stop_until_sec = max(self.safety_stop_until_sec, now + hold_sec)
             self.last_safety_stop_reason = detected_reason
+            if detected_reason == 'stop_red_light':
+                self.red_light_stop_release_pending = True
 
+        # 한 번 정지 사유가 발생하면 hold 시간 동안 정지 명령을 유지해 출렁이는 재출발을 막는다.
         if now < self.safety_stop_until_sec:
             return True, self.last_safety_stop_reason
         return False, ''
 
     def _startup_light_check_pending(self) -> bool:
         # 메인 자율주행의 startup 신호등 check pending 로직을 수행한다.
+        # 출발 신호등 확인이 끝난 뒤에는 startup gate가 다시 주행을 막지 않도록 한다.
         if self.startup_light_gate_released:
             return False
         if not bool(self.get_parameter('startup_light_check_enabled').value):
@@ -2507,6 +2623,7 @@ class TrackDriverNode(Node):
         if now - self.startup_time_sec < min_sec:
             return True
 
+        # 초록불을 확인하면 출발 gate를 해제하고 일반 미션 주행으로 넘어간다.
         if self.yolo_light_checked_once and getattr(self, 'cached_yolo_go_light', False):
             self.startup_light_gate_released = True
             return False
@@ -2693,6 +2810,7 @@ class TrackDriverNode(Node):
         self.person_wait_left_confirm_count = 0
         self.person_wait_last_seen_sec = None
 
+    # 신호등 검출기를 갱신하고 빨간불 정지 요청 여부를 반환한다.
     def _detect_red_light(self, image: Optional[np.ndarray]) -> bool:
         # 입력 데이터에서 detect 빨간불 신호등 조건을 감지한다.
         if not bool(self.get_parameter('stop_on_red_light_enabled').value):
@@ -2990,6 +3108,7 @@ class TrackDriverNode(Node):
         )
 
     def _update_yolo_safety_cache(self, image: Optional[np.ndarray]):
+        # 객체 인식 모델 결과를 캐시해 보행자, 차량, 신호등, 라바콘 판단에 재사용한다.
         # 최신 입력을 기준으로 update YOLO safety 캐시 관련 캐시와 상태를 갱신한다.
         if image is None:
             self.cached_yolo_person = False
@@ -7567,6 +7686,7 @@ class TrackDriverNode(Node):
 
 
 def main(args=None):
+    # ROS2 메인 노드를 생성하고 종료 시 차량 정지 명령을 보낸다.
     # ROS2 노드를 초기화하고 실행 루프를 시작한다.
     rclpy.init(args=args)
     node = TrackDriverNode()
@@ -7576,6 +7696,7 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
+        # 종료 시 마지막으로 정지 명령을 보내 시뮬레이터 차량이 계속 움직이지 않게 한다.
         node.drive(angle=0.0, speed=0.0)
         cv2.destroyAllWindows()
         node.destroy_node()

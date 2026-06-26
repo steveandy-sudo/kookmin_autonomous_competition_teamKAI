@@ -7,6 +7,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
+# 설명: ROS 2 launch 실행에 필요한 노드와 파라미터 구성을 만든다.
 def generate_launch_description():
     package_share = FindPackageShare('track_drive')
     default_cone_model_path = PathJoinSubstitution([
@@ -54,6 +55,9 @@ def generate_launch_description():
     school_zone_speed = LaunchConfiguration('school_zone_speed')
     school_zone_speed_limit_enabled = LaunchConfiguration('school_zone_speed_limit_enabled')
     school_zone_speed_limit_hold_sec = LaunchConfiguration('school_zone_speed_limit_hold_sec')
+    school_zone_post_turn_speed_enabled = LaunchConfiguration('school_zone_post_turn_speed_enabled')
+    school_zone_post_turn_speed = LaunchConfiguration('school_zone_post_turn_speed')
+    school_zone_post_turn_speed_duration_sec = LaunchConfiguration('school_zone_post_turn_speed_duration_sec')
     school_zone_boost_enabled = LaunchConfiguration('school_zone_boost_enabled')
     school_zone_boost_speed = LaunchConfiguration('school_zone_boost_speed')
     school_zone_boost_duration_sec = LaunchConfiguration('school_zone_boost_duration_sec')
@@ -366,7 +370,7 @@ def generate_launch_description():
             'model_path',
             default_value=default_cone_model_path,
         ),
-        DeclareLaunchArgument('speed', default_value='55.0'),
+        DeclareLaunchArgument('speed', default_value='49.0'),
         DeclareLaunchArgument('ai_initial_speed', default_value='21.0'),
         DeclareLaunchArgument('ai_initial_speed_duration_sec', default_value='5.0'),
         DeclareLaunchArgument('ai_initial_speed_limit_enabled', default_value='true'),
@@ -384,11 +388,11 @@ def generate_launch_description():
         DeclareLaunchArgument('hybrid_trigger_topic', default_value='/track_drive/hybrid_trigger'),
         DeclareLaunchArgument('control_rate_hz', default_value='100.0'),
         DeclareLaunchArgument('camera_qos_depth', default_value='1'),
-        DeclareLaunchArgument('publish_light_debug_image', default_value='true'),
-        DeclareLaunchArgument('publish_drive_debug_image', default_value='true'),
+        DeclareLaunchArgument('publish_light_debug_image', default_value='false'),
+        DeclareLaunchArgument('publish_drive_debug_image', default_value='false'),
         DeclareLaunchArgument('drive_debug_image_topic', default_value='/track_drive/drive_debug_image'),
-        DeclareLaunchArgument('drive_debug_publish_rate_hz', default_value='4.0'),
-        DeclareLaunchArgument('use_rviz', default_value='true'),
+        DeclareLaunchArgument('drive_debug_publish_rate_hz', default_value='0.0'),
+        DeclareLaunchArgument('use_rviz', default_value='false'),
         DeclareLaunchArgument(
             'rviz_config',
             default_value=PathJoinSubstitution([
@@ -399,9 +403,12 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument('stop_line_update_period_sec', default_value='0.01'),
         DeclareLaunchArgument('school_zone_update_period_sec', default_value='0.10'),
-        DeclareLaunchArgument('school_zone_speed', default_value='17.5'),
+        DeclareLaunchArgument('school_zone_speed', default_value='16.5'),
         DeclareLaunchArgument('school_zone_speed_limit_enabled', default_value='true'),
         DeclareLaunchArgument('school_zone_speed_limit_hold_sec', default_value='1.0'),
+        DeclareLaunchArgument('school_zone_post_turn_speed_enabled', default_value='true'),
+        DeclareLaunchArgument('school_zone_post_turn_speed', default_value='21.0'),
+        DeclareLaunchArgument('school_zone_post_turn_speed_duration_sec', default_value='6.0'),
         DeclareLaunchArgument('school_zone_boost_enabled', default_value='false'),
         DeclareLaunchArgument('school_zone_boost_speed', default_value='30.0'),
         DeclareLaunchArgument('school_zone_boost_duration_sec', default_value='0.0'),
@@ -692,7 +699,7 @@ def generate_launch_description():
                 'speed_rise_limit_enabled': False,
                 'speed_rise_per_sec': 10.0,
                 'turn_speed_limit_enabled': True,
-                'turn_speed': 10.0,
+                'turn_speed': 12.0,
                 'turn_speed_start_steer_deg': 6.0,
                 'turn_speed_full_steer_deg': 35.0,
                 'max_steer_deg': ParameterValue(max_steer_deg, value_type=float),
@@ -747,6 +754,12 @@ def generate_launch_description():
                     school_zone_speed_limit_enabled, value_type=bool),
                 'school_zone_speed_limit_hold_sec': ParameterValue(
                     school_zone_speed_limit_hold_sec, value_type=float),
+                'school_zone_post_turn_speed_enabled': ParameterValue(
+                    school_zone_post_turn_speed_enabled, value_type=bool),
+                'school_zone_post_turn_speed': ParameterValue(
+                    school_zone_post_turn_speed, value_type=float),
+                'school_zone_post_turn_speed_duration_sec': ParameterValue(
+                    school_zone_post_turn_speed_duration_sec, value_type=float),
                 'school_zone_boost_enabled': ParameterValue(school_zone_boost_enabled, value_type=bool),
                 'school_zone_boost_speed': ParameterValue(school_zone_boost_speed, value_type=float),
                 'school_zone_boost_duration_sec': ParameterValue(

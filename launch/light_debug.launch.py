@@ -6,6 +6,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
+# 설명: ROS 2 launch 실행에 필요한 노드와 파라미터 구성을 만든다.
 def generate_launch_description():
     package_share = FindPackageShare('track_drive')
     camera_topic = LaunchConfiguration('camera_topic')
