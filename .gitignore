@@ -1,0 +1,46 @@
+# ROS / colcon build artifacts
+build/
+install/
+log/
+xycar_ws/build/
+xycar_ws/install/
+xycar_ws/log/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local agent / editor files
+.agents/
+.vscode/
+.idea/
+*.swp
+*~
+
+# Gazebo / ROS runtime logs and recordings
+*.log
+*.bag
+*.db3
+*.mcap
+*.active
+*.mp4
+*.avi
+
+# Generated debug images kept locally during map fitting
+alignment/debug_*.png
+
+# Local backups
+worlds/*.before_*.sdf
+*.bak
+
+# Large local tools / external model weights
+xycar_ws/etc/
+xycar_ws/etc/desktop_all/*.pdf
+xycar_ws/etc/motor_vesc/
+xycar_ws/src/xycar_device/xycar_lidar/YDLidar-SDK/
+xycar_ws/src/yolo_ros/
+
+# Compiled binaries copied from the real-car workspace
+*.so
+xycar_ws/src/xycar_application/app_path_planning/app_path_planning/main

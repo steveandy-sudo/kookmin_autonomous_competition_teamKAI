@@ -1,0 +1,560 @@
+[
+  {
+    "name": "white_line_cad_01",
+    "texture": "media/materials/textures/kookmin_white_line_cad_01.png",
+    "pose_xy": [
+      -4.985,
+      -0.4400000000000004
+    ],
+    "size_xy": [
+      0.13,
+      3.1199999999999997
+    ],
+    "bbox_px": [
+      620,
+      563,
+      633,
+      875
+    ]
+  },
+  {
+    "name": "white_line_cad_02",
+    "texture": "media/materials/textures/kookmin_white_line_cad_02.png",
+    "pose_xy": [
+      -4.185,
+      -0.4400000000000004
+    ],
+    "size_xy": [
+      0.13,
+      3.1199999999999997
+    ],
+    "bbox_px": [
+      700,
+      563,
+      713,
+      875
+    ]
+  },
+  {
+    "name": "white_line_cad_03",
+    "texture": "media/materials/textures/kookmin_white_line_cad_03.png",
+    "pose_xy": [
+      -0.34999999999999964,
+      -3.705
+    ],
+    "size_xy": [
+      5.74,
+      0.13
+    ],
+    "bbox_px": [
+      803,
+      1039,
+      1377,
+      1052
+    ]
+  },
+  {
+    "name": "white_line_cad_04",
+    "texture": "media/materials/textures/kookmin_white_line_cad_04.png",
+    "pose_xy": [
+      -0.34999999999999964,
+      -2.9350000000000005
+    ],
+    "size_xy": [
+      5.74,
+      0.13
+    ],
+    "bbox_px": [
+      803,
+      962,
+      1377,
+      975
+    ]
+  },
+  {
+    "name": "white_line_cad_05",
+    "texture": "media/materials/textures/kookmin_white_line_cad_05.png",
+    "pose_xy": [
+      -0.34999999999999964,
+      2.0549999999999997
+    ],
+    "size_xy": [
+      5.78,
+      0.13
+    ],
+    "bbox_px": [
+      801,
+      463,
+      1379,
+      476
+    ]
+  },
+  {
+    "name": "white_line_cad_06",
+    "texture": "media/materials/textures/kookmin_white_line_cad_06.png",
+    "pose_xy": [
+      -0.34999999999999964,
+      2.8649999999999998
+    ],
+    "size_xy": [
+      5.78,
+      0.13
+    ],
+    "bbox_px": [
+      801,
+      382,
+      1379,
+      395
+    ]
+  },
+  {
+    "name": "white_line_cad_07",
+    "texture": "media/materials/textures/kookmin_white_line_cad_07.png",
+    "pose_xy": [
+      2.8649999999999984,
+      -2.3149999999999995
+    ],
+    "size_xy": [
+      0.18999999999999997,
+      0.71
+    ],
+    "bbox_px": [
+      1402,
+      871,
+      1421,
+      942
+    ]
+  },
+  {
+    "name": "white_line_cad_08",
+    "texture": "media/materials/textures/kookmin_white_line_cad_08.png",
+    "pose_xy": [
+      2.6449999999999996,
+      -2.7750000000000004
+    ],
+    "size_xy": [
+      0.51,
+      0.45
+    ],
+    "bbox_px": [
+      1364,
+      930,
+      1415,
+      975
+    ]
+  },
+  {
+    "name": "white_line_cad_09",
+    "texture": "media/materials/textures/kookmin_white_line_cad_09.png",
+    "pose_xy": [
+      3.0700000000000003,
+      -3.26
+    ],
+    "size_xy": [
+      1.22,
+      1.06
+    ],
+    "bbox_px": [
+      1371,
+      948,
+      1493,
+      1054
+    ]
+  },
+  {
+    "name": "white_line_cad_10",
+    "texture": "media/materials/textures/kookmin_white_line_cad_10.png",
+    "pose_xy": [
+      3.629999999999999,
+      -2.3200000000000003
+    ],
+    "size_xy": [
+      0.24,
+      1.28
+    ],
+    "bbox_px": [
+      1476,
+      843,
+      1500,
+      971
+    ]
+  },
+  {
+    "name": "white_line_cad_11",
+    "texture": "media/materials/textures/kookmin_white_line_cad_11.png",
+    "pose_xy": [
+      3.535,
+      -1.6449999999999996
+    ],
+    "size_xy": [
+      0.23,
+      0.31
+    ],
+    "bbox_px": [
+      1467,
+      824,
+      1490,
+      855
+    ]
+  },
+  {
+    "name": "white_line_cad_12",
+    "texture": "media/materials/textures/kookmin_white_line_cad_12.png",
+    "pose_xy": [
+      2.8149999999999995,
+      1.4450000000000003
+    ],
+    "size_xy": [
+      0.18999999999999997,
+      0.71
+    ],
+    "bbox_px": [
+      1397,
+      495,
+      1416,
+      566
+    ]
+  },
+  {
+    "name": "white_line_cad_13",
+    "texture": "media/materials/textures/kookmin_white_line_cad_13.png",
+    "pose_xy": [
+      2.5999999999999996,
+      0.9750000000000005
+    ],
+    "size_xy": [
+      0.52,
+      0.47
+    ],
+    "bbox_px": [
+      1359,
+      554,
+      1411,
+      601
+    ]
+  },
+  {
+    "name": "white_line_cad_14",
+    "texture": "media/materials/textures/kookmin_white_line_cad_14.png",
+    "pose_xy": [
+      3.0199999999999996,
+      2.3999999999999995
+    ],
+    "size_xy": [
+      1.22,
+      1.06
+    ],
+    "bbox_px": [
+      1366,
+      382,
+      1488,
+      488
+    ]
+  },
+  {
+    "name": "white_line_cad_15",
+    "texture": "media/materials/textures/kookmin_white_line_cad_15.png",
+    "pose_xy": [
+      3.58,
+      1.4500000000000002
+    ],
+    "size_xy": [
+      0.24,
+      1.28
+    ],
+    "bbox_px": [
+      1471,
+      466,
+      1495,
+      594
+    ]
+  },
+  {
+    "name": "white_line_cad_16",
+    "texture": "media/materials/textures/kookmin_white_line_cad_16.png",
+    "pose_xy": [
+      3.4849999999999994,
+      0.7799999999999994
+    ],
+    "size_xy": [
+      0.23,
+      0.32
+    ],
+    "bbox_px": [
+      1462,
+      581,
+      1485,
+      613
+    ]
+  },
+  {
+    "name": "white_line_cad_17",
+    "texture": "media/materials/textures/kookmin_white_line_cad_17.png",
+    "pose_xy": [
+      1.9000000000000004,
+      -0.20500000000000007
+    ],
+    "size_xy": [
+      0.30000000000000004,
+      1.43
+    ],
+    "bbox_px": [
+      1300,
+      624,
+      1330,
+      767
+    ]
+  },
+  {
+    "name": "white_line_cad_18",
+    "texture": "media/materials/textures/kookmin_white_line_cad_18.png",
+    "pose_xy": [
+      -3.6800000000000006,
+      1.5650000000000004
+    ],
+    "size_xy": [
+      1.14,
+      1.13
+    ],
+    "bbox_px": [
+      700,
+      462,
+      814,
+      575
+    ]
+  },
+  {
+    "name": "white_line_cad_19",
+    "texture": "media/materials/textures/kookmin_white_line_cad_19.png",
+    "pose_xy": [
+      -4.03,
+      1.9649999999999999
+    ],
+    "size_xy": [
+      2.04,
+      1.93
+    ],
+    "bbox_px": [
+      620,
+      382,
+      824,
+      575
+    ]
+  },
+  {
+    "name": "white_line_cad_20",
+    "texture": "media/materials/textures/kookmin_white_line_cad_20.png",
+    "pose_xy": [
+      -3.675,
+      -2.4450000000000003
+    ],
+    "size_xy": [
+      1.17,
+      1.13
+    ],
+    "bbox_px": [
+      699,
+      863,
+      816,
+      976
+    ]
+  },
+  {
+    "name": "white_line_cad_21",
+    "texture": "media/materials/textures/kookmin_white_line_cad_21.png",
+    "pose_xy": [
+      -3.9700000000000006,
+      -2.83
+    ],
+    "size_xy": [
+      2.1399999999999997,
+      1.9000000000000001
+    ],
+    "bbox_px": [
+      621,
+      863,
+      835,
+      1053
+    ]
+  },
+  {
+    "name": "white_line_cad_22",
+    "texture": "media/materials/textures/kookmin_white_line_cad_22.png",
+    "pose_xy": [
+      2.869999999999999,
+      -2.165000000000001
+    ],
+    "size_xy": [
+      0.18,
+      0.41
+    ],
+    "bbox_px": [
+      1403,
+      871,
+      1421,
+      912
+    ]
+  },
+  {
+    "name": "white_line_cad_23",
+    "texture": "media/materials/textures/kookmin_white_line_cad_23.png",
+    "pose_xy": [
+      2.244999999999999,
+      -1.3399999999999999
+    ],
+    "size_xy": [
+      0.83,
+      0.96
+    ],
+    "bbox_px": [
+      1308,
+      761,
+      1391,
+      857
+    ]
+  },
+  {
+    "name": "white_line_cad_24",
+    "texture": "media/materials/textures/kookmin_white_line_cad_24.png",
+    "pose_xy": [
+      2.7200000000000006,
+      -1.8849999999999998
+    ],
+    "size_xy": [
+      0.37999999999999995,
+      0.37
+    ],
+    "bbox_px": [
+      1378,
+      845,
+      1416,
+      882
+    ]
+  },
+  {
+    "name": "white_line_cad_25",
+    "texture": "media/materials/textures/kookmin_white_line_cad_25.png",
+    "pose_xy": [
+      2.1949999999999985,
+      0.625
+    ],
+    "size_xy": [
+      0.55,
+      0.49000000000000005
+    ],
+    "bbox_px": [
+      1317,
+      588,
+      1372,
+      637
+    ]
+  },
+  {
+    "name": "white_line_cad_26",
+    "texture": "media/materials/textures/kookmin_white_line_cad_26.png",
+    "pose_xy": [
+      2.755000000000001,
+      0.06500000000000039
+    ],
+    "size_xy": [
+      0.33,
+      0.29
+    ],
+    "bbox_px": [
+      1384,
+      654,
+      1417,
+      683
+    ]
+  },
+  {
+    "name": "white_line_cad_27",
+    "texture": "media/materials/textures/kookmin_white_line_cad_27.png",
+    "pose_xy": [
+      3.1449999999999996,
+      0.41500000000000004
+    ],
+    "size_xy": [
+      0.7100000000000001,
+      0.6699999999999999
+    ],
+    "bbox_px": [
+      1404,
+      600,
+      1475,
+      667
+    ]
+  },
+  {
+    "name": "white_line_cad_28",
+    "texture": "media/materials/textures/kookmin_white_line_cad_28.png",
+    "pose_xy": [
+      2.6549999999999994,
+      -0.4299999999999997
+    ],
+    "size_xy": [
+      0.23,
+      0.94
+    ],
+    "bbox_px": [
+      1379,
+      671,
+      1402,
+      765
+    ]
+  },
+  {
+    "name": "white_line_cad_29",
+    "texture": "media/materials/textures/kookmin_white_line_cad_29.png",
+    "pose_xy": [
+      3.1950000000000003,
+      -1.2750000000000004
+    ],
+    "size_xy": [
+      0.7100000000000001,
+      0.6699999999999999
+    ],
+    "bbox_px": [
+      1409,
+      769,
+      1480,
+      836
+    ]
+  },
+  {
+    "name": "white_line_cad_30",
+    "texture": "media/materials/textures/kookmin_white_line_cad_30.png",
+    "pose_xy": [
+      2.8000000000000007,
+      -0.9049999999999994
+    ],
+    "size_xy": [
+      0.34,
+      0.33
+    ],
+    "bbox_px": [
+      1388,
+      749,
+      1422,
+      782
+    ]
+  },
+  {
+    "name": "white_line_cad_31",
+    "texture": "media/materials/textures/kookmin_white_line_cad_31.png",
+    "pose_xy": [
+      2.630000000000001,
+      1.9050000000000002
+    ],
+    "size_xy": [
+      0.44,
+      0.45
+    ],
+    "bbox_px": [
+      1366,
+      462,
+      1410,
+      507
+    ]
+  }
+]
