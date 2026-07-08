@@ -1,5 +1,6 @@
 import csv
 import json
+import math
 import os
 import re
 import tempfile
@@ -126,13 +127,47 @@ def ros_time_to_ns(clock_now: Any) -> int:
     return int(clock_now.nanoseconds)
 
 
-def motor_from_msg(msg: Any):
+def _coerce_float_pair(angle_value: Any, speed_value: Any) -> Tuple[Optional[float], Optional[float], str]:
+    try:
+        angle = float(angle_value)
+        speed = float(speed_value)
+    except (TypeError, ValueError) as exc:
+        return None, None, f"motor command values are not numeric: {exc}"
+    if not math.isfinite(angle) or not math.isfinite(speed):
+        return None, None, "motor command contains non-finite angle or speed"
+    return angle, speed, "ok"
+
+
+def extract_motor_command(msg: Any) -> Tuple[Optional[float], Optional[float], str]:
+    if msg is None:
+        return None, None, "motor message is None"
+
     if hasattr(msg, "angle") and hasattr(msg, "speed"):
-        return float(msg.angle), float(msg.speed)
+        return _coerce_float_pair(msg.angle, msg.speed)
+
     data = getattr(msg, "data", None)
-    if data is not None and len(data) >= 2:
-        return float(data[0]), float(data[1])
-    raise ValueError(f"unsupported motor message type: {type(msg)!r}")
+    if data is not None:
+        try:
+            if len(data) < 2:
+                return None, None, "Float32MultiArray motor command needs data[0]=angle and data[1]=speed"
+            return _coerce_float_pair(data[0], data[1])
+        except TypeError:
+            try:
+                angle = float(data)
+            except (TypeError, ValueError) as exc:
+                return None, None, f"Float32 motor command is not numeric: {exc}"
+            if not math.isfinite(angle):
+                return None, None, "Float32 motor command angle is non-finite"
+            return angle, None, "Float32 motor command has angle only; speed is unavailable"
+
+    return None, None, f"unsupported motor message type: {type(msg)!r}"
+
+
+def motor_from_msg(msg: Any):
+    angle, speed, reason = extract_motor_command(msg)
+    if angle is None or speed is None:
+        raise ValueError(reason)
+    return angle, speed
 
 
 def string_from_msg(msg: Any, default: str = "idle") -> str:

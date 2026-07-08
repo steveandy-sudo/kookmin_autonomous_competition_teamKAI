@@ -4,6 +4,19 @@ Team K.A.I. imitation learning 데이터 수집용 ROS2 Humble Python 패키지�
 
 이 패키지는 자율주행 로직을 바꾸지 않습니다. `/xycar_motor`를 publish하지 않고, 이미 주행 코드나 사람이 만든 `/xycar_motor` 명령을 구독해서 학습용 데이터로 저장하는 역할만 합니다.
 
+## 처음 읽을 문서
+
+처음 보는 사람은 [docs/IL_DATA_TOOLS_OVERVIEW.md](../docs/IL_DATA_TOOLS_OVERVIEW.md)부터 읽으세요.
+
+- [docs/IL_DATA_TOOLS_OVERVIEW.md](../docs/IL_DATA_TOOLS_OVERVIEW.md): 전체 목적, 구조, 안전 원칙
+- [docs/IL_DATA_TOOLS_FILE_MAP.md](../docs/IL_DATA_TOOLS_FILE_MAP.md): 파일별 역할 지도
+- [docs/IL_DATA_COLLECTION_QUICKSTART.md](../docs/IL_DATA_COLLECTION_QUICKSTART.md): build, local dry-run, 실차 수집 절차
+- [docs/IL_DATASET_BUILDING_GUIDE.md](../docs/IL_DATASET_BUILDING_GUIDE.md): raw session을 processed CSV로 변환하는 방법
+- [docs/IL_TRAINING_AND_MODEL_SELECTION.md](../docs/IL_TRAINING_AND_MODEL_SELECTION.md): 학습 명령과 모델 선택 기준
+- [docs/IL_EVALUATION_AND_BENCHMARK.md](../docs/IL_EVALUATION_AND_BENCHMARK.md): offline evaluation, 시각화, latency benchmark
+- [docs/IL_TROUBLESHOOTING.md](../docs/IL_TROUBLESHOOTING.md): 자주 만나는 문제와 해결법
+- [docs/IL_COMMAND_CHEATSHEET.md](../docs/IL_COMMAND_CHEATSHEET.md): 자주 쓰는 명령 요약
+
 ## 역할 분리
 
 이 패키지의 책임:
@@ -69,6 +82,63 @@ ros2 run il_data_tools check_topics.sh
 - `/imu`
 - `/xycar_motor`
 - `~/xycar_ws` 디스크 용량
+
+## xycar_msgs가 없는 개발 노트북에서 테스트하는 방법
+
+실제 Xycar에서는 `/xycar_motor`가 보통 `xycar_msgs/msg/XycarMotor` 타입을 사용합니다.
+하지만 개발 노트북에는 `xycar_msgs` 패키지가 없을 수 있습니다. 이 경우 로컬 dry-run에서는
+`std_msgs/msg/Float32MultiArray` fallback을 사용하면 됩니다.
+
+로컬 테스트에서는 반드시 다음 원칙을 지킵니다.
+
+- recorder에는 `motor_msg_type:=float32_multi_array`를 넘깁니다.
+- motor topic은 `/test/xycar_motor`를 사용합니다.
+- 로컬 dummy publisher는 기본적으로 `/xycar_motor`에 publish하지 않습니다.
+- recorder는 어떤 설정에서도 `/xycar_motor`를 publish하지 않고 구독만 합니다.
+- 실차에서는 `xycar_msgs/msg/XycarMotor`가 설치된 상태에서 `motor_msg_type:=auto` 또는 `motor_msg_type:=xycar`를 사용합니다.
+
+Terminal 1:
+
+```bash
+ros2 run il_data_tools il_mission_labeler
+```
+
+Terminal 2:
+
+```bash
+ros2 launch il_data_tools record_drive_dataset.launch.py \
+  session_name:=dummy_drive_test \
+  output_root:=/tmp/il_test \
+  camera_front_topic:=/test/image \
+  motor_topic:=/test/xycar_motor \
+  motor_msg_type:=float32_multi_array \
+  mission_label_topic:=/il/mission_label
+```
+
+Terminal 3:
+
+```bash
+ros2 run il_data_tools publish_dummy_il_stream.py \
+  --image-topic /test/image \
+  --motor-topic /test/xycar_motor \
+  --label general_drive \
+  --duration-sec 12
+```
+
+recorder를 종료한 뒤 결과를 확인합니다.
+
+```bash
+find /tmp/il_test -maxdepth 6 -type f | sort | head -80
+SAMPLES=$(find /tmp/il_test -name "samples.csv" | tail -n 1)
+echo "$SAMPLES"
+head -5 "$SAMPLES"
+```
+
+같은 안내를 출력하는 helper script도 있습니다.
+
+```bash
+ros2 run il_data_tools run_local_recorder_dryrun.sh
+```
 
 ## mission labeler
 

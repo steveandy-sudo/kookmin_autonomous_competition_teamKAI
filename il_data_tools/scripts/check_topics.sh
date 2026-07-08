@@ -5,9 +5,11 @@ pass() { printf 'PASS %s\n' "$*"; }
 warn() { printf 'WARN %s\n' "$*"; }
 fail() { printf 'FAIL %s\n' "$*"; }
 
+TOPIC_LIST=""
+
 check_topic_exists() {
   local topic="$1"
-  if ros2 topic list | grep -qx "$topic"; then
+  if printf '%s\n' "$TOPIC_LIST" | grep -qx "$topic"; then
     pass "topic exists: $topic"
     return 0
   fi
@@ -17,7 +19,7 @@ check_topic_exists() {
 
 check_hz() {
   local topic="$1"
-  if ! ros2 topic list | grep -qx "$topic"; then
+  if ! printf '%s\n' "$TOPIC_LIST" | grep -qx "$topic"; then
     warn "skip hz; topic missing: $topic"
     return 0
   fi
@@ -30,10 +32,19 @@ check_hz() {
 }
 
 echo "== ros2 topic list =="
-if ros2 topic list; then
+if TOPIC_LIST="$(ros2 topic list)"; then
+  printf '%s\n' "$TOPIC_LIST"
   pass "ros2 topic list"
 else
   fail "ros2 topic list failed"
+fi
+
+echo
+echo "== xycar_msgs interface =="
+if ros2 interface show xycar_msgs/msg/XycarMotor >/tmp/il_xycar_msgs_interface.txt 2>&1; then
+  pass "xycar_msgs/msg/XycarMotor found"
+else
+  warn "xycar_msgs not found. This is OK for local dry-run if motor_msg_type:=float32_multi_array is used. Real Xycar runtime requires xycar_msgs/msg/XycarMotor."
 fi
 
 echo
@@ -49,10 +60,19 @@ check_hz "/imu"
 
 echo
 echo "== /xycar_motor info =="
-if ros2 topic info /xycar_motor -v; then
-  pass "topic info /xycar_motor"
+if printf '%s\n' "$TOPIC_LIST" | grep -qx "/xycar_motor"; then
+  if INFO="$(ros2 topic info /xycar_motor -v)"; then
+    printf '%s\n' "$INFO"
+    pass "topic info /xycar_motor"
+    PUBLISHERS="$(printf '%s\n' "$INFO" | awk '/Publisher count:/ {print $3; exit}')"
+    if [ -n "$PUBLISHERS" ] && [ "$PUBLISHERS" -gt 1 ]; then
+      warn "/xycar_motor has more than one publisher: $PUBLISHERS"
+    fi
+  else
+    fail "topic info /xycar_motor failed"
+  fi
 else
-  fail "topic info /xycar_motor failed"
+  warn "skip topic info /xycar_motor; topic is not currently available"
 fi
 
 echo

@@ -32,9 +32,9 @@ except ImportError:  # pragma: no cover
 
 from il_data_tools.record_schema import (
     atomic_write_json,
+    extract_motor_command,
     image_suffix,
     make_session_dir,
-    motor_from_msg,
     open_samples_csv,
     parse_allowed_labels,
     relative_to_session,
@@ -53,6 +53,7 @@ class ILCommonRecorder(Node):
         super().__init__("il_common_recorder")
         self._declare_parameters()
         self.params = self._read_parameters()
+        self.motor_msg_type, self.resolved_motor_msg_type_name = self._resolve_motor_msg_type()
         self.allowed_labels = parse_allowed_labels(
             self.params["allowed_labels"], self.params["dataset_profile"]
         )
@@ -117,6 +118,7 @@ class ILCommonRecorder(Node):
             "imu_topic": "/imu",
             "odom_topic": "/odom",
             "motor_topic": "/xycar_motor",
+            "motor_msg_type": "auto",
             "mission_label_topic": "/il/mission_label",
             "save_front_image": True,
             "save_side_images": False,
@@ -159,6 +161,7 @@ class ILCommonRecorder(Node):
             "imu_topic": self._get_str("imu_topic"),
             "odom_topic": self._get_str("odom_topic"),
             "motor_topic": self._get_str("motor_topic"),
+            "motor_msg_type": self._get_str("motor_msg_type"),
             "mission_label_topic": self._get_str("mission_label_topic"),
             "save_front_image": self._get_bool("save_front_image"),
             "save_side_images": self._get_bool("save_side_images"),
@@ -201,6 +204,47 @@ class ILCommonRecorder(Node):
 
     def _get_float(self, name: str) -> float:
         return float(self.get_parameter(name).value)
+
+    def _resolve_motor_msg_type(self):
+        value = self.params["motor_msg_type"].strip().lower()
+        xycar_values = {"xycar", "xycar_msgs/msg/xycarmotor"}
+        float_array_values = {"float32_multi_array", "std_msgs/msg/float32multiarray"}
+
+        if value == "auto":
+            if XycarMotor is not None:
+                self.get_logger().info(
+                    "motor_msg_type=auto resolved to xycar_msgs/msg/XycarMotor"
+                )
+                return XycarMotor, "xycar_msgs/msg/XycarMotor"
+            self.get_logger().warn(
+                "xycar_msgs is not installed; motor_msg_type=auto resolved to "
+                "std_msgs/msg/Float32MultiArray for local dry-run. "
+                "Use motor_msg_type:=xycar on the real Xycar when xycar_msgs is installed."
+            )
+            return Float32MultiArray, "std_msgs/msg/Float32MultiArray"
+
+        if value in xycar_values:
+            if XycarMotor is None:
+                raise RuntimeError(
+                    "motor_msg_type:=xycar requested, but xycar_msgs is not installed. "
+                    "Install xycar_msgs on the real Xycar, or use "
+                    "motor_msg_type:=float32_multi_array for local dry-run."
+                )
+            self.get_logger().info("motor_msg_type resolved to xycar_msgs/msg/XycarMotor")
+            return XycarMotor, "xycar_msgs/msg/XycarMotor"
+
+        if value in float_array_values:
+            self.get_logger().warn(
+                "motor_msg_type resolved to std_msgs/msg/Float32MultiArray. "
+                "This is intended for local dry-run topics such as /test/xycar_motor."
+            )
+            return Float32MultiArray, "std_msgs/msg/Float32MultiArray"
+
+        raise ValueError(
+            "motor_msg_type must be one of: auto, xycar, "
+            "xycar_msgs/msg/XycarMotor, float32_multi_array, "
+            "std_msgs/msg/Float32MultiArray"
+        )
 
     def _write_static_files(self) -> None:
         topics = {
@@ -317,8 +361,9 @@ class ILCommonRecorder(Node):
             lambda msg: self.odom_buffer.add(stamp_to_ns(msg), msg),
             qos,
         )
-        motor_msg_type = XycarMotor if XycarMotor is not None else Float32MultiArray
-        self.create_subscription(motor_msg_type, self.params["motor_topic"], self._motor_cb, qos)
+        self.create_subscription(
+            self.motor_msg_type, self.params["motor_topic"], self._motor_cb, qos
+        )
         self.create_subscription(
             String,
             self.params["mission_label_topic"],
@@ -365,7 +410,15 @@ class ILCommonRecorder(Node):
                 return
             motor_angle, motor_speed = "", ""
         else:
-            motor_angle, motor_speed = motor_from_msg(motor_item.msg)
+            motor_angle, motor_speed, reason = extract_motor_command(motor_item.msg)
+            if motor_angle is None or motor_speed is None:
+                self.skipped_missing_motor += 1
+                self._warn_once(
+                    f"invalid motor command on {self.params['motor_topic']}: {reason}"
+                )
+                if self.params["require_motor_command"]:
+                    return
+                motor_angle, motor_speed = "", ""
 
         label_item = self.label_buffer.nearest(stamp_ns, tolerance_ns)
         mission_label = string_from_msg(label_item.msg) if label_item else "idle"
@@ -613,6 +666,7 @@ class ILCommonRecorder(Node):
             "finished": bool(final),
             "allowed_labels": self.allowed_labels,
             "parameters": self.params,
+            "resolved_motor_msg_type": self.resolved_motor_msg_type_name,
             "sample_count": self.sample_count,
             "image_count": self.image_count,
             "scan_count": self.scan_count,
