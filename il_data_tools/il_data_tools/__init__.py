@@ -1,3 +1,1 @@
-"""Tools for safe Xycar imitation-learning data collection."""
-
-__version__ = "0.1.0"
+"""Team K.A.I. imitation-learning data collection tools."""

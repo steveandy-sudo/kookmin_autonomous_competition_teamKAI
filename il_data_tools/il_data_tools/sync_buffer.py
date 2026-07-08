@@ -10,18 +10,13 @@ class TimedMessage:
 
 
 class TimedBuffer:
-    """Small nearest-timestamp buffer for approximate synchronization."""
+    """Small nearest-timestamp buffer for approximate sensor synchronization."""
 
-    def __init__(self, maxlen: int = 200):
+    def __init__(self, maxlen: int = 300):
         self._items: Deque[TimedMessage] = deque(maxlen=maxlen)
 
     def add(self, stamp_ns: int, msg: Any) -> None:
         self._items.append(TimedMessage(int(stamp_ns), msg))
-
-    def latest(self) -> Optional[TimedMessage]:
-        if not self._items:
-            return None
-        return self._items[-1]
 
     def nearest(self, stamp_ns: int, tolerance_ns: int) -> Optional[TimedMessage]:
         if not self._items:
@@ -32,11 +27,10 @@ class TimedBuffer:
             return best
         return None
 
-    def age_ns(self, now_ns: int) -> Optional[int]:
-        latest = self.latest()
-        if latest is None:
+    def latest_age_ns(self, now_ns: int) -> Optional[int]:
+        if not self._items:
             return None
-        return int(now_ns) - latest.stamp_ns
+        return int(now_ns) - self._items[-1].stamp_ns
 
     def __len__(self) -> int:
         return len(self._items)

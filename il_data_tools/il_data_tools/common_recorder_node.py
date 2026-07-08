@@ -1,0 +1,661 @@
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import csv
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+import rclpy
+from nav_msgs.msg import Odometry
+from rclpy.node import Node
+from sensor_msgs.msg import Image, Imu, LaserScan
+from std_msgs.msg import Float32MultiArray, String
+
+try:
+    from xycar_msgs.msg import XycarMotor
+except ImportError:  # pragma: no cover
+    XycarMotor = None
+
+try:
+    import cv2
+    from cv_bridge import CvBridge
+except ImportError:  # pragma: no cover
+    cv2 = None
+    CvBridge = None
+
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover
+    np = None
+
+from il_data_tools.record_schema import (
+    atomic_write_json,
+    image_suffix,
+    make_session_dir,
+    motor_from_msg,
+    open_samples_csv,
+    parse_allowed_labels,
+    relative_to_session,
+    ros_time_to_ns,
+    stamp_to_ns,
+    string_from_msg,
+    write_session_readme,
+)
+from il_data_tools.sync_buffer import TimedBuffer
+
+
+class ILCommonRecorder(Node):
+    """Subscribe-only dataset recorder for imitation-learning samples."""
+
+    def __init__(self) -> None:
+        super().__init__("il_common_recorder")
+        self._declare_parameters()
+        self.params = self._read_parameters()
+        self.allowed_labels = parse_allowed_labels(
+            self.params["allowed_labels"], self.params["dataset_profile"]
+        )
+        self.session_id, self.session_dir = make_session_dir(
+            self.params["output_root"],
+            self.params["dataset_profile"],
+            self.params["session_name"],
+        )
+        self.csv_handle, self.csv_writer = open_samples_csv(
+            self.session_dir / "samples.csv"
+        )
+        self.imu_handle = None
+        self.imu_writer = None
+        self.odom_handle = None
+        self.odom_writer = None
+        self._open_optional_debug_writers()
+        self.bridge = CvBridge() if CvBridge is not None else None
+
+        self.front_buffer = TimedBuffer()
+        self.left_buffer = TimedBuffer()
+        self.right_buffer = TimedBuffer()
+        self.rear_buffer = TimedBuffer()
+        self.scan_buffer = TimedBuffer()
+        self.imu_buffer = TimedBuffer()
+        self.odom_buffer = TimedBuffer()
+        self.motor_buffer = TimedBuffer()
+        self.label_buffer = TimedBuffer()
+
+        self.recording_enabled = self.params["enable_recording_on_start"]
+        self.started_at = datetime.now()
+        self.sample_count = 0
+        self.image_count = 0
+        self.scan_count = 0
+        self.skipped_missing_motor = 0
+        self.skipped_label_filter = 0
+        self.skipped_speed_filter = 0
+        self.skipped_rate_limit = 0
+        self.skipped_disk_limit = 0
+        self.last_saved_ns: Optional[int] = None
+        self.last_debug_sec = 0.0
+        self.warnings = []
+
+        self._write_static_files()
+        self._create_subscriptions()
+        self.create_timer(self.params["debug_print_period_sec"], self._debug_tick)
+        self.get_logger().info(f"IL dataset session: {self.session_dir}")
+        self.get_logger().warn(
+            "Subscribe-only recorder: this node never publishes /xycar_motor."
+        )
+
+    def _declare_parameters(self) -> None:
+        defaults = {
+            "output_root": "~/xycar_ws/datasets/il",
+            "session_name": "session",
+            "dataset_profile": "drive",
+            "allowed_labels": "",
+            "camera_front_topic": "/usb_cam/image_raw/front",
+            "camera_left_topic": "/usb_cam/image_raw/left",
+            "camera_right_topic": "/usb_cam/image_raw/right",
+            "camera_rear_topic": "/usb_cam/image_raw/behind",
+            "scan_topic": "/scan",
+            "imu_topic": "/imu",
+            "odom_topic": "/odom",
+            "motor_topic": "/xycar_motor",
+            "mission_label_topic": "/il/mission_label",
+            "save_front_image": True,
+            "save_side_images": False,
+            "save_scan_npz": False,
+            "save_imu": False,
+            "save_odom": False,
+            "image_format": "jpg",
+            "jpeg_quality": 90,
+            "max_save_rate_hz": 10.0,
+            "min_abs_speed_to_save": 0.0,
+            "save_when_stopped": False,
+            "require_motor_command": True,
+            "approximate_sync_tolerance_sec": 0.10,
+            "flush_every_n_samples": 20,
+            "max_session_duration_sec": 0.0,
+            "max_disk_usage_gb": 0.0,
+            "enable_recording_on_start": True,
+            "exclude_bad_data": True,
+            "exclude_idle": True,
+            "exclude_zero_speed": False,
+            "debug_print_period_sec": 5.0,
+            "source_mode": "manual_or_rule",
+            "lap_index": -1,
+            "notes": "",
+        }
+        for key, value in defaults.items():
+            self.declare_parameter(key, value)
+
+    def _read_parameters(self) -> Dict[str, Any]:
+        return {
+            "output_root": self._get_str("output_root"),
+            "session_name": self._get_str("session_name"),
+            "dataset_profile": self._get_str("dataset_profile"),
+            "allowed_labels": self.get_parameter("allowed_labels").value,
+            "camera_front_topic": self._get_str("camera_front_topic"),
+            "camera_left_topic": self._get_str("camera_left_topic"),
+            "camera_right_topic": self._get_str("camera_right_topic"),
+            "camera_rear_topic": self._get_str("camera_rear_topic"),
+            "scan_topic": self._get_str("scan_topic"),
+            "imu_topic": self._get_str("imu_topic"),
+            "odom_topic": self._get_str("odom_topic"),
+            "motor_topic": self._get_str("motor_topic"),
+            "mission_label_topic": self._get_str("mission_label_topic"),
+            "save_front_image": self._get_bool("save_front_image"),
+            "save_side_images": self._get_bool("save_side_images"),
+            "save_scan_npz": self._get_bool("save_scan_npz"),
+            "save_imu": self._get_bool("save_imu"),
+            "save_odom": self._get_bool("save_odom"),
+            "image_format": image_suffix(self._get_str("image_format")),
+            "jpeg_quality": self._get_int("jpeg_quality"),
+            "max_save_rate_hz": self._get_float("max_save_rate_hz"),
+            "min_abs_speed_to_save": self._get_float("min_abs_speed_to_save"),
+            "save_when_stopped": self._get_bool("save_when_stopped"),
+            "require_motor_command": self._get_bool("require_motor_command"),
+            "approximate_sync_tolerance_sec": self._get_float(
+                "approximate_sync_tolerance_sec"
+            ),
+            "flush_every_n_samples": self._get_int("flush_every_n_samples"),
+            "max_session_duration_sec": self._get_float("max_session_duration_sec"),
+            "max_disk_usage_gb": self._get_float("max_disk_usage_gb"),
+            "enable_recording_on_start": self._get_bool("enable_recording_on_start"),
+            "exclude_bad_data": self._get_bool("exclude_bad_data"),
+            "exclude_idle": self._get_bool("exclude_idle"),
+            "exclude_zero_speed": self._get_bool("exclude_zero_speed"),
+            "debug_print_period_sec": max(self._get_float("debug_print_period_sec"), 1.0),
+            "source_mode": self._get_str("source_mode"),
+            "lap_index": self._get_int("lap_index"),
+            "notes": self._get_str("notes"),
+        }
+
+    def _get_str(self, name: str) -> str:
+        return str(self.get_parameter(name).value)
+
+    def _get_bool(self, name: str) -> bool:
+        value = self.get_parameter(name).value
+        if isinstance(value, bool):
+            return value
+        return str(value).lower() in {"1", "true", "yes", "on"}
+
+    def _get_int(self, name: str) -> int:
+        return int(self.get_parameter(name).value)
+
+    def _get_float(self, name: str) -> float:
+        return float(self.get_parameter(name).value)
+
+    def _write_static_files(self) -> None:
+        topics = {
+            "camera_front_topic": self.params["camera_front_topic"],
+            "camera_left_topic": self.params["camera_left_topic"],
+            "camera_right_topic": self.params["camera_right_topic"],
+            "camera_rear_topic": self.params["camera_rear_topic"],
+            "scan_topic": self.params["scan_topic"],
+            "imu_topic": self.params["imu_topic"],
+            "odom_topic": self.params["odom_topic"],
+            "motor_topic": self.params["motor_topic"],
+            "mission_label_topic": self.params["mission_label_topic"],
+        }
+        write_session_readme(
+            self.session_dir,
+            self.session_id,
+            self.params["dataset_profile"],
+            self.allowed_labels,
+            topics,
+        )
+        self._write_metadata(final=False)
+
+    def _open_optional_debug_writers(self) -> None:
+        debug_dir = self.session_dir / "debug"
+        if self.params["save_imu"]:
+            self.imu_handle = (debug_dir / "imu.csv").open(
+                "w", newline="", encoding="utf-8"
+            )
+            self.imu_writer = csv.DictWriter(
+                self.imu_handle,
+                fieldnames=[
+                    "sample_timestamp_ns",
+                    "imu_timestamp_ns",
+                    "frame_id",
+                    "orientation_x",
+                    "orientation_y",
+                    "orientation_z",
+                    "orientation_w",
+                    "angular_velocity_x",
+                    "angular_velocity_y",
+                    "angular_velocity_z",
+                    "linear_acceleration_x",
+                    "linear_acceleration_y",
+                    "linear_acceleration_z",
+                ],
+            )
+            self.imu_writer.writeheader()
+        if self.params["save_odom"]:
+            self.odom_handle = (debug_dir / "odom.csv").open(
+                "w", newline="", encoding="utf-8"
+            )
+            self.odom_writer = csv.DictWriter(
+                self.odom_handle,
+                fieldnames=[
+                    "sample_timestamp_ns",
+                    "odom_timestamp_ns",
+                    "frame_id",
+                    "child_frame_id",
+                    "position_x",
+                    "position_y",
+                    "position_z",
+                    "orientation_x",
+                    "orientation_y",
+                    "orientation_z",
+                    "orientation_w",
+                    "linear_x",
+                    "linear_y",
+                    "linear_z",
+                    "angular_x",
+                    "angular_y",
+                    "angular_z",
+                ],
+            )
+            self.odom_writer.writeheader()
+
+    def _create_subscriptions(self) -> None:
+        qos = 10
+        self.create_subscription(
+            Image, self.params["camera_front_topic"], self._front_image_cb, qos
+        )
+        self.create_subscription(
+            Image,
+            self.params["camera_left_topic"],
+            lambda msg: self._image_to_buffer(self.left_buffer, msg),
+            qos,
+        )
+        self.create_subscription(
+            Image,
+            self.params["camera_right_topic"],
+            lambda msg: self._image_to_buffer(self.right_buffer, msg),
+            qos,
+        )
+        self.create_subscription(
+            Image,
+            self.params["camera_rear_topic"],
+            lambda msg: self._image_to_buffer(self.rear_buffer, msg),
+            qos,
+        )
+        self.create_subscription(
+            LaserScan,
+            self.params["scan_topic"],
+            lambda msg: self.scan_buffer.add(stamp_to_ns(msg), msg),
+            qos,
+        )
+        self.create_subscription(
+            Imu,
+            self.params["imu_topic"],
+            lambda msg: self.imu_buffer.add(stamp_to_ns(msg), msg),
+            qos,
+        )
+        self.create_subscription(
+            Odometry,
+            self.params["odom_topic"],
+            lambda msg: self.odom_buffer.add(stamp_to_ns(msg), msg),
+            qos,
+        )
+        motor_msg_type = XycarMotor if XycarMotor is not None else Float32MultiArray
+        self.create_subscription(motor_msg_type, self.params["motor_topic"], self._motor_cb, qos)
+        self.create_subscription(
+            String,
+            self.params["mission_label_topic"],
+            self._mission_label_cb,
+            qos,
+        )
+
+    def _image_to_buffer(self, buffer: TimedBuffer, msg: Image) -> None:
+        buffer.add(stamp_to_ns(msg, ros_time_to_ns(self.get_clock().now())), msg)
+
+    def _front_image_cb(self, msg: Image) -> None:
+        stamp_ns = stamp_to_ns(msg, ros_time_to_ns(self.get_clock().now()))
+        self.front_buffer.add(stamp_ns, msg)
+        if not self.recording_enabled:
+            return
+        self._try_record_sample(stamp_ns, msg)
+
+    def _motor_cb(self, msg: Any) -> None:
+        self.motor_buffer.add(stamp_to_ns(msg, ros_time_to_ns(self.get_clock().now())), msg)
+
+    def _mission_label_cb(self, msg: String) -> None:
+        now_ns = ros_time_to_ns(self.get_clock().now())
+        self.label_buffer.add(now_ns, msg)
+
+    def _try_record_sample(self, stamp_ns: int, front_msg: Image) -> None:
+        if not self._within_duration_limit():
+            self.recording_enabled = False
+            self._warn_once("max_session_duration_sec reached; recording stopped")
+            return
+        if not self._within_rate_limit(stamp_ns):
+            self.skipped_rate_limit += 1
+            return
+        if not self._within_disk_limit():
+            self.skipped_disk_limit += 1
+            self.recording_enabled = False
+            self._warn_once("max_disk_usage_gb reached; recording stopped")
+            return
+
+        tolerance_ns = int(self.params["approximate_sync_tolerance_sec"] * 1e9)
+        motor_item = self.motor_buffer.nearest(stamp_ns, tolerance_ns)
+        if motor_item is None:
+            self.skipped_missing_motor += 1
+            if self.params["require_motor_command"]:
+                return
+            motor_angle, motor_speed = "", ""
+        else:
+            motor_angle, motor_speed = motor_from_msg(motor_item.msg)
+
+        label_item = self.label_buffer.nearest(stamp_ns, tolerance_ns)
+        mission_label = string_from_msg(label_item.msg) if label_item else "idle"
+        if not self._label_allowed(mission_label):
+            self.skipped_label_filter += 1
+            return
+
+        if motor_item is not None and not self._speed_allowed(float(motor_speed)):
+            self.skipped_speed_filter += 1
+            return
+
+        paths = self._save_images(stamp_ns, front_msg)
+        scan_path = self._save_nearest_scan(stamp_ns, tolerance_ns)
+        self._write_optional_debug_sample(stamp_ns, tolerance_ns)
+
+        row = {
+            "timestamp_ns": stamp_ns,
+            "front_image_path": relative_to_session(self.session_dir, paths["front"]),
+            "left_image_path": relative_to_session(self.session_dir, paths["left"]),
+            "right_image_path": relative_to_session(self.session_dir, paths["right"]),
+            "rear_image_path": relative_to_session(self.session_dir, paths["rear"]),
+            "scan_npz_path": relative_to_session(self.session_dir, scan_path),
+            "motor_angle": motor_angle,
+            "motor_speed": motor_speed,
+            "mission_label": mission_label,
+            "dataset_profile": self.params["dataset_profile"],
+            "source_mode": self.params["source_mode"],
+            "session_id": self.session_id,
+            "lap_index": self.params["lap_index"],
+            "notes": self.params["notes"],
+        }
+        self.csv_writer.writerow(row)
+        self.sample_count += 1
+        self.last_saved_ns = stamp_ns
+        if self.sample_count % max(1, self.params["flush_every_n_samples"]) == 0:
+            self.csv_handle.flush()
+            self._flush_debug_handles()
+
+    def _label_allowed(self, label: str) -> bool:
+        if self.params["exclude_bad_data"] and label == "bad_data":
+            return False
+        if self.params["exclude_idle"] and label == "idle":
+            return False
+        if self.allowed_labels and label not in self.allowed_labels:
+            return False
+        return True
+
+    def _speed_allowed(self, speed: float) -> bool:
+        threshold = self.params["min_abs_speed_to_save"]
+        if self.params["exclude_zero_speed"] and abs(speed) <= max(threshold, 1e-6):
+            return False
+        if abs(speed) >= threshold:
+            return True
+        return self.params["save_when_stopped"]
+
+    def _save_images(self, stamp_ns: int, front_msg: Image) -> Dict[str, Optional[Path]]:
+        paths = {"front": None, "left": None, "right": None, "rear": None}
+        if self.params["save_front_image"]:
+            paths["front"] = self._save_image("front", stamp_ns, front_msg)
+        if self.params["save_side_images"]:
+            tolerance_ns = int(self.params["approximate_sync_tolerance_sec"] * 1e9)
+            for name, buffer in [
+                ("left", self.left_buffer),
+                ("right", self.right_buffer),
+                ("rear", self.rear_buffer),
+            ]:
+                item = buffer.nearest(stamp_ns, tolerance_ns)
+                if item is not None:
+                    paths[name] = self._save_image(name, stamp_ns, item.msg)
+        return paths
+
+    def _save_image(self, camera_name: str, stamp_ns: int, msg: Image) -> Path:
+        if self.bridge is None or cv2 is None:
+            raise RuntimeError("cv_bridge and OpenCV are required to save images")
+        suffix = self.params["image_format"]
+        out_path = self.session_dir / "images" / camera_name / f"{stamp_ns}.{suffix}"
+        image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+        if suffix == "jpg":
+            options = [int(cv2.IMWRITE_JPEG_QUALITY), int(self.params["jpeg_quality"])]
+        else:
+            options = [int(cv2.IMWRITE_PNG_COMPRESSION), 3]
+        ok = cv2.imwrite(str(out_path), image, options)
+        if not ok:
+            raise RuntimeError(f"failed to write image: {out_path}")
+        self.image_count += 1
+        return out_path
+
+    def _save_nearest_scan(self, stamp_ns: int, tolerance_ns: int) -> Optional[Path]:
+        if not self.params["save_scan_npz"]:
+            return None
+        item = self.scan_buffer.nearest(stamp_ns, tolerance_ns)
+        if item is None:
+            return None
+        return self._save_scan(stamp_ns, item.msg)
+
+    def _save_scan(self, stamp_ns: int, msg: LaserScan) -> Optional[Path]:
+        if np is None:
+            self._warn_once("numpy is unavailable; scan npz was not saved")
+            return None
+        out_path = self.session_dir / "scan" / f"{stamp_ns}.npz"
+        np.savez_compressed(
+            out_path,
+            ranges=np.asarray(msg.ranges, dtype=np.float32),
+            intensities=np.asarray(msg.intensities, dtype=np.float32),
+            angle_min=np.float32(msg.angle_min),
+            angle_max=np.float32(msg.angle_max),
+            angle_increment=np.float32(msg.angle_increment),
+            time_increment=np.float32(msg.time_increment),
+            scan_time=np.float32(msg.scan_time),
+            range_min=np.float32(msg.range_min),
+            range_max=np.float32(msg.range_max),
+            frame_id=np.asarray(getattr(msg.header, "frame_id", ""), dtype=str),
+        )
+        self.scan_count += 1
+        return out_path
+
+    def _write_optional_debug_sample(self, stamp_ns: int, tolerance_ns: int) -> None:
+        if self.imu_writer is not None:
+            item = self.imu_buffer.nearest(stamp_ns, tolerance_ns)
+            if item is not None:
+                self.imu_writer.writerow(self._imu_row(stamp_ns, item.msg))
+        if self.odom_writer is not None:
+            item = self.odom_buffer.nearest(stamp_ns, tolerance_ns)
+            if item is not None:
+                self.odom_writer.writerow(self._odom_row(stamp_ns, item.msg))
+
+    def _imu_row(self, stamp_ns: int, msg: Imu) -> Dict[str, Any]:
+        return {
+            "sample_timestamp_ns": stamp_ns,
+            "imu_timestamp_ns": stamp_to_ns(msg),
+            "frame_id": getattr(msg.header, "frame_id", ""),
+            "orientation_x": msg.orientation.x,
+            "orientation_y": msg.orientation.y,
+            "orientation_z": msg.orientation.z,
+            "orientation_w": msg.orientation.w,
+            "angular_velocity_x": msg.angular_velocity.x,
+            "angular_velocity_y": msg.angular_velocity.y,
+            "angular_velocity_z": msg.angular_velocity.z,
+            "linear_acceleration_x": msg.linear_acceleration.x,
+            "linear_acceleration_y": msg.linear_acceleration.y,
+            "linear_acceleration_z": msg.linear_acceleration.z,
+        }
+
+    def _odom_row(self, stamp_ns: int, msg: Odometry) -> Dict[str, Any]:
+        pose = msg.pose.pose
+        twist = msg.twist.twist
+        return {
+            "sample_timestamp_ns": stamp_ns,
+            "odom_timestamp_ns": stamp_to_ns(msg),
+            "frame_id": getattr(msg.header, "frame_id", ""),
+            "child_frame_id": getattr(msg, "child_frame_id", ""),
+            "position_x": pose.position.x,
+            "position_y": pose.position.y,
+            "position_z": pose.position.z,
+            "orientation_x": pose.orientation.x,
+            "orientation_y": pose.orientation.y,
+            "orientation_z": pose.orientation.z,
+            "orientation_w": pose.orientation.w,
+            "linear_x": twist.linear.x,
+            "linear_y": twist.linear.y,
+            "linear_z": twist.linear.z,
+            "angular_x": twist.angular.x,
+            "angular_y": twist.angular.y,
+            "angular_z": twist.angular.z,
+        }
+
+    def _within_rate_limit(self, stamp_ns: int) -> bool:
+        max_rate = self.params["max_save_rate_hz"]
+        if max_rate <= 0.0 or self.last_saved_ns is None:
+            return True
+        return stamp_ns - self.last_saved_ns >= int(1e9 / max_rate)
+
+    def _within_duration_limit(self) -> bool:
+        limit = self.params["max_session_duration_sec"]
+        if limit <= 0.0:
+            return True
+        return (datetime.now() - self.started_at).total_seconds() <= limit
+
+    def _within_disk_limit(self) -> bool:
+        limit_gb = self.params["max_disk_usage_gb"]
+        if limit_gb <= 0.0:
+            return True
+        total = 0
+        for path in self.session_dir.rglob("*"):
+            if path.is_file():
+                try:
+                    total += path.stat().st_size
+                except OSError:
+                    pass
+        return total / (1024 ** 3) <= limit_gb
+
+    def _debug_tick(self) -> None:
+        now_ns = ros_time_to_ns(self.get_clock().now())
+        missing = []
+        if len(self.front_buffer) == 0:
+            missing.append("front_image")
+        if len(self.motor_buffer) == 0:
+            missing.append("motor")
+        if len(self.label_buffer) == 0:
+            missing.append("mission_label")
+        if self.params["save_scan_npz"] and len(self.scan_buffer) == 0:
+            missing.append("scan")
+        if missing:
+            self._warn_once(f"waiting for: {', '.join(missing)}")
+
+        motor_publishers = self.get_publishers_info_by_topic(self.params["motor_topic"])
+        if len(motor_publishers) > 1:
+            self._warn_once(
+                f"{self.params['motor_topic']} has {len(motor_publishers)} publishers"
+            )
+        self.get_logger().info(
+            "samples=%d images=%d scans=%d skipped(motor=%d,label=%d,speed=%d,rate=%d) "
+            "buffers(front=%d,motor=%d,label=%d,scan=%d) now_ns=%d"
+            % (
+                self.sample_count,
+                self.image_count,
+                self.scan_count,
+                self.skipped_missing_motor,
+                self.skipped_label_filter,
+                self.skipped_speed_filter,
+                self.skipped_rate_limit,
+                len(self.front_buffer),
+                len(self.motor_buffer),
+                len(self.label_buffer),
+                len(self.scan_buffer),
+                now_ns,
+            )
+        )
+        self._write_metadata(final=False)
+
+    def _warn_once(self, message: str) -> None:
+        if message not in self.warnings:
+            self.warnings.append(message)
+            self.get_logger().warn(message)
+
+    def _write_metadata(self, final: bool) -> None:
+        data = {
+            "package": "il_data_tools",
+            "node": "il_common_recorder",
+            "session_id": self.session_id,
+            "dataset_profile": self.params["dataset_profile"],
+            "session_dir": str(self.session_dir),
+            "started_at": self.started_at.isoformat(),
+            "updated_at": datetime.now().isoformat(),
+            "finished": bool(final),
+            "allowed_labels": self.allowed_labels,
+            "parameters": self.params,
+            "sample_count": self.sample_count,
+            "image_count": self.image_count,
+            "scan_count": self.scan_count,
+            "skipped_missing_motor": self.skipped_missing_motor,
+            "skipped_label_filter": self.skipped_label_filter,
+            "skipped_speed_filter": self.skipped_speed_filter,
+            "skipped_rate_limit": self.skipped_rate_limit,
+            "skipped_disk_limit": self.skipped_disk_limit,
+            "warnings": self.warnings,
+            "safety": {
+                "publishes_xycar_motor": False,
+                "note": "This recorder only subscribes to /xycar_motor.",
+            },
+        }
+        atomic_write_json(self.session_dir / "metadata.json", data)
+
+    def close(self) -> None:
+        self.csv_handle.flush()
+        self.csv_handle.close()
+        self._flush_debug_handles()
+        for handle in [self.imu_handle, self.odom_handle]:
+            if handle is not None:
+                handle.close()
+        self._write_metadata(final=True)
+
+    def _flush_debug_handles(self) -> None:
+        for handle in [self.imu_handle, self.odom_handle]:
+            if handle is not None:
+                handle.flush()
+
+
+def main(args=None) -> None:
+    rclpy.init(args=args)
+    node = ILCommonRecorder()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.close()
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

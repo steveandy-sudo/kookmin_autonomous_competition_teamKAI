@@ -1,256 +1,1064 @@
 # il_data_tools
 
-`il_data_tools`는 2026 국민대학교 자율주행 경진대회 결선 연습에서 Team K.A.I.가 자이카 ROS2 Y모델의 모방학습 데이터를 안전하게 모으기 위한 ROS2 Humble 패키지입니다.
+Team K.A.I. imitation learning 데이터 수집용 ROS2 Humble Python 패키지입니다.
 
-이 패키지는 기본적으로 기록만 합니다. `/xycar_motor`에 명령을 publish하지 않으므로 기존 `track_drive`, `my_motor`, 수동조종, Docker 기반 VESC 브리지와 충돌하지 않도록 설계했습니다.
+이 패키지는 자율주행 로직을 바꾸지 않습니다. `/xycar_motor`를 publish하지 않고, 이미 주행 코드나 사람이 만든 `/xycar_motor` 명령을 구독해서 학습용 데이터로 저장하는 역할만 합니다.
 
-## 왜 이미지 + 모터 명령 + 미션 라벨이 필요한가
+## 역할 분리
 
-모방학습 데이터는 "그 상황에서 사람이 어떤 조향/속도 명령을 냈는지"를 배워야 합니다. 그래서 기본 샘플은 앞 카메라 이미지, 같은 시각의 `/xycar_motor` 명령, 현재 미션 라벨, LiDAR scan을 함께 가집니다.
+이 패키지의 책임:
 
-미션 라벨은 나중에 데이터를 거르는 데 중요합니다. 예를 들어 차선주행, 콘주행, 언덕, 보행자 회피, 차량 추종/추월, 신호등 출발, 경로 선택, shortcut, parking, recovery 데이터를 섞어 하나의 모델에 넣을지, 미션별 정책으로 나눌지 결정할 수 있습니다.
+- 전방/측면/후방 카메라 이미지 저장
+- LiDAR scan 저장
+- 현재 `/xycar_motor`의 조향각과 속도 기록
+- 현재 mission label 기록
+- 데이터셋 세션 폴더 생성
+- `samples.csv` 중심의 학습용 인덱스 생성
 
-`timestamp_ns`는 센서와 명령을 같은 순간 기준으로 묶기 위해 필요합니다. 카메라, LiDAR, 모터 명령은 들어오는 시간이 조금씩 다르므로 timestamp가 있어야 "이 이미지와 가장 가까운 조향각/속도/scan"을 찾을 수 있고, 나중에 raw bag 재변환이나 데이터 품질 검사도 할 수 있습니다.
+이 패키지가 하지 않는 일:
 
-속도는 꼭 학습 target으로 쓰지 않아도 됩니다. 실차에서는 속도를 rule-based로 정하는 것이 더 안전할 수 있습니다. 그래도 속도 값은 거의 용량을 쓰지 않으므로 저장해두는 것을 추천합니다. 나중에 정지 프레임 제거, 저속/고속 구간 분리, 사람이 어떤 상황에서 속도를 줄였는지 분석할 때 쓸 수 있습니다.
+- `/xycar_motor` publish
+- rule-based mission 판단
+- 신호등 stop/go 판단
+- 보행자 정지 판단
+- 최종 속도 결정
+- 긴급정지 판단
+- 주행 코드 수정
 
-## 안전 경고
+최종 `/xycar_motor` publish는 rule-based 주행/미션 코드 한 곳에서만 해야 합니다.
 
-실차에서는 `/xycar_motor` publisher가 하나만 있어야 합니다. recorder는 publisher를 만들지 않지만, 수동조종 코드와 자율주행 코드가 동시에 켜져 있으면 차량이 위험하게 움직일 수 있습니다.
+## 설치 위치
 
-주행 전에 항상 다음을 확인하세요.
+기존 repository root가 `track_drive` ROS2 패키지라면, 그 안에 `package.xml`을 또 만들면 안 됩니다.
+
+권장 구조는 `~/xycar_ws/src` 아래 sibling 패키지로 두는 방식입니다.
 
 ```bash
-ros2 topic info /xycar_motor -v
+/home/xytron/xycar_ws/src/
+  track_drive/
+  il_data_tools/
 ```
 
-`Publisher count`가 2 이상이면 주행하지 말고 중복 실행된 제어 노드를 먼저 끄세요.
-
-## 설치
-
-이 폴더를 자이카 워크스페이스의 `src` 아래에 둡니다.
+## 빌드
 
 ```bash
-cd /home/xytron/xycar_ws
-colcon build --symlink-install --packages-select il_data_tools
+cd ~/xycar_ws
+colcon build --packages-select il_data_tools
 source install/setup.bash
-ros2 pkg executables il_data_tools
 ```
 
-기대되는 executable:
-
-```text
-il_data_tools dataset_recorder_node
-il_data_tools mission_labeler_node
-```
-
-## 실차 preflight 체크리스트
-
-1. 메인 배터리와 프로세서 전원이 정상인지 확인합니다.
-2. 모터를 사용할 경우 Motor Docker/VESC 브리지가 필요한지 확인하고 별도 터미널에서 실행합니다.
-3. 센서 토픽이 살아 있는지 확인합니다.
-4. `/xycar_motor` publisher/subscriber 수를 확인합니다.
-5. `~/xycar_ws` 디스크 공간을 확인합니다.
-
-추천 명령:
+필요한 ROS2 의존성이 빠져 있으면 먼저 설치합니다.
 
 ```bash
-bash ~/xycar_ws/src/il_data_tools/scripts/check_topics.sh
+sudo apt update
+sudo apt install -y ros-humble-cv-bridge python3-opencv python3-numpy
 ```
 
-## 추천 데이터 수집 절차
+## 실행 전 확인
 
-터미널 1: 모터 Docker 브리지 실행. 모터를 실제로 쓸 때만 실행합니다.
-
-터미널 2: 미션 라벨러 실행.
+자이카에서 토픽이 정상적으로 나오는지 확인합니다.
 
 ```bash
-source ~/xycar_ws/install/setup.bash
-ros2 run il_data_tools mission_labeler_node
+ros2 run il_data_tools check_topics.sh
 ```
 
-터미널 3: dataset recorder 또는 raw rosbag recorder 실행.
+확인 대상:
+
+- `/usb_cam/image_raw/front`
+- `/scan`
+- `/imu`
+- `/xycar_motor`
+- `~/xycar_ws` 디스크 용량
+
+## mission labeler
+
+데이터 수집 중 현재 구간의 label을 사람이 키보드로 지정하는 노드입니다.
+
+실행:
 
 ```bash
-source ~/xycar_ws/install/setup.bash
-ros2 launch il_data_tools record_dataset.launch.py session_name:=lane_run_01
+ros2 run il_data_tools il_mission_labeler
 ```
 
-또는 raw bag을 먼저 저장합니다.
+publish topic:
 
 ```bash
-bash ~/xycar_ws/src/il_data_tools/scripts/record_bag.sh
+/il/mission_label
 ```
 
-터미널 4: 기존 주행 코드나 수동조종 코드를 실행합니다. 이 터미널만 `/xycar_motor`를 publish하도록 관리하세요.
-
-## 가장 안전한 첫 실행
-
-아래 명령은 차량을 제어하지 않고 front camera, motor command, mission label만 기록합니다.
+publish rate:
 
 ```bash
-ros2 launch il_data_tools record_dataset.launch.py session_name:=dry_run save_scan_npz:=true save_side_images:=false
+5 Hz
 ```
+
+키보드 매핑:
+
+| 키 | label |
+|---|---|
+| `0` | `idle` |
+| `1` | `general_drive` |
+| `2` | `lane_drive` |
+| `3` | `hill_drive` |
+| `4` | `shortcut` |
+| `5` | `recovery` |
+| `6` | `cone_drive` |
+| `7` | `vehicle_overtake` |
+| `8` | `overtake_start` |
+| `9` | `overtake_end` |
+| `p` | `parking` |
+| `b` | `bad_data` |
+| `r` | `red_light_wait` |
+| `h` | `pedestrian_wait` |
+| `q` | quit |
+
+## recorder
+
+공통 데이터 수집 노드입니다.
+
+실행 파일:
+
+```bash
+ros2 run il_data_tools il_common_recorder
+```
+
+기본 구독 토픽:
+
+| 데이터 | 기본 토픽 |
+|---|---|
+| front camera | `/usb_cam/image_raw/front` |
+| left camera | `/usb_cam/image_raw/left` |
+| right camera | `/usb_cam/image_raw/right` |
+| rear camera | `/usb_cam/image_raw/behind` |
+| LiDAR | `/scan` |
+| IMU | `/imu` |
+| odom | `/odom` |
+| motor command | `/xycar_motor` |
+| mission label | `/il/mission_label` |
+
+## launch presets
+
+일반 주행 데이터:
+
+```bash
+ros2 launch il_data_tools record_drive_dataset.launch.py
+```
+
+저장 label:
+
+- `general_drive`
+- `lane_drive`
+- `hill_drive`
+- `shortcut`
+- `recovery`
+
+기본값:
+
+- `save_scan_npz=false`
+
+콘 주행 데이터:
+
+```bash
+ros2 launch il_data_tools record_cone_dataset.launch.py
+```
+
+저장 label:
+
+- `cone_drive`
+- `recovery`
+
+기본값:
+
+- `save_scan_npz=true`
+
+추월 데이터:
+
+```bash
+ros2 launch il_data_tools record_overtake_dataset.launch.py
+```
+
+저장 label:
+
+- `vehicle_overtake`
+- `overtake_start`
+- `overtake_end`
+- `recovery`
+
+기본값:
+
+- `save_scan_npz=true`
+
+## 저장 구조
 
 기본 저장 위치:
 
-```text
-~/xycar_ws/datasets/il/YYYYMMDD_HHMMSS_session_name/
-  metadata.json
-  samples.csv
-  images/front/*.jpg
-  images/left/*.jpg
-  images/right/*.jpg
-  images/rear/*.jpg
-  scan/*.npz
-  debug/
+```bash
+~/xycar_ws/datasets/il/<profile>/<YYYYMMDD_HHMMSS_session_name>/
 ```
 
-`metadata.json`은 세션당 1개만 생기는 작은 설정/요약 파일입니다. 학습에는 필수는 아니지만 나중에 어떤 토픽과 설정으로 모았는지 추적할 때 도움이 됩니다. 용량을 더 줄이고 싶으면 `write_metadata:=false`로 끌 수 있습니다.
-
-`README_session.md`는 기본으로 저장하지 않습니다. 세션별 설명 파일이 필요할 때만 `write_session_readme:=true`로 켜세요.
-
-## Mission labeler 키
-
-```text
-0: idle
-1: lane_drive
-2: cone_drive
-3: hill_drive
-4: pedestrian_avoid
-5: vehicle_follow
-6: vehicle_overtake
-7: traffic_light_start
-8: route_select
-9: shortcut
-p: parking
-r: recovery
-x: bad_data
-q: quit
-```
-
-라벨러는 현재 라벨을 `/il/mission_label`로 5 Hz 주기로 계속 publish합니다.
-
-## 주요 launch 옵션
+예:
 
 ```bash
-ros2 launch il_data_tools record_dataset.launch.py \
-  session_name:=cone_run_01 \
-  camera_front_topic:=/usb_cam/image_raw/front \
-  motor_topic:=/xycar_motor \
-  mission_label_topic:=/il/mission_label \
-  save_side_images:=false \
-  save_scan_npz:=true \
-  save_rate_hz:=10.0 \
-  image_format:=jpg \
-  jpeg_quality:=90
+~/xycar_ws/datasets/il/drive/20260708_153012_lane_test/
 ```
 
-기본 motor 메시지는 `xycar_msgs/msg/XycarMotor`입니다. 참고한 `xycar_ws` 안에는 일부 예제가 `std_msgs/Float32MultiArray`를 `/xycar_motor`에 publish하는 경우도 있으므로, 그런 환경에서는 아래처럼 바꿔 실행할 수 있습니다.
+세션 내부 구조:
 
 ```bash
-ros2 launch il_data_tools record_dataset.launch.py motor_msg_type:=std_msgs/Float32MultiArray
+metadata.json
+samples.csv
+images/front/*.jpg
+images/left/*.jpg
+images/right/*.jpg
+images/rear/*.jpg
+scan/*.npz
+debug/
+debug/imu.csv
+debug/odom.csv
+README_session.md
 ```
 
-## raw rosbag 기록
+`samples.csv` 한 줄은 학습에서 하나의 sample index 역할을 합니다.
+
+컬럼:
+
+| 컬럼 | 의미 |
+|---|---|
+| `timestamp_ns` | sample 기준 시간, nanosecond |
+| `front_image_path` | 전방 이미지 상대 경로 |
+| `left_image_path` | 좌측 이미지 상대 경로 |
+| `right_image_path` | 우측 이미지 상대 경로 |
+| `rear_image_path` | 후방 이미지 상대 경로 |
+| `scan_npz_path` | LiDAR npz 상대 경로 |
+| `motor_angle` | `/xycar_motor`에서 읽은 조향값 |
+| `motor_speed` | `/xycar_motor`에서 읽은 속도값 |
+| `mission_label` | 저장 시점 label |
+| `dataset_profile` | `drive`, `cone`, `overtake` |
+| `source_mode` | `manual`, `rule_based`, `unknown` 등 |
+| `session_id` | 세션 ID |
+| `lap_index` | lap 번호 |
+| `notes` | 메모 |
+
+이미지와 scan 파일 경로는 세션 폴더 기준 상대 경로로 저장됩니다. 데이터셋 폴더를 다른 컴퓨터로 옮겨도 `samples.csv`를 그대로 읽기 쉽도록 하기 위해서입니다.
+
+## LiDAR 저장 형식
+
+LiDAR는 `sensor_msgs/LaserScan` 메시지를 `.npz`로 저장합니다.
+
+저장 key:
+
+| key | 의미 |
+|---|---|
+| `ranges` | 각 angle bin의 거리값 배열 |
+| `intensities` | 반사 강도 배열 |
+| `angle_min` | 첫 ray 각도, rad |
+| `angle_max` | 마지막 ray 각도, rad |
+| `angle_increment` | ray 사이 각도 간격, rad |
+| `time_increment` | ray 사이 시간 간격 |
+| `scan_time` | scan 한 바퀴 또는 한 frame 시간 |
+| `range_min` | 센서 최소 유효 거리 |
+| `range_max` | 센서 최대 유효 거리 |
+| `stamp_ns` | scan timestamp |
+| `frame_id` | scan frame id |
+
+학습에서 LiDAR를 쓰지 않는 모델은 `scan_npz_path`를 무시하면 됩니다. 추후 cone/overtake에서 전방 장애물 거리, 빈 공간, 차량 추월 phase 판단 보조 feature로 사용할 수 있습니다.
+
+## IMU/odom 저장
+
+IMU와 odom은 기본적으로 구독만 하고 파일로 저장하지 않습니다. 필요할 때만 아래 파라미터를 켭니다.
 
 ```bash
-bash ~/xycar_ws/src/il_data_tools/scripts/record_bag.sh
+save_imu:=true
+save_odom:=true
 ```
 
-환경변수로 토픽을 바꿀 수 있습니다.
+켜면 세션의 `debug/` 폴더 아래에 보조 CSV가 생깁니다.
+
+- `debug/imu.csv`
+- `debug/odom.csv`
+
+이 파일들은 학습 기본 index인 `samples.csv` 형식을 바꾸지 않기 위한 보조 기록입니다.
+
+## 주요 파라미터
+
+| 파라미터 | 기본값 | 설명 |
+|---|---:|---|
+| `output_root` | `~/xycar_ws/datasets/il` | 데이터셋 root |
+| `session_name` | `session` | 세션 이름 |
+| `dataset_profile` | `drive` | `drive`, `cone`, `overtake` |
+| `allowed_labels` | profile 기본값 | 저장 허용 label |
+| `save_front_image` | `true` | 전방 이미지 저장 |
+| `save_side_images` | `false` | 좌/우/후방 이미지 저장 |
+| `save_scan_npz` | `false` | LiDAR npz 저장 |
+| `save_imu` | `false` | `debug/imu.csv` 저장 |
+| `save_odom` | `false` | `debug/odom.csv` 저장 |
+| `image_format` | `jpg` | 이미지 포맷 |
+| `jpeg_quality` | `90` | JPG 품질 |
+| `max_save_rate_hz` | `10.0` | 최대 저장 주기 |
+| `min_abs_speed_to_save` | `0.0` | 저장할 최소 절대 속도 |
+| `save_when_stopped` | `false` | 정지 상태 저장 허용 |
+| `require_motor_command` | `true` | motor command 없으면 저장 안 함 |
+| `approximate_sync_tolerance_sec` | `0.10` | timestamp 근사 동기화 허용 범위 |
+| `flush_every_n_samples` | `20` | CSV flush 주기 |
+| `max_session_duration_sec` | `0.0` | 세션 최대 시간, 0이면 제한 없음 |
+| `max_disk_usage_gb` | `0.0` | 세션 최대 용량, 0이면 제한 없음 |
+| `enable_recording_on_start` | `true` | 시작하자마자 저장 |
+| `exclude_bad_data` | `true` | `bad_data` 제외 |
+| `exclude_idle` | `true` | `idle` 제외 |
+| `exclude_zero_speed` | `false` | 속도 0 제외 |
+| `debug_print_period_sec` | `5.0` | 상태 로그 주기 |
+
+## 예시 실행
+
+터미널 1:
 
 ```bash
-FRONT_CAMERA_TOPIC=/image_raw \
-REAR_CAMERA_TOPIC=/usb_cam/image_raw/rear \
-bash ~/xycar_ws/src/il_data_tools/scripts/record_bag.sh
-```
-
-이 스크립트는 시작 전에 topic list, topic hz 확인 명령, 디스크 사용량, `/xycar_motor` publisher 수를 출력합니다. Docker는 자동으로 시작하거나 종료하지 않습니다.
-
-## rosbag을 dataset으로 변환
-
-ROS2 Humble의 `rosbag2_py`, `cv_bridge`, OpenCV가 사용 가능한 환경에서는 다음처럼 변환할 수 있습니다.
-
-```bash
-source /opt/ros/humble/setup.bash
 source ~/xycar_ws/install/setup.bash
-python3 ~/xycar_ws/src/il_data_tools/scripts/bag_to_dataset.py \
-  ~/xycar_ws/bags/il/run_YYYYMMDD_HHMMSS \
-  --session-name bag_lane_01
+ros2 run il_data_tools il_mission_labeler
 ```
 
-만약 `rosbag2_py`로 직접 읽기가 실패하면 fallback 방식으로 재생하면서 recorder로 다시 저장하세요.
+터미널 2:
 
 ```bash
-ros2 launch il_data_tools record_dataset.launch.py session_name:=bag_replay
-ros2 bag play ~/xycar_ws/bags/il/run_YYYYMMDD_HHMMSS
+source ~/xycar_ws/install/setup.bash
+ros2 launch il_data_tools record_drive_dataset.launch.py session_name:=lane_practice_01
 ```
 
-## dataset 요약
+터미널 3:
+
+사람이 직접 운전하거나 기존 rule-based 주행 코드를 실행합니다.
+
+수집 중 labeler 터미널에서 현재 구간에 맞는 키를 누릅니다.
+
+예:
+
+- 차선 주행: `2`
+- 언덕: `3`
+- 지름길: `4`
+- 복구 주행: `5`
+- 실패 구간: `b`
+
+`bad_data`, `idle`은 기본 설정에서 저장되지 않습니다.
+
+## rosbag 백업
+
+원본 토픽을 bag으로도 남기고 싶을 때 사용합니다.
 
 ```bash
-python3 ~/xycar_ws/src/il_data_tools/scripts/summarize_dataset.py \
-  ~/xycar_ws/datasets/il/YYYYMMDD_HHMMSS_lane_run_01
+ros2 run il_data_tools record_drive_bag.sh
+ros2 run il_data_tools record_cone_bag.sh
+ros2 run il_data_tools record_overtake_bag.sh
 ```
 
-출력 내용:
+bag 저장 위치:
 
-- 전체 샘플 수
-- 라벨별 개수
-- angle/speed min, max, mean, std
-- 정지/이동 샘플 수
-- 누락 이미지 수
-- 샘플 rate 추정
-- 가장 큰 시간 간격 10개
+```bash
+~/xycar_ws/bags/il/
+```
 
-## 미션별 권장 세션
+## 데이터셋 요약
 
-한 번에 모든 미션을 섞어 모으기보다 아래처럼 짧고 분명한 세션으로 나누는 것을 추천합니다.
+수집 후 세션 상태를 빠르게 확인합니다.
 
-- `lane_drive`
-- `cone_drive`
-- `hill_drive`
-- `pedestrian_avoid`
-- `vehicle_follow`
-- `vehicle_overtake`
-- `traffic_light_start`
-- `route_select`
-- `shortcut`
+```bash
+ros2 run il_data_tools summarize_dataset.py ~/xycar_ws/datasets/il/drive/20260708_153012_lane_test
+```
+
+확인 내용:
+
+- 총 sample 수
+- label별 개수
+- 조향각 min/max/mean
+- 속도 min/max/mean
+- 이미지 파일 누락 여부
+- scan 파일 누락 여부
+
+## 학습 연결 기준
+
+현재 설계에서는 학습 모델이 steering만 예측합니다.
+
+- 입력: 이미지, 필요하면 LiDAR
+- 정답: `motor_angle`
+- 참고 정보: `mission_label`, `dataset_profile`
+- 사용하지 않을 수 있는 값: `motor_speed`
+
+속도는 rule-based 코드에서 결정하므로, 학습 target으로 쓰지 않아도 됩니다. 다만 데이터 분석과 상황 재현을 위해 `motor_speed`는 기록합니다.
+
+학습용 필터 예:
+
+- drive model: `general_drive`, `lane_drive`, `hill_drive`, `shortcut`
+- cone model: `cone_drive`
+- overtake model: `vehicle_overtake`, `overtake_start`, `overtake_end`
+
+실패/대기/정지 구간은 기본적으로 학습에서 제외하는 것을 권장합니다.
+
+- `bad_data`
+- `idle`
+- `red_light_wait`
+- `pedestrian_wait`
 - `parking`
+
+## 안전 원칙
+
+이 패키지는 기록 장치입니다.
+
+- `/xycar_motor` publish 금지
+- rule-based mission manager 수정 금지
+- 최종 motor command 결정 금지
+- 데이터 수집 중 저장 label을 잘못 누른 구간은 `bad_data`로 표시
+- 실차 수집 전 `check_topics.sh`로 토픽과 디스크 용량 확인
+
+## 학습용 CSV 빌더
+
+`il_data_tools`로 모은 원본 세션을 바로 학습에 넣기보다, 먼저 정책별 processed CSV로 변환합니다.
+
+생성되는 파일:
+
+```bash
+train.csv
+val.csv
+test.csv
+dataset_report.json
+```
+
+분할은 frame 단위가 아니라 session 단위로 합니다. 즉 같은 수집 세션의 frame이 train과 val/test에 섞이지 않습니다.
+
+공통 처리:
+
+- `samples.csv` 읽기
+- 이미지 파일 존재 확인
+- mission label 필터링
+- 기본 제외 label 제거
+- 정지 frame 제거
+- `steer_norm = motor_angle / max_steer_deg` 계산
+- `steer_norm`을 `[-1, 1]`로 clamp
+- train/val/test CSV 저장
+- 처리 통계를 `dataset_report.json`에 저장
+
+기본 제외 label:
+
+- `bad_data`
+- `idle`
+- `red_light_wait`
+- `pedestrian_wait`
+- `parking`
+
+기본 출력 컬럼:
+
+| 컬럼 | 의미 |
+|---|---|
+| `image_path` | 학습 입력 이미지 절대 경로 |
+| `steer_norm` | 정규화 조향값 |
+| `angle_deg` | 원본 조향값 |
+| `speed` | 원본 속도값 |
+| `mission_label` | 수집 당시 label |
+| `session_id` | 수집 세션 ID |
+| `timestamp_ns` | sample timestamp |
+
+### Drive Dataset
+
+사용 label:
+
+- `general_drive`
+- `lane_drive`
+- `hill_drive`
+- `shortcut`
 - `recovery`
 
-## 좋은 데이터와 나쁜 데이터
+제외되는 대표 label:
 
-좋은 데이터:
+- `cone_drive`
+- `vehicle_overtake`
+- `parking`
+- `idle`
+- `bad_data`
+- `red_light_wait`
+- `pedestrian_wait`
 
-- 차선 중앙을 유지하는 주행
-- 곡선 진입과 탈출
-- 좌/우로 벗어난 상태에서 정상 차선으로 복귀
-- 장애물에 천천히 접근하고 회피하는 장면
-- shortcut 진입/탈출 성공
-- parking 접근과 최종 정렬 성공
+실행 예:
 
-나쁜 데이터:
+```bash
+python3 scripts/build_drive_dataset.py \
+  --dataset-root /home/xytron/xycar_ws/datasets/il/drive \
+  --output-dir /home/xytron/xycar_ws/datasets/processed/drive \
+  --max-steer-deg 100
+```
 
-- 충돌
-- 차량이 멈춰 빠져나오지 못한 구간
-- 제어되지 않은 회전
-- 사람이 잘못 넣은 조향/속도 명령
-- 의도적으로 `idle`로 모으는 경우가 아닌 긴 정지 프레임
+선택 옵션:
 
-나쁜 구간은 가능하면 `x: bad_data`로 라벨링해서 학습 전에 제외할 수 있게 하세요.
+```bash
+--balance-steering
+--steering-bins 21
+--max-bin-samples 500
+--recovery-oversample-factor 2
+```
 
-## 학습 메모
+`--balance-steering`은 train split에서 조향 분포가 한쪽으로 몰릴 때 bin별 downsample을 합니다. `--recovery-oversample-factor`는 recovery sample을 train split에서 복제해 복구 상황 학습 비중을 높입니다.
 
-처음에는 조향 예측부터 시작하는 것을 추천합니다. 속도는 미션별 rule-based 로직으로 두는 편이 실차 안전을 관리하기 쉽습니다.
+### Cone Dataset
 
-미션 라벨은 데이터 필터링이나 미션별 모델 분리에 사용하세요. raw bag은 나중에 라벨을 다시 붙이거나 추가 센서를 포함해 재변환할 수 있으므로 가능하면 보관하는 것이 좋습니다.
+사용 label:
 
-## 이 패키지가 하지 않는 것
+- `cone_drive`
+- `recovery`
 
-- 딥러닝 학습 파이프라인을 만들지 않습니다.
-- 자율주행 로직을 추가하지 않습니다.
-- `track_drive`나 기존 패키지를 수정하지 않습니다.
-- recorder가 `/xycar_motor`에 publish하지 않습니다.
-- GPU가 있다고 가정하지 않습니다.
+Cone dataset은 현재 image-only 학습 CSV로 쓰되, 나중에 LiDAR 모델을 붙일 수 있도록 `scan_npz_path` 컬럼을 보존합니다.
+
+실행 예:
+
+```bash
+python3 scripts/build_cone_dataset.py \
+  --dataset-root /home/xytron/xycar_ws/datasets/il/cone \
+  --output-dir /home/xytron/xycar_ws/datasets/processed/cone \
+  --max-steer-deg 100
+```
+
+추가 출력 컬럼:
+
+| 컬럼 | 의미 |
+|---|---|
+| `scan_npz_path` | LiDAR `.npz` 절대 경로, 없으면 빈 값 |
+
+### Overtake Dataset
+
+사용 label:
+
+- `vehicle_overtake`
+- `overtake_start`
+- `overtake_end`
+- `recovery`
+
+Overtake dataset은 `phase` 컬럼을 추가합니다.
+
+- 같은 session 안에 `overtake_start`와 `overtake_end`가 있으면 그 사이를 `0.0`에서 `1.0`으로 선형 계산합니다.
+- start만 있으면 `start + --default-duration-sec`를 end로 봅니다.
+- end만 있으면 `end - --default-duration-sec`를 start로 봅니다.
+- 둘 다 없으면 첫 `vehicle_overtake` frame부터 `--default-duration-sec` 동안 phase를 계산합니다.
+
+실행 예:
+
+```bash
+python3 scripts/build_overtake_dataset.py \
+  --dataset-root /home/xytron/xycar_ws/datasets/il/overtake \
+  --output-dir /home/xytron/xycar_ws/datasets/processed/overtake \
+  --max-steer-deg 100 \
+  --default-duration-sec 4.0
+```
+
+추가 출력 컬럼:
+
+| 컬럼 | 의미 |
+|---|---|
+| `phase` | 추월 진행도, `0.0`~`1.0` |
+| `scan_npz_path` | LiDAR `.npz` 절대 경로, 없으면 빈 값 |
+
+### 공통 옵션
+
+여러 dataset root나 session을 직접 지정할 수 있습니다.
+
+```bash
+python3 scripts/build_drive_dataset.py \
+  --dataset-root /home/xytron/xycar_ws/datasets/il/drive \
+  --session-dir /home/xytron/xycar_ws/datasets/il/drive/20260708_153012_lane_test \
+  --output-dir /home/xytron/xycar_ws/datasets/processed/drive \
+  --max-steer-deg 100
+```
+
+정지 frame 기준을 바꾸려면:
+
+```bash
+--min-abs-speed 1.0
+```
+
+정지 frame도 학습에 포함하려면:
+
+```bash
+--keep-stopped
+```
+
+split 비율과 random seed를 바꾸려면:
+
+```bash
+--val-ratio 0.1 --test-ratio 0.1 --seed 2026
+```
+
+## 학습 모델 후보
+
+최종 모델은 validation loss 하나만 보고 고르지 않습니다.
+
+최종 선택 기준:
+
+- 조향 오차가 낮을 것
+- 저속 실차 주행이 안정적일 것
+- Jetson Orin Nano에서 p95 inference latency가 35~50ms 아래일 것
+- 심한 steering oscillation이 없을 것
+- TorchScript 또는 ONNX 배포가 쉬울 것
+- rule-based safety 쪽에 regression을 만들지 않을 것
+
+모든 policy는 steering만 출력합니다. speed, stop/go, emergency stop, 최종 `/xycar_motor` publish는 rule-based 코드가 계속 담당합니다.
+
+학습 스크립트는 PyTorch, torchvision, OpenCV가 필요합니다. 학습 PC나 Jetson 환경에 맞는 PyTorch를 먼저 설치해야 합니다.
+
+지원 `model_type`:
+
+| model_type | 용도 |
+|---|---|
+| `pilotnet` | 가볍고 빠른 baseline |
+| `mobilenet_v3_small` | 경량 CNN 비교 후보 |
+| `resnet18` | drive 기본 후보, 성능 비교용 CNN |
+| `vit_tiny` | 실험용 후보, 최종 후보로 바로 선택하지 않음 |
+
+정책별 기본값:
+
+| policy | 기본 모델 |
+|---|---|
+| `drive` | `resnet18` |
+| `cone` | `pilotnet` |
+| `overtake` | `pilotnet_phase` |
+
+`model_type` 옵션에는 기본 모델 이름만 넣습니다.
+
+```bash
+--model-type pilotnet
+--model-type mobilenet_v3_small
+--model-type resnet18
+--model-type vit_tiny
+```
+
+추월 정책은 기본 `phase_mode=auto`에서 phase 입력을 자동으로 사용합니다. 그래서 `policy=overtake`, `model_type=pilotnet`이면 실제 variant는 `pilotnet_phase`가 됩니다. 비교 실험으로 `resnet18_phase`를 만들고 싶으면 `--policy overtake --model-type resnet18`을 사용합니다.
+
+### 학습 실행 예시
+
+Drive 기본 후보:
+
+```bash
+python3 scripts/train_policy.py \
+  --policy drive \
+  --train-csv /home/xytron/xycar_ws/datasets/processed/drive/train.csv \
+  --val-csv /home/xytron/xycar_ws/datasets/processed/drive/val.csv \
+  --output-dir /home/xytron/xycar_ws/models/drive_resnet18 \
+  --model-type resnet18 \
+  --max-steer-deg 100
+```
+
+Cone 기본 후보:
+
+```bash
+python3 scripts/train_policy.py \
+  --policy cone \
+  --train-csv /home/xytron/xycar_ws/datasets/processed/cone/train.csv \
+  --val-csv /home/xytron/xycar_ws/datasets/processed/cone/val.csv \
+  --output-dir /home/xytron/xycar_ws/models/cone_pilotnet \
+  --model-type pilotnet \
+  --max-steer-deg 100
+```
+
+Cone 비교 후보:
+
+```bash
+python3 scripts/train_policy.py \
+  --policy cone \
+  --train-csv /home/xytron/xycar_ws/datasets/processed/cone/train.csv \
+  --val-csv /home/xytron/xycar_ws/datasets/processed/cone/val.csv \
+  --output-dir /home/xytron/xycar_ws/models/cone_resnet18 \
+  --model-type resnet18 \
+  --max-steer-deg 100
+```
+
+Overtake 기본 후보:
+
+```bash
+python3 scripts/train_policy.py \
+  --policy overtake \
+  --train-csv /home/xytron/xycar_ws/datasets/processed/overtake/train.csv \
+  --val-csv /home/xytron/xycar_ws/datasets/processed/overtake/val.csv \
+  --output-dir /home/xytron/xycar_ws/models/overtake_pilotnet_phase \
+  --model-type pilotnet \
+  --max-steer-deg 100
+```
+
+Overtake 비교 후보:
+
+```bash
+python3 scripts/train_policy.py \
+  --policy overtake \
+  --train-csv /home/xytron/xycar_ws/datasets/processed/overtake/train.csv \
+  --val-csv /home/xytron/xycar_ws/datasets/processed/overtake/val.csv \
+  --output-dir /home/xytron/xycar_ws/models/overtake_resnet18_phase \
+  --model-type resnet18 \
+  --max-steer-deg 100
+```
+
+학습 결과:
+
+```bash
+<policy>_policy_<model_variant>.pth
+<policy>_policy_<model_variant>_scripted.pt
+<policy>_policy_scripted.pt
+<policy>_policy_<model_variant>_report.json
+```
+
+`.pth`는 학습 checkpoint이고, `.pt`는 실시간 실행에 넣기 쉬운 TorchScript 모델입니다.
+
+ONNX도 같이 만들려면:
+
+```bash
+--export-onnx
+```
+
+### Jetson Orin Nano Benchmark
+
+Jetson Orin Nano에서 TorchScript latency를 확인합니다.
+
+```bash
+python3 scripts/benchmark_policy_model.py \
+  --model /home/xytron/xycar_ws/models/drive_resnet18/drive_policy_scripted.pt \
+  --device cuda \
+  --iterations 500
+```
+
+Phase 입력이 있는 overtake 모델은:
+
+```bash
+python3 scripts/benchmark_policy_model.py \
+  --model /home/xytron/xycar_ws/models/overtake_pilotnet_phase/overtake_policy_scripted.pt \
+  --phase-enabled \
+  --device cuda \
+  --iterations 500
+```
+
+보고서의 `p95_ms`가 35~50ms 목표를 넘으면, validation loss가 좋아도 실차 후보에서 제외하거나 더 가벼운 모델로 비교해야 합니다.
+
+## 오프라인 학습 파이프라인
+
+이 학습 파이프라인은 ROS 없이 CSV와 이미지 파일만으로 실행됩니다. 목적은 `drive`, `cone`, `overtake` 세 steering-only policy를 학습하고, 여러 후보 모델을 같은 기준으로 비교하는 것입니다.
+
+이 단계에서 하지 않는 일:
+
+- `track_drive` 주행 코드 수정
+- rule-based mission logic 구현
+- `/xycar_motor` publish
+- 속도 학습
+- 신호등/보행자/긴급정지 판단
+
+모든 학습 모델은 조향값만 출력합니다. 속도, stop/go, emergency stop, sensor timeout, parking, 최종 `/xycar_motor` publish는 rule-based 코드가 담당합니다.
+
+### 모델을 여러 개 비교하는 이유
+
+validation loss가 낮은 모델이 실차에서 항상 좋은 모델은 아닙니다. 실제 최종 후보는 다음을 함께 만족해야 합니다.
+
+- offline validation 조향 오차가 낮음
+- Jetson Orin Nano에서 p95 latency가 35~50ms 이하
+- 저속 closed-loop 실차 주행이 안정적
+- 심한 steering oscillation 없음
+- TorchScript 또는 ONNX 배포가 쉬움
+- penalty risk와 safety compatibility가 좋음
+
+### 모델 후보
+
+| 후보 | 설명 |
+|---|---|
+| `pilotnet` | 가장 가볍고 빠른 baseline CNN |
+| `mobilenet_v3_small` | 경량 CNN 비교 후보 |
+| `resnet18` | drive 기본 후보, 안정적인 CNN baseline |
+| `vit_tiny` | experimental only |
+
+ViT-Tiny는 데이터가 많이 필요하고, Jetson latency가 불리할 수 있으며, timm 같은 선택 의존성이 필요합니다. 그래서 기본 후보가 아니라 실험용으로만 둡니다.
+
+phase-conditioned 후보:
+
+- `pilotnet_phase`
+- `mobilenet_v3_small_phase`
+- `resnet18_phase`
+- `vit_tiny_phase`
+
+Overtake policy는 phase 입력을 사용합니다.
+
+- `phase=0.0`: shift-out start
+- `phase=0.5`: passing
+- `phase=1.0`: return/finish
+
+### 추천 기본 후보
+
+| policy | 추천 시작점 |
+|---|---|
+| drive | `resnet18` |
+| cone | `pilotnet` 먼저, `resnet18` 비교 |
+| overtake | `pilotnet_phase` 먼저, `resnet18_phase` 비교 |
+
+### 주요 스크립트
+
+| 파일 | 역할 |
+|---|---|
+| `scripts/policy_models.py` | PilotNet, MobileNetV3-Small, ResNet18, ViT-Tiny, phase wrapper |
+| `scripts/policy_dataset.py` | processed CSV 이미지 Dataset |
+| `scripts/train_policy.py` | 통합 학습 스크립트 |
+| `scripts/train_drive_policy.py` | drive 기본 wrapper |
+| `scripts/train_cone_policy.py` | cone 기본 wrapper |
+| `scripts/train_overtake_policy.py` | overtake 기본 wrapper |
+| `scripts/eval_policy.py` | TorchScript offline 평가 |
+| `scripts/visualize_policy_predictions.py` | prediction debug 이미지/그래프 생성 |
+| `scripts/export_policy_torchscript.py` | `.pth`에서 TorchScript `.pt` export |
+| `scripts/export_policy_onnx.py` | `.pth`에서 ONNX export |
+| `scripts/benchmark_policy_runtime.py` | Jetson Orin Nano latency benchmark |
+| `scripts/compare_models.py` | eval/benchmark 결과 비교 report |
+
+### 학습 예시
+
+Drive ResNet18:
+
+```bash
+python3 scripts/train_drive_policy.py \
+  --train-csv /home/xytron/xycar_ws/datasets/processed/drive/train.csv \
+  --val-csv /home/xytron/xycar_ws/datasets/processed/drive/val.csv \
+  --output-dir /home/xytron/xycar_ws/models/il_policies/drive_resnet18 \
+  --model-type resnet18 \
+  --epochs 50 \
+  --batch-size 128 \
+  --lr 1e-4 \
+  --max-steer-deg 100 \
+  --input-width 160 \
+  --input-height 90
+```
+
+Drive MobileNetV3-Small:
+
+```bash
+python3 scripts/train_drive_policy.py \
+  --train-csv /home/xytron/xycar_ws/datasets/processed/drive/train.csv \
+  --val-csv /home/xytron/xycar_ws/datasets/processed/drive/val.csv \
+  --output-dir /home/xytron/xycar_ws/models/il_policies/drive_mobilenet \
+  --model-type mobilenet_v3_small \
+  --epochs 50 \
+  --batch-size 128 \
+  --lr 1e-4 \
+  --max-steer-deg 100 \
+  --input-width 160 \
+  --input-height 90
+```
+
+Cone PilotNet:
+
+```bash
+python3 scripts/train_cone_policy.py \
+  --train-csv /home/xytron/xycar_ws/datasets/processed/cone/train.csv \
+  --val-csv /home/xytron/xycar_ws/datasets/processed/cone/val.csv \
+  --output-dir /home/xytron/xycar_ws/models/il_policies/cone_pilotnet \
+  --model-type pilotnet \
+  --epochs 50 \
+  --batch-size 128 \
+  --lr 1e-4 \
+  --max-steer-deg 100 \
+  --input-width 160 \
+  --input-height 90
+```
+
+Cone ResNet18:
+
+```bash
+python3 scripts/train_cone_policy.py \
+  --train-csv /home/xytron/xycar_ws/datasets/processed/cone/train.csv \
+  --val-csv /home/xytron/xycar_ws/datasets/processed/cone/val.csv \
+  --output-dir /home/xytron/xycar_ws/models/il_policies/cone_resnet18 \
+  --model-type resnet18 \
+  --epochs 50 \
+  --batch-size 128 \
+  --lr 1e-4 \
+  --max-steer-deg 100 \
+  --input-width 160 \
+  --input-height 90
+```
+
+Overtake PilotNet + phase:
+
+```bash
+python3 scripts/train_overtake_policy.py \
+  --train-csv /home/xytron/xycar_ws/datasets/processed/overtake/train.csv \
+  --val-csv /home/xytron/xycar_ws/datasets/processed/overtake/val.csv \
+  --output-dir /home/xytron/xycar_ws/models/il_policies/overtake_pilotnet_phase \
+  --model-type pilotnet_phase \
+  --use-phase \
+  --epochs 50 \
+  --batch-size 128 \
+  --lr 1e-4 \
+  --max-steer-deg 100 \
+  --input-width 160 \
+  --input-height 90
+```
+
+Overtake ResNet18 + phase:
+
+```bash
+python3 scripts/train_overtake_policy.py \
+  --train-csv /home/xytron/xycar_ws/datasets/processed/overtake/train.csv \
+  --val-csv /home/xytron/xycar_ws/datasets/processed/overtake/val.csv \
+  --output-dir /home/xytron/xycar_ws/models/il_policies/overtake_resnet18_phase \
+  --model-type resnet18_phase \
+  --use-phase \
+  --epochs 50 \
+  --batch-size 128 \
+  --lr 1e-4 \
+  --max-steer-deg 100 \
+  --input-width 160 \
+  --input-height 90
+```
+
+학습 결과:
+
+```bash
+<policy_name>_<model_type>_best.pth
+<policy_name>_<model_type>_scripted.pt
+train_config.json
+metrics.json
+val_predictions.csv
+```
+
+최종 후보로 확정한 모델만 generic runtime 파일명으로 복사합니다.
+
+```bash
+--mark-final
+```
+
+그러면 다음 파일도 같이 만들어집니다.
+
+```bash
+drive_policy_scripted.pt
+cone_policy_scripted.pt
+overtake_policy_scripted.pt
+```
+
+### Offline Evaluation
+
+```bash
+python3 scripts/eval_policy.py \
+  --csv /home/xytron/xycar_ws/datasets/processed/drive/test.csv \
+  --model /home/xytron/xycar_ws/models/il_policies/drive_resnet18/drive_resnet18_scripted.pt \
+  --model-type resnet18 \
+  --output-dir /home/xytron/xycar_ws/eval/drive_resnet18 \
+  --input-width 160 \
+  --input-height 90 \
+  --max-steer-deg 100
+```
+
+저장:
+
+- `predictions.csv`
+- `eval_metrics.json`
+
+### Prediction Visualization
+
+```bash
+python3 scripts/visualize_policy_predictions.py \
+  --predictions-csv /home/xytron/xycar_ws/eval/drive_resnet18/predictions.csv \
+  --output-dir /home/xytron/xycar_ws/eval/drive_resnet18/debug_images \
+  --top-n 50 \
+  --random-n 50
+```
+
+저장:
+
+- 큰 오차 top N 이미지
+- random N 이미지
+- target vs prediction plot
+- error histogram
+- phase-bin error plot, overtake일 때
+
+### TorchScript Export
+
+```bash
+python3 scripts/export_policy_torchscript.py \
+  --checkpoint /home/xytron/xycar_ws/models/il_policies/drive_resnet18/drive_resnet18_best.pth \
+  --output /home/xytron/xycar_ws/models/il_policies/drive_resnet18/drive_resnet18_scripted.pt \
+  --model-type resnet18 \
+  --input-width 160 \
+  --input-height 90
+```
+
+Overtake phase 모델:
+
+```bash
+python3 scripts/export_policy_torchscript.py \
+  --checkpoint /home/xytron/xycar_ws/models/il_policies/overtake_pilotnet_phase/overtake_pilotnet_phase_best.pth \
+  --output /home/xytron/xycar_ws/models/il_policies/overtake_pilotnet_phase/overtake_pilotnet_phase_scripted.pt \
+  --model-type pilotnet_phase \
+  --use-phase \
+  --input-width 160 \
+  --input-height 90
+```
+
+### ONNX Export
+
+```bash
+python3 scripts/export_policy_onnx.py \
+  --checkpoint /home/xytron/xycar_ws/models/il_policies/drive_resnet18/drive_resnet18_best.pth \
+  --output /home/xytron/xycar_ws/models/il_policies/drive_resnet18/drive_resnet18.onnx \
+  --model-type resnet18 \
+  --input-width 160 \
+  --input-height 90
+```
+
+ONNX/TensorRT FP16은 TorchScript가 Jetson에서 충분히 빠르지 않을 때 다음 단계로 검토합니다.
+
+### Jetson Orin Nano Benchmark
+
+Jetson에서 직접 실행합니다.
+
+```bash
+python3 scripts/benchmark_policy_runtime.py \
+  --model /home/xytron/xycar_ws/models/il_policies/drive_resnet18/drive_resnet18_scripted.pt \
+  --device cuda \
+  --input-width 160 \
+  --input-height 90 \
+  --iters 500
+```
+
+Overtake phase 모델:
+
+```bash
+python3 scripts/benchmark_policy_runtime.py \
+  --model /home/xytron/xycar_ws/models/il_policies/overtake_pilotnet_phase/overtake_pilotnet_phase_scripted.pt \
+  --use-phase \
+  --device cuda \
+  --input-width 160 \
+  --input-height 90 \
+  --iters 500
+```
+
+Latency 기준:
+
+| p95 latency | 판단 |
+|---:|---|
+| `<20 ms` | excellent |
+| `20~35 ms` | good |
+| `35~50 ms` | acceptable |
+| `50~80 ms` | risky |
+| `>80 ms` | too slow |
+
+### Model Comparison
+
+```bash
+python3 scripts/compare_models.py \
+  --eval-metrics /home/xytron/xycar_ws/eval/drive_resnet18/eval_metrics.json \
+  --eval-metrics /home/xytron/xycar_ws/eval/drive_mobilenet/eval_metrics.json \
+  --benchmark-json /home/xytron/xycar_ws/eval/drive_resnet18/benchmark.json \
+  --benchmark-json /home/xytron/xycar_ws/eval/drive_mobilenet/benchmark.json \
+  --output-dir /home/xytron/xycar_ws/eval/model_comparison
+```
+
+저장:
+
+- `model_comparison.csv`
+- `model_comparison.md`
+
+score는 낮을수록 좋습니다.
+
+```text
+score =
+  0.35 * normalized_val_mae
+  + 0.25 * normalized_p95_latency
+  + 0.20 * normalized_max_error
+  + 0.10 * normalized_model_size
+  + 0.10 * penalty_for_missing_phase_bins_or_failures
+```
+
+이 점수도 자동 최종 결정을 의미하지 않습니다. 마지막 선택은 offline eval, Jetson benchmark, 저속 실차 주행, steering oscillation, safety compatibility, penalty risk를 같이 보고 정합니다.

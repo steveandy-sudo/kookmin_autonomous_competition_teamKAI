@@ -3,7 +3,7 @@
 <package format="3">
   <name>il_data_tools</name>
   <version>0.1.0</version>
-  <description>Non-invasive imitation-learning data collection tools for the Xycar ROS2 Y-model.</description>
+  <description>Safe imitation-learning data collection tools for Team K.A.I. Xycar ROS2.</description>
   <maintainer email="team.kai@example.com">Team K.A.I.</maintainer>
   <license>Apache-2.0</license>
 
@@ -17,7 +17,6 @@
   <exec_depend>cv_bridge</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
-  <exec_depend>rosbag2_py</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
 

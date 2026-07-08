@@ -1,92 +1,84 @@
 #!/usr/bin/env python3
-
 import argparse
 import csv
 import math
 from collections import Counter
 from pathlib import Path
-from statistics import mean, pstdev
-from typing import Iterable, List
 
 
-def as_float(value: str):
+def as_float(value):
     try:
         number = float(value)
-        if math.isfinite(number):
-            return number
     except (TypeError, ValueError):
         return None
-    return None
+    return number if math.isfinite(number) else None
 
 
-def describe(name: str, values: Iterable[float]) -> None:
-    cleaned = [value for value in values if value is not None]
-    if not cleaned:
-        print(f"{name}: no numeric values")
-        return
-    print(
-        f"{name}: min={min(cleaned):.4f}, max={max(cleaned):.4f}, "
-        f"mean={mean(cleaned):.4f}, std={pstdev(cleaned):.4f}"
-    )
+def stats(values):
+    values = [v for v in values if v is not None]
+    if not values:
+        return {"count": 0, "min": None, "max": None, "mean": None}
+    return {
+        "count": len(values),
+        "min": min(values),
+        "max": max(values),
+        "mean": sum(values) / len(values),
+    }
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Summarize an il_data_tools dataset.")
-    parser.add_argument("dataset_dir", type=Path)
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("dataset_dir", help="Session directory containing samples.csv")
     args = parser.parse_args()
 
-    dataset_dir = args.dataset_dir.expanduser().resolve()
-    samples_csv = dataset_dir / "samples.csv"
-    if not samples_csv.exists():
-        raise SystemExit(f"samples.csv not found: {samples_csv}")
+    dataset_dir = Path(args.dataset_dir).expanduser().resolve()
+    csv_path = dataset_dir / "samples.csv"
+    if not csv_path.exists():
+        raise SystemExit(f"samples.csv not found: {csv_path}")
 
-    with samples_csv.open(newline="", encoding="utf-8") as handle:
+    rows = []
+    with csv_path.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
 
-    timestamps: List[int] = []
-    angles = []
-    speeds = []
-    missing_images = 0
-    labels = Counter()
+    labels = Counter(row.get("mission_label") or "unknown" for row in rows)
+    angles = [as_float(row.get("motor_angle")) for row in rows]
+    speeds = [as_float(row.get("motor_speed")) for row in rows]
+
+    missing_front = 0
+    missing_scan = 0
+    scan_rows = 0
+    for row in rows:
+        front = row.get("front_image_path") or ""
+        scan = row.get("scan_npz_path") or ""
+        if front and not (dataset_dir / front).exists():
+            missing_front += 1
+        if scan:
+            scan_rows += 1
+            if not (dataset_dir / scan).exists():
+                missing_scan += 1
+
+    timestamps = []
     for row in rows:
         try:
             timestamps.append(int(row.get("timestamp_ns") or "0"))
         except ValueError:
             pass
-        labels[row.get("mission_label") or "unknown"] += 1
-        angles.append(as_float(row.get("motor_angle", "")))
-        speeds.append(as_float(row.get("motor_speed", "")))
-        image_rel = row.get("image_front") or ""
-        if not image_rel or not (dataset_dir / image_rel).exists():
-            missing_images += 1
-
-    moving = sum(1 for speed in speeds if speed is not None and abs(speed) > 1e-6)
-    stopped = sum(1 for speed in speeds if speed is not None and abs(speed) <= 1e-6)
-    gaps = []
-    for left, right in zip(timestamps, timestamps[1:]):
-        gaps.append((right - left) / 1e9)
-
-    print(f"Dataset: {dataset_dir}")
-    print(f"Total samples: {len(rows)}")
-    print("Label counts:")
-    for label, count in labels.most_common():
-        print(f"  {label}: {count}")
-    describe("Angle", angles)
-    describe("Speed", speeds)
-    print(f"Stopped samples: {stopped}")
-    print(f"Moving samples: {moving}")
-    print(f"Missing front image count: {missing_images}")
+    timestamps.sort()
+    duration_sec = 0.0
     if len(timestamps) >= 2:
-        duration = (max(timestamps) - min(timestamps)) / 1e9
-        rate = (len(timestamps) - 1) / duration if duration > 0 else 0.0
-        print(f"Sample rate estimate: {rate:.3f} Hz over {duration:.3f} sec")
-    else:
-        print("Sample rate estimate: unavailable")
-    print("Top 10 largest time gaps:")
-    for gap in sorted(gaps, reverse=True)[:10]:
-        print(f"  {gap:.4f} sec")
-    return 0
+        duration_sec = (timestamps[-1] - timestamps[0]) / 1e9
+
+    print(f"dataset_dir: {dataset_dir}")
+    print(f"samples: {len(rows)}")
+    print(f"duration_sec: {duration_sec:.2f}")
+    print(f"estimated_rate_hz: {(len(rows) / duration_sec) if duration_sec > 0 else 0.0:.2f}")
+    print(f"labels: {dict(labels)}")
+    print(f"angle_stats: {stats(angles)}")
+    print(f"speed_stats: {stats(speeds)}")
+    print(f"front_missing_files: {missing_front}")
+    print(f"scan_rows: {scan_rows}")
+    print(f"scan_missing_files: {missing_scan}")
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
