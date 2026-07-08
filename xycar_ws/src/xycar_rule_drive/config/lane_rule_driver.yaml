@@ -1,0 +1,30 @@
+xycar_lane_rule_driver:
+  ros__parameters:
+    use_sim_time: true
+    road_segments_topic: /perception/road_segments
+    motor_topic: /xycar_motor
+    target_path_topic: /rule_drive/target_path
+    debug_markers_topic: /rule_drive/debug_markers
+    base_frame_id: base_footprint
+
+    lane_width_m: 0.80
+    min_lane_width_m: 0.35
+    max_lane_width_m: 1.20
+    min_segment_points: 4
+    min_target_points: 3
+    sample_count: 18
+
+    wheel_base_m: 0.32
+    steering_gain_rad_per_cmd: -0.0068
+    angle_command_min: -42.0
+    angle_command_max: 42.0
+    lookahead_distance_m: 1.20
+    min_lookahead_x_m: 0.45
+
+    speed_command: 1.5
+    min_speed_command: 0.8
+    slow_down_angle_cmd: 18.0
+    max_abs_angle_for_drive: 38.0
+    perception_timeout_sec: 0.40
+    command_rate_hz: 20.0
+    hold_last_path_sec: 0.25

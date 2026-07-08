@@ -88,6 +88,47 @@ RIGHT_S_NEG_AMP = 0.600
 RIGHT_S_FREQ = 4.0
 LEFT_TURN_CENTER_X = -6.816
 
+# Real Xycar motor path measured from the ROS1 VESC stack:
+# steering_angle(rad) = -0.0068 * angle_command, servo-clipped near +/-0.289 rad.
+XYCAR_BODY_LENGTH = 0.55
+XYCAR_BODY_WIDTH = 0.30
+XYCAR_BODY_HEIGHT = 0.12
+XYCAR_TOTAL_HEIGHT = 0.25
+XYCAR_WHEEL_Y = 0.1325
+XYCAR_STEERING_LINK_Y = 0.1200
+XYCAR_WHEEL_SEPARATION = 0.265
+XYCAR_KINGPIN_WIDTH = 0.240
+XYCAR_STEERING_LIMIT = 0.289
+XYCAR_SPEED_MIN = -4.0
+XYCAR_SPEED_MAX = 8.0
+XYCAR_CHASSIS_Z = 0.135
+XYCAR_FRONT_WHEEL_CENTER_X = 0.16
+XYCAR_FRONT_WHEEL_CENTER_Z = 0.06
+XYCAR_CAMERA_FROM_FRONT_WHEEL_X = 0.08
+XYCAR_CAMERA_FROM_FRONT_WHEEL_Z = 0.06
+XYCAR_LIDAR_FROM_FRONT_WHEEL_X = -0.04
+XYCAR_LIDAR_FROM_FRONT_WHEEL_Z = 0.17
+XYCAR_CAMERA_X = XYCAR_FRONT_WHEEL_CENTER_X + XYCAR_CAMERA_FROM_FRONT_WHEEL_X
+XYCAR_CAMERA_Z = (
+    XYCAR_FRONT_WHEEL_CENTER_Z
+    + XYCAR_CAMERA_FROM_FRONT_WHEEL_Z
+    - XYCAR_CHASSIS_Z
+)
+XYCAR_LIDAR_X = XYCAR_FRONT_WHEEL_CENTER_X + XYCAR_LIDAR_FROM_FRONT_WHEEL_X
+XYCAR_LIDAR_Z = (
+    XYCAR_FRONT_WHEEL_CENTER_Z
+    + XYCAR_LIDAR_FROM_FRONT_WHEEL_Z
+    - XYCAR_CHASSIS_Z
+)
+XYCAR_CAMERA_HFOV = math.radians(170.0)
+XYCAR_CAMERA_PITCH = 0.22
+XYCAR_LIDAR_SAMPLES = 505
+XYCAR_LIDAR_RANGE_MAX = 12.0
+XYCAR_SPAWN_X = -2.70
+XYCAR_SPAWN_Y = 2.25
+XYCAR_SPAWN_Z = 0.05
+XYCAR_SPAWN_YAW = 0.0
+
 WORLD_W = 22.50
 WORLD_H = 13.50
 IMG_W = 2250
@@ -2200,6 +2241,54 @@ def room_reference_links():
     return "".join(links)
 
 
+def room_context_object_model(name, pose, size, color):
+    x, y, z, roll, pitch, yaw = pose
+    sx, sy, sz = size
+    return f"""
+    <model name="room_{name}">
+      <static>true</static>
+      <pose>{x:.4f} {y:.4f} {z:.4f} {roll:.6f} {pitch:.6f} {yaw:.6f}</pose>
+      <link name="{name}">
+        <visual name="visual">
+          <geometry><box><size>{sx:.4f} {sy:.4f} {sz:.4f}</size></box></geometry>
+          {material_xml(color)}
+        </visual>
+      </link>
+    </model>"""
+
+
+def room_context_models():
+    wall = (220, 222, 214, 255)
+    locker = (48, 50, 50, 255)
+    table = (126, 98, 63, 255)
+    chair = (24, 25, 26, 255)
+    light = (245, 245, 235, 255)
+    cone = (220, 80, 24, 255)
+
+    objects = [
+        ("north_wall", (0, 6.70, 0.90, 0, 0, 0), (22.3, 0.06, 1.70), wall),
+        ("south_wall", (0, -6.70, 0.90, 0, 0, 0), (22.3, 0.06, 1.70), wall),
+        ("east_wall", (11.10, 0, 0.90, 0, 0, 0), (0.06, 13.2, 1.70), wall),
+        ("west_wall", (-11.10, 0, 0.90, 0, 0, 0), (0.06, 13.2, 1.70), wall),
+        ("north_wood_band", (0, 6.64, 0.20, 0, 0, 0), (22.1, 0.08, 0.40), COLORS["wood_dark"]),
+        ("south_wood_band", (0, -6.64, 0.20, 0, 0, 0), (22.1, 0.08, 0.40), COLORS["wood_dark"]),
+        ("locker_bank", (7.4, 5.95, 0.70, 0, 0, 0), (4.0, 0.18, 1.15), locker),
+        ("black_display_stand", (-7.0, 4.90, 0.75, 0, 0, 0), (1.4, 0.18, 1.10), locker),
+        ("orange_cone_reference", (6.4, -3.7, 0.18, 0, 0, 0), (0.18, 0.18, 0.36), cone),
+    ]
+
+    for idx, x in enumerate([-5.4, -3.6, -1.8, 0.0, 1.8]):
+        objects.append((f"table_top_{idx}", (x, 1.0, 0.43, 0, 0, 0), (1.30, 0.62, 0.06), table))
+        objects.append((f"chair_back_{idx}", (x, 1.43, 0.42, 0, 0, 0), (0.55, 0.08, 0.52), chair))
+        objects.append((f"chair_seat_{idx}", (x, 1.34, 0.26, 0, 0, 0), (0.48, 0.40, 0.08), chair))
+
+    for idx, x in enumerate([-8.0, -5.7, -3.4, -1.1, 1.2, 3.5, 5.8, 8.1]):
+        yaw = 0.2 if idx % 2 == 0 else -0.15
+        objects.append((f"ceiling_light_{idx}", (x, 0.5 + (idx % 3) * 1.7, 2.15, 0, 0, yaw), (1.10, 0.055, 0.035), light))
+
+    return "".join(room_context_object_model(name, pose, size, color) for name, pose, size, color in objects)
+
+
 def track_model():
     texture_uri = gz_resource_uri(ROAD_TEXTURE)
     return f"""
@@ -2318,18 +2407,18 @@ def short_centerline_white_models():
 
 
 def vehicle_model():
-    return """
+    return f"""
     <model name="xycar_ackermann">
-      <pose>-8.7000 5.1500 0.0500 0 0 0</pose>
+      <pose>{XYCAR_SPAWN_X:.4f} {XYCAR_SPAWN_Y:.4f} {XYCAR_SPAWN_Z:.4f} 0 0 {XYCAR_SPAWN_YAW:.4f}</pose>
       <link name="chassis">
-        <pose>0 0 0.135 0 0 0</pose>
+        <pose>0 0 {XYCAR_CHASSIS_Z:.3f} 0 0 0</pose>
         <inertial>
-          <mass>1.2</mass>
-          <inertia><ixx>0.03</ixx><ixy>0</ixy><ixz>0</ixz><iyy>0.08</iyy><iyz>0</iyz><izz>0.09</izz></inertia>
+          <mass>2.2</mass>
+          <inertia><ixx>0.055</ixx><ixy>0</ixy><ixz>0</ixz><iyy>0.13</iyy><iyz>0</iyz><izz>0.16</izz></inertia>
         </inertial>
-        <collision name="collision"><geometry><box><size>0.52 0.20 0.12</size></box></geometry></collision>
+        <collision name="collision"><geometry><box><size>{XYCAR_BODY_LENGTH:.3f} {XYCAR_BODY_WIDTH:.3f} {XYCAR_BODY_HEIGHT:.3f}</size></box></geometry></collision>
         <visual name="body">
-          <geometry><box><size>0.52 0.20 0.12</size></box></geometry>
+          <geometry><box><size>{XYCAR_BODY_LENGTH:.3f} {XYCAR_BODY_WIDTH:.3f} {XYCAR_BODY_HEIGHT:.3f}</size></box></geometry>
           <material><ambient>0.1 0.28 0.8 1</ambient><diffuse>0.1 0.28 0.8 1</diffuse></material>
         </visual>
         <visual name="front_marker">
@@ -2337,46 +2426,92 @@ def vehicle_model():
           <geometry><box><size>0.035 0.13 0.035</size></box></geometry>
           <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material>
         </visual>
+        <visual name="mini_pc_body">
+          <pose>-0.02 0 0.115 0 0 0</pose>
+          <geometry><box><size>0.17 0.13 0.07</size></box></geometry>
+          <material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse></material>
+        </visual>
+        <visual name="camera_body">
+          <pose>{XYCAR_CAMERA_X:.3f} 0 {XYCAR_CAMERA_Z - 0.015:.3f} 0 0 0</pose>
+          <geometry><box><size>0.045 0.060 0.035</size></box></geometry>
+          <material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse></material>
+        </visual>
+        <visual name="lidar_body">
+          <pose>{XYCAR_LIDAR_X:.3f} 0 {XYCAR_LIDAR_Z - 0.035:.3f} 0 0 0</pose>
+          <geometry><cylinder><length>0.035</length><radius>0.040</radius></cylinder></geometry>
+          <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        </visual>
+        <sensor name="front_camera" type="camera">
+          <pose>{XYCAR_CAMERA_X:.3f} 0 {XYCAR_CAMERA_Z:.3f} 0 {XYCAR_CAMERA_PITCH:.4f} 0</pose>
+          <topic>/image_raw</topic>
+          <update_rate>30</update_rate>
+          <camera>
+            <camera_info_topic>/camera_info</camera_info_topic>
+            <horizontal_fov>{XYCAR_CAMERA_HFOV:.4f}</horizontal_fov>
+            <image><width>640</width><height>480</height><format>R8G8B8</format></image>
+            <clip><near>0.03</near><far>20</far></clip>
+          </camera>
+          <always_on>true</always_on>
+          <visualize>false</visualize>
+        </sensor>
+        <sensor name="lidar" type="gpu_lidar">
+          <pose>{XYCAR_LIDAR_X:.3f} 0 {XYCAR_LIDAR_Z:.3f} 0 0 0</pose>
+          <topic>/scan</topic>
+          <update_rate>10</update_rate>
+          <ray>
+            <scan>
+              <horizontal>
+                <samples>{XYCAR_LIDAR_SAMPLES}</samples>
+                <resolution>1</resolution>
+                <min_angle>-3.14159</min_angle>
+                <max_angle>3.14159</max_angle>
+              </horizontal>
+            </scan>
+            <range><min>0.10</min><max>{XYCAR_LIDAR_RANGE_MAX:.1f}</max><resolution>0.01</resolution></range>
+          </ray>
+          <always_on>true</always_on>
+          <visualize>false</visualize>
+        </sensor>
       </link>
       <link name="front_left_wheel_steering_link">
-        <pose>0.16 0.10 0.06 0 0 0</pose>
+        <pose>0.16 {XYCAR_STEERING_LINK_Y:.4f} 0.06 0 0 0</pose>
         <inertial><mass>0.08</mass><inertia><ixx>0.0002</ixx><iyy>0.0002</iyy><izz>0.0002</izz></inertia></inertial>
       </link>
       <link name="front_right_wheel_steering_link">
-        <pose>0.16 -0.10 0.06 0 0 0</pose>
+        <pose>0.16 -{XYCAR_STEERING_LINK_Y:.4f} 0.06 0 0 0</pose>
         <inertial><mass>0.08</mass><inertia><ixx>0.0002</ixx><iyy>0.0002</iyy><izz>0.0002</izz></inertia></inertial>
       </link>
       <link name="front_left_wheel">
-        <pose>0.16 0.1125 0.06 -1.5707 0 0</pose>
+        <pose>0.16 {XYCAR_WHEEL_Y:.4f} 0.06 -1.5707 0 0</pose>
         <inertial><mass>0.12</mass><inertia><ixx>0.0004</ixx><iyy>0.0004</iyy><izz>0.00025</izz></inertia></inertial>
         <collision name="collision"><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry></collision>
         <visual name="visual"><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry><material><ambient>0.03 0.03 0.03 1</ambient><diffuse>0.03 0.03 0.03 1</diffuse></material></visual>
       </link>
       <link name="front_right_wheel">
-        <pose>0.16 -0.1125 0.06 -1.5707 0 0</pose>
+        <pose>0.16 -{XYCAR_WHEEL_Y:.4f} 0.06 -1.5707 0 0</pose>
         <inertial><mass>0.12</mass><inertia><ixx>0.0004</ixx><iyy>0.0004</iyy><izz>0.00025</izz></inertia></inertial>
         <collision name="collision"><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry></collision>
         <visual name="visual"><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry><material><ambient>0.03 0.03 0.03 1</ambient><diffuse>0.03 0.03 0.03 1</diffuse></material></visual>
       </link>
       <link name="rear_left_wheel">
-        <pose>-0.16 0.1125 0.06 -1.5707 0 0</pose>
+        <pose>-0.16 {XYCAR_WHEEL_Y:.4f} 0.06 -1.5707 0 0</pose>
         <inertial><mass>0.12</mass><inertia><ixx>0.0004</ixx><iyy>0.0004</iyy><izz>0.00025</izz></inertia></inertial>
         <collision name="collision"><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry></collision>
         <visual name="visual"><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry><material><ambient>0.03 0.03 0.03 1</ambient><diffuse>0.03 0.03 0.03 1</diffuse></material></visual>
       </link>
       <link name="rear_right_wheel">
-        <pose>-0.16 -0.1125 0.06 -1.5707 0 0</pose>
+        <pose>-0.16 -{XYCAR_WHEEL_Y:.4f} 0.06 -1.5707 0 0</pose>
         <inertial><mass>0.12</mass><inertia><ixx>0.0004</ixx><iyy>0.0004</iyy><izz>0.00025</izz></inertia></inertial>
         <collision name="collision"><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry></collision>
         <visual name="visual"><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry><material><ambient>0.03 0.03 0.03 1</ambient><diffuse>0.03 0.03 0.03 1</diffuse></material></visual>
       </link>
       <joint name="front_left_wheel_steering_joint" type="revolute">
         <parent>chassis</parent><child>front_left_wheel_steering_link</child>
-        <axis><xyz>0 0 1</xyz><limit><lower>-0.55</lower><upper>0.55</upper><velocity>2.0</velocity><effort>8</effort></limit></axis>
+        <axis><xyz>0 0 1</xyz><limit><lower>-{XYCAR_STEERING_LIMIT:.4f}</lower><upper>{XYCAR_STEERING_LIMIT:.4f}</upper><velocity>2.0</velocity><effort>8</effort></limit></axis>
       </joint>
       <joint name="front_right_wheel_steering_joint" type="revolute">
         <parent>chassis</parent><child>front_right_wheel_steering_link</child>
-        <axis><xyz>0 0 1</xyz><limit><lower>-0.55</lower><upper>0.55</upper><velocity>2.0</velocity><effort>8</effort></limit></axis>
+        <axis><xyz>0 0 1</xyz><limit><lower>-{XYCAR_STEERING_LIMIT:.4f}</lower><upper>{XYCAR_STEERING_LIMIT:.4f}</upper><velocity>2.0</velocity><effort>8</effort></limit></axis>
       </joint>
       <joint name="front_left_wheel_joint" type="revolute">
         <parent>front_left_wheel_steering_link</parent><child>front_left_wheel</child>
@@ -2401,13 +2536,13 @@ def vehicle_model():
         <right_joint>rear_right_wheel_joint</right_joint>
         <left_steering_joint>front_left_wheel_steering_joint</left_steering_joint>
         <right_steering_joint>front_right_wheel_steering_joint</right_steering_joint>
-        <kingpin_width>0.20</kingpin_width>
-        <steering_limit>0.5</steering_limit>
+        <kingpin_width>{XYCAR_KINGPIN_WIDTH:.3f}</kingpin_width>
+        <steering_limit>{XYCAR_STEERING_LIMIT:.4f}</steering_limit>
         <wheel_base>0.32</wheel_base>
-        <wheel_separation>0.225</wheel_separation>
+        <wheel_separation>{XYCAR_WHEEL_SEPARATION:.3f}</wheel_separation>
         <wheel_radius>0.06</wheel_radius>
-        <min_velocity>-1.0</min_velocity>
-        <max_velocity>1.5</max_velocity>
+        <min_velocity>{XYCAR_SPEED_MIN:.4f}</min_velocity>
+        <max_velocity>{XYCAR_SPEED_MAX:.4f}</max_velocity>
         <min_acceleration>-2</min_acceleration>
         <max_acceleration>2</max_acceleration>
       </plugin>
@@ -2639,6 +2774,9 @@ def sdf_world(include_gui=True):
     <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
     <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
     <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
     {gui}
     <scene>
       <ambient>0.75 0.75 0.75 1</ambient>
@@ -2653,6 +2791,7 @@ def sdf_world(include_gui=True):
       <direction>-0.45 0.20 -0.88</direction>
     </light>
     {track_model()}
+    {room_context_models()}
     {white_line_overlay_models()}
     {yellow_centerline_overlay_models()}
     {short_centerline_white_models()}

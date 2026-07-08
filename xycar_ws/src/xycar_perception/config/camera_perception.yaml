@@ -1,0 +1,53 @@
+xycar_camera_perception:
+  ros__parameters:
+    use_sim_time: true
+    image_topic: /image_raw
+    road_segments_topic: /perception/road_segments
+    centerline_topic: /perception/centerline
+    objects_topic: /perception/objects
+    traffic_lights_topic: /perception/traffic_lights
+    debug_image_topic: /perception/debug_image
+    debug_markers_topic: /perception/debug_markers
+    base_frame_id: base_footprint
+    source_name: xycar_camera_perception
+    publish_rate_limit_hz: 15.0
+    publish_empty_optional_topics: true
+
+    # Pixel ROI for the low front-facing Xycar camera.
+    roi_top_row: 230
+    roi_bottom_row: 470
+    row_step_px: 6
+    image_center_x_px: -1.0
+
+    # Vanishing-point inverse-perspective calibration. This keeps straight
+    # track lines straight in base_footprint even with the wide Gazebo camera.
+    projection_mode: vanishing_point
+    horizon_row_px: 236.0
+    vanishing_point_x_px: -1.0
+    ipm_x_scale_m_px: 67.0
+    ipm_y_scale_m_px: 0.18
+    horizon_min_denom_px: 8.0
+    min_projected_x_m: 0.20
+    max_projected_x_m: 5.00
+
+    # Legacy row-linear projection fallback.
+    near_x_m: 0.20
+    far_x_m: 2.20
+    near_m_per_px: 0.0022
+    far_m_per_px: 0.0065
+    lane_width_m: 0.80
+
+    min_cluster_width_px: 3
+    max_cluster_gap_px: 8
+    min_segment_points: 4
+    min_centerline_points: 3
+
+    white_s_max: 80
+    white_v_min: 145
+    yellow_h_min: 15
+    yellow_h_max: 42
+    yellow_s_min: 60
+    yellow_v_min: 110
+    morphology_kernel_px: 3
+    centerline_mode: lane_midline
+    use_yellow_as_centerline: false

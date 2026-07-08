@@ -1,0 +1,22 @@
+xycar_motor_bridge:
+  ros__parameters:
+    motor_topics:
+      - xycar_motor
+      - /xycar_motor
+    cmd_vel_topic: /model/xycar_ackermann/cmd_vel
+    wheel_base: 0.32
+
+    angle_command_min: -50.0
+    angle_command_max: 100.0
+    steering_gain: -0.0068
+    steering_min: -0.2881
+    steering_max: 0.2888
+
+    speed_command_min: -50.0
+    speed_command_max: 100.0
+    speed_gain: 0.08
+    speed_min: -4.0
+    speed_max: 8.0
+
+    cmd_timeout_sec: 0.5
+    debug_topic: /xycar_motor_bridge/debug

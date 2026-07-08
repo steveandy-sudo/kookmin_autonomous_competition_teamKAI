@@ -11,21 +11,71 @@
 | 항목 | 현재 시뮬 값 | SDF에서 바꿀 곳 |
 |---|---:|---|
 | 차량 모델 | `xycar_ackermann` | `<model name='xycar_ackermann'>` |
-| 차량 body 크기 | `0.52 x 0.20 x 0.12 m` | `chassis` box size |
-| 대략 차량 폭 | `0.26 m` | wheel y pose + wheel length |
+| 실차 프레임 기준 | `0.55 x 0.30 x 0.25 m` | Y모델 스펙 자료 |
+| Gazebo body 충돌 박스 | `0.55 x 0.30 x 0.12 m` | `chassis` box size |
+| 대략 차량 폭 | `0.30 m` | wheel y pose + wheel length |
 | wheelbase | `0.32 m` | `<wheel_base>` |
-| wheel separation | `0.225 m` | `<wheel_separation>` |
-| kingpin width | `0.20 m` | `<kingpin_width>` |
+| wheel separation | `0.265 m` | `<wheel_separation>` |
+| kingpin width | `0.240 m` | `<kingpin_width>` |
 | wheel radius | `0.06 m` | `<wheel_radius>` |
-| steering limit | `0.5 rad` 약 `28.6 deg` | `<steering_limit>` |
-| max velocity | `1.5 m/s` | `<max_velocity>` |
-| min velocity | `-1.0 m/s` | `<min_velocity>` |
+| steering limit | `0.289 rad` 약 `16.6 deg` | `<steering_limit>`, steering joint limit |
+| max velocity | `8.0 m/s` | `<max_velocity>` |
+| min velocity | `-4.0 m/s` | `<min_velocity>` |
+| camera | `/image_raw`, 640x480, 30Hz, HFOV 약 170도 | `front_camera` sensor |
+| lidar | `/scan`, 505 samples, 10Hz, `-pi~pi`, `0.1~12 m` | `lidar` sensor |
+| sensor origin | 앞바퀴 중심 기준 | 실차 측정 기준 |
+| camera pose | `(0.08, 0.00, 0.06) m` | 앞바퀴 중심 기준 |
+| lidar pose | `(-0.04, 0.00, 0.17) m` | 앞바퀴 중심 기준 |
+
+실차 카메라 영상에서 보이는 실내 기준물도 시뮬에 추가했다. 벽, 나무 몰딩, 락커, 책상/의자, 천장 조명, 콘은 `room_*` 접두어를 가진 **독립 Gazebo 모델**이다. Entity Tree에서 각각 선택해 이동/저장할 수 있고, 주행 물리에는 간섭하지 않도록 충돌 없는 시각 객체로만 둔다.
+
+2026-07-07 실차 조사에서 ROS1 VESC 모터 경로의 변환식이 확인되었으므로, Gazebo wrapper는 아래 값을 우선 기준으로 둔다.
+
+```text
+steering_angle(rad) = -0.0068 * angle_command
+speed_mps = 0.08 * speed_command
+angle_command clamp = -50 ~ 100
+speed_command clamp = -50 ~ 100
+servo clipping steering range ~= -0.2881 ~ +0.2888 rad
+```
+
+이를 반영해 `xycar_ws/src/xycar_gazebo_bridge` 패키지를 추가했다. 이 패키지는 `std_msgs/msg/Float32MultiArray [angle, speed]`를 받아 `/model/xycar_ackermann/cmd_vel` `geometry_msgs/msg/Twist`로 바꾼다.
 
 최종 맵 파일:
 
 ```bash
-gz sim worlds/kookmin_xycar_track_final.sdf
+gz sim -r worlds/kookmin_xycar_track_final.sdf
 ```
+
+실차 코드와 같은 모터 명령으로 Gazebo 차량을 움직일 때:
+
+```bash
+source /opt/ros/humble/setup.bash
+cd xycar_ws
+colcon build --packages-select xycar_gazebo_bridge
+export AMENT_PREFIX_PATH=$PWD/install/xycar_gazebo_bridge:${AMENT_PREFIX_PATH}
+source install/xycar_gazebo_bridge/share/xycar_gazebo_bridge/package.bash
+ros2 launch xycar_gazebo_bridge xycar_gazebo_bridge.launch.py
+```
+
+카메라/라이다를 RViz에서 확인할 때:
+
+```bash
+source /opt/ros/humble/setup.bash
+cd xycar_ws
+colcon build --packages-select xycar_gazebo_bridge --symlink-install
+export AMENT_PREFIX_PATH=$PWD/install/xycar_gazebo_bridge:${AMENT_PREFIX_PATH}
+source install/xycar_gazebo_bridge/share/xycar_gazebo_bridge/package.bash
+ros2 launch xycar_gazebo_bridge xycar_gazebo_rviz.launch.py
+```
+
+RViz는 Gazebo bridge의 원본 센서 토픽을 직접 본다.
+
+| 토픽 | RViz 표시 | frame_id |
+|---|---|---|
+| `/scan` | LaserScan display | `xycar_ackermann/chassis/lidar` |
+| `/image_raw` | Image display | `xycar_ackermann/chassis/front_camera` |
+| `/camera_info` | Camera info 확인용 | `xycar_ackermann/chassis/front_camera` |
 
 주의: `python3 scripts/generate_kookmin_track.py`를 다시 실행하면 Gazebo에서 수동 저장한 맵/차선 위치가 덮일 수 있다.
 
@@ -97,7 +147,7 @@ ros2 topic info xycar_motor
 | frame_id | `laser_frame` |
 | baudrate | `512000` |
 | angle_min / angle_max | `-180 deg / 180 deg` |
-| range_min / range_max | `0.1 m / 16.0 m` |
+| range_min / range_max | 코드 설정 후보 `0.1 m / 16.0 m`, Y모델 스펙 기준 `0.1 m / 12.0 m` |
 | frequency | `10 Hz` |
 | 코드 사용 range | `msg.ranges[1:505]` |
 | app_sensor_drive 비교 인덱스 | right `252-63`, left `252+63` |
@@ -173,8 +223,8 @@ ros2 topic pub --once /xycar_motor xycar_msgs/msg/XycarMotor "{angle: -20.0, spe
 | 차량 전체 폭 | 가장 왼쪽부터 가장 오른쪽까지 | chassis size, wheel pose |
 | 차량 높이 | 바닥부터 가장 높은 구조물까지 | chassis/sensor pose |
 | 무게 | 배터리 포함 주행 상태 | `<mass>` |
-| 카메라 위치 | rear axle 기준 x/y/z | camera sensor pose |
-| 라이다 위치 | rear axle 기준 x/y/z/yaw | lidar sensor pose |
+| 카메라 위치 | 앞바퀴 중심 기준 x/y/z | camera sensor pose |
+| 라이다 위치 | 앞바퀴 중심 기준 x/y/z/yaw | lidar sensor pose |
 | 카메라 pitch | 바닥 기준 아래로 숙인 각도 | camera pose |
 
 추천 좌표계:
@@ -182,9 +232,11 @@ ros2 topic pub --once /xycar_motor xycar_msgs/msg/XycarMotor "{angle: -20.0, spe
 - `x`: 차량 앞쪽이 `+`
 - `y`: 차량 왼쪽이 `+`
 - `z`: 위쪽이 `+`
-- 원점: 뒷바퀴 축 중심 또는 차량 중심 중 하나로 통일
+- 원점: 앞바퀴 중심
 
-룰베이스와 시뮬에서는 보통 rear axle 중심을 원점으로 두면 Ackermann 계산이 편하다.
+현재 시뮬과 RViz TF는 실차에서 측정한 앞바퀴 중심 기준 센서 좌표로 통일한다.
+Gazebo SDF 내부에서는 센서가 `chassis` 링크 아래에 붙어 있으므로,
+앞바퀴 중심 기준 좌표를 `chassis` 링크 기준 pose로 변환해서 넣는다.
 
 ### 2. 조향 범위와 조향 명령 매핑
 
@@ -310,7 +362,7 @@ atan(0.32 / 0.70) = 0.429 rad = 24.6 deg
 | FPS | `ros2 topic hz` | update_rate |
 | FOV | 카메라 모델/캘리브레이션 | horizontal_fov |
 | 카메라 높이 | 줄자 | pose z |
-| 카메라 x/y 위치 | rear axle 기준 측정 | pose x/y |
+| 카메라 x/y 위치 | 앞바퀴 중심 기준 측정 | pose x/y |
 | pitch angle | 각도기/영상 기반 | pose pitch |
 | exposure/brightness | 실제 주행 이미지 저장 | sim noise/domain randomization |
 | 왜곡 여부 | fish-eye/일반 렌즈 | undistort 여부 |
@@ -383,7 +435,7 @@ rclpy.spin(SaveOneImage())
 | range_min / range_max | topic echo |
 | FPS | `ros2 topic hz /scan` |
 | 라이다 높이 | 줄자 |
-| 라이다 x/y/yaw | rear axle 기준 측정 |
+| 라이다 x/y/yaw | 앞바퀴 중심 기준 측정 |
 
 확인 명령:
 
@@ -529,35 +581,36 @@ vehicle:
 
 steering:
   topic: /xycar_motor
-  message_type: std_msgs/msg/Float32MultiArray  # 실차에서 topic info로 확인. 대안: xycar_msgs/msg/XycarMotor
+  message_type: std_msgs/msg/Float32MultiArray
   float32_multi_array_order: [angle, speed]
-  command_min:
-  command_max:
-  center_command:
-  max_left_rad:
-  max_right_rad:
-  command_to_rad:
-    - [command, rad]
+  command_min: -50
+  command_max: 100
+  center_command: 0
+  steering_gain_rad_per_command: -0.0068
+  servo_limited_min_rad: -0.2881
+  servo_limited_max_rad: 0.2888
 
 speed:
   topic: /xycar_motor
   message_type: std_msgs/msg/Float32MultiArray
-  command_min:
-  command_max:
-  deadband_command:
-  command_to_mps:
-    - [command, mps]
+  command_min: -50
+  command_max: 100
+  speed_gain_mps_per_command: 0.08
+  command_limited_min_mps: -4.0
+  command_limited_max_mps: 8.0
 
 camera:
   topic: /image_raw
   width: 640
   height: 480
   fps: 30
-  horizontal_fov_deg:
-  x_m:
-  y_m:
-  z_m:
-  pitch_deg:
+  horizontal_fov_deg: 170
+  frame: front_wheel_center
+  x_m: 0.08
+  y_m: 0.0
+  z_m: 0.06
+  gazebo_chassis_pose_m: [0.240, 0.0, -0.015]
+  pitch_rad: 0.220
   roi_start_row: 300
   roi_end_row: 380
   roi_reference_row: 40
@@ -569,15 +622,18 @@ lidar:
   fps: 10
   angle_min_rad: -3.14159
   angle_max_rad: 3.14159
+  samples: 505
   range_min_m: 0.1
-  range_max_m: 16.0
+  range_max_m: 12.0
   used_range_slice: [1, 505]
   left_index_in_slice: 315
   right_index_in_slice: 189
-  x_m:
-  y_m:
-  z_m:
-  yaw_deg:
+  frame: front_wheel_center
+  x_m: -0.04
+  y_m: 0.0
+  z_m: 0.17
+  gazebo_chassis_pose_m: [0.120, 0.0, 0.095]
+  yaw_deg: 0.0
 ```
 
 이 YAML을 만든 뒤 시뮬 SDF와 rule-based 노드가 같은 값을 읽도록 만들면, 이후 BC/Offline RL 데이터셋도 같은 기준으로 정리할 수 있다.
