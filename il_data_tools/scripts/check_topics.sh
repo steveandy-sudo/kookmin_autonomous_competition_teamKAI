@@ -44,17 +44,17 @@ echo "== xycar_msgs interface =="
 if ros2 interface show xycar_msgs/msg/XycarMotor >/tmp/il_xycar_msgs_interface.txt 2>&1; then
   pass "xycar_msgs/msg/XycarMotor found"
 else
-  warn "xycar_msgs not found. This is OK for local dry-run if motor_msg_type:=float32_multi_array is used. Real Xycar runtime requires xycar_msgs/msg/XycarMotor."
+  warn "xycar_msgs not found. This is OK when /xycar_motor uses std_msgs/msg/Float32MultiArray. Use motor_msg_type:=xycar only when /xycar_motor is xycar_msgs/msg/XycarMotor."
 fi
 
 echo
-check_topic_exists "/usb_cam/image_raw/front"
+check_topic_exists "/image_raw"
 check_topic_exists "/scan"
 check_topic_exists "/imu"
 check_topic_exists "/xycar_motor"
 
 echo
-check_hz "/usb_cam/image_raw/front"
+check_hz "/image_raw"
 check_hz "/scan"
 check_hz "/imu"
 

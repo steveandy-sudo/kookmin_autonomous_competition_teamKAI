@@ -4,6 +4,21 @@ Team K.A.I. imitation learning 데이터 수집용 ROS2 Humble Python 패키지�
 
 이 패키지는 자율주행 로직을 바꾸지 않습니다. `/xycar_motor`를 publish하지 않고, 이미 주행 코드나 사람이 만든 `/xycar_motor` 명령을 구독해서 학습용 데이터로 저장하는 역할만 합니다.
 
+## 직접 쓰는 명령
+
+기본 사용에서는 아래 명령만 직접 실행하면 됩니다. 나머지 build/train helper 스크립트는 `train_from_raw_dataset.py`가 내부에서 호출합니다.
+
+```bash
+ros2 launch il_data_tools record_drive_dataset.launch.py session_name:=drive
+ros2 launch il_data_tools record_cone_dataset.launch.py session_name:=cone
+ros2 launch il_data_tools record_overtake_dataset.launch.py session_name:=overtake
+ros2 run il_data_tools train_from_raw_dataset.py --profile drive
+```
+
+`--profile`은 `drive`, `cone`, `overtake` 중 하나를 사용합니다.
+
+수집 명령은 같은 `session_name`을 반복해서 써도 자동으로 다음 번호를 붙입니다. 예를 들어 `session_name:=drive`를 반복 실행하면 `drive_01`, `drive_02`, `drive_03` 순서로 저장됩니다.
+
 ## 처음 읽을 문서
 
 처음 보는 사람은 [docs/IL_DATA_TOOLS_OVERVIEW.md](../docs/IL_DATA_TOOLS_OVERVIEW.md)부터 읽으세요.
@@ -21,7 +36,7 @@ Team K.A.I. imitation learning 데이터 수집용 ROS2 Humble Python 패키지�
 
 이 패키지의 책임:
 
-- 전방/측면/후방 카메라 이미지 저장
+- 전방 카메라 이미지 저장
 - LiDAR scan 저장
 - 현재 `/xycar_motor`의 조향각과 속도 기록
 - 현재 mission label 기록
@@ -77,7 +92,7 @@ ros2 run il_data_tools check_topics.sh
 
 확인 대상:
 
-- `/usb_cam/image_raw/front`
+- `/image_raw`
 - `/scan`
 - `/imu`
 - `/xycar_motor`
@@ -85,17 +100,17 @@ ros2 run il_data_tools check_topics.sh
 
 ## xycar_msgs가 없는 개발 노트북에서 테스트하는 방법
 
-실제 Xycar에서는 `/xycar_motor`가 보통 `xycar_msgs/msg/XycarMotor` 타입을 사용합니다.
-하지만 개발 노트북에는 `xycar_msgs` 패키지가 없을 수 있습니다. 이 경우 로컬 dry-run에서는
-`std_msgs/msg/Float32MultiArray` fallback을 사용하면 됩니다.
+다운로드된 Xycar workspace의 `track_drive`, `app_hough_drive`, `app_sensor_drive` 계열 코드는
+`/xycar_motor`를 `std_msgs/msg/Float32MultiArray` 타입으로 publish합니다.
+그래서 이 패키지의 기본 `motor_msg_type`도 `float32_multi_array`로 맞춰져 있습니다.
 
 로컬 테스트에서는 반드시 다음 원칙을 지킵니다.
 
-- recorder에는 `motor_msg_type:=float32_multi_array`를 넘깁니다.
+- recorder 기본값은 `motor_msg_type:=float32_multi_array`입니다.
 - motor topic은 `/test/xycar_motor`를 사용합니다.
 - 로컬 dummy publisher는 기본적으로 `/xycar_motor`에 publish하지 않습니다.
 - recorder는 어떤 설정에서도 `/xycar_motor`를 publish하지 않고 구독만 합니다.
-- 실차에서는 `xycar_msgs/msg/XycarMotor`가 설치된 상태에서 `motor_msg_type:=auto` 또는 `motor_msg_type:=xycar`를 사용합니다.
+- 사용하는 주행 코드가 `xycar_msgs/msg/XycarMotor`를 publish하는 경우에만 `motor_msg_type:=xycar`를 사용합니다.
 
 Terminal 1:
 
@@ -196,10 +211,7 @@ ros2 run il_data_tools il_common_recorder
 
 | 데이터 | 기본 토픽 |
 |---|---|
-| front camera | `/usb_cam/image_raw/front` |
-| left camera | `/usb_cam/image_raw/left` |
-| right camera | `/usb_cam/image_raw/right` |
-| rear camera | `/usb_cam/image_raw/behind` |
+| front camera | `/image_raw` |
 | LiDAR | `/scan` |
 | IMU | `/imu` |
 | odom | `/odom` |
@@ -224,7 +236,7 @@ ros2 launch il_data_tools record_drive_dataset.launch.py
 
 기본값:
 
-- `save_scan_npz=false`
+- `save_scan_npz=true`
 
 콘 주행 데이터:
 
@@ -278,9 +290,6 @@ ros2 launch il_data_tools record_overtake_dataset.launch.py
 metadata.json
 samples.csv
 images/front/*.jpg
-images/left/*.jpg
-images/right/*.jpg
-images/rear/*.jpg
 scan/*.npz
 debug/
 debug/imu.csv
@@ -296,18 +305,12 @@ README_session.md
 |---|---|
 | `timestamp_ns` | sample 기준 시간, nanosecond |
 | `front_image_path` | 전방 이미지 상대 경로 |
-| `left_image_path` | 좌측 이미지 상대 경로 |
-| `right_image_path` | 우측 이미지 상대 경로 |
-| `rear_image_path` | 후방 이미지 상대 경로 |
 | `scan_npz_path` | LiDAR npz 상대 경로 |
 | `motor_angle` | `/xycar_motor`에서 읽은 조향값 |
 | `motor_speed` | `/xycar_motor`에서 읽은 속도값 |
 | `mission_label` | 저장 시점 label |
 | `dataset_profile` | `drive`, `cone`, `overtake` |
-| `source_mode` | `manual`, `rule_based`, `unknown` 등 |
 | `session_id` | 세션 ID |
-| `lap_index` | lap 번호 |
-| `notes` | 메모 |
 
 이미지와 scan 파일 경로는 세션 폴더 기준 상대 경로로 저장됩니다. 데이터셋 폴더를 다른 컴퓨터로 옮겨도 `samples.csv`를 그대로 읽기 쉽도록 하기 위해서입니다.
 
@@ -331,7 +334,7 @@ LiDAR는 `sensor_msgs/LaserScan` 메시지를 `.npz`로 저장합니다.
 | `stamp_ns` | scan timestamp |
 | `frame_id` | scan frame id |
 
-학습에서 LiDAR를 쓰지 않는 모델은 `scan_npz_path`를 무시하면 됩니다. 추후 cone/overtake에서 전방 장애물 거리, 빈 공간, 차량 추월 phase 판단 보조 feature로 사용할 수 있습니다.
+학습에서 LiDAR를 쓰지 않는 모델은 `scan_npz_path`를 무시하면 됩니다. 추후 drive/cone/overtake에서 전방 장애물 거리, 빈 공간, 차량 추월 phase 판단 보조 feature로 사용할 수 있습니다.
 
 ## IMU/odom 저장
 
@@ -358,8 +361,7 @@ save_odom:=true
 | `dataset_profile` | `drive` | `drive`, `cone`, `overtake` |
 | `allowed_labels` | profile 기본값 | 저장 허용 label |
 | `save_front_image` | `true` | 전방 이미지 저장 |
-| `save_side_images` | `false` | 좌/우/후방 이미지 저장 |
-| `save_scan_npz` | `false` | LiDAR npz 저장 |
+| `save_scan_npz` | launch preset 기준 `true` | LiDAR npz 저장 |
 | `save_imu` | `false` | `debug/imu.csv` 저장 |
 | `save_odom` | `false` | `debug/odom.csv` 저장 |
 | `image_format` | `jpg` | 이미지 포맷 |

@@ -61,6 +61,7 @@ class ILCommonRecorder(Node):
             self.params["output_root"],
             self.params["dataset_profile"],
             self.params["session_name"],
+            auto_increment=self.params["session_auto_increment"],
         )
         self.csv_handle, self.csv_writer = open_samples_csv(
             self.session_dir / "samples.csv"
@@ -73,9 +74,6 @@ class ILCommonRecorder(Node):
         self.bridge = CvBridge() if CvBridge is not None else None
 
         self.front_buffer = TimedBuffer()
-        self.left_buffer = TimedBuffer()
-        self.right_buffer = TimedBuffer()
-        self.rear_buffer = TimedBuffer()
         self.scan_buffer = TimedBuffer()
         self.imu_buffer = TimedBuffer()
         self.odom_buffer = TimedBuffer()
@@ -108,20 +106,18 @@ class ILCommonRecorder(Node):
         defaults = {
             "output_root": "~/xycar_ws/datasets/il",
             "session_name": "session",
+            "session_auto_increment": True,
             "dataset_profile": "drive",
             "allowed_labels": "",
-            "camera_front_topic": "/usb_cam/image_raw/front",
-            "camera_left_topic": "/usb_cam/image_raw/left",
-            "camera_right_topic": "/usb_cam/image_raw/right",
-            "camera_rear_topic": "/usb_cam/image_raw/behind",
+            "camera_front_topic": "/image_raw",
             "scan_topic": "/scan",
             "imu_topic": "/imu",
             "odom_topic": "/odom",
             "motor_topic": "/xycar_motor",
-            "motor_msg_type": "auto",
+            "motor_msg_type": "float32_multi_array",
             "mission_label_topic": "/il/mission_label",
+            "default_mission_label": "idle",
             "save_front_image": True,
-            "save_side_images": False,
             "save_scan_npz": False,
             "save_imu": False,
             "save_odom": False,
@@ -140,9 +136,6 @@ class ILCommonRecorder(Node):
             "exclude_idle": True,
             "exclude_zero_speed": False,
             "debug_print_period_sec": 5.0,
-            "source_mode": "manual_or_rule",
-            "lap_index": -1,
-            "notes": "",
         }
         for key, value in defaults.items():
             self.declare_parameter(key, value)
@@ -151,20 +144,18 @@ class ILCommonRecorder(Node):
         return {
             "output_root": self._get_str("output_root"),
             "session_name": self._get_str("session_name"),
+            "session_auto_increment": self._get_bool("session_auto_increment"),
             "dataset_profile": self._get_str("dataset_profile"),
             "allowed_labels": self.get_parameter("allowed_labels").value,
             "camera_front_topic": self._get_str("camera_front_topic"),
-            "camera_left_topic": self._get_str("camera_left_topic"),
-            "camera_right_topic": self._get_str("camera_right_topic"),
-            "camera_rear_topic": self._get_str("camera_rear_topic"),
             "scan_topic": self._get_str("scan_topic"),
             "imu_topic": self._get_str("imu_topic"),
             "odom_topic": self._get_str("odom_topic"),
             "motor_topic": self._get_str("motor_topic"),
             "motor_msg_type": self._get_str("motor_msg_type"),
             "mission_label_topic": self._get_str("mission_label_topic"),
+            "default_mission_label": self._get_str("default_mission_label"),
             "save_front_image": self._get_bool("save_front_image"),
-            "save_side_images": self._get_bool("save_side_images"),
             "save_scan_npz": self._get_bool("save_scan_npz"),
             "save_imu": self._get_bool("save_imu"),
             "save_odom": self._get_bool("save_odom"),
@@ -185,9 +176,6 @@ class ILCommonRecorder(Node):
             "exclude_idle": self._get_bool("exclude_idle"),
             "exclude_zero_speed": self._get_bool("exclude_zero_speed"),
             "debug_print_period_sec": max(self._get_float("debug_print_period_sec"), 1.0),
-            "source_mode": self._get_str("source_mode"),
-            "lap_index": self._get_int("lap_index"),
-            "notes": self._get_str("notes"),
         }
 
     def _get_str(self, name: str) -> str:
@@ -213,13 +201,15 @@ class ILCommonRecorder(Node):
         if value == "auto":
             if XycarMotor is not None:
                 self.get_logger().info(
-                    "motor_msg_type=auto resolved to xycar_msgs/msg/XycarMotor"
+                    "motor_msg_type=auto resolved to xycar_msgs/msg/XycarMotor. "
+                    "If /xycar_motor is std_msgs/msg/Float32MultiArray, use "
+                    "motor_msg_type:=float32_multi_array."
                 )
                 return XycarMotor, "xycar_msgs/msg/XycarMotor"
             self.get_logger().warn(
                 "xycar_msgs is not installed; motor_msg_type=auto resolved to "
-                "std_msgs/msg/Float32MultiArray for local dry-run. "
-                "Use motor_msg_type:=xycar on the real Xycar when xycar_msgs is installed."
+                "std_msgs/msg/Float32MultiArray. Check `ros2 topic info /xycar_motor -v` "
+                "and set motor_msg_type explicitly if needed."
             )
             return Float32MultiArray, "std_msgs/msg/Float32MultiArray"
 
@@ -227,8 +217,8 @@ class ILCommonRecorder(Node):
             if XycarMotor is None:
                 raise RuntimeError(
                     "motor_msg_type:=xycar requested, but xycar_msgs is not installed. "
-                    "Install xycar_msgs on the real Xycar, or use "
-                    "motor_msg_type:=float32_multi_array for local dry-run."
+                    "Install xycar_msgs, or use motor_msg_type:=float32_multi_array "
+                    "when /xycar_motor is std_msgs/msg/Float32MultiArray."
                 )
             self.get_logger().info("motor_msg_type resolved to xycar_msgs/msg/XycarMotor")
             return XycarMotor, "xycar_msgs/msg/XycarMotor"
@@ -236,7 +226,8 @@ class ILCommonRecorder(Node):
         if value in float_array_values:
             self.get_logger().warn(
                 "motor_msg_type resolved to std_msgs/msg/Float32MultiArray. "
-                "This is intended for local dry-run topics such as /test/xycar_motor."
+                "Use motor_msg_type:=xycar only when /xycar_motor is published as "
+                "xycar_msgs/msg/XycarMotor."
             )
             return Float32MultiArray, "std_msgs/msg/Float32MultiArray"
 
@@ -249,14 +240,12 @@ class ILCommonRecorder(Node):
     def _write_static_files(self) -> None:
         topics = {
             "camera_front_topic": self.params["camera_front_topic"],
-            "camera_left_topic": self.params["camera_left_topic"],
-            "camera_right_topic": self.params["camera_right_topic"],
-            "camera_rear_topic": self.params["camera_rear_topic"],
             "scan_topic": self.params["scan_topic"],
             "imu_topic": self.params["imu_topic"],
             "odom_topic": self.params["odom_topic"],
             "motor_topic": self.params["motor_topic"],
             "mission_label_topic": self.params["mission_label_topic"],
+            "default_mission_label": self.params["default_mission_label"],
         }
         write_session_readme(
             self.session_dir,
@@ -326,24 +315,6 @@ class ILCommonRecorder(Node):
             Image, self.params["camera_front_topic"], self._front_image_cb, qos
         )
         self.create_subscription(
-            Image,
-            self.params["camera_left_topic"],
-            lambda msg: self._image_to_buffer(self.left_buffer, msg),
-            qos,
-        )
-        self.create_subscription(
-            Image,
-            self.params["camera_right_topic"],
-            lambda msg: self._image_to_buffer(self.right_buffer, msg),
-            qos,
-        )
-        self.create_subscription(
-            Image,
-            self.params["camera_rear_topic"],
-            lambda msg: self._image_to_buffer(self.rear_buffer, msg),
-            qos,
-        )
-        self.create_subscription(
             LaserScan,
             self.params["scan_topic"],
             lambda msg: self.scan_buffer.add(stamp_to_ns(msg), msg),
@@ -370,9 +341,6 @@ class ILCommonRecorder(Node):
             self._mission_label_cb,
             qos,
         )
-
-    def _image_to_buffer(self, buffer: TimedBuffer, msg: Image) -> None:
-        buffer.add(stamp_to_ns(msg, ros_time_to_ns(self.get_clock().now())), msg)
 
     def _front_image_cb(self, msg: Image) -> None:
         stamp_ns = stamp_to_ns(msg, ros_time_to_ns(self.get_clock().now()))
@@ -421,7 +389,11 @@ class ILCommonRecorder(Node):
                 motor_angle, motor_speed = "", ""
 
         label_item = self.label_buffer.nearest(stamp_ns, tolerance_ns)
-        mission_label = string_from_msg(label_item.msg) if label_item else "idle"
+        mission_label = (
+            string_from_msg(label_item.msg)
+            if label_item
+            else self.params["default_mission_label"]
+        )
         if not self._label_allowed(mission_label):
             self.skipped_label_filter += 1
             return
@@ -430,25 +402,19 @@ class ILCommonRecorder(Node):
             self.skipped_speed_filter += 1
             return
 
-        paths = self._save_images(stamp_ns, front_msg)
+        front_path = self._save_front_image(stamp_ns, front_msg)
         scan_path = self._save_nearest_scan(stamp_ns, tolerance_ns)
         self._write_optional_debug_sample(stamp_ns, tolerance_ns)
 
         row = {
             "timestamp_ns": stamp_ns,
-            "front_image_path": relative_to_session(self.session_dir, paths["front"]),
-            "left_image_path": relative_to_session(self.session_dir, paths["left"]),
-            "right_image_path": relative_to_session(self.session_dir, paths["right"]),
-            "rear_image_path": relative_to_session(self.session_dir, paths["rear"]),
+            "front_image_path": relative_to_session(self.session_dir, front_path),
             "scan_npz_path": relative_to_session(self.session_dir, scan_path),
             "motor_angle": motor_angle,
             "motor_speed": motor_speed,
             "mission_label": mission_label,
             "dataset_profile": self.params["dataset_profile"],
-            "source_mode": self.params["source_mode"],
             "session_id": self.session_id,
-            "lap_index": self.params["lap_index"],
-            "notes": self.params["notes"],
         }
         self.csv_writer.writerow(row)
         self.sample_count += 1
@@ -474,21 +440,10 @@ class ILCommonRecorder(Node):
             return True
         return self.params["save_when_stopped"]
 
-    def _save_images(self, stamp_ns: int, front_msg: Image) -> Dict[str, Optional[Path]]:
-        paths = {"front": None, "left": None, "right": None, "rear": None}
+    def _save_front_image(self, stamp_ns: int, front_msg: Image) -> Optional[Path]:
         if self.params["save_front_image"]:
-            paths["front"] = self._save_image("front", stamp_ns, front_msg)
-        if self.params["save_side_images"]:
-            tolerance_ns = int(self.params["approximate_sync_tolerance_sec"] * 1e9)
-            for name, buffer in [
-                ("left", self.left_buffer),
-                ("right", self.right_buffer),
-                ("rear", self.rear_buffer),
-            ]:
-                item = buffer.nearest(stamp_ns, tolerance_ns)
-                if item is not None:
-                    paths[name] = self._save_image(name, stamp_ns, item.msg)
-        return paths
+            return self._save_image("front", stamp_ns, front_msg)
+        return None
 
     def _save_image(self, camera_name: str, stamp_ns: int, msg: Image) -> Path:
         if self.bridge is None or cv2 is None:

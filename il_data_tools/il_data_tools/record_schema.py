@@ -12,18 +12,12 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 CSV_FIELDS = [
     "timestamp_ns",
     "front_image_path",
-    "left_image_path",
-    "right_image_path",
-    "rear_image_path",
     "scan_npz_path",
     "motor_angle",
     "motor_speed",
     "mission_label",
     "dataset_profile",
-    "source_mode",
     "session_id",
-    "lap_index",
-    "notes",
 ]
 
 
@@ -43,9 +37,34 @@ def sanitize_name(name: str) -> str:
     return cleaned.strip("._-") or "session"
 
 
-def make_session_id(session_name: str, now: Optional[datetime] = None) -> str:
+NUMBERED_SESSION_RE = re.compile(r"^(?P<base>.+?)_(?P<index>\d+)$")
+
+
+def make_timestamp_session_id(session_name: str, now: Optional[datetime] = None) -> str:
     stamp = (now or datetime.now()).strftime("%Y%m%d_%H%M%S")
     return f"{stamp}_{sanitize_name(session_name)}"
+
+
+def session_base_name(session_name: str) -> str:
+    base = sanitize_name(session_name)
+    match = NUMBERED_SESSION_RE.match(base)
+    if match:
+        return sanitize_name(match.group("base"))
+    return base
+
+
+def make_next_session_id(profile_dir: Path, session_name: str) -> str:
+    base = session_base_name(session_name)
+    highest = 0
+    pattern = re.compile(rf"^{re.escape(base)}_(\d+)$")
+    if profile_dir.is_dir():
+        for child in profile_dir.iterdir():
+            if not child.is_dir():
+                continue
+            match = pattern.match(child.name)
+            if match:
+                highest = max(highest, int(match.group(1)))
+    return f"{base}_{highest + 1:02d}"
 
 
 def make_session_dir(
@@ -53,15 +72,17 @@ def make_session_dir(
     dataset_profile: str,
     session_name: str,
     now: Optional[datetime] = None,
+    auto_increment: bool = True,
 ) -> Tuple[str, Path]:
     profile = sanitize_name(dataset_profile)
-    session_id = make_session_id(session_name, now=now)
-    session_dir = expand_path(output_root) / profile / session_id
+    profile_dir = expand_path(output_root) / profile
+    if auto_increment:
+        session_id = make_next_session_id(profile_dir, session_name)
+    else:
+        session_id = make_timestamp_session_id(session_name, now=now)
+    session_dir = profile_dir / session_id
     for relative in [
         "images/front",
-        "images/left",
-        "images/right",
-        "images/rear",
         "scan",
         "debug",
     ]:

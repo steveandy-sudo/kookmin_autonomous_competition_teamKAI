@@ -4,7 +4,7 @@ from setuptools import find_packages, setup
 
 
 package_name = "il_data_tools"
-script_files = [path for path in glob("scripts/*") if isfile(path)]
+all_script_files = [path for path in glob("scripts/*") if isfile(path)]
 
 setup(
     name=package_name,
@@ -14,9 +14,8 @@ setup(
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml", "README.md"]),
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
-        (f"share/{package_name}/scripts", script_files),
+        (f"share/{package_name}/scripts", all_script_files),
     ],
-    scripts=script_files,
     install_requires=["setuptools"],
     zip_safe=True,
     maintainer="Team K.A.I.",
@@ -26,7 +25,7 @@ setup(
     entry_points={
         "console_scripts": [
             "il_common_recorder = il_data_tools.common_recorder_node:main",
-            "il_mission_labeler = il_data_tools.mission_labeler_node:main",
+            "train_from_raw_dataset.py = il_data_tools.train_from_raw_dataset:main",
         ],
     },
 )

@@ -6,10 +6,7 @@ mkdir -p "$(dirname "$OUT")"
 
 ros2 bag record \
   -o "$OUT" \
-  /usb_cam/image_raw/front \
-  /usb_cam/image_raw/left \
-  /usb_cam/image_raw/right \
-  /usb_cam/image_raw/behind \
+  /image_raw \
   /scan \
   /imu \
   /odom \
