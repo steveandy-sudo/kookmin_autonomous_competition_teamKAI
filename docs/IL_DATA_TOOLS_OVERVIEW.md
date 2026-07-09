@@ -29,14 +29,13 @@
 ## 패키지에 포함된 것
 
 - `il_common_recorder`: 데이터 세션을 기록하는 ROS node
-- `il_mission_labeler`: 키보드로 `/il/mission_label`을 publish하는 ROS node
+- `/il/mission_label`: 필요할 때 외부에서 publish하는 mission label topic
 - `record_*_dataset.launch.py`: drive/cone/overtake 수집 preset
 - `build_*_dataset.py`: raw session을 train/val/test CSV로 변환
 - `train_*_policy.py`: steering-only 모델 학습 wrapper
 - `eval_policy.py`: TorchScript 모델 offline 평가
-- `benchmark_policy_runtime.py`: TorchScript latency 측정
+- `benchmark_policy_model.py`: TorchScript latency 측정
 - `compare_models.py`: eval/benchmark 결과 비교
-- `publish_dummy_il_stream.py`: 개발 노트북 local dry-run용 안전 dummy publisher
 
 ## 패키지에 포함되지 않은 것
 
@@ -66,9 +65,9 @@
 
 ```mermaid
 flowchart TD
-    A[mission_labeler] --> D[il_common_recorder]
+    A[/il/mission_label publisher] --> D[il_common_recorder]
     B[camera / scan / imu / odom] --> D
-    C[motor topic<br/>/xycar_motor or /test/xycar_motor] --> D
+    C[motor topic<br/>/xycar_motor] --> D
     D --> E[samples.csv + images + metadata]
     E --> F[build_drive/cone/overtake_dataset.py]
     F --> G[train.csv / val.csv / test.csv]
@@ -80,7 +79,7 @@ flowchart TD
 텍스트로 보면 다음과 같습니다.
 
 ```text
-mission_labeler + camera + motor topic
+/il/mission_label + camera + motor topic
         ↓
 il_common_recorder
         ↓
@@ -100,4 +99,3 @@ rule-based teammate loads model later
 내 역할은 imitation learning 데이터 수집, dataset build, training, evaluation입니다. 다른 팀원이 담당하는 rule-based 주행/미션 코드는 최종 차량 제어와 안전 판단을 유지합니다.
 
 따라서 학습 모델은 "조향 제안"만 합니다. 속도와 stop/go는 계속 rule-based가 결정해야 합니다. 이 분리를 유지해야 사고 위험과 디버깅 비용을 줄일 수 있습니다.
-

@@ -61,7 +61,7 @@ Expected important files:
   il_data_tools/scripts/visualize_policy_predictions.py
   il_data_tools/scripts/export_policy_torchscript.py
   il_data_tools/scripts/export_policy_onnx.py
-  il_data_tools/scripts/benchmark_policy_runtime.py
+  il_data_tools/scripts/benchmark_policy_model.py
   il_data_tools/scripts/compare_models.py
   il_data_tools/README.md
 
@@ -81,7 +81,7 @@ Run:
 Expected executables:
 
   il_common_recorder
-  il_mission_labeler
+  train_from_raw_dataset.py
 
 Also confirm installed scripts are runnable if possible:
 
@@ -117,7 +117,7 @@ Terminal 1:
 
   cd ~/xycar_ws
   source install/setup.bash
-  ros2 run il_data_tools il_mission_labeler
+  ros2 topic pub /il/mission_label std_msgs/msg/String "{data: general_drive}" --rate 5
 
 Terminal 2:
 
@@ -231,7 +231,7 @@ Only check CLI and imports:
   python3 ~/xycar_ws/src/il_data_tools/scripts/train_cone_policy.py --help
   python3 ~/xycar_ws/src/il_data_tools/scripts/train_overtake_policy.py --help
   python3 ~/xycar_ws/src/il_data_tools/scripts/eval_policy.py --help
-  python3 ~/xycar_ws/src/il_data_tools/scripts/benchmark_policy_runtime.py --help
+  python3 ~/xycar_ws/src/il_data_tools/scripts/benchmark_policy_model.py --help
   python3 ~/xycar_ws/src/il_data_tools/scripts/compare_models.py --help
 
 If PyTorch/torchvision/OpenCV are missing, report which dependency is missing.
@@ -257,4 +257,3 @@ If you make fixes, list changed files and why.
 
 Do not push to GitHub unless I explicitly ask.
 ```
-

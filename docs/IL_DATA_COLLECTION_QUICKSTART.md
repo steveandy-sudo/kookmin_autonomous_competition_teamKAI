@@ -1,6 +1,6 @@
 # IL 데이터 수집 Quickstart
 
-처음에는 local dry-run으로 파일이 만들어지는지 확인하고, 그 다음 실제 Xycar에서 drive/cone/overtake profile별로 수집하세요.
+실제 Xycar workspace에서 drive/cone/overtake profile별로 데이터를 수집하세요.
 
 ## A. Build
 
@@ -11,55 +11,27 @@ source install/setup.bash
 ros2 pkg executables il_data_tools
 ```
 
-`il_common_recorder`, `il_mission_labeler`, `record_*`, `build_*`, `train_*`, `eval_policy.py`, `benchmark_policy_runtime.py` 등이 보여야 합니다.
+`il_common_recorder`, `train_from_raw_dataset.py`가 보여야 합니다.
 
-## B. xycar_msgs 없이 local dry-run
+## B. Topic compatibility
 
-개발 노트북 테스트 전용입니다. 실차 제어 topic인 `/xycar_motor`를 쓰지 않고 `/test/xycar_motor`를 사용합니다.
+다운로드된 `track_drive`, `app_hough_drive`, `app_sensor_drive` 계열 코드는 `/xycar_motor`를
+`std_msgs/msg/Float32MultiArray`로 publish하므로 기본 명령을 그대로 사용합니다.
 
-Terminal 1:
+수집 전에는 실제 토픽이 살아 있는지 확인합니다.
 
 ```bash
-ros2 topic pub /il/mission_label std_msgs/msg/String "{data: general_drive}" --rate 5
+ros2 topic list
+ros2 topic info /xycar_motor -v
 ```
 
-Terminal 2:
+만약 사용하는 주행 코드가 `xycar_msgs/msg/XycarMotor`를 publish한다면 그때만 다음처럼 바꿉니다.
 
 ```bash
 ros2 launch il_data_tools record_drive_dataset.launch.py \
-  session_name:=dummy_drive_test \
-  output_root:=/tmp/il_test \
-  camera_front_topic:=/test/image \
-  motor_topic:=/test/xycar_motor \
-  motor_msg_type:=float32_multi_array \
-  mission_label_topic:=/il/mission_label
+  session_name:=drive \
+  motor_msg_type:=xycar
 ```
-
-Terminal 3:
-
-```bash
-ros2 run il_data_tools publish_dummy_il_stream.py \
-  --image-topic /test/image \
-  --motor-topic /test/xycar_motor \
-  --label general_drive \
-  --duration-sec 12
-```
-
-recorder를 멈춘 뒤 확인합니다.
-
-```bash
-find /tmp/il_test -maxdepth 6 -type f | sort | head -80
-SAMPLES=$(find /tmp/il_test -name "samples.csv" | tail -n 1)
-echo "$SAMPLES"
-head -5 "$SAMPLES"
-```
-
-기대 결과:
-
-- `metadata.json` 생성
-- `samples.csv` 생성
-- `images/front/*.jpg` 생성
-- `samples.csv`에 `motor_angle`, `motor_speed`, `mission_label`, `dataset_profile` 값 기록
 
 ## C. Drive dataset collection
 
@@ -82,7 +54,7 @@ ros2 launch il_data_tools record_drive_dataset.launch.py session_name:=drive
 수집 중 label을 바꾸려면 다른 terminal에서:
 
 ```bash
-ros2 run il_data_tools il_mission_labeler
+ros2 topic pub /il/mission_label std_msgs/msg/String "{data: recovery}" --rate 5
 ```
 
 ## D. Cone dataset collection
@@ -146,7 +118,5 @@ ros2 launch il_data_tools record_drive_dataset.launch.py \
 
 주의:
 
-- 실차 주행에서 `/test/xycar_motor`를 쓰지 마세요. 그것은 dry-run용입니다.
 - recorder는 `/xycar_motor`를 publish하지 않습니다.
-- dummy publisher도 기본적으로 `/xycar_motor`를 publish하지 않습니다.
 - `/xycar_motor` publisher가 2개 이상이면 위험합니다. `ros2 topic info /xycar_motor -v`로 확인하세요.

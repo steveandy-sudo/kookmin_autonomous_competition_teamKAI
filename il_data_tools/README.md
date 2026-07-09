@@ -25,7 +25,7 @@ ros2 run il_data_tools train_from_raw_dataset.py --profile drive
 
 - [docs/IL_DATA_TOOLS_OVERVIEW.md](../docs/IL_DATA_TOOLS_OVERVIEW.md): 전체 목적, 구조, 안전 원칙
 - [docs/IL_DATA_TOOLS_FILE_MAP.md](../docs/IL_DATA_TOOLS_FILE_MAP.md): 파일별 역할 지도
-- [docs/IL_DATA_COLLECTION_QUICKSTART.md](../docs/IL_DATA_COLLECTION_QUICKSTART.md): build, local dry-run, 실차 수집 절차
+- [docs/IL_DATA_COLLECTION_QUICKSTART.md](../docs/IL_DATA_COLLECTION_QUICKSTART.md): build, 토픽 확인, 실차 수집 절차
 - [docs/IL_DATASET_BUILDING_GUIDE.md](../docs/IL_DATASET_BUILDING_GUIDE.md): raw session을 processed CSV로 변환하는 방법
 - [docs/IL_TRAINING_AND_MODEL_SELECTION.md](../docs/IL_TRAINING_AND_MODEL_SELECTION.md): 학습 명령과 모델 선택 기준
 - [docs/IL_EVALUATION_AND_BENCHMARK.md](../docs/IL_EVALUATION_AND_BENCHMARK.md): offline evaluation, 시각화, latency benchmark
@@ -98,71 +98,25 @@ ros2 run il_data_tools check_topics.sh
 - `/xycar_motor`
 - `~/xycar_ws` 디스크 용량
 
-## xycar_msgs가 없는 개발 노트북에서 테스트하는 방법
+## motor message type
 
 다운로드된 Xycar workspace의 `track_drive`, `app_hough_drive`, `app_sensor_drive` 계열 코드는
 `/xycar_motor`를 `std_msgs/msg/Float32MultiArray` 타입으로 publish합니다.
 그래서 이 패키지의 기본 `motor_msg_type`도 `float32_multi_array`로 맞춰져 있습니다.
 
-로컬 테스트에서는 반드시 다음 원칙을 지킵니다.
-
 - recorder 기본값은 `motor_msg_type:=float32_multi_array`입니다.
-- motor topic은 `/test/xycar_motor`를 사용합니다.
-- 로컬 dummy publisher는 기본적으로 `/xycar_motor`에 publish하지 않습니다.
 - recorder는 어떤 설정에서도 `/xycar_motor`를 publish하지 않고 구독만 합니다.
 - 사용하는 주행 코드가 `xycar_msgs/msg/XycarMotor`를 publish하는 경우에만 `motor_msg_type:=xycar`를 사용합니다.
 
-Terminal 1:
+## mission label
+
+데이터 수집 중 label을 바꾸고 싶으면 `/il/mission_label`에 `std_msgs/String`을 publish합니다.
+기본 수집에서는 launch 파일의 `default_mission_label`이 자동으로 사용됩니다.
+
+예:
 
 ```bash
-ros2 run il_data_tools il_mission_labeler
-```
-
-Terminal 2:
-
-```bash
-ros2 launch il_data_tools record_drive_dataset.launch.py \
-  session_name:=dummy_drive_test \
-  output_root:=/tmp/il_test \
-  camera_front_topic:=/test/image \
-  motor_topic:=/test/xycar_motor \
-  motor_msg_type:=float32_multi_array \
-  mission_label_topic:=/il/mission_label
-```
-
-Terminal 3:
-
-```bash
-ros2 run il_data_tools publish_dummy_il_stream.py \
-  --image-topic /test/image \
-  --motor-topic /test/xycar_motor \
-  --label general_drive \
-  --duration-sec 12
-```
-
-recorder를 종료한 뒤 결과를 확인합니다.
-
-```bash
-find /tmp/il_test -maxdepth 6 -type f | sort | head -80
-SAMPLES=$(find /tmp/il_test -name "samples.csv" | tail -n 1)
-echo "$SAMPLES"
-head -5 "$SAMPLES"
-```
-
-같은 안내를 출력하는 helper script도 있습니다.
-
-```bash
-ros2 run il_data_tools run_local_recorder_dryrun.sh
-```
-
-## mission labeler
-
-데이터 수집 중 현재 구간의 label을 사람이 키보드로 지정하는 노드입니다.
-
-실행:
-
-```bash
-ros2 run il_data_tools il_mission_labeler
+ros2 topic pub /il/mission_label std_msgs/msg/String "{data: recovery}" --rate 5
 ```
 
 publish topic:
@@ -382,11 +336,11 @@ save_odom:=true
 
 ## 예시 실행
 
-터미널 1:
+터미널 1, 필요할 때만 label override:
 
 ```bash
 source ~/xycar_ws/install/setup.bash
-ros2 run il_data_tools il_mission_labeler
+ros2 topic pub /il/mission_label std_msgs/msg/String "{data: recovery}" --rate 5
 ```
 
 터미널 2:
@@ -411,22 +365,6 @@ ros2 launch il_data_tools record_drive_dataset.launch.py session_name:=lane_prac
 - 실패 구간: `b`
 
 `bad_data`, `idle`은 기본 설정에서 저장되지 않습니다.
-
-## rosbag 백업
-
-원본 토픽을 bag으로도 남기고 싶을 때 사용합니다.
-
-```bash
-ros2 run il_data_tools record_drive_bag.sh
-ros2 run il_data_tools record_cone_bag.sh
-ros2 run il_data_tools record_overtake_bag.sh
-```
-
-bag 저장 위치:
-
-```bash
-~/xycar_ws/bags/il/
-```
 
 ## 데이터셋 요약
 
@@ -872,7 +810,7 @@ Overtake policy는 phase 입력을 사용합니다.
 | `scripts/visualize_policy_predictions.py` | prediction debug 이미지/그래프 생성 |
 | `scripts/export_policy_torchscript.py` | `.pth`에서 TorchScript `.pt` export |
 | `scripts/export_policy_onnx.py` | `.pth`에서 ONNX export |
-| `scripts/benchmark_policy_runtime.py` | Jetson Orin Nano latency benchmark |
+| `scripts/benchmark_policy_model.py` | Jetson Orin Nano latency benchmark |
 | `scripts/compare_models.py` | eval/benchmark 결과 비교 report |
 
 ### 학습 예시
@@ -1076,24 +1014,24 @@ ONNX/TensorRT FP16은 TorchScript가 Jetson에서 충분히 빠르지 않을 때
 Jetson에서 직접 실행합니다.
 
 ```bash
-python3 scripts/benchmark_policy_runtime.py \
+python3 scripts/benchmark_policy_model.py \
   --model /home/xytron/xycar_ws/models/il_policies/drive_resnet18/drive_resnet18_scripted.pt \
   --device cuda \
-  --input-width 160 \
-  --input-height 90 \
-  --iters 500
+  --image-width 160 \
+  --image-height 90 \
+  --iterations 500
 ```
 
 Overtake phase 모델:
 
 ```bash
-python3 scripts/benchmark_policy_runtime.py \
+python3 scripts/benchmark_policy_model.py \
   --model /home/xytron/xycar_ws/models/il_policies/overtake_pilotnet_phase/overtake_pilotnet_phase_scripted.pt \
-  --use-phase \
+  --phase-enabled \
   --device cuda \
-  --input-width 160 \
-  --input-height 90 \
-  --iters 500
+  --image-width 160 \
+  --image-height 90 \
+  --iterations 500
 ```
 
 Latency 기준:

@@ -18,16 +18,7 @@ ros2 interface show xycar_msgs/msg/XycarMotor
 해결:
 
 - 기본값은 `motor_msg_type:=float32_multi_array`입니다.
-- motor topic은 `/test/xycar_motor`를 사용합니다.
 - 사용하는 주행 코드가 `xycar_msgs/msg/XycarMotor`를 publish할 때만 `xycar_msgs`가 필요합니다.
-
-dry-run 예:
-
-```bash
-ros2 launch il_data_tools record_drive_dataset.launch.py \
-  motor_topic:=/test/xycar_motor \
-  motor_msg_type:=float32_multi_array
-```
 
 ## `/il/mission_label`이 publish되지 않음
 
@@ -41,11 +32,7 @@ ros2 topic echo /il/mission_label
 
 해결:
 
-```bash
-ros2 run il_data_tools il_mission_labeler
-```
-
-또는 고정 label을 publish합니다.
+고정 label을 publish합니다.
 
 ```bash
 ros2 topic pub /il/mission_label std_msgs/msg/String "{data: general_drive}" --rate 5
@@ -92,16 +79,13 @@ ros2 topic info /image_raw -v
 해결:
 
 - recorder의 `camera_front_topic`이 실제 카메라 topic과 같은지 확인합니다.
-- dummy test에서는 `/test/image`를 사용합니다.
 - `cv_bridge`와 OpenCV가 설치되어 있는지 확인합니다.
 - output directory 권한을 확인합니다.
 - recorder log에서 `waiting for: front_image`가 계속 나오는지 봅니다.
 
 ## scan rows가 0임
 
-local dummy stream은 `/scan`을 publish하지 않습니다. image-only dry-run에서는 정상입니다.
-
-실제 cone/overtake 데이터에서는 확인하세요.
+실제 `/scan` 토픽이 publish되고 있는지 확인하세요.
 
 ```bash
 ros2 topic info /scan -v
@@ -131,7 +115,6 @@ ros2 topic info /xycar_motor -v
 
 - 중복 motor publisher를 종료합니다.
 - `il_data_tools` recorder는 `/xycar_motor`를 publish하지 않습니다.
-- local dummy publisher는 기본적으로 `/test/xycar_motor`만 사용합니다.
 
 ## recorder가 sample을 저장하지 않음
 

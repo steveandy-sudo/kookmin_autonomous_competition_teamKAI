@@ -47,36 +47,36 @@ ros2 run il_data_tools visualize_policy_predictions.py \
 TorchScript `.pt`가 실시간으로 충분히 빠른지 확인합니다.
 
 ```bash
-ros2 run il_data_tools benchmark_policy_runtime.py \
+python3 ~/xycar_ws/src/kookmin_autonomous_competition_teamKAI/il_data_tools/scripts/benchmark_policy_model.py \
   --model ~/xycar_ws/models/il_policies/drive_resnet18/drive_resnet18_scripted.pt \
   --device cuda \
-  --input-width 160 \
-  --input-height 90 \
-  --iters 500
+  --image-width 160 \
+  --image-height 90 \
+  --iterations 500
 ```
 
 JSON으로 저장하려면:
 
 ```bash
-ros2 run il_data_tools benchmark_policy_runtime.py \
+python3 ~/xycar_ws/src/kookmin_autonomous_competition_teamKAI/il_data_tools/scripts/benchmark_policy_model.py \
   --model ~/xycar_ws/models/il_policies/drive_resnet18/drive_resnet18_scripted.pt \
   --device cuda \
-  --input-width 160 \
-  --input-height 90 \
-  --iters 500 \
+  --image-width 160 \
+  --image-height 90 \
+  --iterations 500 \
   --output-json ~/xycar_ws/models/il_policies/drive_resnet18/benchmark.json
 ```
 
 phase 모델 benchmark:
 
 ```bash
-ros2 run il_data_tools benchmark_policy_runtime.py \
+python3 ~/xycar_ws/src/kookmin_autonomous_competition_teamKAI/il_data_tools/scripts/benchmark_policy_model.py \
   --model ~/xycar_ws/models/il_policies/overtake_pilotnet_phase/overtake_pilotnet_phase_scripted.pt \
   --device cuda \
-  --use-phase \
-  --input-width 160 \
-  --input-height 90 \
-  --iters 500
+  --phase-enabled \
+  --image-width 160 \
+  --image-height 90 \
+  --iterations 500
 ```
 
 ## Latency guide
@@ -119,4 +119,3 @@ ros2 run il_data_tools compare_models.py \
 - rule-based safety와의 호환성
 
 실차에서는 반드시 낮은 속도, 안전한 공간, rule-based 안전 로직이 살아 있는 상태에서 검증해야 합니다.
-
