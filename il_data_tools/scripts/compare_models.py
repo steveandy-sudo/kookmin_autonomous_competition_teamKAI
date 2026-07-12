@@ -164,6 +164,7 @@ def infer_model_type(stem: str) -> str:
         "mobilenet_v3_small",
         "pilotnet_phase",
         "resnet18_phase",
+        "resnet18_lidar",
         "vit_tiny_phase",
         "pilotnet",
         "resnet18",

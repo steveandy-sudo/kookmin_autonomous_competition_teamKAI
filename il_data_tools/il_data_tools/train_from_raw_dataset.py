@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import shlex
+import shutil
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 from typing import Dict, List
 
@@ -24,18 +27,19 @@ SUPPORTED_MODEL_TYPES = (
     "mobilenet_v3_small_phase",
     "resnet18_phase",
     "vit_tiny_phase",
+    "resnet18_lidar",
 )
 
 PROFILE_CONFIG: Dict[str, Dict[str, str]] = {
     "drive": {
         "build_script": "build_drive_dataset.py",
         "train_script": "train_drive_policy.py",
-        "default_model": "resnet18",
+        "default_model": "resnet18_lidar",
     },
     "cone": {
         "build_script": "build_cone_dataset.py",
         "train_script": "train_cone_policy.py",
-        "default_model": "pilotnet",
+        "default_model": "resnet18_lidar",
     },
     "overtake": {
         "build_script": "build_overtake_dataset.py",
@@ -87,6 +91,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--build-seed", type=int, default=2026)
     parser.add_argument("--train-seed", type=int, default=42)
     parser.add_argument("--image-column", default="front_image_path")
+    parser.add_argument("--max-scan-time-offset-ms", type=float, default=50.0)
 
     parser.add_argument(
         "--balance-steering",
@@ -102,6 +107,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=4.0,
         help="Overtake only: fallback phase duration.",
     )
+    parser.add_argument("--overtake-min-speed", type=float, default=None)
+    parser.add_argument("--overtake-max-speed", type=float, default=None)
+    parser.add_argument("--overtake-max-speed-std", type=float, default=None)
+    parser.add_argument("--require-explicit-phase-boundaries", action="store_true")
 
     parser.add_argument("--input-width", type=int, default=160)
     parser.add_argument("--input-height", type=int, default=90)
@@ -153,9 +162,25 @@ def main() -> None:
         print("dry-run only; nothing was executed.")
         return
 
-    run_command(build_cmd)
-    validate_processed_csvs(processed_dir)
-    run_command(train_cmd)
+    token = uuid.uuid4().hex[:10]
+    processed_stage = processed_dir.with_name(f".{processed_dir.name}.staging-{token}")
+    model_stage = model_output_dir.with_name(f".{model_output_dir.name}.staging-{token}")
+    build_cmd = make_build_command(args, config, profile, processed_stage)
+    train_cmd = make_train_command(args, config, model_type, processed_stage, model_stage)
+    try:
+        run_command(build_cmd)
+        validate_processed_csvs(processed_stage)
+        run_command(train_cmd)
+        if profile == "overtake":
+            contract = processed_stage / "deployment_contract.json"
+            if contract.is_file():
+                shutil.copy2(contract, model_stage / "deployment_contract.json")
+        promote_directory(processed_stage, processed_dir)
+        promote_directory(model_stage, model_output_dir)
+    except BaseException:
+        shutil.rmtree(processed_stage, ignore_errors=True)
+        shutil.rmtree(model_stage, ignore_errors=True)
+        raise
     print("")
     print("done")
     print(f"processed_csv_dir={processed_dir}")
@@ -207,6 +232,7 @@ def make_build_command(
         cmd.append("--keep-stopped")
 
     if profile == "drive":
+        cmd += ["--require-scan", "--max-scan-time-offset-ms", str(args.max_scan_time_offset_ms)]
         if args.balance_steering:
             cmd.append("--balance-steering")
         cmd += [
@@ -217,8 +243,18 @@ def make_build_command(
             "--recovery-oversample-factor",
             str(args.recovery_oversample_factor),
         ]
+    elif profile == "cone":
+        cmd += ["--require-scan", "--max-scan-time-offset-ms", str(args.max_scan_time_offset_ms)]
     elif profile == "overtake":
         cmd += ["--default-duration-sec", str(args.default_duration_sec)]
+        if args.overtake_min_speed is not None:
+            cmd += ["--min-speed", str(args.overtake_min_speed)]
+        if args.overtake_max_speed is not None:
+            cmd += ["--max-speed", str(args.overtake_max_speed)]
+        if args.overtake_max_speed_std is not None:
+            cmd += ["--max-speed-std", str(args.overtake_max_speed_std)]
+        if args.require_explicit_phase_boundaries:
+            cmd.append("--require-explicit-phase-boundaries")
 
     return cmd
 
@@ -307,6 +343,21 @@ def run_command(cmd: List[str]) -> None:
     completed = subprocess.run(cmd, check=False)
     if completed.returncode != 0:
         raise SystemExit(completed.returncode)
+
+
+def promote_directory(staging: Path, destination: Path) -> None:
+    """Atomically expose successful output while preserving rollback on failure."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    backup = destination.with_name(f".{destination.name}.backup-{uuid.uuid4().hex[:8]}")
+    if destination.exists():
+        os.replace(destination, backup)
+    try:
+        os.replace(staging, destination)
+    except BaseException:
+        if backup.exists() and not destination.exists():
+            os.replace(backup, destination)
+        raise
+    shutil.rmtree(backup, ignore_errors=True)
 
 
 def validate_processed_csvs(processed_dir: Path) -> None:

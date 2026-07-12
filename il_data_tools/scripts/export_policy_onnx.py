@@ -21,6 +21,7 @@ MODEL_TYPES = (
     "mobilenet_v3_small_phase",
     "resnet18_phase",
     "vit_tiny_phase",
+    "resnet18_lidar",
 )
 
 
@@ -42,7 +43,7 @@ def main() -> None:
     import numpy as np
     import torch
 
-    from policy_models import create_policy_model, model_uses_phase
+    from policy_models import create_policy_model, model_uses_lidar, model_uses_phase
 
     checkpoint_path = Path(args.checkpoint).expanduser().resolve()
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
@@ -52,6 +53,7 @@ def main() -> None:
     input_width = int(checkpoint.get("input_width", args.input_width))
     input_height = int(checkpoint.get("input_height", args.input_height))
     use_phase = bool(args.use_phase or checkpoint.get("use_phase", False) or model_uses_phase(model_type))
+    use_lidar = bool(checkpoint.get("use_lidar", False) or model_uses_lidar(model_type))
 
     device = choose_device(args.device, torch)
     model = create_policy_model(
@@ -70,7 +72,12 @@ def main() -> None:
     inputs = (image,)
     input_names = ["image"]
     dynamic_axes = {"image": {0: "batch"}, "steer_norm": {0: "batch"}}
-    if use_phase:
+    if use_lidar:
+        lidar = torch.zeros(1, 2, 360, device=device)
+        inputs = (image, lidar)
+        input_names.append("lidar")
+        dynamic_axes["lidar"] = {0: "batch"}
+    elif use_phase:
         phase = torch.zeros(1, 1, device=device)
         inputs = (image, phase)
         input_names.append("phase")
@@ -96,7 +103,9 @@ def main() -> None:
 
     session = ort.InferenceSession(str(output_path), providers=["CPUExecutionProvider"])
     feed = {"image": np.zeros((1, 3, input_height, input_width), dtype=np.float32)}
-    if use_phase:
+    if use_lidar:
+        feed["lidar"] = np.zeros((1, 2, 360), dtype=np.float32)
+    elif use_phase:
         feed["phase"] = np.zeros((1, 1), dtype=np.float32)
     output = session.run(None, feed)[0]
     print(f"onnxruntime output_shape={output.shape} sample={float(output.reshape(-1)[0]):.6f}")

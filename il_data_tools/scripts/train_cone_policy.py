@@ -14,4 +14,4 @@ from train_policy import main as train_main
 
 
 if __name__ == "__main__":
-    train_main(["--policy-name", "cone", "--model-type", "pilotnet"] + sys.argv[1:])
+    train_main(["--policy-name", "cone", "--model-type", "resnet18_lidar"] + sys.argv[1:])

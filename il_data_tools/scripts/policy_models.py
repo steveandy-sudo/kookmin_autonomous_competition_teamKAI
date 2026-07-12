@@ -20,7 +20,12 @@ PHASE_MODEL_TYPES = {
     "resnet18_phase",
     "vit_tiny_phase",
 }
-SUPPORTED_MODEL_TYPES = tuple(sorted(IMAGE_MODEL_TYPES | PHASE_MODEL_TYPES))
+LIDAR_MODEL_TYPES = {
+    "resnet18_lidar",
+}
+SUPPORTED_MODEL_TYPES = tuple(
+    sorted(IMAGE_MODEL_TYPES | PHASE_MODEL_TYPES | LIDAR_MODEL_TYPES)
+)
 
 
 class PilotNetPolicy(nn.Module):
@@ -36,7 +41,8 @@ class PilotNetPolicy(nn.Module):
 
 
 class PilotNetEncoder(nn.Module):
-    feature_dim = 64
+    # Preserve coarse left/right spatial layout for steering regression.
+    feature_dim = 64 * 2 * 4
 
     def __init__(self) -> None:
         super().__init__()
@@ -51,7 +57,7 @@ class PilotNetEncoder(nn.Module):
             nn.ELU(inplace=True),
             nn.Conv2d(64, 64, kernel_size=3),
             nn.ELU(inplace=True),
-            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.AdaptiveAvgPool2d((2, 4)),
             nn.Flatten(),
         )
 
@@ -119,6 +125,46 @@ class ResNet18Encoder(nn.Module):
 
     def forward(self, image: torch.Tensor) -> torch.Tensor:
         return self.features(image)
+
+
+class Lidar1DEncoder(nn.Module):
+    """Encode normalized LaserScan ranges and validity mask [B, 2, N]."""
+
+    feature_dim = 64
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.features = nn.Sequential(
+            nn.Conv1d(2, 16, kernel_size=7, stride=2, padding=3),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(16, 32, kernel_size=5, stride=2, padding=2),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(32, 64, kernel_size=5, stride=2, padding=2),
+            nn.ReLU(inplace=True),
+            nn.AdaptiveAvgPool1d(4),
+            nn.Flatten(),
+        )
+        self.feature_dim = 64 * 4
+
+    def forward(self, lidar: torch.Tensor) -> torch.Tensor:
+        return self.features(lidar)
+
+
+class ResNet18LidarPolicy(nn.Module):
+    """Mid-fusion steering policy using a camera image and synchronized 2D LiDAR."""
+
+    def __init__(self, pretrained: bool = False) -> None:
+        super().__init__()
+        self.image_encoder = ResNet18Encoder(pretrained=pretrained)
+        self.lidar_encoder = Lidar1DEncoder()
+        self.head = RegressionHead(
+            self.image_encoder.feature_dim + self.lidar_encoder.feature_dim
+        )
+
+    def forward(self, image: torch.Tensor, lidar: torch.Tensor) -> torch.Tensor:
+        image_features = self.image_encoder(image)
+        lidar_features = self.lidar_encoder(lidar)
+        return self.head(torch.cat([image_features, lidar_features], dim=1))
 
 
 class ViTTinyPolicy(nn.Module):
@@ -216,6 +262,10 @@ def create_policy_model(
     pretrained: bool = False,
 ) -> nn.Module:
     normalized = normalize_model_type(model_type)
+    if normalized == "resnet18_lidar":
+        if use_phase:
+            raise ValueError("resnet18_lidar does not accept overtake phase input")
+        return ResNet18LidarPolicy(pretrained=pretrained)
     phase_from_name = normalized.endswith("_phase")
     base_type = normalized[: -len("_phase")] if phase_from_name else normalized
     phase_enabled = use_phase or phase_from_name
@@ -274,3 +324,7 @@ def normalize_model_type(model_type: str) -> str:
 
 def model_uses_phase(model_type: str, use_phase: bool = False) -> bool:
     return bool(use_phase or normalize_model_type(model_type).endswith("_phase"))
+
+
+def model_uses_lidar(model_type: str) -> bool:
+    return normalize_model_type(model_type) in LIDAR_MODEL_TYPES

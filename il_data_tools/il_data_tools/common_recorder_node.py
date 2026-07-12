@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import csv
+from collections import deque
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+import queue
+import threading
+import time
 from typing import Any, Dict, Optional
 
 import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import Image, Imu, LaserScan
 from std_msgs.msg import Float32MultiArray, String
 
@@ -41,9 +47,29 @@ from il_data_tools.record_schema import (
     ros_time_to_ns,
     stamp_to_ns,
     string_from_msg,
-    write_session_readme,
 )
 from il_data_tools.sync_buffer import TimedBuffer
+from il_data_tools.recorder_state import (
+    DiskSpaceGuard,
+    LabelLatch,
+    wait_for_thread_shutdown,
+)
+
+
+@dataclass(frozen=True)
+class PendingSample:
+    """A fully synchronized sample waiting for background disk I/O."""
+
+    timestamp_ns: int
+    scan_timestamp_ns: Optional[int]
+    scan_time_offset_ms: Optional[float]
+    front_msg: Image
+    scan_msg: Optional[LaserScan]
+    imu_msg: Optional[Imu]
+    odom_msg: Optional[Odometry]
+    motor_angle: Any
+    motor_speed: Any
+    mission_label: str
 
 
 class ILCommonRecorder(Node):
@@ -53,6 +79,10 @@ class ILCommonRecorder(Node):
         super().__init__("il_common_recorder")
         self._declare_parameters()
         self.params = self._read_parameters()
+        if self.params["require_scan"] and not self.params["save_scan_npz"]:
+            raise ValueError("require_scan=true requires save_scan_npz=true")
+        if self.params["approximate_sync_tolerance_sec"] <= 0.0:
+            raise ValueError("approximate_sync_tolerance_sec must be positive")
         self.motor_msg_type, self.resolved_motor_msg_type_name = self._resolve_motor_msg_type()
         self.allowed_labels = parse_allowed_labels(
             self.params["allowed_labels"], self.params["dataset_profile"]
@@ -78,7 +108,10 @@ class ILCommonRecorder(Node):
         self.imu_buffer = TimedBuffer()
         self.odom_buffer = TimedBuffer()
         self.motor_buffer = TimedBuffer()
-        self.label_buffer = TimedBuffer()
+        # Mission label is state, not a timestamp-synchronized sensor.  The last
+        # received value remains active until another label arrives.
+        self.label_latch = LabelLatch(self.params["default_mission_label"])
+        self.sync_pending_images = deque()
 
         self.recording_enabled = self.params["enable_recording_on_start"]
         self.started_at = datetime.now()
@@ -86,17 +119,44 @@ class ILCommonRecorder(Node):
         self.image_count = 0
         self.scan_count = 0
         self.skipped_missing_motor = 0
+        self.skipped_missing_scan = 0
+        self.skipped_unsynced_scan = 0
         self.skipped_label_filter = 0
         self.skipped_speed_filter = 0
         self.skipped_rate_limit = 0
         self.skipped_disk_limit = 0
-        self.last_saved_ns: Optional[int] = None
+        self.dropped_queue_full = 0
+        self.dropped_sync_queue_full = 0
+        self.writer_errors = []
+        self.stop_reason = ""
+        self.writer_shutdown_wait_sec = 0.0
+        self._closed = False
+        self.last_enqueued_ns: Optional[int] = None
+        self.last_free_disk_gb: Optional[float] = None
         self.last_debug_sec = 0.0
         self.warnings = []
+        self.disk_guard = DiskSpaceGuard(
+            min_free_gb=self.params["min_free_disk_gb"],
+            period_sec=self.params["disk_check_period_sec"],
+            enabled=self.params["stop_on_low_disk"],
+        )
+
+        self.pending_queue: queue.Queue[PendingSample] = queue.Queue(
+            maxsize=self.params["writer_queue_size"]
+        )
+        self.writer_stop = threading.Event()
+        self.accepting_samples = True
+        self.writer_thread = threading.Thread(
+            target=self._writer_loop,
+            name="il-data-writer",
+            daemon=True,
+        )
+        self.writer_thread.start()
 
         self._write_static_files()
         self._create_subscriptions()
         self.create_timer(self.params["debug_print_period_sec"], self._debug_tick)
+        self.create_timer(0.01, self._drain_sync_pending_images)
         self.get_logger().info(f"IL dataset session: {self.session_dir}")
         self.get_logger().warn(
             "Subscribe-only recorder: this node never publishes /xycar_motor."
@@ -119,18 +179,26 @@ class ILCommonRecorder(Node):
             "default_mission_label": "idle",
             "save_front_image": True,
             "save_scan_npz": False,
+            "require_scan": False,
             "save_imu": False,
             "save_odom": False,
             "image_format": "jpg",
             "jpeg_quality": 90,
             "max_save_rate_hz": 10.0,
             "min_abs_speed_to_save": 0.0,
+            "max_abs_speed_to_save": 0.0,
             "save_when_stopped": False,
             "require_motor_command": True,
             "approximate_sync_tolerance_sec": 0.10,
+            "sync_wait_sec": 0.10,
             "flush_every_n_samples": 20,
             "max_session_duration_sec": 0.0,
             "max_disk_usage_gb": 0.0,
+            "writer_queue_size": 128,
+            "writer_shutdown_timeout_sec": 15.0,
+            "min_free_disk_gb": 10.0,
+            "disk_check_period_sec": 5.0,
+            "stop_on_low_disk": True,
             "enable_recording_on_start": True,
             "exclude_bad_data": True,
             "exclude_idle": True,
@@ -157,20 +225,32 @@ class ILCommonRecorder(Node):
             "default_mission_label": self._get_str("default_mission_label"),
             "save_front_image": self._get_bool("save_front_image"),
             "save_scan_npz": self._get_bool("save_scan_npz"),
+            "require_scan": self._get_bool("require_scan"),
             "save_imu": self._get_bool("save_imu"),
             "save_odom": self._get_bool("save_odom"),
             "image_format": image_suffix(self._get_str("image_format")),
             "jpeg_quality": self._get_int("jpeg_quality"),
             "max_save_rate_hz": self._get_float("max_save_rate_hz"),
             "min_abs_speed_to_save": self._get_float("min_abs_speed_to_save"),
+            "max_abs_speed_to_save": self._get_float("max_abs_speed_to_save"),
             "save_when_stopped": self._get_bool("save_when_stopped"),
             "require_motor_command": self._get_bool("require_motor_command"),
             "approximate_sync_tolerance_sec": self._get_float(
                 "approximate_sync_tolerance_sec"
             ),
+            "sync_wait_sec": max(0.0, self._get_float("sync_wait_sec")),
             "flush_every_n_samples": self._get_int("flush_every_n_samples"),
             "max_session_duration_sec": self._get_float("max_session_duration_sec"),
             "max_disk_usage_gb": self._get_float("max_disk_usage_gb"),
+            "writer_queue_size": max(1, self._get_int("writer_queue_size")),
+            "writer_shutdown_timeout_sec": max(
+                1.0, self._get_float("writer_shutdown_timeout_sec")
+            ),
+            "min_free_disk_gb": max(0.0, self._get_float("min_free_disk_gb")),
+            "disk_check_period_sec": max(
+                0.5, self._get_float("disk_check_period_sec")
+            ),
+            "stop_on_low_disk": self._get_bool("stop_on_low_disk"),
             "enable_recording_on_start": self._get_bool("enable_recording_on_start"),
             "exclude_bad_data": self._get_bool("exclude_bad_data"),
             "exclude_idle": self._get_bool("exclude_idle"),
@@ -238,22 +318,6 @@ class ILCommonRecorder(Node):
         )
 
     def _write_static_files(self) -> None:
-        topics = {
-            "camera_front_topic": self.params["camera_front_topic"],
-            "scan_topic": self.params["scan_topic"],
-            "imu_topic": self.params["imu_topic"],
-            "odom_topic": self.params["odom_topic"],
-            "motor_topic": self.params["motor_topic"],
-            "mission_label_topic": self.params["mission_label_topic"],
-            "default_mission_label": self.params["default_mission_label"],
-        }
-        write_session_readme(
-            self.session_dir,
-            self.session_id,
-            self.params["dataset_profile"],
-            self.allowed_labels,
-            topics,
-        )
         self._write_metadata(final=False)
 
     def _open_optional_debug_writers(self) -> None:
@@ -310,36 +374,49 @@ class ILCommonRecorder(Node):
             self.odom_writer.writeheader()
 
     def _create_subscriptions(self) -> None:
-        qos = 10
+        reliable_qos = QoSProfile(
+            depth=10,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
         self.create_subscription(
-            Image, self.params["camera_front_topic"], self._front_image_cb, qos
+            Image,
+            self.params["camera_front_topic"],
+            self._front_image_cb,
+            qos_profile_sensor_data,
         )
         self.create_subscription(
             LaserScan,
             self.params["scan_topic"],
             lambda msg: self.scan_buffer.add(stamp_to_ns(msg), msg),
-            qos,
+            qos_profile_sensor_data,
         )
         self.create_subscription(
             Imu,
             self.params["imu_topic"],
             lambda msg: self.imu_buffer.add(stamp_to_ns(msg), msg),
-            qos,
+            qos_profile_sensor_data,
         )
         self.create_subscription(
             Odometry,
             self.params["odom_topic"],
             lambda msg: self.odom_buffer.add(stamp_to_ns(msg), msg),
-            qos,
+            qos_profile_sensor_data,
         )
         self.create_subscription(
-            self.motor_msg_type, self.params["motor_topic"], self._motor_cb, qos
+            self.motor_msg_type,
+            self.params["motor_topic"],
+            self._motor_cb,
+            reliable_qos,
         )
         self.create_subscription(
             String,
             self.params["mission_label_topic"],
             self._mission_label_cb,
-            qos,
+            reliable_qos,
+        )
+        self.get_logger().info(
+            "QoS: camera/scan/imu/odom=SensorDataQoS(BEST_EFFORT), "
+            "motor/mission_label=RELIABLE(depth=10)"
         )
 
     def _front_image_cb(self, msg: Image) -> None:
@@ -347,14 +424,36 @@ class ILCommonRecorder(Node):
         self.front_buffer.add(stamp_ns, msg)
         if not self.recording_enabled:
             return
-        self._try_record_sample(stamp_ns, msg)
+        max_pending = max(32, self.params["writer_queue_size"] * 2)
+        if len(self.sync_pending_images) >= max_pending:
+            self.sync_pending_images.popleft()
+            self.dropped_sync_queue_full += 1
+            self._warn_once("sensor synchronization queue is full; oldest image dropped")
+        self.sync_pending_images.append((time.monotonic(), stamp_ns, msg))
+
+    def _drain_sync_pending_images(self) -> None:
+        """Delay matching so a slightly later scan can still pair with the image."""
+        if not self.recording_enabled:
+            self.sync_pending_images.clear()
+            return
+        now = time.monotonic()
+        wait_sec = self.params["sync_wait_sec"]
+        while self.sync_pending_images:
+            received_at, stamp_ns, msg = self.sync_pending_images[0]
+            if now - received_at < wait_sec:
+                break
+            self.sync_pending_images.popleft()
+            self._try_record_sample(stamp_ns, msg)
 
     def _motor_cb(self, msg: Any) -> None:
         self.motor_buffer.add(stamp_to_ns(msg, ros_time_to_ns(self.get_clock().now())), msg)
 
     def _mission_label_cb(self, msg: String) -> None:
         now_ns = ros_time_to_ns(self.get_clock().now())
-        self.label_buffer.add(now_ns, msg)
+        label = string_from_msg(msg).strip()
+        if not label:
+            return
+        self.label_latch.update(label, now_ns)
 
     def _try_record_sample(self, stamp_ns: int, front_msg: Image) -> None:
         if not self._within_duration_limit():
@@ -364,10 +463,12 @@ class ILCommonRecorder(Node):
         if not self._within_rate_limit(stamp_ns):
             self.skipped_rate_limit += 1
             return
-        if not self._within_disk_limit():
+        if not self._disk_space_available():
             self.skipped_disk_limit += 1
             self.recording_enabled = False
-            self._warn_once("max_disk_usage_gb reached; recording stopped")
+            self.accepting_samples = False
+            self.stop_reason = "low_disk_space"
+            self._warn_once("low disk space; recording stopped safely")
             return
 
         tolerance_ns = int(self.params["approximate_sync_tolerance_sec"] * 1e9)
@@ -388,12 +489,7 @@ class ILCommonRecorder(Node):
                     return
                 motor_angle, motor_speed = "", ""
 
-        label_item = self.label_buffer.nearest(stamp_ns, tolerance_ns)
-        mission_label = (
-            string_from_msg(label_item.msg)
-            if label_item
-            else self.params["default_mission_label"]
-        )
+        mission_label = self.label_latch.active
         if not self._label_allowed(mission_label):
             self.skipped_label_filter += 1
             return
@@ -402,23 +498,94 @@ class ILCommonRecorder(Node):
             self.skipped_speed_filter += 1
             return
 
-        front_path = self._save_front_image(stamp_ns, front_msg)
-        scan_path = self._save_nearest_scan(stamp_ns, tolerance_ns)
-        self._write_optional_debug_sample(stamp_ns, tolerance_ns)
+        if not self.accepting_samples:
+            return
+        scan_item = self.scan_buffer.nearest(stamp_ns, tolerance_ns)
+        if self.params["require_scan"] and scan_item is None:
+            if len(self.scan_buffer) == 0:
+                self.skipped_missing_scan += 1
+            else:
+                self.skipped_unsynced_scan += 1
+            return
+        scan_timestamp_ns = scan_item.stamp_ns if scan_item is not None else None
+        scan_time_offset_ms = (
+            abs(scan_timestamp_ns - stamp_ns) / 1_000_000.0
+            if scan_timestamp_ns is not None
+            else None
+        )
+        imu_item = self.imu_buffer.nearest(stamp_ns, tolerance_ns)
+        odom_item = self.odom_buffer.nearest(stamp_ns, tolerance_ns)
+        pending = PendingSample(
+            timestamp_ns=stamp_ns,
+            scan_timestamp_ns=scan_timestamp_ns,
+            scan_time_offset_ms=scan_time_offset_ms,
+            front_msg=front_msg,
+            scan_msg=scan_item.msg if scan_item else None,
+            imu_msg=imu_item.msg if imu_item else None,
+            odom_msg=odom_item.msg if odom_item else None,
+            motor_angle=motor_angle,
+            motor_speed=motor_speed,
+            mission_label=mission_label,
+        )
+        try:
+            self.pending_queue.put_nowait(pending)
+            self.last_enqueued_ns = stamp_ns
+        except queue.Full:
+            self.dropped_queue_full += 1
+            self._warn_once("writer queue is full; newest samples are being dropped")
 
-        row = {
-            "timestamp_ns": stamp_ns,
-            "front_image_path": relative_to_session(self.session_dir, front_path),
-            "scan_npz_path": relative_to_session(self.session_dir, scan_path),
-            "motor_angle": motor_angle,
-            "motor_speed": motor_speed,
-            "mission_label": mission_label,
-            "dataset_profile": self.params["dataset_profile"],
-            "session_id": self.session_id,
-        }
-        self.csv_writer.writerow(row)
+    def _writer_loop(self) -> None:
+        """Serialize JPEG/NPZ/CSV writes away from ROS callbacks."""
+        while not self.writer_stop.is_set() or not self.pending_queue.empty():
+            try:
+                pending = self.pending_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            try:
+                self._write_pending_sample(pending)
+            except Exception as exc:  # keep metadata even after a disk/codec failure
+                message = f"{type(exc).__name__}: {exc}"
+                self.writer_errors.append(message)
+                self.recording_enabled = False
+                self.accepting_samples = False
+                self.stop_reason = "writer_error"
+                self.writer_stop.set()
+                while True:
+                    try:
+                        self.pending_queue.get_nowait()
+                        self.pending_queue.task_done()
+                    except queue.Empty:
+                        break
+            finally:
+                self.pending_queue.task_done()
+
+    def _write_pending_sample(self, pending: PendingSample) -> None:
+        front_path = self._save_front_image(pending.timestamp_ns, pending.front_msg)
+        scan_path = None
+        if self.params["save_scan_npz"] and pending.scan_msg is not None:
+            scan_path = self._save_scan(pending.timestamp_ns, pending.scan_msg)
+        if self.imu_writer is not None and pending.imu_msg is not None:
+            self.imu_writer.writerow(self._imu_row(pending.timestamp_ns, pending.imu_msg))
+        if self.odom_writer is not None and pending.odom_msg is not None:
+            self.odom_writer.writerow(self._odom_row(pending.timestamp_ns, pending.odom_msg))
+        self.csv_writer.writerow(
+            {
+                "timestamp_ns": pending.timestamp_ns,
+                "image_timestamp_ns": pending.timestamp_ns,
+                "scan_timestamp_ns": pending.scan_timestamp_ns or "",
+                "scan_time_offset_ms": (
+                    "" if pending.scan_time_offset_ms is None else pending.scan_time_offset_ms
+                ),
+                "front_image_path": relative_to_session(self.session_dir, front_path),
+                "scan_npz_path": relative_to_session(self.session_dir, scan_path),
+                "motor_angle": pending.motor_angle,
+                "motor_speed": pending.motor_speed,
+                "mission_label": pending.mission_label,
+                "dataset_profile": self.params["dataset_profile"],
+                "session_id": self.session_id,
+            }
+        )
         self.sample_count += 1
-        self.last_saved_ns = stamp_ns
         if self.sample_count % max(1, self.params["flush_every_n_samples"]) == 0:
             self.csv_handle.flush()
             self._flush_debug_handles()
@@ -434,6 +601,9 @@ class ILCommonRecorder(Node):
 
     def _speed_allowed(self, speed: float) -> bool:
         threshold = self.params["min_abs_speed_to_save"]
+        maximum = self.params["max_abs_speed_to_save"]
+        if maximum > 0.0 and abs(speed) > maximum:
+            return False
         if self.params["exclude_zero_speed"] and abs(speed) <= max(threshold, 1e-6):
             return False
         if abs(speed) >= threshold:
@@ -542,9 +712,9 @@ class ILCommonRecorder(Node):
 
     def _within_rate_limit(self, stamp_ns: int) -> bool:
         max_rate = self.params["max_save_rate_hz"]
-        if max_rate <= 0.0 or self.last_saved_ns is None:
+        if max_rate <= 0.0 or self.last_enqueued_ns is None:
             return True
-        return stamp_ns - self.last_saved_ns >= int(1e9 / max_rate)
+        return stamp_ns - self.last_enqueued_ns >= int(1e9 / max_rate)
 
     def _within_duration_limit(self) -> bool:
         limit = self.params["max_session_duration_sec"]
@@ -552,18 +722,14 @@ class ILCommonRecorder(Node):
             return True
         return (datetime.now() - self.started_at).total_seconds() <= limit
 
-    def _within_disk_limit(self) -> bool:
-        limit_gb = self.params["max_disk_usage_gb"]
-        if limit_gb <= 0.0:
+    def _disk_space_available(self) -> bool:
+        try:
+            available = self.disk_guard.available(self.session_dir)
+            self.last_free_disk_gb = self.disk_guard.last_free_gb
+        except OSError as exc:
+            self._warn_once(f"disk free-space check failed: {exc}")
             return True
-        total = 0
-        for path in self.session_dir.rglob("*"):
-            if path.is_file():
-                try:
-                    total += path.stat().st_size
-                except OSError:
-                    pass
-        return total / (1024 ** 3) <= limit_gb
+        return available
 
     def _debug_tick(self) -> None:
         now_ns = ros_time_to_ns(self.get_clock().now())
@@ -572,7 +738,7 @@ class ILCommonRecorder(Node):
             missing.append("front_image")
         if len(self.motor_buffer) == 0:
             missing.append("motor")
-        if len(self.label_buffer) == 0:
+        if not self.label_latch.ever_received:
             missing.append("mission_label")
         if self.params["save_scan_npz"] and len(self.scan_buffer) == 0:
             missing.append("scan")
@@ -585,19 +751,22 @@ class ILCommonRecorder(Node):
                 f"{self.params['motor_topic']} has {len(motor_publishers)} publishers"
             )
         self.get_logger().info(
-            "samples=%d images=%d scans=%d skipped(motor=%d,label=%d,speed=%d,rate=%d) "
-            "buffers(front=%d,motor=%d,label=%d,scan=%d) now_ns=%d"
+            "samples=%d images=%d scans=%d queue=%d dropped_queue=%d "
+            "skipped(motor=%d,scan=%d,label=%d,speed=%d,rate=%d) "
+            "buffers(front=%d,motor=%d,scan=%d) now_ns=%d"
             % (
                 self.sample_count,
                 self.image_count,
                 self.scan_count,
+                self.pending_queue.qsize(),
+                self.dropped_queue_full,
                 self.skipped_missing_motor,
+                self.skipped_missing_scan,
                 self.skipped_label_filter,
                 self.skipped_speed_filter,
                 self.skipped_rate_limit,
                 len(self.front_buffer),
                 len(self.motor_buffer),
-                len(self.label_buffer),
                 len(self.scan_buffer),
                 now_ns,
             )
@@ -626,10 +795,23 @@ class ILCommonRecorder(Node):
             "image_count": self.image_count,
             "scan_count": self.scan_count,
             "skipped_missing_motor": self.skipped_missing_motor,
+            "skipped_missing_scan": self.skipped_missing_scan,
+            "skipped_unsynced_scan": self.skipped_unsynced_scan,
             "skipped_label_filter": self.skipped_label_filter,
             "skipped_speed_filter": self.skipped_speed_filter,
             "skipped_rate_limit": self.skipped_rate_limit,
             "skipped_disk_limit": self.skipped_disk_limit,
+            "queue_size": self.pending_queue.qsize(),
+            "dropped_queue_full": self.dropped_queue_full,
+            "dropped_sync_queue_full": self.dropped_sync_queue_full,
+            "writer_errors": list(self.writer_errors),
+            "writer_shutdown_wait_sec": self.writer_shutdown_wait_sec,
+            "stop_reason": self.stop_reason,
+            "last_free_disk_gb": self.last_free_disk_gb,
+            "label_ever_received": self.label_latch.ever_received,
+            "final_active_label": self.label_latch.active,
+            "last_label_timestamp_ns": self.label_latch.last_timestamp_ns,
+            "label_change_count": self.label_latch.change_count,
             "warnings": self.warnings,
             "safety": {
                 "publishes_xycar_motor": False,
@@ -639,12 +821,28 @@ class ILCommonRecorder(Node):
         atomic_write_json(self.session_dir / "metadata.json", data)
 
     def close(self) -> None:
+        if self._closed:
+            return
+        self.recording_enabled = False
+        self.accepting_samples = False
+        self.writer_stop.set()
+        warning_after = self.params["writer_shutdown_timeout_sec"]
+        self.writer_shutdown_wait_sec = wait_for_thread_shutdown(
+            self.writer_thread,
+            warning_after_sec=warning_after,
+            on_warning=lambda elapsed: self._warn_once(
+                "writer shutdown is taking longer than %.1fs; waiting for a safe drain "
+                "before closing CSV files" % elapsed
+            ),
+        )
+        # At this point the writer is guaranteed not to touch these handles again.
         self.csv_handle.flush()
         self.csv_handle.close()
         self._flush_debug_handles()
         for handle in [self.imu_handle, self.odom_handle]:
             if handle is not None:
                 handle.close()
+        self._closed = True
         self._write_metadata(final=True)
 
     def _flush_debug_handles(self) -> None:

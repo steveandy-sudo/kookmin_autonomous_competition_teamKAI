@@ -21,6 +21,7 @@ MODEL_TYPES = (
     "mobilenet_v3_small_phase",
     "resnet18_phase",
     "vit_tiny_phase",
+    "resnet18_lidar",
 )
 
 
@@ -40,7 +41,7 @@ def main() -> None:
     args = build_parser().parse_args()
     import torch
 
-    from policy_models import create_policy_model, model_uses_phase
+    from policy_models import create_policy_model, model_uses_lidar, model_uses_phase
 
     checkpoint_path = Path(args.checkpoint).expanduser().resolve()
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
@@ -50,6 +51,7 @@ def main() -> None:
     input_width = int(checkpoint.get("input_width", args.input_width))
     input_height = int(checkpoint.get("input_height", args.input_height))
     use_phase = bool(args.use_phase or checkpoint.get("use_phase", False) or model_uses_phase(model_type))
+    use_lidar = bool(checkpoint.get("use_lidar", False) or model_uses_lidar(model_type))
 
     device = choose_device(args.device, torch)
     model = create_policy_model(
@@ -65,8 +67,12 @@ def main() -> None:
     output_path = Path(args.output).expanduser().resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image = torch.zeros(1, 3, input_height, input_width, device=device)
+    lidar = torch.zeros(1, 2, 360, device=device)
     with torch.no_grad():
-        if use_phase:
+        if use_lidar:
+            scripted = torch.jit.trace(model, (image, lidar))
+            sample = scripted(image, lidar)
+        elif use_phase:
             phase = torch.zeros(1, 1, device=device)
             scripted = torch.jit.trace(model, (image, phase))
             sample = scripted(image, phase)
@@ -77,7 +83,9 @@ def main() -> None:
 
     loaded = torch.jit.load(str(output_path), map_location=device)
     with torch.no_grad():
-        if use_phase:
+        if use_lidar:
+            loaded_sample = loaded(image, lidar)
+        elif use_phase:
             loaded_sample = loaded(image, phase)
         else:
             loaded_sample = loaded(image)

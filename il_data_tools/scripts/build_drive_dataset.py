@@ -12,7 +12,7 @@ if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
 
 from il_data_tools.dataset_builder_common import (
-    COMMON_OUTPUT_COLUMNS,
+    LIDAR_OUTPUT_COLUMNS,
     add_common_args,
     balance_steering,
     finalize_report,
@@ -39,6 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Build processed CSV files for the steering-only drive policy."
     )
     add_common_args(parser)
+    parser.set_defaults(require_scan=True)
     parser.add_argument(
         "--balance-steering",
         action="store_true",
@@ -83,7 +84,7 @@ def main() -> None:
         )
         splits["train"] = balanced
 
-    output_files = write_splits(config.output_dir, splits, COMMON_OUTPUT_COLUMNS)
+    output_files = write_splits(config.output_dir, splits, LIDAR_OUTPUT_COLUMNS)
     final_report = finalize_report(
         report,
         config.output_dir,
@@ -91,7 +92,7 @@ def main() -> None:
         output_files,
         extra={
             "policy": "drive",
-            "output_columns": COMMON_OUTPUT_COLUMNS,
+            "output_columns": LIDAR_OUTPUT_COLUMNS,
             "balance_steering": balance_report,
             "recovery_oversample": recovery_report,
         },

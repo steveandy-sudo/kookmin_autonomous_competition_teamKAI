@@ -12,6 +12,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
+from image_preprocessing import preprocess_bgr_image
+
 
 class PolicyCsvDataset(Dataset):
     def __init__(
@@ -21,6 +23,8 @@ class PolicyCsvDataset(Dataset):
         input_height: int = 90,
         max_steer_deg: float = 100.0,
         use_phase: bool = False,
+        use_lidar: bool = False,
+        lidar_points: int = 360,
         enable_augment: bool = False,
         enable_flip: bool = False,
     ) -> None:
@@ -29,6 +33,8 @@ class PolicyCsvDataset(Dataset):
         self.input_height = input_height
         self.max_steer_deg = max_steer_deg
         self.use_phase = use_phase
+        self.use_lidar = use_lidar
+        self.lidar_points = lidar_points
         self.enable_augment = enable_augment
         self.enable_flip = enable_flip
 
@@ -48,6 +54,14 @@ class PolicyCsvDataset(Dataset):
                 continue
             row = dict(row)
             row["image_path"] = str(image_path)
+            if use_lidar:
+                scan_path = Path(row.get("scan_npz_path", "")).expanduser()
+                if not scan_path.is_absolute():
+                    scan_path = (self.csv_path.parent / scan_path).resolve()
+                if not scan_path.is_file():
+                    missing.append({"row": index, "scan_npz_path": str(scan_path)})
+                    continue
+                row["scan_npz_path"] = str(scan_path)
             self.rows.append(row)
 
         if missing:
@@ -64,14 +78,21 @@ class PolicyCsvDataset(Dataset):
     def __getitem__(self, index: int) -> Dict[str, object]:
         row = self.rows[index]
         image = load_image_bgr(row["image_path"])
+        lidar = (
+            load_lidar_tensor(row["scan_npz_path"], self.lidar_points)
+            if self.use_lidar
+            else torch.empty(0, dtype=torch.float32)
+        )
         steer_norm = float(row["steer_norm"])
 
         if self.enable_augment:
-            image, steer_norm = augment_image(
+            image, steer_norm, flipped = augment_image(
                 image,
                 steer_norm,
                 enable_flip=self.enable_flip,
             )
+            if flipped and self.use_lidar:
+                lidar = torch.flip(lidar, dims=[1])
 
         image = preprocess_image(image, self.input_width, self.input_height)
         phase = float(row.get("phase") or 0.0)
@@ -79,6 +100,7 @@ class PolicyCsvDataset(Dataset):
         speed = float(row.get("speed") or 0.0)
         metadata = {
             "image_path": row.get("image_path", ""),
+            "scan_npz_path": row.get("scan_npz_path", ""),
             "angle_deg": angle_deg,
             "speed": speed,
             "mission_label": row.get("mission_label", ""),
@@ -88,6 +110,7 @@ class PolicyCsvDataset(Dataset):
         }
         return {
             "image": image,
+            "lidar": lidar,
             "target": torch.tensor([steer_norm], dtype=torch.float32),
             "phase": torch.tensor([phase], dtype=torch.float32),
             "metadata": metadata,
@@ -109,26 +132,50 @@ def preprocess_image(
     input_width: int,
     input_height: int,
 ) -> torch.Tensor:
-    image = cv2.resize(image_bgr, (input_width, input_height), interpolation=cv2.INTER_AREA)
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    image = image.astype(np.float32) / 255.0
-    image = np.transpose(image, (2, 0, 1))
-    return torch.from_numpy(image)
+    # Preserve geometry: 640x480 becomes image[80:440, :] (640x360),
+    # then scales to 160x90.  The same helper must be used at runtime.
+    return torch.from_numpy(
+        preprocess_bgr_image(image_bgr, input_width, input_height)
+    )
+
+
+def load_lidar_tensor(path: str, lidar_points: int = 360) -> torch.Tensor:
+    """Load LaserScan NPZ as normalized range plus validity-mask channels."""
+    if lidar_points <= 0:
+        raise ValueError("lidar_points must be positive")
+    with np.load(str(path), allow_pickle=False) as data:
+        ranges = np.asarray(data["ranges"], dtype=np.float32).reshape(-1)
+        raw_max = float(np.asarray(data.get("range_max", 12.0)).reshape(-1)[0])
+        raw_min = float(np.asarray(data.get("range_min", 0.0)).reshape(-1)[0])
+    if ranges.size == 0:
+        raise ValueError(f"empty LiDAR ranges: {path}")
+    max_range = raw_max if np.isfinite(raw_max) and raw_max > 0.0 else 12.0
+    min_range = raw_min if np.isfinite(raw_min) and raw_min >= 0.0 else 0.0
+    valid = np.isfinite(ranges) & (ranges >= min_range) & (ranges <= max_range)
+    cleaned = np.where(valid, ranges, max_range).astype(np.float32)
+    cleaned = np.clip(cleaned, 0.0, max_range) / max_range
+
+    source_x = np.arange(ranges.size, dtype=np.float32)
+    target_x = np.linspace(0.0, float(ranges.size - 1), lidar_points, dtype=np.float32)
+    normalized = np.interp(target_x, source_x, cleaned).astype(np.float32)
+    valid_mask = np.interp(target_x, source_x, valid.astype(np.float32)).astype(np.float32)
+    valid_mask = (valid_mask >= 0.5).astype(np.float32)
+    return torch.from_numpy(np.stack([normalized, valid_mask], axis=0))
 
 
 def augment_image(
     image_bgr: np.ndarray,
     steer_norm: float,
     enable_flip: bool = False,
-) -> Tuple[np.ndarray, float]:
+) -> Tuple[np.ndarray, float, bool]:
     image = image_bgr.copy()
     image = random_brightness_contrast_gamma(image)
     image = random_noise_blur(image)
-    image = random_shift_crop(image)
-    if enable_flip and random.random() < 0.5:
+    flipped = enable_flip and random.random() < 0.5
+    if flipped:
         image = cv2.flip(image, 1)
         steer_norm = -steer_norm
-    return image, steer_norm
+    return image, steer_norm, flipped
 
 
 def random_brightness_contrast_gamma(image: np.ndarray) -> np.ndarray:
@@ -150,19 +197,3 @@ def random_noise_blur(image: np.ndarray) -> np.ndarray:
     if random.random() < 0.20:
         image = cv2.GaussianBlur(image, (3, 3), 0)
     return image
-
-
-def random_shift_crop(image: np.ndarray) -> np.ndarray:
-    height, width = image.shape[:2]
-    max_dx = max(1, int(width * 0.04))
-    max_dy = max(1, int(height * 0.04))
-    dx = random.randint(-max_dx, max_dx)
-    dy = random.randint(-max_dy, max_dy)
-    matrix = np.float32([[1, 0, dx], [0, 1, dy]])
-    return cv2.warpAffine(
-        image,
-        matrix,
-        (width, height),
-        flags=cv2.INTER_LINEAR,
-        borderMode=cv2.BORDER_REPLICATE,
-    )

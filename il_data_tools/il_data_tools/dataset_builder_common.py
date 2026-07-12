@@ -31,6 +31,12 @@ COMMON_OUTPUT_COLUMNS = [
     "timestamp_ns",
 ]
 
+LIDAR_OUTPUT_COLUMNS = COMMON_OUTPUT_COLUMNS + [
+    "scan_npz_path",
+    "scan_timestamp_ns",
+    "scan_time_offset_ms",
+]
+
 
 @dataclass
 class BuildConfig:
@@ -45,6 +51,8 @@ class BuildConfig:
     val_ratio: float
     test_ratio: float
     seed: int
+    require_scan: bool = False
+    max_scan_time_offset_ms: float = 50.0
     image_column: str = "front_image_path"
     scan_column: str = "scan_npz_path"
 
@@ -59,6 +67,8 @@ class Sample:
     session_id: str
     timestamp_ns: int
     scan_npz_path: str = ""
+    scan_timestamp_ns: Optional[int] = None
+    scan_time_offset_ms: Optional[float] = None
     phase: Optional[float] = None
 
 
@@ -92,6 +102,17 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--test-ratio", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--image-column", default="front_image_path")
+    parser.add_argument(
+        "--require-scan",
+        action="store_true",
+        help="Reject rows without a valid synchronized scan NPZ file.",
+    )
+    parser.add_argument(
+        "--max-scan-time-offset-ms",
+        type=float,
+        default=50.0,
+        help="Maximum image/LiDAR timestamp difference for --require-scan.",
+    )
 
 
 def parse_config(
@@ -105,6 +126,8 @@ def parse_config(
         raise ValueError("--min-abs-speed must be non-negative")
     if args.val_ratio < 0 or args.test_ratio < 0 or args.val_ratio + args.test_ratio >= 1:
         raise ValueError("--val-ratio + --test-ratio must be >= 0 and < 1")
+    if args.max_scan_time_offset_ms < 0:
+        raise ValueError("--max-scan-time-offset-ms must be non-negative")
 
     dataset_roots = [Path(value).expanduser().resolve() for value in args.dataset_root]
     session_dirs = [Path(value).expanduser().resolve() for value in args.session_dir]
@@ -123,6 +146,8 @@ def parse_config(
         val_ratio=float(args.val_ratio),
         test_ratio=float(args.test_ratio),
         seed=int(args.seed),
+        require_scan=bool(args.require_scan),
+        max_scan_time_offset_ms=float(args.max_scan_time_offset_ms),
         image_column=str(args.image_column),
     )
 
@@ -154,6 +179,8 @@ def load_samples(config: BuildConfig) -> Tuple[List[Sample], Dict[str, object]]:
         "max_steer_deg": config.max_steer_deg,
         "min_abs_speed": config.min_abs_speed,
         "keep_stopped": config.keep_stopped,
+        "require_scan": config.require_scan,
+        "max_scan_time_offset_ms": config.max_scan_time_offset_ms,
         "total_rows_read": 0,
         "samples_kept": 0,
         "filtered": Counter(),
@@ -242,6 +269,33 @@ def parse_row(
                 "scan_npz_path": scan_value,
             }
         )
+    if config.require_scan and not scan_output:
+        report["filtered"]["missing_scan"] += 1
+        return None
+
+    scan_timestamp_ns: Optional[int] = None
+    scan_time_offset_ms: Optional[float] = None
+    raw_scan_timestamp = (row.get("scan_timestamp_ns") or "").strip()
+    raw_scan_offset = (row.get("scan_time_offset_ms") or "").strip()
+    if raw_scan_timestamp and raw_scan_offset:
+        try:
+            scan_timestamp_ns = int(raw_scan_timestamp)
+            scan_time_offset_ms = float(raw_scan_offset)
+        except (TypeError, ValueError):
+            report["filtered"]["invalid_scan_timestamp"] += 1
+            if config.require_scan:
+                return None
+    elif config.require_scan:
+        report["filtered"]["missing_scan_timestamp"] += 1
+        return None
+
+    if (
+        config.require_scan
+        and scan_time_offset_ms is not None
+        and scan_time_offset_ms > config.max_scan_time_offset_ms
+    ):
+        report["filtered"]["unsynchronized_scan"] += 1
+        return None
 
     steer_norm = clamp(angle_deg / config.max_steer_deg, -1.0, 1.0)
     session_id = (row.get("session_id") or session_dir.name).strip() or session_dir.name
@@ -255,6 +309,8 @@ def parse_row(
         session_id=session_id,
         timestamp_ns=timestamp_ns,
         scan_npz_path=scan_output,
+        scan_timestamp_ns=scan_timestamp_ns,
+        scan_time_offset_ms=scan_time_offset_ms,
     )
 
 
@@ -405,6 +461,10 @@ def sample_to_row(sample: Sample, columns: Sequence[str]) -> Dict[str, object]:
         "session_id": sample.session_id,
         "timestamp_ns": sample.timestamp_ns,
         "scan_npz_path": sample.scan_npz_path,
+        "scan_timestamp_ns": "" if sample.scan_timestamp_ns is None else sample.scan_timestamp_ns,
+        "scan_time_offset_ms": (
+            "" if sample.scan_time_offset_ms is None else format_float(sample.scan_time_offset_ms)
+        ),
         "phase": "" if sample.phase is None else format_float(sample.phase),
     }
     return {column: values.get(column, "") for column in columns}

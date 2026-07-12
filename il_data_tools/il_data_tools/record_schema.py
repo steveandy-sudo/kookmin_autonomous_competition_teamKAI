@@ -11,6 +11,9 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 CSV_FIELDS = [
     "timestamp_ns",
+    "image_timestamp_ns",
+    "scan_timestamp_ns",
+    "scan_time_offset_ms",
     "front_image_path",
     "scan_npz_path",
     "motor_angle",

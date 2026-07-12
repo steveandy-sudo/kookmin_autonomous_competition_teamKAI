@@ -19,8 +19,8 @@ if str(SCRIPT_DIR) not in sys.path:
 
 
 POLICY_DEFAULT_MODELS = {
-    "drive": "resnet18",
-    "cone": "pilotnet",
+    "drive": "resnet18_lidar",
+    "cone": "resnet18_lidar",
     "overtake": "pilotnet_phase",
 }
 SUPPORTED_MODEL_TYPES = (
@@ -32,6 +32,7 @@ SUPPORTED_MODEL_TYPES = (
     "mobilenet_v3_small_phase",
     "resnet18_phase",
     "vit_tiny_phase",
+    "resnet18_lidar",
 )
 
 
@@ -83,14 +84,21 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
     from torch.utils.data import DataLoader
 
     from policy_dataset import PolicyCsvDataset
-    from policy_models import create_policy_model, model_uses_phase
+    from image_preprocessing import preprocessing_contract
+    from policy_models import create_policy_model, model_uses_lidar, model_uses_phase
 
+    if args.pretrained:
+        raise ValueError(
+            "--pretrained is intentionally disabled: ImageNet normalization is not "
+            "implemented consistently in training, evaluation, and runtime inference."
+        )
     seed_everything(args.seed, torch)
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     model_type = args.model_type or POLICY_DEFAULT_MODELS[args.policy_name]
     use_phase = bool(args.use_phase or model_uses_phase(model_type))
+    use_lidar = model_uses_lidar(model_type)
     if args.policy_name == "overtake" and not use_phase:
         print("WARN overtake policy is usually phase-conditioned; continuing without phase.")
     if "vit_tiny" in model_type:
@@ -106,6 +114,7 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
         input_height=args.input_height,
         max_steer_deg=args.max_steer_deg,
         use_phase=use_phase,
+        use_lidar=use_lidar,
         enable_augment=True,
         enable_flip=args.enable_flip and args.policy_name in {"drive", "cone"},
     )
@@ -115,6 +124,7 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
         input_height=args.input_height,
         max_steer_deg=args.max_steer_deg,
         use_phase=use_phase,
+        use_lidar=use_lidar,
         enable_augment=False,
         enable_flip=False,
     )
@@ -156,12 +166,14 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
         {
             "model_type_resolved": model_type,
             "use_phase_resolved": use_phase,
+            "use_lidar_resolved": use_lidar,
             "device_resolved": str(device),
             "selection_warning": (
                 "Final model must be selected using offline eval, Jetson latency, "
                 "low-speed closed-loop driving, oscillation, and safety compatibility."
             ),
             "safety": "Model outputs steering only. Speed and safety remain rule-based.",
+            "preprocessing": preprocessing_contract(args.input_width, args.input_height),
         }
     )
     write_json(output_dir / "train_config.json", train_config)
@@ -179,6 +191,7 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
             device,
             loss_fn,
             use_phase,
+            use_lidar,
             args.max_steer_deg,
             args.steer_weight_gain,
             args.recovery_weight,
@@ -189,6 +202,7 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
             val_loader,
             device,
             use_phase,
+            use_lidar,
             args.max_steer_deg,
             args.steer_weight_gain,
             args.recovery_weight,
@@ -239,6 +253,7 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
         val_loader,
         device,
         use_phase,
+        use_lidar,
         args.max_steer_deg,
         args.steer_weight_gain,
         args.recovery_weight,
@@ -260,6 +275,7 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
             "policy_name": args.policy_name,
             "model_type": model_type,
             "use_phase": use_phase,
+            "use_lidar": use_lidar,
             "input_width": args.input_width,
             "input_height": args.input_height,
             "max_steer_deg": args.max_steer_deg,
@@ -276,6 +292,7 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
         args.input_width,
         args.input_height,
         use_phase,
+        use_lidar,
         device,
     )
     if args.mark_final:
@@ -299,6 +316,7 @@ def run_epoch(
     device,
     loss_fn,
     use_phase: bool,
+    use_lidar: bool,
     max_steer_deg: float,
     steer_weight_gain: float,
     recovery_weight: float,
@@ -313,8 +331,9 @@ def run_epoch(
         image = batch["image"].to(device)
         target = batch["target"].to(device)
         phase = batch["phase"].to(device)
+        lidar = batch["lidar"].to(device)
         labels = batch["metadata"]["mission_label"]
-        pred = model(image, phase) if use_phase else model(image)
+        pred = run_model(model, image, lidar, phase, use_lidar, use_phase)
         weights = sample_weights(target, labels, steer_weight_gain, recovery_weight, torch).to(device)
         loss_items = loss_fn(pred, target)
         loss = (loss_items * weights).mean()
@@ -332,6 +351,7 @@ def evaluate_loader(
     loader,
     device,
     use_phase: bool,
+    use_lidar: bool,
     max_steer_deg: float,
     steer_weight_gain: float,
     recovery_weight: float,
@@ -349,8 +369,9 @@ def evaluate_loader(
             image = batch["image"].to(device)
             target = batch["target"].to(device)
             phase = batch["phase"].to(device)
+            lidar = batch["lidar"].to(device)
             labels = batch["metadata"]["mission_label"]
-            pred = model(image, phase) if use_phase else model(image)
+            pred = run_model(model, image, lidar, phase, use_lidar, use_phase)
             weights = sample_weights(target, labels, steer_weight_gain, recovery_weight, torch).to(device)
             loss = (loss_fn(pred, target) * weights).mean()
             total_loss += float(loss.detach().cpu()) * target.numel()
@@ -455,19 +476,31 @@ def export_torchscript_model(
     input_width: int,
     input_height: int,
     use_phase: bool,
+    use_lidar: bool,
     device,
 ) -> None:
     import torch
 
     model.eval()
     image = torch.zeros(1, 3, input_height, input_width, device=device)
+    lidar = torch.zeros(1, 2, 360, device=device)
     with torch.no_grad():
-        if use_phase:
+        if use_lidar:
+            scripted = torch.jit.trace(model, (image, lidar))
+        elif use_phase:
             phase = torch.zeros(1, 1, device=device)
             scripted = torch.jit.trace(model, (image, phase))
         else:
             scripted = torch.jit.trace(model, image)
     scripted.save(str(output_path))
+
+
+def run_model(model, image, lidar, phase, use_lidar: bool, use_phase: bool):
+    if use_lidar:
+        return model(image, lidar)
+    if use_phase:
+        return model(image, phase)
+    return model(image)
 
 
 def create_scheduler(name: str, optimizer, epochs: int):

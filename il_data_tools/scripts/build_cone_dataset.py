@@ -12,7 +12,7 @@ if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
 
 from il_data_tools.dataset_builder_common import (
-    COMMON_OUTPUT_COLUMNS,
+    LIDAR_OUTPUT_COLUMNS,
     add_common_args,
     finalize_report,
     load_samples,
@@ -28,7 +28,7 @@ INCLUDE_LABELS = [
     "recovery",
 ]
 
-OUTPUT_COLUMNS = COMMON_OUTPUT_COLUMNS + ["scan_npz_path"]
+OUTPUT_COLUMNS = LIDAR_OUTPUT_COLUMNS
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,6 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Build processed CSV files for the steering-only cone policy."
     )
     add_common_args(parser)
+    parser.set_defaults(require_scan=True)
     return parser
 
 
@@ -56,7 +57,7 @@ def main() -> None:
         extra={
             "policy": "cone",
             "output_columns": OUTPUT_COLUMNS,
-            "note": "scan_npz_path is preserved for future LiDAR-aware models.",
+            "note": "Every processed row contains a timestamp-validated LiDAR scan.",
         },
     )
     write_report(config.output_dir / "dataset_report.json", final_report)

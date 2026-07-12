@@ -25,6 +25,7 @@ SUPPORTED_MODEL_TYPES = (
     "mobilenet_v3_small_phase",
     "resnet18_phase",
     "vit_tiny_phase",
+    "resnet18_lidar",
 )
 
 
@@ -48,11 +49,12 @@ def main() -> None:
     from torch.utils.data import DataLoader
 
     from policy_dataset import PolicyCsvDataset
-    from policy_models import model_uses_phase
+    from policy_models import model_uses_lidar, model_uses_phase
 
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     use_phase = args.use_phase or model_uses_phase(args.model_type)
+    use_lidar = model_uses_lidar(args.model_type)
     device = choose_device(args.device, torch)
     if args.device == "cuda" and device.type != "cuda":
         print("WARN CUDA requested but unavailable; falling back to CPU.")
@@ -63,6 +65,7 @@ def main() -> None:
         input_height=args.input_height,
         max_steer_deg=args.max_steer_deg,
         use_phase=use_phase,
+        use_lidar=use_lidar,
         enable_augment=False,
     )
     loader = DataLoader(dataset, batch_size=128, shuffle=False, num_workers=0)
@@ -74,8 +77,14 @@ def main() -> None:
         for batch in loader:
             image = batch["image"].to(device)
             phase = batch["phase"].to(device)
+            lidar = batch["lidar"].to(device)
             target = batch["target"]
-            pred = model(image, phase) if use_phase else model(image)
+            if use_lidar:
+                pred = model(image, lidar)
+            elif use_phase:
+                pred = model(image, phase)
+            else:
+                pred = model(image)
             pred_np = pred.detach().cpu().numpy().reshape(-1)
             target_np = target.detach().cpu().numpy().reshape(-1)
             phase_np = phase.detach().cpu().numpy().reshape(-1)
@@ -106,6 +115,7 @@ def main() -> None:
             "model": str(Path(args.model).expanduser().resolve()),
             "model_type": args.model_type,
             "use_phase": use_phase,
+            "use_lidar": use_lidar,
             "model_size_mb": Path(args.model).expanduser().resolve().stat().st_size / (1024 * 1024),
         }
     )
