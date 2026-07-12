@@ -104,10 +104,10 @@ XYCAR_SPEED_MAX = 8.0
 XYCAR_CHASSIS_Z = 0.135
 XYCAR_FRONT_WHEEL_CENTER_X = 0.16
 XYCAR_FRONT_WHEEL_CENTER_Z = 0.06
-XYCAR_CAMERA_FROM_FRONT_WHEEL_X = 0.08
-XYCAR_CAMERA_FROM_FRONT_WHEEL_Z = 0.06
-XYCAR_LIDAR_FROM_FRONT_WHEEL_X = -0.04
-XYCAR_LIDAR_FROM_FRONT_WHEEL_Z = 0.17
+XYCAR_CAMERA_FROM_FRONT_WHEEL_X = -0.04
+XYCAR_CAMERA_FROM_FRONT_WHEEL_Z = 0.17
+XYCAR_LIDAR_FROM_FRONT_WHEEL_X = 0.08
+XYCAR_LIDAR_FROM_FRONT_WHEEL_Z = 0.06
 XYCAR_CAMERA_X = XYCAR_FRONT_WHEEL_CENTER_X + XYCAR_CAMERA_FROM_FRONT_WHEEL_X
 XYCAR_CAMERA_Z = (
     XYCAR_FRONT_WHEEL_CENTER_Z
@@ -120,7 +120,11 @@ XYCAR_LIDAR_Z = (
     + XYCAR_LIDAR_FROM_FRONT_WHEEL_Z
     - XYCAR_CHASSIS_Z
 )
+XYCAR_CAMERA_VISIBILITY_MASK = 4294967293
+XYCAR_SELF_VISIBILITY_FLAGS = 2
 XYCAR_CAMERA_HFOV = math.radians(170.0)
+XYCAR_CAMERA_WIDTH = 1280
+XYCAR_CAMERA_HEIGHT = 1024
 XYCAR_CAMERA_PITCH = 0.22
 XYCAR_LIDAR_SAMPLES = 505
 XYCAR_LIDAR_RANGE_MAX = 12.0
@@ -2418,22 +2422,14 @@ def vehicle_model():
         </inertial>
         <collision name="collision"><geometry><box><size>{XYCAR_BODY_LENGTH:.3f} {XYCAR_BODY_WIDTH:.3f} {XYCAR_BODY_HEIGHT:.3f}</size></box></geometry></collision>
         <visual name="body">
+          <visibility_flags>{XYCAR_SELF_VISIBILITY_FLAGS}</visibility_flags>
           <geometry><box><size>{XYCAR_BODY_LENGTH:.3f} {XYCAR_BODY_WIDTH:.3f} {XYCAR_BODY_HEIGHT:.3f}</size></box></geometry>
           <material><ambient>0.1 0.28 0.8 1</ambient><diffuse>0.1 0.28 0.8 1</diffuse></material>
         </visual>
-        <visual name="front_marker">
-          <pose>0.27 0 0.035 0 0 0</pose>
-          <geometry><box><size>0.035 0.13 0.035</size></box></geometry>
-          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material>
-        </visual>
         <visual name="mini_pc_body">
+          <visibility_flags>{XYCAR_SELF_VISIBILITY_FLAGS}</visibility_flags>
           <pose>-0.02 0 0.115 0 0 0</pose>
           <geometry><box><size>0.17 0.13 0.07</size></box></geometry>
-          <material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse></material>
-        </visual>
-        <visual name="camera_body">
-          <pose>{XYCAR_CAMERA_X:.3f} 0 {XYCAR_CAMERA_Z - 0.015:.3f} 0 0 0</pose>
-          <geometry><box><size>0.045 0.060 0.035</size></box></geometry>
           <material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse></material>
         </visual>
         <visual name="lidar_body">
@@ -2448,8 +2444,15 @@ def vehicle_model():
           <camera>
             <camera_info_topic>/camera_info</camera_info_topic>
             <horizontal_fov>{XYCAR_CAMERA_HFOV:.4f}</horizontal_fov>
-            <image><width>640</width><height>480</height><format>R8G8B8</format></image>
+            <image><width>{XYCAR_CAMERA_WIDTH}</width><height>{XYCAR_CAMERA_HEIGHT}</height><format>R8G8B8</format></image>
             <clip><near>0.03</near><far>20</far></clip>
+            <visibility_mask>{XYCAR_CAMERA_VISIBILITY_MASK}</visibility_mask>
+            <lens>
+              <type>equidistant</type>
+              <scale_to_hfov>true</scale_to_hfov>
+              <cutoff_angle>1.5707963267948966</cutoff_angle>
+              <env_texture_size>512</env_texture_size>
+            </lens>
           </camera>
           <always_on>true</always_on>
           <visualize>false</visualize>
@@ -2485,25 +2488,25 @@ def vehicle_model():
         <pose>0.16 {XYCAR_WHEEL_Y:.4f} 0.06 -1.5707 0 0</pose>
         <inertial><mass>0.12</mass><inertia><ixx>0.0004</ixx><iyy>0.0004</iyy><izz>0.00025</izz></inertia></inertial>
         <collision name="collision"><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry></collision>
-        <visual name="visual"><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry><material><ambient>0.03 0.03 0.03 1</ambient><diffuse>0.03 0.03 0.03 1</diffuse></material></visual>
+        <visual name="visual"><visibility_flags>{XYCAR_SELF_VISIBILITY_FLAGS}</visibility_flags><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry><material><ambient>0.03 0.03 0.03 1</ambient><diffuse>0.03 0.03 0.03 1</diffuse></material></visual>
       </link>
       <link name="front_right_wheel">
         <pose>0.16 -{XYCAR_WHEEL_Y:.4f} 0.06 -1.5707 0 0</pose>
         <inertial><mass>0.12</mass><inertia><ixx>0.0004</ixx><iyy>0.0004</iyy><izz>0.00025</izz></inertia></inertial>
         <collision name="collision"><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry></collision>
-        <visual name="visual"><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry><material><ambient>0.03 0.03 0.03 1</ambient><diffuse>0.03 0.03 0.03 1</diffuse></material></visual>
+        <visual name="visual"><visibility_flags>{XYCAR_SELF_VISIBILITY_FLAGS}</visibility_flags><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry><material><ambient>0.03 0.03 0.03 1</ambient><diffuse>0.03 0.03 0.03 1</diffuse></material></visual>
       </link>
       <link name="rear_left_wheel">
         <pose>-0.16 {XYCAR_WHEEL_Y:.4f} 0.06 -1.5707 0 0</pose>
         <inertial><mass>0.12</mass><inertia><ixx>0.0004</ixx><iyy>0.0004</iyy><izz>0.00025</izz></inertia></inertial>
         <collision name="collision"><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry></collision>
-        <visual name="visual"><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry><material><ambient>0.03 0.03 0.03 1</ambient><diffuse>0.03 0.03 0.03 1</diffuse></material></visual>
+        <visual name="visual"><visibility_flags>{XYCAR_SELF_VISIBILITY_FLAGS}</visibility_flags><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry><material><ambient>0.03 0.03 0.03 1</ambient><diffuse>0.03 0.03 0.03 1</diffuse></material></visual>
       </link>
       <link name="rear_right_wheel">
         <pose>-0.16 -{XYCAR_WHEEL_Y:.4f} 0.06 -1.5707 0 0</pose>
         <inertial><mass>0.12</mass><inertia><ixx>0.0004</ixx><iyy>0.0004</iyy><izz>0.00025</izz></inertia></inertial>
         <collision name="collision"><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry></collision>
-        <visual name="visual"><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry><material><ambient>0.03 0.03 0.03 1</ambient><diffuse>0.03 0.03 0.03 1</diffuse></material></visual>
+        <visual name="visual"><visibility_flags>{XYCAR_SELF_VISIBILITY_FLAGS}</visibility_flags><geometry><cylinder><length>0.035</length><radius>0.06</radius></cylinder></geometry><material><ambient>0.03 0.03 0.03 1</ambient><diffuse>0.03 0.03 0.03 1</diffuse></material></visual>
       </link>
       <joint name="front_left_wheel_steering_joint" type="revolute">
         <parent>chassis</parent><child>front_left_wheel_steering_link</child>

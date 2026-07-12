@@ -62,11 +62,11 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("source_name", "xycar_camera_perception")
         self.declare_parameter("publish_rate_limit_hz", 15.0)
         self.declare_parameter("publish_empty_optional_topics", True)
-        self.declare_parameter("roi_top_row", 230)
-        self.declare_parameter("roi_bottom_row", 470)
+        self.declare_parameter("roi_top_row", 0)
+        self.declare_parameter("roi_bottom_row", 219)
         self.declare_parameter("row_step_px", 6)
         self.declare_parameter("image_center_x_px", -1.0)
-        self.declare_parameter("projection_mode", "vanishing_point")
+        self.declare_parameter("projection_mode", "bev_homography")
         self.declare_parameter("horizon_row_px", 236.0)
         self.declare_parameter("vanishing_point_x_px", -1.0)
         self.declare_parameter("ipm_x_scale_m_px", 67.0)
@@ -74,6 +74,22 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("horizon_min_denom_px", 8.0)
         self.declare_parameter("min_projected_x_m", 0.20)
         self.declare_parameter("max_projected_x_m", 5.00)
+        self.declare_parameter("calib_yaml", "")
+        self.declare_parameter("enable_rectify", True)
+        self.declare_parameter("rect_balance", 0.8)
+        self.declare_parameter("src_tl_x_ratio", 0.42)
+        self.declare_parameter("src_tr_x_ratio", 0.58)
+        self.declare_parameter("src_br_x_ratio", 1.10)
+        self.declare_parameter("src_bl_x_ratio", -0.10)
+        self.declare_parameter("src_top_y_ratio", 0.48)
+        self.declare_parameter("src_bottom_y_ratio", 0.72)
+        self.declare_parameter("bev_width", 640)
+        self.declare_parameter("bev_height", 220)
+        self.declare_parameter("dst_left_ratio", 0.10)
+        self.declare_parameter("dst_right_ratio", 0.90)
+        self.declare_parameter("lateral_m_per_px", 0.00164)
+        self.declare_parameter("forward_m_per_px", 0.005)
+        self.declare_parameter("bev_x_offset_m", 0.0)
         self.declare_parameter("near_x_m", 0.20)
         self.declare_parameter("far_x_m", 2.20)
         self.declare_parameter("near_m_per_px", 0.0022)
@@ -111,6 +127,22 @@ class CameraPerceptionNode(Node):
         self.horizon_min_denom_px = float(self.get_parameter("horizon_min_denom_px").value)
         self.min_projected_x_m = float(self.get_parameter("min_projected_x_m").value)
         self.max_projected_x_m = float(self.get_parameter("max_projected_x_m").value)
+        self.calib_yaml = str(self.get_parameter("calib_yaml").value)
+        self.enable_rectify = bool(self.get_parameter("enable_rectify").value)
+        self.rect_balance = float(self.get_parameter("rect_balance").value)
+        self.src_tl_x_ratio = float(self.get_parameter("src_tl_x_ratio").value)
+        self.src_tr_x_ratio = float(self.get_parameter("src_tr_x_ratio").value)
+        self.src_br_x_ratio = float(self.get_parameter("src_br_x_ratio").value)
+        self.src_bl_x_ratio = float(self.get_parameter("src_bl_x_ratio").value)
+        self.src_top_y_ratio = float(self.get_parameter("src_top_y_ratio").value)
+        self.src_bottom_y_ratio = float(self.get_parameter("src_bottom_y_ratio").value)
+        self.bev_width = int(self.get_parameter("bev_width").value)
+        self.bev_height = int(self.get_parameter("bev_height").value)
+        self.dst_left_ratio = float(self.get_parameter("dst_left_ratio").value)
+        self.dst_right_ratio = float(self.get_parameter("dst_right_ratio").value)
+        self.lateral_m_per_px = float(self.get_parameter("lateral_m_per_px").value)
+        self.forward_m_per_px = float(self.get_parameter("forward_m_per_px").value)
+        self.bev_x_offset_m = float(self.get_parameter("bev_x_offset_m").value)
         self.near_x_m = float(self.get_parameter("near_x_m").value)
         self.far_x_m = float(self.get_parameter("far_x_m").value)
         self.near_m_per_px = float(self.get_parameter("near_m_per_px").value)
@@ -136,6 +168,19 @@ class CameraPerceptionNode(Node):
         self.min_publish_period = 0.0 if rate_limit_hz <= 0.0 else 1.0 / rate_limit_hz
         self.last_publish_wall_time = 0.0
         self.detection_id = 1
+        self.K: np.ndarray | None = None
+        self.D: np.ndarray | None = None
+        self.distortion_model = "fisheye"
+        self.K_rect: np.ndarray | None = None
+        self.rect_map1: np.ndarray | None = None
+        self.rect_map2: np.ndarray | None = None
+        self.rect_size: tuple[int, int] | None = None
+        self.M: np.ndarray | None = None
+        self.M_inv: np.ndarray | None = None
+        self.homography_input_shape: tuple[int, int] | None = None
+        self.homography_output_shape: tuple[int, int] | None = None
+        self.current_projection_height = self.bev_height
+        self.load_calib_yaml()
 
         self.road_segments_pub = self.create_publisher(
             RoadSegmentArray,
@@ -174,8 +219,8 @@ class CameraPerceptionNode(Node):
             10,
         )
         self.get_logger().info(
-            "camera perception ready: /image_raw -> /perception/road_segments, "
-            "/perception/centerline"
+            f"camera perception ready: /image_raw -> /perception/road_segments, "
+            f"/perception/centerline, projection_mode={self.projection_mode}"
         )
 
     def next_detection_id(self) -> int:
@@ -221,7 +266,9 @@ class CameraPerceptionNode(Node):
             self.debug_markers_pub.publish(self.build_markers(header, road_segments, centerline))
 
     def detect_lanes(self, image: np.ndarray, header) -> tuple[RoadSegmentArray, Centerline, np.ndarray]:
+        image = self.prepare_projection_image(image)
         height, width = image.shape[:2]
+        self.current_projection_height = height
         center_x = self.image_center_x_px if self.image_center_x_px >= 0.0 else width * 0.5
         roi_top = max(0, min(height - 1, self.roi_top_row))
         roi_bottom = max(roi_top + 1, min(height - 1, self.roi_bottom_row))
@@ -253,6 +300,8 @@ class CameraPerceptionNode(Node):
         right_points: list[Point] = []
         yellow_points: list[Point] = []
         debug = image.copy()
+        if self.projection_mode == "bev_homography":
+            debug = self.draw_bev_guides(debug)
         cv2.rectangle(debug, (0, roi_top), (width - 1, roi_bottom), (80, 80, 80), 1)
 
         for row in range(roi_bottom, roi_top - 1, -self.row_step_px):
@@ -330,6 +379,159 @@ class CameraPerceptionNode(Node):
             return None
         return min(clusters, key=lambda value: abs(value - center_x))
 
+    def load_calib_yaml(self) -> None:
+        if not self.calib_yaml:
+            return
+        try:
+            import yaml
+
+            with open(self.calib_yaml, "r", encoding="utf-8") as file:
+                data = yaml.safe_load(file)
+            if "camera_matrix" in data:
+                self.K = np.array(data["camera_matrix"]["data"], dtype=np.float64).reshape(3, 3)
+            elif "K" in data:
+                self.K = np.array(data["K"], dtype=np.float64).reshape(3, 3)
+            else:
+                raise RuntimeError("camera_matrix or K is missing")
+
+            if "distortion_coefficients" in data:
+                self.D = np.array(data["distortion_coefficients"]["data"], dtype=np.float64)
+            elif "D" in data:
+                self.D = np.array(data["D"], dtype=np.float64)
+            else:
+                self.D = np.zeros(4, dtype=np.float64)
+
+            self.distortion_model = str(data.get("distortion_model", "fisheye")).lower()
+            self.get_logger().info(f"loaded camera calibration yaml: {self.calib_yaml}")
+        except Exception as exc:
+            self.get_logger().warn(f"failed to load calib_yaml: {exc}")
+            self.K = None
+            self.D = None
+
+    def build_rectify_map(self, width: int, height: int) -> bool:
+        if self.K is None or self.D is None:
+            return False
+
+        size = (width, height)
+        R = np.eye(3, dtype=np.float64)
+        try:
+            if "fisheye" in self.distortion_model or "equidistant" in self.distortion_model:
+                d4 = np.zeros((4, 1), dtype=np.float64)
+                count = min(4, len(self.D))
+                d4[:count, 0] = self.D[:count]
+                self.K_rect = cv2.fisheye.estimateNewCameraMatrixForUndistortRectify(
+                    self.K,
+                    d4,
+                    size,
+                    R,
+                    balance=self.rect_balance,
+                    new_size=size,
+                )
+                self.rect_map1, self.rect_map2 = cv2.fisheye.initUndistortRectifyMap(
+                    self.K,
+                    d4,
+                    R,
+                    self.K_rect,
+                    size,
+                    cv2.CV_32FC1,
+                )
+            else:
+                self.K_rect, _ = cv2.getOptimalNewCameraMatrix(
+                    self.K,
+                    self.D,
+                    size,
+                    alpha=self.rect_balance,
+                    newImgSize=size,
+                )
+                self.rect_map1, self.rect_map2 = cv2.initUndistortRectifyMap(
+                    self.K,
+                    self.D,
+                    R,
+                    self.K_rect,
+                    size,
+                    cv2.CV_32FC1,
+                )
+            self.rect_size = size
+            self.get_logger().info(f"rectify map built: {size}, balance={self.rect_balance}")
+            return True
+        except cv2.error as exc:
+            self.get_logger().warn(f"rectify map failed: {exc}")
+            return False
+
+    def rectify_image(self, image: np.ndarray) -> np.ndarray:
+        if not self.enable_rectify:
+            return image
+        height, width = image.shape[:2]
+        if self.rect_map1 is None or self.rect_map2 is None or self.rect_size != (width, height):
+            if not self.build_rectify_map(width, height):
+                return image
+        return cv2.remap(
+            image,
+            self.rect_map1,
+            self.rect_map2,
+            interpolation=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=(0, 0, 0),
+        )
+
+    def build_homography(self, width: int, height: int) -> None:
+        tl_x = self.src_tl_x_ratio * width
+        tr_x = self.src_tr_x_ratio * width
+        br_x = self.src_br_x_ratio * width
+        bl_x = self.src_bl_x_ratio * width
+        top_y = self.src_top_y_ratio * height
+        bottom_y = self.src_bottom_y_ratio * height
+        dst_l = self.dst_left_ratio * self.bev_width
+        dst_r = self.dst_right_ratio * self.bev_width
+
+        src = np.float32([[tl_x, top_y], [tr_x, top_y], [br_x, bottom_y], [bl_x, bottom_y]])
+        dst = np.float32(
+            [[dst_l, 0], [dst_r, 0], [dst_r, self.bev_height], [dst_l, self.bev_height]]
+        )
+        self.M = cv2.getPerspectiveTransform(src, dst)
+        self.M_inv = cv2.getPerspectiveTransform(dst, src)
+        self.homography_input_shape = (width, height)
+        self.homography_output_shape = (self.bev_width, self.bev_height)
+
+    def prepare_projection_image(self, image: np.ndarray) -> np.ndarray:
+        if self.projection_mode != "bev_homography":
+            return image
+
+        rectified = self.rectify_image(image)
+        height, width = rectified.shape[:2]
+        output_shape = (self.bev_width, self.bev_height)
+        if (
+            self.M is None
+            or self.homography_input_shape != (width, height)
+            or self.homography_output_shape != output_shape
+        ):
+            self.build_homography(width, height)
+        return cv2.warpPerspective(rectified, self.M, output_shape)
+
+    def draw_bev_guides(self, image: np.ndarray) -> np.ndarray:
+        out = image.copy()
+        height, width = out.shape[:2]
+        if self.lateral_m_per_px <= 0.0:
+            return out
+        center_x = width * 0.5
+
+        def col_from_y_left(y_left_m: float) -> int:
+            return int(round(center_x - y_left_m / self.lateral_m_per_px))
+
+        for y_left, label, color in [
+            (0.40, "left +0.40m", (255, 0, 0)),
+            (0.00, "center 0.00m", (0, 255, 255)),
+            (-0.40, "right -0.40m", (0, 0, 255)),
+        ]:
+            col = col_from_y_left(y_left)
+            if 0 <= col < width:
+                cv2.line(out, (col, 0), (col, height - 1), color, 1)
+                cv2.putText(out, label, (col + 5, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
+
+        for row in range(0, height, 20):
+            cv2.line(out, (0, row), (width - 1, row), (70, 70, 70), 1)
+        return out
+
     def pixel_to_vehicle(
         self,
         pixel_x: float,
@@ -338,6 +540,8 @@ class CameraPerceptionNode(Node):
         roi_top: int,
         roi_bottom: int,
     ) -> Point | None:
+        if self.projection_mode == "bev_homography":
+            return self.pixel_to_vehicle_bev(pixel_x, pixel_y, center_x)
         if self.projection_mode == "vanishing_point":
             return self.pixel_to_vehicle_vanishing_point(pixel_x, pixel_y, center_x)
 
@@ -370,6 +574,19 @@ class CameraPerceptionNode(Node):
             return None
 
         y_m = (vanishing_x - float(pixel_x)) * self.ipm_y_scale_m_px / denom
+        return make_point(x_m, y_m, 0.0)
+
+    def pixel_to_vehicle_bev(
+        self,
+        pixel_x: float,
+        pixel_y: int,
+        center_x: float,
+    ) -> Point | None:
+        if self.lateral_m_per_px <= 0.0 or self.forward_m_per_px <= 0.0:
+            return None
+        image_height = max(1, self.current_projection_height)
+        x_m = self.bev_x_offset_m + (image_height - 1 - float(pixel_y)) * self.forward_m_per_px
+        y_m = (center_x - float(pixel_x)) * self.lateral_m_per_px
         return make_point(x_m, y_m, 0.0)
 
     def smooth_points(self, points: list[Point]) -> list[Point]:
@@ -543,6 +760,8 @@ class CameraPerceptionNode(Node):
         roi_top: int,
         roi_bottom: int,
     ) -> tuple[int, int] | None:
+        if self.projection_mode == "bev_homography":
+            return self.vehicle_to_pixel_bev(point, center_x)
         if self.projection_mode == "vanishing_point":
             return self.vehicle_to_pixel_vanishing_point(point, center_x)
 
@@ -573,6 +792,14 @@ class CameraPerceptionNode(Node):
             return None
         pixel_y = int(round(self.horizon_row_px + denom))
         pixel_x = int(round(vanishing_x - float(point.y) * denom / self.ipm_y_scale_m_px))
+        return pixel_x, pixel_y
+
+    def vehicle_to_pixel_bev(self, point: Point, center_x: float) -> tuple[int, int] | None:
+        if self.lateral_m_per_px <= 0.0 or self.forward_m_per_px <= 0.0:
+            return None
+        image_height = max(1, self.current_projection_height)
+        pixel_y = int(round((image_height - 1) - (point.x - self.bev_x_offset_m) / self.forward_m_per_px))
+        pixel_x = int(round(center_x - point.y / self.lateral_m_per_px))
         return pixel_x, pixel_y
 
     def build_markers(

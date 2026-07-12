@@ -3609,6 +3609,7 @@
           </surface>
         </collision>
         <visual name='body'>
+          <visibility_flags>2</visibility_flags>
           <geometry>
             <box>
               <size>0.55 0.30 0.12</size>
@@ -3619,19 +3620,8 @@
             <diffuse>0.100000001 0.280000001 0.800000012 1</diffuse>
           </material>
         </visual>
-        <visual name='front_marker'>
-          <pose>0.27000000000000002 0 0.035000000000000003 0 0 0</pose>
-          <geometry>
-            <box>
-              <size>0.035000000000000003 0.13 0.035000000000000003</size>
-            </box>
-          </geometry>
-          <material>
-            <ambient>1 1 1 1</ambient>
-            <diffuse>1 1 1 1</diffuse>
-          </material>
-        </visual>
         <visual name='mini_pc_body'>
+          <visibility_flags>2</visibility_flags>
           <pose>-0.02 0 0.115 0 0 0</pose>
           <geometry>
             <box>
@@ -3643,20 +3633,8 @@
             <diffuse>0.02 0.02 0.02 1</diffuse>
           </material>
         </visual>
-        <visual name='camera_body'>
-          <pose>0.240 0 -0.030 0 0 0</pose>
-          <geometry>
-            <box>
-              <size>0.045 0.06 0.035</size>
-            </box>
-          </geometry>
-          <material>
-            <ambient>0.02 0.02 0.02 1</ambient>
-            <diffuse>0.02 0.02 0.02 1</diffuse>
-          </material>
-        </visual>
         <visual name='lidar_body'>
-          <pose>0.120 0 0.060 0 0 0</pose>
+          <pose>0.240 0 -0.050 0 0 0</pose>
           <geometry>
             <cylinder>
               <length>0.035</length>
@@ -3669,27 +3647,34 @@
           </material>
         </visual>
         <sensor name='front_camera' type='camera'>
-          <pose>0.240 0 -0.015 0 0.2200 0</pose>
+          <pose>0.120 0 0.095 0 0.2200 0</pose>
           <topic>/image_raw</topic>
           <update_rate>30</update_rate>
           <camera>
             <camera_info_topic>/camera_info</camera_info_topic>
             <horizontal_fov>2.9671</horizontal_fov>
             <image>
-              <width>640</width>
-              <height>480</height>
+              <width>1280</width>
+              <height>1024</height>
               <format>R8G8B8</format>
             </image>
             <clip>
               <near>0.03</near>
               <far>20</far>
             </clip>
+            <visibility_mask>4294967293</visibility_mask>
+            <lens>
+              <type>equidistant</type>
+              <scale_to_hfov>true</scale_to_hfov>
+              <cutoff_angle>1.5707963267948966</cutoff_angle>
+              <env_texture_size>512</env_texture_size>
+            </lens>
           </camera>
           <always_on>true</always_on>
           <visualize>false</visualize>
         </sensor>
         <sensor name='lidar' type='gpu_lidar'>
-          <pose>0.120 0 0.095 0 0 0</pose>
+          <pose>0.240 0 -0.015 0 0 0</pose>
           <topic>/scan</topic>
           <update_rate>10</update_rate>
           <ray>
@@ -3774,6 +3759,7 @@
           </surface>
         </collision>
         <visual name='visual'>
+          <visibility_flags>2</visibility_flags>
           <geometry>
             <cylinder>
               <length>0.035000000000000003</length>
@@ -3817,6 +3803,7 @@
           </surface>
         </collision>
         <visual name='visual'>
+          <visibility_flags>2</visibility_flags>
           <geometry>
             <cylinder>
               <length>0.035000000000000003</length>
@@ -3860,6 +3847,7 @@
           </surface>
         </collision>
         <visual name='visual'>
+          <visibility_flags>2</visibility_flags>
           <geometry>
             <cylinder>
               <length>0.035000000000000003</length>
@@ -3903,6 +3891,7 @@
           </surface>
         </collision>
         <visual name='visual'>
+          <visibility_flags>2</visibility_flags>
           <geometry>
             <cylinder>
               <length>0.035000000000000003</length>

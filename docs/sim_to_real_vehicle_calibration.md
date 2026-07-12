@@ -21,11 +21,11 @@
 | steering limit | `0.289 rad` 약 `16.6 deg` | `<steering_limit>`, steering joint limit |
 | max velocity | `8.0 m/s` | `<max_velocity>` |
 | min velocity | `-4.0 m/s` | `<min_velocity>` |
-| camera | `/image_raw`, 640x480, 30Hz, HFOV 약 170도 | `front_camera` sensor |
+| camera | `/image_raw`, 1280x1024, 30Hz, HFOV 약 170도, equidistant fisheye | `front_camera` sensor |
 | lidar | `/scan`, 505 samples, 10Hz, `-pi~pi`, `0.1~12 m` | `lidar` sensor |
 | sensor origin | 앞바퀴 중심 기준 | 실차 측정 기준 |
-| camera pose | `(0.08, 0.00, 0.06) m` | 앞바퀴 중심 기준 |
-| lidar pose | `(-0.04, 0.00, 0.17) m` | 앞바퀴 중심 기준 |
+| camera pose | `(-0.04, 0.00, 0.17) m` | 앞바퀴 중심 기준 |
+| lidar pose | `(0.08, 0.00, 0.06) m` | 앞바퀴 중심 기준 |
 
 실차 카메라 영상에서 보이는 실내 기준물도 시뮬에 추가했다. 벽, 나무 몰딩, 락커, 책상/의자, 천장 조명, 콘은 `room_*` 접두어를 가진 **독립 Gazebo 모델**이다. Entity Tree에서 각각 선택해 이동/저장할 수 있고, 주행 물리에는 간섭하지 않도록 충돌 없는 시각 객체로만 둔다.
 
@@ -120,16 +120,17 @@ ros2 topic info xycar_motor
 | `app_sensor_drive/app_sensor_drive.py` | `scan` | `Float32MultiArray` `xycar_motor` | angle `-50/0/50`, speed `10` | LiDAR 방향/인덱스 정합 확인 |
 | `app_rule_drive_sim/app_rule_drive_sim.py` | `ultrasonic` | `XycarMotor` `xycar_motor` | speed `10`, angle = R-L | 기존 pygame 시뮬용이라 Gazebo 실차정합 기준으로는 보조 참고 |
 
-현재 camera lane 코드가 가정하는 이미지 조건:
+현재 Gazebo camera lane 코드가 가정하는 이미지 조건:
 
 | 항목 | 코드 기준값 |
 |---|---:|
-| 이미지 폭 | `640 px` |
-| 이미지 높이 | `480 px` |
+| 이미지 폭 | `1280 px` |
+| 이미지 높이 | `1024 px` |
 | FPS 가정 | `30 Hz` |
-| ROI row | `300 ~ 380` |
-| ROI 높이 | `80 px` |
-| 기준 row | ROI 내부 `40` |
+| 입력 카메라 모델 | `170 deg`, `equidistant fisheye` |
+| 인지 투영 | `bev_homography` |
+| BEV 출력 | `640 x 220 px` |
+| BEV ROI row | `0 ~ 219` |
 | 화면 중심 | `320 px` |
 | Canny threshold | `60, 75` 또는 예제에 따라 `60, 70` |
 | HoughLinesP | rho `1`, theta `1 deg`, threshold `50`, minLineLength `50`, maxLineGap `20` |
@@ -601,15 +602,16 @@ speed:
 
 camera:
   topic: /image_raw
-  width: 640
-  height: 480
+  width: 1280
+  height: 1024
   fps: 30
   horizontal_fov_deg: 170
+  lens: equidistant
   frame: front_wheel_center
-  x_m: 0.08
+  x_m: -0.04
   y_m: 0.0
-  z_m: 0.06
-  gazebo_chassis_pose_m: [0.240, 0.0, -0.015]
+  z_m: 0.17
+  gazebo_chassis_pose_m: [0.120, 0.0, 0.095]
   pitch_rad: 0.220
   roi_start_row: 300
   roi_end_row: 380
@@ -629,10 +631,10 @@ lidar:
   left_index_in_slice: 315
   right_index_in_slice: 189
   frame: front_wheel_center
-  x_m: -0.04
+  x_m: 0.08
   y_m: 0.0
-  z_m: 0.17
-  gazebo_chassis_pose_m: [0.120, 0.0, 0.095]
+  z_m: 0.06
+  gazebo_chassis_pose_m: [0.240, 0.0, -0.015]
   yaw_deg: 0.0
 ```
 

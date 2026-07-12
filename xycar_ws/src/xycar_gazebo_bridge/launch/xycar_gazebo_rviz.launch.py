@@ -20,6 +20,13 @@ def generate_launch_description():
             "camera_perception.yaml",
         ]
     )
+    perception_calib = PathJoinSubstitution(
+        [
+            FindPackageShare("xycar_perception"),
+            "config",
+            "wide_camera_fisheye_1280x1024.yaml",
+        ]
+    )
 
     bridge_args = [
         "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock",
@@ -54,6 +61,11 @@ def generate_launch_description():
                 "perception_config",
                 default_value=perception_config,
                 description="YAML parameters for camera-based perception overlays.",
+            ),
+            DeclareLaunchArgument(
+                "perception_calib",
+                default_value=perception_calib,
+                description="Fisheye calibration YAML for the 1280x1024 real wide camera model.",
             ),
             TimerAction(
                 period=1.0,
@@ -95,7 +107,10 @@ def generate_launch_description():
                 package="xycar_perception",
                 executable="camera_perception_node",
                 name="xycar_camera_perception",
-                parameters=[LaunchConfiguration("perception_config")],
+                parameters=[
+                    LaunchConfiguration("perception_config"),
+                    {"calib_yaml": LaunchConfiguration("perception_calib")},
+                ],
                 output="screen",
             ),
             Node(
@@ -119,9 +134,9 @@ def generate_launch_description():
                 executable="static_transform_publisher",
                 name="xycar_base_to_laser_tf",
                 arguments=[
-                    "-0.04",
+                    "0.08",
                     "0",
-                    "0.17",
+                    "0.06",
                     "0",
                     "0",
                     "0",
@@ -135,9 +150,9 @@ def generate_launch_description():
                 executable="static_transform_publisher",
                 name="xycar_base_to_camera_tf",
                 arguments=[
-                    "0.08",
+                    "-0.04",
                     "0",
-                    "0.06",
+                    "0.17",
                     "0",
                     "0",
                     "0",

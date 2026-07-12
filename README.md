@@ -96,14 +96,23 @@ ros2 launch xycar_perception camera_perception.launch.py
 ```
 
 현재 검출 대상은 흰색 차선과 노란 중앙 점선입니다. `/perception/road_segments`에는 실제 검출된 흰/노란 차선이 그대로 나가고, `/perception/centerline`은 기본적으로 `centerline_mode: lane_midline`을 사용해 노란 중앙선과 바깥쪽 흰 차선 사이의 주행 중심 경로를 냅니다. 그래서 곡선 구간에서는 흰 차선의 곡률을 반영한 중심 경로가 생성됩니다.
-카메라 원근 보정은 `xycar_perception/config/camera_perception.yaml`의 `projection_mode: vanishing_point`와 `horizon_row_px`, `ipm_x_scale_m_px`, `ipm_y_scale_m_px` 값으로 조정합니다.
+카메라 인지 좌표 변환은 현재 실차 `gsw` 브랜치의 광각 카메라 흐름처럼 `projection_mode: bev_homography`를 기본으로 씁니다. raw 이미지에서 사다리꼴 ROI를 잡고 BEV로 펼친 뒤, 그 BEV 이미지에서 흰 차선과 노란 중앙선을 검출합니다. 튜닝 값은 `xycar_perception/config/camera_perception.yaml`의 `src_*_ratio`, `bev_width`, `bev_height`, `lateral_m_per_px`, `forward_m_per_px`입니다.
+
+실차 코드와 같은 BEV 프리뷰 창을 따로 보고 싶으면 아래를 실행합니다. Gazebo 입력은 `/image_raw` raw 이미지이므로 실차의 `/wide_camera_mjpeg/image_raw/compressed` 대신 `use_compressed: false` 설정을 씁니다.
+
+```bash
+source /opt/ros/humble/setup.bash
+cd xycar_ws
+source install/setup.bash
+ros2 launch lane_bev_tools sim_bev_preview.launch.py
+```
 
 카메라 인지 결과로 rule-based 주행을 시작하려면 별도 터미널에서 아래 노드를 실행합니다. 이 노드는 `/perception/road_segments`의 노란 중앙선과 바깥쪽 흰 차선 사이 중앙을 `/rule_drive/target_path`로 만들고, `/xycar_motor`에 `[angle, speed]` 명령을 발행합니다.
 
 ```bash
 source /opt/ros/humble/setup.bash
 cd xycar_ws
-colcon build --packages-select kaiev26_msgs xycar_perception xycar_gazebo_bridge xycar_rule_drive --symlink-install
+colcon build --packages-up-to lane_bev_tools xycar_perception xycar_gazebo_bridge xycar_rule_drive --symlink-install
 source install/setup.bash
 ros2 launch xycar_rule_drive lane_rule_driver.launch.py
 ```
@@ -180,11 +189,11 @@ ros2 launch xycar_gazebo_bridge xycar_legacy_camera_drive_rviz.launch.py
 - steering command scale: `steering_rad = -0.0068 * angle_command`
 - command clamp: `angle -50~100`, `speed -50~100`
 - velocity range from command clamp: `-4.0 ~ 8.0 m/s`
-- camera: `/image_raw`, 640x480, 30Hz, HFOV 약 170도
+- camera: `/image_raw`, 1280x1024, 30Hz, HFOV 약 170도, equidistant fisheye lens
 - lidar: `/scan`, 505 samples, 10Hz, -180~180도, range `0.1~12.0 m`
 - sensor origin: 앞바퀴 중심 기준
-- camera pose from front wheel center: `(0.08, 0.00, 0.06) m`
-- lidar pose from front wheel center: `(-0.04, 0.00, 0.17) m`
+- camera pose from front wheel center: `(-0.04, 0.00, 0.17) m`
+- lidar pose from front wheel center: `(0.08, 0.00, 0.06) m`
 
 실차와 맞추기 위한 측정 항목과 ROS2 확인 명령은
 `docs/sim_to_real_vehicle_calibration.md`에 정리되어 있습니다.

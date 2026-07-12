@@ -4,7 +4,7 @@ import os
 from setuptools import find_packages, setup
 
 
-package_name = "xycar_perception"
+package_name = "xycar_dynamics_test"
 
 setup(
     name=package_name,
@@ -25,15 +25,16 @@ setup(
             glob("launch/*.launch.py"),
         ),
     ],
-    install_requires=["setuptools", "PyYAML"],
+    install_requires=["setuptools"],
     zip_safe=True,
     maintainer="as",
     maintainer_email="as@example.com",
-    description="Camera-based Xycar perception publisher compatible with KAIEV perception topics.",
+    description="Real Xycar dynamics measurement tools.",
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
-            "camera_perception_node = xycar_perception.camera_perception_node:main",
+            "dynamics_test_runner = xycar_dynamics_test.dynamics_test_runner:main",
+            "analyze_dynamics_log = xycar_dynamics_test.analyze_dynamics_log:main",
         ],
     },
 )

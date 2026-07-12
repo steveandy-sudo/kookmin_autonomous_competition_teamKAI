@@ -13,15 +13,15 @@ xycar_camera_perception:
     publish_rate_limit_hz: 15.0
     publish_empty_optional_topics: true
 
-    # Pixel ROI for the low front-facing Xycar camera.
-    roi_top_row: 230
-    roi_bottom_row: 470
+    # BEV ROI after the real-car homography-style projection.
+    roi_top_row: 0
+    roi_bottom_row: 219
     row_step_px: 6
     image_center_x_px: -1.0
 
-    # Vanishing-point inverse-perspective calibration. This keeps straight
-    # track lines straight in base_footprint even with the wide Gazebo camera.
-    projection_mode: vanishing_point
+    # Real-car style wide-camera projection path:
+    # raw image -> optional fisheye rectification -> homography BEV.
+    projection_mode: bev_homography
     horizon_row_px: 236.0
     vanishing_point_x_px: -1.0
     ipm_x_scale_m_px: 67.0
@@ -29,8 +29,24 @@ xycar_camera_perception:
     horizon_min_denom_px: 8.0
     min_projected_x_m: 0.20
     max_projected_x_m: 5.00
+    calib_yaml: ""
+    enable_rectify: true
+    rect_balance: 0.8
+    src_tl_x_ratio: 0.42
+    src_tr_x_ratio: 0.58
+    src_bl_x_ratio: -0.10
+    src_br_x_ratio: 1.10
+    src_top_y_ratio: 0.48
+    src_bottom_y_ratio: 0.72
+    bev_width: 640
+    bev_height: 220
+    dst_left_ratio: 0.10
+    dst_right_ratio: 0.90
+    lateral_m_per_px: 0.00164
+    forward_m_per_px: 0.005
+    bev_x_offset_m: 0.0
 
-    # Legacy row-linear projection fallback.
+    # Row-linear projection calibration.
     near_x_m: 0.20
     far_x_m: 2.20
     near_m_per_px: 0.0022
