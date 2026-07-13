@@ -80,9 +80,9 @@ def validate_sessions(
         preroll_sec = float(
             metadata.get("parameters", {}).get("bad_data_preroll_sec", 0.0)
         )
-        if preroll_sec < 3.0:
+        if preroll_sec < 10.0:
             raise RuntimeError(
-                f"{session.name} did not use the required 3-second bad-data preroll"
+                f"{session.name} did not use the required 10-second bad-data preroll"
             )
         discarded_bad_preroll += int(
             metadata.get("discarded_bad_data_preroll", 0)

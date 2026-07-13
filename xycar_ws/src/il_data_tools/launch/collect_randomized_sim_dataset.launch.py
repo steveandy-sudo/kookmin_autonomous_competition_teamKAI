@@ -152,7 +152,7 @@ def generate_launch_description():
                 "exclude_bad_data": True,
                 "exclude_idle": True,
                 "exclude_zero_speed": True,
-                "bad_data_preroll_sec": 3.0,
+                "bad_data_preroll_sec": 10.0,
                 "max_samples": ParameterValue(max_samples, value_type=int),
                 "exit_on_limit_reached": True,
             }

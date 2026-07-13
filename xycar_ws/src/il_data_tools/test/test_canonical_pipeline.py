@@ -36,7 +36,7 @@ class CanonicalPipelineTests(unittest.TestCase):
             (session / "metadata.json").write_text(
                 json.dumps(
                     {
-                        "parameters": {"bad_data_preroll_sec": 3.0},
+                        "parameters": {"bad_data_preroll_sec": 10.0},
                         "discarded_bad_data_preroll": 4,
                     }
                 ),
@@ -76,7 +76,7 @@ class CanonicalPipelineTests(unittest.TestCase):
                     }
                 )
             (session / "metadata.json").write_text(
-                json.dumps({"parameters": {"bad_data_preroll_sec": 3.0}}),
+                json.dumps({"parameters": {"bad_data_preroll_sec": 10.0}}),
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(RuntimeError, "recovery data ratio"):

@@ -18,30 +18,42 @@ class ReliabilityTests(unittest.TestCase):
         def __init__(self, timestamp_ns):
             self.timestamp_ns = timestamp_ns
 
-    def test_stop_discards_exact_three_second_preroll(self):
-        buffer = BadDataPreroll(window_ns=3_000_000_000)
+    def test_stop_discards_exact_ten_second_preroll(self):
+        buffer = BadDataPreroll(window_ns=10_000_000_000)
         released = []
-        for second in range(1, 7):
+        for second in range(1, 17):
             released += buffer.push(self.Sample(second * 1_000_000_000))
-        safe, discarded = buffer.stop(6_500_000_000)
+        safe, discarded = buffer.stop(16_500_000_000)
         released += safe
-        self.assertEqual([sample.timestamp_ns for sample in released], [1_000_000_000, 2_000_000_000, 3_000_000_000])
-        self.assertEqual(discarded, 3)
+        self.assertEqual(
+            [sample.timestamp_ns for sample in released],
+            [
+                1_000_000_000,
+                2_000_000_000,
+                3_000_000_000,
+                4_000_000_000,
+                5_000_000_000,
+                6_000_000_000,
+            ],
+        )
+        self.assertEqual(discarded, 10)
         self.assertEqual(len(buffer), 0)
 
     def test_stop_keeps_only_samples_older_than_the_bad_window(self):
-        buffer = BadDataPreroll(window_ns=3_000_000_000)
+        buffer = BadDataPreroll(window_ns=10_000_000_000)
         released = []
-        for tenth in range(50, 101):
+        for tenth in range(50, 201):
             released += buffer.push(self.Sample(tenth * 100_000_000))
 
-        safe, discarded = buffer.stop(10_000_000_000)
+        safe, discarded = buffer.stop(20_000_000_000)
         released += safe
 
         self.assertTrue(released)
-        self.assertLess(released[-1].timestamp_ns, 7_000_000_000)
-        self.assertEqual(discarded, 31)
-        self.assertTrue(all(sample.timestamp_ns < 7_000_000_000 for sample in released))
+        self.assertLess(released[-1].timestamp_ns, 10_000_000_000)
+        self.assertEqual(discarded, 101)
+        self.assertTrue(
+            all(sample.timestamp_ns < 10_000_000_000 for sample in released)
+        )
 
     def test_rate_limit_accepts_small_nominal_timestamp_jitter(self):
         self.assertTrue(rate_limit_allows(91_000_000, 0, 10.0))

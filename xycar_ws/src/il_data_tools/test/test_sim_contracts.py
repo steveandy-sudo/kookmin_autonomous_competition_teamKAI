@@ -73,7 +73,7 @@ class SimulationContractTests(unittest.TestCase):
         self.assertIn('"run_manifest_path": LaunchConfiguration', source)
         self.assertIn('"exclude_bad_data": True', source)
         self.assertIn('"exclude_zero_speed": True', source)
-        self.assertIn('"bad_data_preroll_sec": 3.0', source)
+        self.assertIn('"bad_data_preroll_sec": 10.0', source)
         self.assertIn('"stop_retry_hold_sec"', source)
         self.assertIn('"retry_delay_sec"', source)
         self.assertIn('executable="il_recovery_scenario_manager"', source)

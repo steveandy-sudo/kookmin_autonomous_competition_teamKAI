@@ -43,7 +43,7 @@ ros2 run il_data_tools collect_randomized_batches \
 상세 preset과 검증 방법은 저장소 루트의
 `docs/domain_randomized_collection.md`를 참고합니다.
 
-현재 sim-to-real용 canonical BEV 5만 장은 복구 데이터, 정지 직전 3초 폐기,
+현재 sim-to-real용 canonical BEV 5만 장은 복구 데이터, 정지 직전 10초 폐기,
 학습·held-out 평가, 모델 게시와 성공 시 전원 종료를 하나로 묶은 명령을 쓴다.
 
 ```bash
@@ -55,8 +55,8 @@ ros2 run il_data_tools run_canonical_50k_pipeline \
 ```
 
 완전 이탈로 룰베이스가 `speed=0`을 내리면 recorder는 정지 프레임과 직전
-3초를 `bad_data`로 폐기한다. 이 기능 때문에 후보 샘플은 디스크 기록 전에
-3초간 메모리 지연 버퍼에 머문다.
+10초를 `bad_data`로 폐기한다. 이 기능 때문에 후보 샘플은 디스크 기록 전에
+10초간 메모리 지연 버퍼에 머문다.
 
 ### 데이터 가공
 
