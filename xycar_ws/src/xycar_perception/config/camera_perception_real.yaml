@@ -1,7 +1,7 @@
 xycar_camera_perception:
   ros__parameters:
     use_sim_time: false
-    image_topic: /image_raw
+    image_topic: /wide_camera/rect/image_raw
     use_compressed_image: false
     road_segments_topic: /perception/road_segments
     centerline_topic: /perception/centerline
@@ -29,16 +29,17 @@ xycar_camera_perception:
     min_projected_x_m: 0.20
     max_projected_x_m: 5.00
     calib_yaml: ""
-    enable_rectify: true
+    # /wide_camera/rect/image_raw is already rectified by app_wide_camera_calib.
+    enable_rectify: false
     rect_balance: 0.3
-    src_tl_x_ratio: 0.39
-    src_tr_x_ratio: 0.67
-    src_bl_x_ratio: -0.10
-    src_br_x_ratio: 1.10
-    src_top_y_ratio: 0.48
+    src_tl_x_ratio: 0.16
+    src_tr_x_ratio: 0.84
+    src_bl_x_ratio: 0.00
+    src_br_x_ratio: 1.00
+    src_top_y_ratio: 0.64
     src_bottom_y_ratio: 0.72
     bev_width: 640
-    bev_height: 220
+    bev_height: 120
     dst_left_ratio: 0.10
     dst_right_ratio: 0.90
     # Initial metric scale from the known track markings; verify on real images.

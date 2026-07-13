@@ -17,6 +17,7 @@ from kaiev26_msgs.msg import (
 import numpy as np
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CompressedImage, Image
 from visualization_msgs.msg import Marker, MarkerArray
 
@@ -255,7 +256,7 @@ class CameraPerceptionNode(Node):
                 CompressedImage,
                 image_topic,
                 self.on_compressed_image,
-                10,
+                qos_profile_sensor_data,
             )
             transport = "sensor_msgs/CompressedImage"
         else:
@@ -263,7 +264,7 @@ class CameraPerceptionNode(Node):
                 Image,
                 image_topic,
                 self.on_image,
-                10,
+                qos_profile_sensor_data,
             )
             transport = "sensor_msgs/Image"
         self.get_logger().info(

@@ -40,8 +40,8 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "image_topic",
-                default_value="/image_raw",
-                description="Raw or compressed physical camera topic.",
+                default_value="/wide_camera/rect/image_raw",
+                description="Rectified physical wide-camera topic.",
             ),
             DeclareLaunchArgument(
                 "use_compressed_image",

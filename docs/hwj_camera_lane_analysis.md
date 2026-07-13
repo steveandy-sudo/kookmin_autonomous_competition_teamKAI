@@ -40,3 +40,34 @@ requiring the real-car YOLO model. It adopts the reusable parts of the new
 code: the measured fisheye rectification balance, dashed-path ROI, bottom
 sensor-occlusion exclusion, quadratic center-path fitting, and temporal path
 smoothing.
+
+## Real-camera BEV fix (2026-07-13)
+
+The real-car camera chain publishes a 1280x1024 MJPEG frame and rectifies it
+once on `/wide_camera/rect/image_raw`. The lane perception profile previously
+rectified that topic again and used a simulation-era 640x220 homography. This
+combination bent the BEV lane boundaries and centerline.
+
+The real-car profile now uses:
+
+```yaml
+image_topic: /wide_camera/rect/image_raw
+use_compressed_image: false
+enable_rectify: false
+src_tl_x_ratio: 0.16
+src_tr_x_ratio: 0.84
+src_bl_x_ratio: 0.00
+src_br_x_ratio: 1.00
+src_top_y_ratio: 0.64
+src_bottom_y_ratio: 0.72
+bev_width: 640
+bev_height: 120
+```
+
+The camera subscriptions also use ROS sensor-data QoS so the perception node
+can receive the camera's `BEST_EFFORT` image publisher. A stationary
+`drive_enabled=false` test confirmed an approximately 11.5 Hz 640x120 debug
+stream. The shadow driver published only `/xycar_motor_shadow`; it did not
+create a `/xycar_motor` publisher.
+
+![Fixed real-camera BEV](assets/camera_bev_fixed_20260713.png)
