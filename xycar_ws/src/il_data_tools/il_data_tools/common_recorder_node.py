@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import json
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
@@ -79,6 +80,9 @@ class ILCommonRecorder(Node):
         super().__init__("il_common_recorder")
         self._declare_parameters()
         self.params = self._read_parameters()
+        self.run_manifest = self._load_run_manifest(
+            self.params["run_manifest_path"]
+        )
         if self.params["require_scan"] and not self.params["save_scan_npz"]:
             raise ValueError("require_scan=true requires save_scan_npz=true")
         if self.params["approximate_sync_tolerance_sec"] <= 0.0:
@@ -181,6 +185,7 @@ class ILCommonRecorder(Node):
             "motor_msg_type": "float32_multi_array",
             "mission_label_topic": "/il/mission_label",
             "default_mission_label": "idle",
+            "run_manifest_path": "",
             "save_front_image": True,
             "save_scan_npz": False,
             "require_scan": False,
@@ -229,6 +234,7 @@ class ILCommonRecorder(Node):
             "motor_msg_type": self._get_str("motor_msg_type"),
             "mission_label_topic": self._get_str("mission_label_topic"),
             "default_mission_label": self._get_str("default_mission_label"),
+            "run_manifest_path": self._get_str("run_manifest_path"),
             "save_front_image": self._get_bool("save_front_image"),
             "save_scan_npz": self._get_bool("save_scan_npz"),
             "require_scan": self._get_bool("require_scan"),
@@ -280,6 +286,20 @@ class ILCommonRecorder(Node):
 
     def _get_float(self, name: str) -> float:
         return float(self.get_parameter(name).value)
+
+    def _load_run_manifest(self, manifest_path: str) -> Dict[str, Any]:
+        if not manifest_path.strip():
+            return {}
+        path = Path(manifest_path).expanduser().resolve()
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, json.JSONDecodeError) as exc:
+            self.get_logger().warn(f"could not read run manifest {path}: {exc}")
+            return {"path": str(path), "load_error": str(exc)}
+        if not isinstance(data, dict):
+            return {"path": str(path), "load_error": "manifest is not an object"}
+        return data
 
     def _resolve_motor_msg_type(self):
         value = self.params["motor_msg_type"].strip().lower()
@@ -841,6 +861,7 @@ class ILCommonRecorder(Node):
             "finished": bool(final),
             "allowed_labels": self.allowed_labels,
             "parameters": self.params,
+            "run_manifest": self.run_manifest,
             "resolved_motor_msg_type": self.resolved_motor_msg_type_name,
             "sample_count": self.sample_count,
             "enqueued_sample_count": self.enqueued_sample_count,

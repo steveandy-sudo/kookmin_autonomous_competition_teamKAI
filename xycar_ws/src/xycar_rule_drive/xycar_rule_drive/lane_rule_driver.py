@@ -17,6 +17,10 @@ def clamp(value: float, lower: float, upper: float) -> float:
     return min(max(value, lower), upper)
 
 
+def apply_steering_only(speed_command: float, steering_only: bool) -> float:
+    return 0.0 if steering_only else float(speed_command)
+
+
 def interpolate_clamped(
     value: float,
     inputs: Sequence[float],
@@ -144,9 +148,12 @@ class LaneRuleDriver(Node):
     def __init__(self) -> None:
         super().__init__("xycar_lane_rule_driver")
         self.declare_parameter("road_segments_topic", "/perception/road_segments")
+        self.declare_parameter("centerline_topic", "/perception/centerline")
+        self.declare_parameter("centerline_fallback_enabled", True)
         self.declare_parameter("motor_topic", "/xycar_motor")
         self.declare_parameter("shadow_motor_topic", "/xycar_motor_shadow")
         self.declare_parameter("drive_enabled", True)
+        self.declare_parameter("steering_only", False)
         self.declare_parameter("target_path_topic", "/rule_drive/target_path")
         self.declare_parameter("debug_markers_topic", "/rule_drive/debug_markers")
         self.declare_parameter("base_frame_id", "base_footprint")
@@ -166,12 +173,28 @@ class LaneRuleDriver(Node):
         self.declare_parameter("use_measured_steering_map", True)
         self.declare_parameter(
             "steering_map_commands",
-            [-42.0, -30.0, -20.0, -10.0, 0.0, 10.0, 20.0, 30.0, 42.0],
+            [
+                -42.0,
+                -40.0,
+                -35.0,
+                -30.0,
+                -20.0,
+                -10.0,
+                0.0,
+                10.0,
+                20.0,
+                30.0,
+                35.0,
+                40.0,
+                42.0,
+            ],
         )
         self.declare_parameter(
             "steering_map_curvatures",
             [
-                1.366747,
+                1.502435,
+                1.383494,
+                1.174860,
                 0.922781,
                 0.552809,
                 0.194230,
@@ -179,7 +202,9 @@ class LaneRuleDriver(Node):
                 -0.556883,
                 -0.959829,
                 -1.369323,
-                -1.860716,
+                -1.601706,
+                -1.853397,
+                -1.939236,
             ],
         )
         self.declare_parameter("angle_command_min", -42.0)
@@ -195,10 +220,14 @@ class LaneRuleDriver(Node):
         self.declare_parameter("hold_last_path_sec", 0.25)
         self.declare_parameter("prediction_enabled", True)
         self.declare_parameter("prediction_speed_command", 4.0)
-        self.declare_parameter("speed_gain_mps_per_cmd", 0.080191)
+        self.declare_parameter("speed_gain_mps_per_cmd", 0.080612)
 
         self.base_frame_id = str(self.get_parameter("base_frame_id").value)
         self.drive_enabled = bool(self.get_parameter("drive_enabled").value)
+        self.steering_only = bool(self.get_parameter("steering_only").value)
+        self.centerline_fallback_enabled = bool(
+            self.get_parameter("centerline_fallback_enabled").value
+        )
         self.lane_width_m = float(self.get_parameter("lane_width_m").value)
         self.min_lane_width_m = float(self.get_parameter("min_lane_width_m").value)
         self.max_lane_width_m = float(self.get_parameter("max_lane_width_m").value)
@@ -282,6 +311,12 @@ class LaneRuleDriver(Node):
             self.on_road_segments,
             10,
         )
+        self.create_subscription(
+            Centerline,
+            str(self.get_parameter("centerline_topic").value),
+            self.on_centerline,
+            10,
+        )
 
         rate_hz = max(1.0, float(self.get_parameter("command_rate_hz").value))
         self.create_timer(1.0 / rate_hz, self.on_timer)
@@ -293,21 +328,48 @@ class LaneRuleDriver(Node):
         self.last_speed_command = 0.0
         self.last_path_update_time = time.monotonic()
         self.prediction_active = False
-        mode = "AUTO" if self.drive_enabled else "SHADOW (motor output disabled)"
+        self.last_road_path_stamp: tuple[int, int] | None = None
+        if not self.drive_enabled:
+            mode = "SHADOW (motor output disabled)"
+        elif self.steering_only:
+            mode = "STEERING-ONLY (propulsion locked at zero)"
+        else:
+            mode = "AUTO"
         self.get_logger().info(f"lane rule driver ready: {mode}")
 
     def on_road_segments(self, msg: RoadSegmentArray) -> None:
         target_path = self.build_target_path(msg)
         if len(target_path) < self.min_target_points:
             return
+        self.last_road_path_stamp = self.header_stamp_key(msg.header)
+        self.accept_target_path(msg.header, target_path)
+
+    def on_centerline(self, msg: Centerline) -> None:
+        if not self.centerline_fallback_enabled:
+            return
+        if len(msg.points) < self.min_target_points:
+            return
+        if self.header_stamp_key(msg.header) == self.last_road_path_stamp:
+            return
+        self.get_logger().warn(
+            "using perception centerline fallback",
+            throttle_duration_sec=2.0,
+        )
+        self.accept_target_path(msg.header, list(msg.points))
+
+    @staticmethod
+    def header_stamp_key(header) -> tuple[int, int]:
+        return int(header.stamp.sec), int(header.stamp.nanosec)
+
+    def accept_target_path(self, header, target_path: list[Point]) -> None:
         self.last_target_path = target_path
-        self.last_header = msg.header
+        self.last_header = header
         now = time.monotonic()
         self.last_segments_time = now
         self.last_path_update_time = now
         self.prediction_active = False
-        self.publish_target_path(msg.header, target_path, predicted=False)
-        self.publish_debug_markers(msg.header, target_path, predicted=False)
+        self.publish_target_path(header, target_path, predicted=False)
+        self.publish_debug_markers(header, target_path, predicted=False)
 
     def build_target_path(self, msg: RoadSegmentArray) -> list[Point]:
         yellow_segments = [
@@ -477,6 +539,7 @@ class LaneRuleDriver(Node):
                     self.last_target_path,
                     predicted=True,
                 )
+        speed_command = apply_steering_only(speed_command, self.steering_only)
         self.last_angle_command = angle_command
         self.last_speed_command = speed_command
         self.publish_motor(angle_command, speed_command)
@@ -679,8 +742,12 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        if rclpy.ok():
-            node.publish_motor(0.0, 0.0)
+        try:
+            if rclpy.ok():
+                node.publish_motor(0.0, 0.0)
+        except Exception:
+            # Launch shutdown can invalidate the ROS context between the check and publish.
+            pass
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

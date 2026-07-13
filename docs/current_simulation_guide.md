@@ -98,7 +98,7 @@ Gazebo에서 수정한 월드는 `Save World As`를 사용해 먼저 작업본�
 | wheelbase | `0.32 m` |
 | wheel separation | `0.265 m` |
 | wheel radius | `0.06 m` |
-| 조향 중심 제한 | `0.550 rad` |
+| 조향 중심 제한 | `0.560 rad` |
 | 조향 joint 제한 | `0.700 rad` |
 
 센서 원점은 실차 측정과 동일하게 앞바퀴 중심을 기준으로 한다.
@@ -124,21 +124,24 @@ data[0]: angle command
 data[1]: speed command
 ```
 
-2026-07-12 실차 주행 데이터에서 얻은 값을 Gazebo bridge에 적용했다.
+2026-07-12 및 2026-07-13 실차 주행 데이터에서 얻은 값을 Gazebo bridge에 적용했다.
 
-- 속도 변환: `speed_mps = 0.080191 * speed_command`
-- 조향 응답: `angle=-30~+30` 실측 곡률과 `+-42` 임시 외삽 테이블
+- 속도 변환: `speed_mps = 0.080612 * speed_command`
+- 출발 데드존: `abs(speed_command) < 3`이면 정지
+- 조향 응답: `angle=+-10, +-20, +-30, +-35, +-40, +-42` 실측 곡률 테이블
 - 같은 절댓값에서도 좌우 반경이 달라 좌우 비대칭 테이블 사용
-- 조향 지연: `0.035 s`
-- 속도 지연: `0.094 s`
+- 조향 지연: `0.10 s`
+- 속도 지연: `0.20 s`
+- 속도 1차 응답: 가속 `tau=0.19 s`, 감속 `tau=0.09 s`
 - 명령이 `0.5 s` 동안 없으면 Gazebo bridge가 정지 명령을 보냄
 - 양수 angle command는 기존 Xycar 규약상 우회전
 
-`+-35, +-40, +-42`는 아직 실차에서 직접 측정하지 않아 `+-30` 결과로 예측한
-값이다. 이 구간은 실제 차량 시험 후 반드시 교체해야 한다.
+전원 저하로 움직이지 않은 일부 `speed=8` 및 제동 반복은 모델 계산에서 제외했다.
+속도는 VESC ERPM 기반 odometry이므로 독립 거리 센서로 다시 검증할 필요가 있다.
 
-근거 데이터는 `data/vehicle_dynamics/2026-07-12/`, 시험 방법은
-`docs/real_vehicle_dynamics_tests.md`에 있다.
+근거 데이터는 `data/vehicle_dynamics/2026-07-12/`와
+`teamkai/data/vehicle-dynamics-20260713` 브랜치의 `data/vehicle_dynamics/2026-07-13/`,
+시험 방법은 `docs/real_vehicle_dynamics_tests.md`에 있다.
 
 ## 7. 카메라 차선 인지 원리
 
@@ -418,7 +421,7 @@ Gazebo bridge와 Gazebo 월드는 실차에서 실행하지 않는다. 실차 �
 ```bash
 export ROS_DOMAIN_ID=7
 ros2 launch xycar_rule_drive real_lane_drive.launch.py \
-  image_topic:=/image_raw \
+  image_topic:=/wide_camera/rect/image_raw \
   use_compressed_image:=false \
   drive_enabled:=false
 ```
@@ -429,7 +432,7 @@ ros2 launch xycar_rule_drive real_lane_drive.launch.py \
 2. 목표 경로가 노란선과 흰선 사이에 있는가
 3. 직선에서 조향 명령이 0 근처인가
 4. 좌우 조향 부호가 실차와 일치하는가
-5. 카메라를 가리면 shadow 속도가 0이 되는가
+5. 카메라를 가리면 마지막 경로 유지 시간 뒤 shadow 속도가 0이 되는가
 6. 다른 노드가 `/xycar_motor`를 발행하고 있지 않은가
 
 실차 프로필은 시뮬 프로필과 분리돼 있다.
@@ -437,8 +440,8 @@ ros2 launch xycar_rule_drive real_lane_drive.launch.py \
 | 항목 | 시뮬 | 실차 기본값 |
 |---|---:|---:|
 | motor 출력 | 켜짐 | 꺼짐(shadow) |
-| 기본 속도 | `4.0` | `1.0` |
-| 곡선 최저 속도 | `2.0` | `0.8` |
+| 기본 속도 | `4.0` | `3.0` |
+| 곡선 최저 속도 | `3.0` | `3.0` |
 | 룩어헤드 | `0.50 m` | `0.40 m` |
 | 중앙선 방향 편향 | `0.10 m` | `0.02 m` |
 | 인지 소실 예측 | `5.0 s` | `1.0 s` |

@@ -54,10 +54,10 @@ kookmin_legacy_camera_driver:
     color_band_half_height_px: 12
     color_min_pixels: 8
 
-    # Xycar Float32MultiArray [angle, speed]. The Gazebo bridge converts this
-    # with steering_rad = -0.0068 * angle and speed_mps = 0.08 * speed.
-    speed_command: 1.5
-    min_speed_command: 0.8
+    # Xycar Float32MultiArray [angle, speed]. Command 3 is the measured
+    # launch threshold; lower nonzero commands stop in the Gazebo bridge.
+    speed_command: 3.0
+    min_speed_command: 3.0
     slow_down_error_px: 55.0
     stop_error_px: 145.0
     stop_on_large_error: false

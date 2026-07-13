@@ -8,10 +8,12 @@ defaults to shadow mode, where calculated commands are published only on
 ## What the real vehicle must provide
 
 - Ubuntu 22.04 and ROS 2 Humble
-- `kaiev26_msgs`, `xycar_perception`, and `xycar_rule_drive` built in one workspace
+- `kaiev26_msgs`, `xycar_perception`, `xycar_rule_drive`, and `il_data_tools`
+  built in one workspace
 - OpenCV, `cv_bridge`, `sensor_msgs`, and `std_msgs`
 - One camera topic with either:
-  - `sensor_msgs/msg/Image`, normally `/image_raw`; or
+  - `sensor_msgs/msg/Image`, preferably the already-rectified
+    `/wide_camera/rect/image_raw`; or
   - `sensor_msgs/msg/CompressedImage`, such as
     `/wide_camera_mjpeg/image_raw/compressed`
 - The existing ROS1 motor container and ROS1-ROS2 dynamic bridge
@@ -30,6 +32,7 @@ Copy these package directories into the real vehicle's `xycar_ws/src`:
 kaiev26_msgs
 xycar_perception
 xycar_rule_drive
+il_data_tools
 ```
 
 Build and source them:
@@ -37,7 +40,7 @@ Build and source them:
 ```bash
 source /opt/ros/humble/setup.bash
 cd ~/xycar_ws
-colcon build --packages-up-to kaiev26_msgs xycar_perception xycar_rule_drive \
+colcon build --packages-up-to kaiev26_msgs xycar_perception xycar_rule_drive il_data_tools \
   --symlink-install
 source install/setup.bash
 ```
@@ -54,7 +57,7 @@ Start the physical camera and the existing motor/bridge stack, then check:
 
 ```bash
 ros2 topic list -t | grep -E 'image|xycar_motor'
-ros2 topic info /image_raw -v
+ros2 topic info /wide_camera/rect/image_raw -v
 ros2 topic info /wide_camera_mjpeg/image_raw/compressed -v
 ros2 topic info /xycar_motor -v
 ```
@@ -69,13 +72,13 @@ Required results:
 If the motor topic is namespaced, pass it explicitly, for example
 `motor_topic:=/xycar/xycar_motor`.
 
-## 2. Shadow mode with a raw camera
+## 2. Shadow mode with the rectified camera
 
 Shadow is the default and cannot publish to the physical motor topic:
 
 ```bash
 ros2 launch xycar_rule_drive real_lane_drive.launch.py \
-  image_topic:=/image_raw \
+  image_topic:=/wide_camera/rect/image_raw \
   use_compressed_image:=false \
   drive_enabled:=false
 ```
@@ -94,7 +97,8 @@ Verify that:
 - the green target path remains between the yellow and right white lines;
 - straight-road steering stays near zero;
 - left and right steering signs match the physical vehicle convention;
-- stopping the camera makes the shadow speed become zero within about 0.65 s.
+- stopping the camera holds and propagates the last path for at most about 1.4 s,
+  then makes the shadow speed zero.
 
 ## 3. Shadow mode with a compressed camera
 
@@ -117,21 +121,29 @@ shadow mode and compare `/xycar_motor_shadow` with small manual motor tests.
 Confirm steering sign, steering center, motor direction, and that `Ctrl+C`
 causes a zero command before enabling autonomous output.
 
-The controller uses the measured real-car command-to-curvature table. Its
-`+/-42` endpoints are still extrapolated from measurements up to command 30,
-so the high-steering region needs another physical measurement when possible.
-
-## 5. First autonomous run
-
-Only after all shadow checks pass, start at speed command 1:
+The launch can publish real steering while locking propulsion at zero:
 
 ```bash
 ros2 launch xycar_rule_drive real_lane_drive.launch.py \
-  image_topic:=/image_raw \
+  drive_enabled:=true steering_only:=true
+```
+
+The controller uses the measured real-car command-to-curvature table through
+`+/-42`. The high-steering entries are based on the 2026-07-13 circle tests;
+repeat them with an external trajectory measurement to validate the IMU result.
+
+## 5. First autonomous run
+
+Only after all shadow checks pass, start at the measured launch threshold,
+speed command 3:
+
+```bash
+ros2 launch xycar_rule_drive real_lane_drive.launch.py \
+  image_topic:=/wide_camera/rect/image_raw \
   use_compressed_image:=false \
   motor_topic:=/xycar_motor \
   drive_enabled:=true \
-  speed_command:=1.0
+  speed_command:=3.0
 ```
 
 Keep a person at the emergency stop. Increase to the simulation default only
@@ -139,11 +151,11 @@ after low-speed straight and curve tests pass:
 
 ```bash
 ros2 launch xycar_rule_drive real_lane_drive.launch.py \
-  image_topic:=/image_raw \
+  image_topic:=/wide_camera/rect/image_raw \
   use_compressed_image:=false \
   motor_topic:=/xycar_motor \
   drive_enabled:=true \
-  speed_command:=3.0
+  speed_command:=4.0
 ```
 
 For a compressed camera, change the two camera arguments as shown in section 3.
@@ -183,11 +195,14 @@ xycar_rule_drive/config/lane_rule_driver_real.yaml
 
 The repository also ships the trained camera+LiDAR TorchScript policy. It uses
 the same physical `/xycar_motor` contract but has a separate shadow topic.
+The complete Korean runbook, model hash check, and lifted-wheel test are in
+[`real_bc_vehicle_runbook.md`](real_bc_vehicle_runbook.md).
 
 ```bash
 ros2 launch il_data_tools real_policy_inference.launch.py \
   image_topic:=/image_raw \
   scan_topic:=/scan \
+  device:=cpu \
   drive_enabled:=false
 
 ros2 topic echo /il/policy_motor_shadow
@@ -201,9 +216,10 @@ ros2 launch il_data_tools real_policy_inference.launch.py \
   image_topic:=/image_raw \
   scan_topic:=/scan \
   motor_topic:=/xycar_motor \
+  device:=cpu \
   drive_enabled:=true \
-  speed_command:=1.0 \
-  min_speed_command:=0.8
+  speed_command:=3.0 \
+  min_speed_command:=3.0
 ```
 
 Do not run this drive mode at the same time as the rule-based driver. The

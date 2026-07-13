@@ -165,16 +165,30 @@ drive_01, drive_02, ...
 바로 성공한다고 보장할 수 없다. 먼저 시뮬에서 pretrain하고, 같은 스키마로 모은
 실차 데이터를 섞어 fine-tuning한 뒤 shadow mode와 저속 주행으로 검증한다.
 
-## 7. 현재 남은 단계
+## 7. 학습 모델 시뮬 폐루프 테스트
 
-`il_data_tools` 원본 범위에는 실차/Gazebo 폐루프 추론 노드가 없다. TorchScript
-모델을 제어에 연결할 때는 다음 계약을 지키는 공용 inference 노드가 필요하다.
+전체 스택은 다음 한 명령으로 실행한다.
 
-1. 학습과 정확히 같은 image/LiDAR 전처리
-2. 출력 `steer_norm * 100`을 angle command로 복원
-3. 속도는 룰베이스가 결정
-4. 입력 timeout, 출력 clamp, shadow mode, emergency stop 제공
-5. 룰베이스와 학습 노드가 동시에 `/xycar_motor`를 발행하지 않도록 selector 사용
+```bash
+cd ~/xycar_kookmin_gazebo_track
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 launch il_data_tools sim_policy_drive.launch.py
+```
 
-데이터를 충분히 수집하고 첫 모델을 만든 뒤 이 inference/selector를 시뮬과
-실차가 공유하도록 구현한다.
+기본 모델은 전체 세션 통합 학습 결과인
+`models/il_policies/drive_resnet18_lidar_all_20260713/drive_policy_scripted.pt`다.
+다른 모델을 시험할 때만 `model_path:=/absolute/path/model.pt`를 붙인다.
+
+이 launch는 Gazebo, 센서 bridge, 인지/RViz, BC 추론을 함께 시작한다. 룰베이스
+주행 노드는 포함하지 않으므로 `/xycar_motor`에는 BC만 명령을 발행한다. 모델은
+조향만 예측하고, 추론 노드가 조향 크기에 따라 속도 `4.0~3.0`을 정하며 센서
+timeout과 조향 `-42~42` 제한을 적용한다.
+
+모터 출력을 막고 예측값만 확인하려면 다음처럼 실행한다.
+
+```bash
+ros2 launch il_data_tools sim_policy_drive.launch.py drive_enabled:=false
+ros2 topic echo /il/policy_motor_shadow
+ros2 topic echo /il/policy_debug
+```

@@ -2,9 +2,12 @@ xycar_lane_rule_driver:
   ros__parameters:
     use_sim_time: false
     road_segments_topic: /perception/road_segments
+    centerline_topic: /perception/centerline
+    centerline_fallback_enabled: true
     motor_topic: /xycar_motor
     shadow_motor_topic: /xycar_motor_shadow
     drive_enabled: false
+    steering_only: false
     target_path_topic: /rule_drive/target_path
     debug_markers_topic: /rule_drive/debug_markers
     base_frame_id: base_footprint
@@ -25,16 +28,16 @@ xycar_lane_rule_driver:
     control_point_x_m: -0.08
     steering_gain_rad_per_cmd: -0.0068
     use_measured_steering_map: true
-    steering_map_commands: [-42.0, -30.0, -20.0, -10.0, 0.0, 10.0, 20.0, 30.0, 42.0]
-    steering_map_curvatures: [1.366747, 0.922781, 0.552809, 0.194230, 0.0, -0.556883, -0.959829, -1.369323, -1.860716]
+    steering_map_commands: [-42.0, -40.0, -35.0, -30.0, -20.0, -10.0, 0.0, 10.0, 20.0, 30.0, 35.0, 40.0, 42.0]
+    steering_map_curvatures: [1.502435, 1.383494, 1.174860, 0.922781, 0.552809, 0.194230, 0.0, -0.556883, -0.959829, -1.369323, -1.601706, -1.853397, -1.939236]
     angle_command_min: -42.0
     angle_command_max: 42.0
     lookahead_distance_m: 0.40
     min_lookahead_x_m: 0.25
 
-    # The real launch defaults to shadow mode and this low first-test speed.
-    speed_command: 1.0
-    min_speed_command: 0.8
+    # Shadow mode remains the default. Command 3 is the measured launch threshold.
+    speed_command: 3.0
+    min_speed_command: 3.0
     slow_down_angle_cmd: 18.0
     max_abs_angle_for_drive: 43.0
     perception_timeout_sec: 0.40
@@ -42,5 +45,5 @@ xycar_lane_rule_driver:
     # Keep the first real-car prediction window conservative until field-tested.
     hold_last_path_sec: 1.0
     prediction_enabled: true
-    prediction_speed_command: 1.0
-    speed_gain_mps_per_cmd: 0.080191
+    prediction_speed_command: 3.0
+    speed_gain_mps_per_cmd: 0.080612

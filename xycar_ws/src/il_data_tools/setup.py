@@ -14,7 +14,7 @@ setup(
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml", "README.md"]),
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
-        (f"share/{package_name}/models", glob("models/*.pt")),
+        (f"share/{package_name}/models", glob("models/*")),
         (f"share/{package_name}/scripts", all_script_files),
     ],
     install_requires=["setuptools"],
@@ -27,6 +27,8 @@ setup(
         "console_scripts": [
             "il_common_recorder = il_data_tools.common_recorder_node:main",
             "il_policy_inference = il_data_tools.policy_inference_node:main",
+            "il_recovery_scenario_manager = il_data_tools.recovery_scenario_manager:main",
+            "collect_randomized_batches = il_data_tools.randomized_batch_collector:main",
             "train_from_raw_dataset.py = il_data_tools.train_from_raw_dataset:main",
         ],
     },

@@ -1,5 +1,6 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -67,6 +68,11 @@ def generate_launch_description():
                 "perception_calib",
                 default_value=perception_calib,
                 description="Fisheye calibration YAML for the 1280x1024 real wide camera model.",
+            ),
+            DeclareLaunchArgument(
+                "enable_rviz",
+                default_value="true",
+                description="Start RViz; disable for unattended dataset batches.",
             ),
             TimerAction(
                 period=1.0,
@@ -171,6 +177,7 @@ def generate_launch_description():
                 ],
                 name="xycar_gazebo_rviz",
                 output="screen",
+                condition=IfCondition(LaunchConfiguration("enable_rviz")),
             ),
         ]
     )

@@ -1,0 +1,144 @@
+from __future__ import annotations
+
+import argparse
+import math
+import subprocess
+import sys
+from pathlib import Path
+from typing import List
+
+from il_data_tools.domain_randomization import PRESETS
+
+
+DEFAULT_PRESET_CYCLE = [
+    "baseline",
+    "visual_light",
+    "visual_dark",
+    "sensor",
+    "dynamics",
+    "mixed",
+]
+
+
+def _parse_presets(value: str) -> List[str]:
+    presets = [part.strip() for part in value.split(",") if part.strip()]
+    unknown = sorted(set(presets) - set(PRESETS))
+    if not presets or unknown:
+        raise argparse.ArgumentTypeError(
+            f"invalid preset cycle; unknown={unknown}, valid={sorted(PRESETS)}"
+        )
+    return presets
+
+
+def _project_root(value: str) -> Path:
+    path = Path(value).expanduser().resolve()
+    expected = path / "worlds" / "kookmin_xycar_track_final.sdf"
+    if not expected.is_file():
+        raise argparse.ArgumentTypeError(f"final world not found below {path}")
+    return path
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Collect multiple independently randomized Gazebo IL sessions."
+    )
+    parser.add_argument(
+        "--project-root",
+        type=_project_root,
+        default=str(Path.cwd()),
+    )
+    parser.add_argument(
+        "--output-root",
+        default="",
+        help="Dataset root; defaults to PROJECT_ROOT/datasets/il.",
+    )
+    parser.add_argument(
+        "--generated-output-dir",
+        default="",
+        help="Generated SDF/manifest root; defaults to PROJECT_ROOT/generated/domain_randomization.",
+    )
+    parser.add_argument("--total-samples", type=int, default=50_000)
+    parser.add_argument("--batch-samples", type=int, default=5_000)
+    parser.add_argument("--seed", type=int, default=2026)
+    parser.add_argument(
+        "--presets",
+        type=_parse_presets,
+        default=DEFAULT_PRESET_CYCLE,
+        help="Comma-separated preset cycle.",
+    )
+    parser.add_argument(
+        "--show-gui-first",
+        action="store_true",
+        help="Show Gazebo/RViz for the first batch only.",
+    )
+    parser.add_argument("--scenario-interval-sec", type=float, default=30.0)
+    parser.add_argument("--recovery-hold-sec", type=float, default=8.0)
+    return parser
+
+
+def main(argv=None) -> int:
+    args = build_parser().parse_args(argv)
+    if args.total_samples <= 0 or args.batch_samples <= 0:
+        raise SystemExit("sample counts must be positive")
+    session_count = int(math.ceil(args.total_samples / args.batch_samples))
+    remaining = args.total_samples
+    output_root = (
+        Path(args.output_root).expanduser().resolve()
+        if args.output_root
+        else args.project_root / "datasets" / "il"
+    )
+    generated_output_dir = (
+        Path(args.generated_output_dir).expanduser().resolve()
+        if args.generated_output_dir
+        else args.project_root / "generated" / "domain_randomization"
+    )
+    print(
+        f"randomized collection: total={args.total_samples}, "
+        f"sessions={session_count}, root={args.project_root}"
+    )
+
+    for index in range(session_count):
+        preset = args.presets[index % len(args.presets)]
+        seed = args.seed + index
+        samples = min(args.batch_samples, remaining)
+        session_name = f"sim_{preset}_s{seed}"
+        show_gui = args.show_gui_first and index == 0
+        command = [
+            "ros2",
+            "launch",
+            "il_data_tools",
+            "collect_randomized_sim_dataset.launch.py",
+            f"project_root:={args.project_root}",
+            f"output_root:={output_root}",
+            f"generated_output_dir:={generated_output_dir}",
+            f"session_name:={session_name}",
+            f"max_samples:={samples}",
+            f"seed:={seed}",
+            f"preset:={preset}",
+            f"show_gui:={'true' if show_gui else 'false'}",
+            f"scenario_interval_sec:={args.scenario_interval_sec}",
+            f"recovery_hold_sec:={args.recovery_hold_sec}",
+        ]
+        print(
+            f"\n[{index + 1}/{session_count}] preset={preset} seed={seed} "
+            f"samples={samples} gui={show_gui}"
+        )
+        try:
+            result = subprocess.run(command, check=False)
+        except KeyboardInterrupt:
+            print("\ncollection interrupted; completed sessions remain on disk")
+            return 130
+        if result.returncode != 0:
+            print(
+                f"session failed with exit code {result.returncode}: {' '.join(command)}",
+                file=sys.stderr,
+            )
+            return result.returncode
+        remaining -= samples
+
+    print(f"\ncompleted {args.total_samples} new randomized samples")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

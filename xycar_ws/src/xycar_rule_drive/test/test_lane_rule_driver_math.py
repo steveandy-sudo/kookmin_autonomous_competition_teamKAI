@@ -1,6 +1,7 @@
 import unittest
 
 from xycar_rule_drive.lane_rule_driver import (
+    apply_steering_only,
     inverse_lookup_table,
     interpolate_clamped,
     make_point,
@@ -11,9 +12,11 @@ from xycar_rule_drive.lane_rule_driver import (
 )
 
 
-COMMANDS = [-42.0, -30.0, -20.0, -10.0, 0.0, 10.0, 20.0, 30.0, 42.0]
+COMMANDS = [-42.0, -40.0, -35.0, -30.0, -20.0, -10.0, 0.0, 10.0, 20.0, 30.0, 35.0, 40.0, 42.0]
 CURVATURES = [
-    1.366747,
+    1.502435,
+    1.383494,
+    1.174860,
     0.922781,
     0.552809,
     0.194230,
@@ -21,11 +24,17 @@ CURVATURES = [
     -0.556883,
     -0.959829,
     -1.369323,
-    -1.860716,
+    -1.601706,
+    -1.853397,
+    -1.939236,
 ]
 
 
 class LaneRuleDriverMathTest(unittest.TestCase):
+    def test_steering_only_forces_zero_speed(self):
+        self.assertEqual(apply_steering_only(3.0, True), 0.0)
+        self.assertEqual(apply_steering_only(3.0, False), 3.0)
+
     def test_midpoint_bias_moves_away_from_white_boundary(self):
         self.assertAlmostEqual(
             midpoint_biased_toward_first(0.0, -0.40, 0.02),
@@ -91,7 +100,9 @@ class LaneRuleDriverMathTest(unittest.TestCase):
 
     def test_inverse_map_interpolates_curvature(self):
         curvatures, commands = inverse_lookup_table(COMMANDS, CURVATURES)
-        curvature = (CURVATURES[5] + CURVATURES[6]) / 2.0
+        lower = COMMANDS.index(10.0)
+        upper = COMMANDS.index(20.0)
+        curvature = (CURVATURES[lower] + CURVATURES[upper]) / 2.0
         self.assertAlmostEqual(
             interpolate_clamped(curvature, curvatures, commands),
             15.0,

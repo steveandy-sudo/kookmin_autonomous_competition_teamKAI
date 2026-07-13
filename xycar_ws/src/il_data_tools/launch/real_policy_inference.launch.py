@@ -44,13 +44,13 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "speed_command",
-                default_value="1.0",
-                description="Conservative first-test straight speed command.",
+                default_value="3.0",
+                description="Measured minimum launch command for the first drive test.",
             ),
             DeclareLaunchArgument(
                 "min_speed_command",
-                default_value="0.8",
-                description="Conservative first-test curve speed command.",
+                default_value="3.0",
+                description="Keep curve speed at or above the measured launch threshold.",
             ),
             DeclareLaunchArgument(
                 "device",

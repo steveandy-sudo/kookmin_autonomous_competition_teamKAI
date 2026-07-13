@@ -25,6 +25,23 @@ recorder와 학습 코드는 `/xycar_motor`를 발행하지 않으며, 별도의
 - writer thread 기반 비동기 디스크 저장
 - 디스크 여유 공간 부족 시 안전 정지
 - Drive/Cone 세션 번호 자동 증가
+- seed 기반 Gazebo 조명·배경·센서·동역학 랜덤화
+- 차선 좌우 이탈과 yaw 오차를 이용한 recovery 구간 자동 라벨링
+- 여러 독립 환경 세션을 목표 장수까지 연속 실행
+
+랜덤 환경 5만 장 수집:
+
+```bash
+ros2 run il_data_tools collect_randomized_batches \
+  --project-root "$PWD" \
+  --total-samples 50000 \
+  --batch-samples 5000 \
+  --seed 2026 \
+  --show-gui-first
+```
+
+상세 preset과 검증 방법은 저장소 루트의
+`docs/domain_randomized_collection.md`를 참고합니다.
 
 ### 데이터 가공
 
@@ -101,6 +118,17 @@ steer_norm = model(image, lidar)
 
 출력 범위는 `-1~1`이며 실제 조향 명령은 학습에 사용한
 `max_steer_deg=100`을 곱한 뒤 실차 유효 범위 `-42~42`로 제한합니다.
+
+시뮬에서 학습 완료 모델을 폐루프 주행시키는 통합 실행:
+
+```bash
+ros2 launch il_data_tools sim_policy_drive.launch.py
+```
+
+이 launch는 Gazebo, 센서 bridge/RViz, BC 추론을 함께 시작하며 룰베이스
+주행 노드는 시작하지 않습니다. 기본 모델은 전체 수집 세션을 합쳐 학습한
+`models/il_policies/drive_resnet18_lidar_all_20260713/drive_policy_scripted.pt`입니다.
+
 `real_policy_inference.launch.py`는 학습 완료 TorchScript 모델과 실차 추론
 노드를 실행하며 기본값은 모터 출력이 차단된 shadow 모드입니다.
 

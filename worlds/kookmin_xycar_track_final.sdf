@@ -4779,7 +4779,7 @@
         <left_steering_joint>front_left_wheel_steering_joint</left_steering_joint>
         <right_steering_joint>front_right_wheel_steering_joint</right_steering_joint>
         <kingpin_width>0.240</kingpin_width>
-        <steering_limit>0.5500</steering_limit>
+        <steering_limit>0.5600</steering_limit>
         <wheel_base>0.32</wheel_base>
         <wheel_separation>0.265</wheel_separation>
         <wheel_radius>0.06</wheel_radius>

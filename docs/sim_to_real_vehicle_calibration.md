@@ -18,7 +18,7 @@
 | wheel separation | `0.265 m` | `<wheel_separation>` |
 | kingpin width | `0.240 m` | `<kingpin_width>` |
 | wheel radius | `0.06 m` | `<wheel_radius>` |
-| steering center limit | `0.550 rad` 약 `31.5 deg` | `<steering_limit>` |
+| steering center limit | `0.560 rad` 약 `32.1 deg` | `<steering_limit>` |
 | steering joint limit | `0.700 rad` 약 `40.1 deg` | steering joint limit |
 | max velocity | `8.0 m/s` | `<max_velocity>` |
 | min velocity | `-4.0 m/s` | `<min_velocity>` |
@@ -40,24 +40,27 @@ speed_command clamp = -50 ~ 100
 servo clipping steering range ~= -0.2881 ~ +0.2888 rad
 ```
 
-2026-07-12 실차 주행에서는 `speed_cmd=3,5`, `angle_cmd=+-10,+-20,+-30` 조합을 측정했다. 최종 Gazebo wrapper는 `std_msgs/msg/Float32MultiArray [angle, speed]`를 받아 `/model/xycar_ackermann/cmd_vel`로 변환하면서 다음 값을 적용한다.
+2026-07-12에는 `speed_cmd=3,5`, `angle_cmd=+-10,+-20,+-30`을, 2026-07-13에는 최대 조향, 저속 데드존, 가속 및 제동 step을 측정했다. 최종 Gazebo wrapper는 `std_msgs/msg/Float32MultiArray [angle, speed]`를 받아 `/model/xycar_ackermann/cmd_vel`로 변환하면서 다음 값을 적용한다.
 
 ```text
-speed_mps = 0.080191 * speed_command
+speed_mps = 0.080612 * speed_command
+abs(speed_command) < 3 -> 0 m/s
 steering response = direction-aware command-to-curvature lookup
-steering delay = 0.035 s
-speed delay = 0.094 s
+steering delay = 0.10 s
+speed delay = 0.20 s
+acceleration response tau = 0.19 s
+braking response tau = 0.09 s
 ```
 
-같은 절댓값에서도 양수 조향 명령이 음수보다 더 급하게 회전했으므로 단일 `steering_gain` 대신 좌우 비대칭 보간 테이블을 사용한다. 실차 VESC 변환과 기존 주행 코드의 부호를 유지해 양수 `angle_cmd`는 우회전으로 정의한다. 측정 그룹 CSV와 반영 근거는 `data/vehicle_dynamics/2026-07-12`에 있다.
+같은 절댓값에서도 양수 조향 명령이 음수보다 더 급하게 회전했으므로 단일 `steering_gain` 대신 좌우 비대칭 보간 테이블을 사용한다. 실차 VESC 변환과 기존 주행 코드의 부호를 유지해 양수 `angle_cmd`는 우회전으로 정의한다. 전원 저하로 움직이지 않은 반복은 계산에서 제외했다. 측정 CSV는 `data/vehicle_dynamics/2026-07-12`와 `teamkai/data/vehicle-dynamics-20260713` 브랜치의 `data/vehicle_dynamics/2026-07-13`에 있다.
 
 ### 다음 실차 동역학 측정 우선순위
 
 | 우선순위 | 시험 | 권장 명령 | 얻을 값 |
 |---|---|---|---|
-| P0 | 최대 조향 정상상태 원주행 | angle `+-35, +-40, +-42`, speed `3, 5`, 각 3회 | 실제 포화 command, 좌우 회전반경, yaw rate |
-| P0 | 저속/데드존 속도 맵 | angle `0`, speed `0, 1, 2, 3, 5, 8, 10` | 출발 deadband, 정상 속도, 선형/비선형 구간 |
-| P0 | 가속/제동 step | speed `0->3, 0->5, 0->8, 5->0, 8->0` | 응답 지연, 10~90% 상승시간, 최대 가감속, 정지거리 |
+| P0 | 독립 속도 검증 | 바닥 거리 또는 외부 영상으로 speed `3, 5, 8, 10` 반복 | ERPM odometry와 실제 지면 속도의 차이 |
+| P0 | 전원 안정 후 step 재측정 | speed `0->8`, `8->0`, 각 3회 이상 | 제외된 전원 저하 반복 보완, 고속 가감속 |
+| P0 | 최대 조향 궤적 재검증 | angle `+-35, +-40, +-42`, 외부 영상/바닥 궤적 | IMU 기반 반경과 실제 궤적 반경 비교 |
 | P1 | 조향 step 및 좌우 반전 | `0->+-10/20/30/42`, `+30->-30` | 조향 지연, 조향 속도, 오버슈트, 복원 지연 |
 | P1 | 속도별 코너링 | angle `+-20, +-30, +-42`, speed `3, 5, 8` | 속도에 따른 언더스티어와 타이어 슬립 |
 | P1 | 타력 주행 | 정상속도 도달 후 speed `0` | 구름저항, 자연 감속 곡선 |
@@ -613,10 +616,10 @@ steering:
   command_max: 100
   center_command: 0
   model: measured_curvature_lookup
-  command_lookup: [-42, -30, -20, -10, 0, 10, 20, 30, 42]
-  curvature_per_m: [1.366747, 0.922781, 0.552809, 0.194230, 0.0, -0.556883, -0.959829, -1.369323, -1.860716]
-  extrapolated_commands: [-42, 42]
-  delay_sec: 0.035
+  command_lookup: [-42, -40, -35, -30, -20, -10, 0, 10, 20, 30, 35, 40, 42]
+  curvature_per_m: [1.502435, 1.383494, 1.174860, 0.922781, 0.552809, 0.194230, 0.0, -0.556883, -0.959829, -1.369323, -1.601706, -1.853397, -1.939236]
+  extrapolated_commands: []
+  delay_sec: 0.10
   linear_fallback_gain_rad_per_command: -0.0068
 
 speed:
@@ -624,8 +627,11 @@ speed:
   message_type: std_msgs/msg/Float32MultiArray
   command_min: -50
   command_max: 100
-  speed_gain_mps_per_command: 0.080191
-  delay_sec: 0.094
+  speed_gain_mps_per_command: 0.080612
+  launch_deadzone_command: 3.0
+  delay_sec: 0.20
+  acceleration_tau_sec: 0.19
+  braking_tau_sec: 0.09
   command_limited_min_mps: -4.0
   command_limited_max_mps: 8.0
 

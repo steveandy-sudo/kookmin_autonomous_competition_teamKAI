@@ -32,6 +32,7 @@ datasets/
 models/
 !xycar_ws/src/il_data_tools/models/
 !xycar_ws/src/il_data_tools/models/drive_policy_scripted.pt
+generated/
 
 # Generated debug images kept locally during map fitting
 alignment/debug_*.png

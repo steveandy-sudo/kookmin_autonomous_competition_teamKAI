@@ -108,6 +108,7 @@ class PolicyInferenceNode(Node):
         self.stop_sent = False
         self.inference_count = 0
         self.missing_scan_count = 0
+        self.pending_image: tuple[int, Image] | None = None
         mode = "DRIVE" if self.drive_enabled else "SHADOW"
         self.get_logger().info(
             f"IL policy ready: {mode}, model={model_path}, device={self.device}"
@@ -129,7 +130,7 @@ class PolicyInferenceNode(Node):
         self.declare_parameter("angle_command_min", -42.0)
         self.declare_parameter("angle_command_max", 42.0)
         self.declare_parameter("speed_command", 4.0)
-        self.declare_parameter("min_speed_command", 2.0)
+        self.declare_parameter("min_speed_command", 3.0)
         self.declare_parameter("slow_down_angle_cmd", 18.0)
         self.declare_parameter("max_abs_angle_for_drive", 43.0)
         self.declare_parameter("steering_temporal_alpha", 0.55)
@@ -139,7 +140,9 @@ class PolicyInferenceNode(Node):
 
     def _scan_callback(self, msg: LaserScan) -> None:
         fallback_ns = self.get_clock().now().nanoseconds
-        self.scan_buffer.add(stamp_to_ns(msg, fallback_ns), msg)
+        scan_stamp_ns = stamp_to_ns(msg, fallback_ns)
+        self.scan_buffer.add(scan_stamp_ns, msg)
+        self._try_pending_image(scan_stamp_ns)
 
     def _image_callback(self, msg: Image) -> None:
         now_wall = time.monotonic()
@@ -148,9 +151,27 @@ class PolicyInferenceNode(Node):
         image_stamp_ns = stamp_to_ns(msg, self.get_clock().now().nanoseconds)
         scan_item = self.scan_buffer.nearest(image_stamp_ns, self.sync_tolerance_ns)
         if scan_item is None:
-            self.missing_scan_count += 1
+            if self.pending_image is not None:
+                self.missing_scan_count += 1
+            self.pending_image = (image_stamp_ns, msg)
             return
+        self.pending_image = None
+        self._run_inference(msg, image_stamp_ns, scan_item, now_wall)
 
+    def _try_pending_image(self, latest_scan_stamp_ns: int) -> None:
+        if self.pending_image is None:
+            return
+        image_stamp_ns, image_msg = self.pending_image
+        scan_item = self.scan_buffer.nearest(image_stamp_ns, self.sync_tolerance_ns)
+        if scan_item is None:
+            if latest_scan_stamp_ns > image_stamp_ns + self.sync_tolerance_ns:
+                self.pending_image = None
+                self.missing_scan_count += 1
+            return
+        self.pending_image = None
+        self._run_inference(image_msg, image_stamp_ns, scan_item, time.monotonic())
+
+    def _run_inference(self, msg, image_stamp_ns, scan_item, now_wall) -> None:
         started = time.perf_counter()
         image_bgr = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
         image_np = preprocess_bgr_image(
@@ -243,8 +264,11 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        if rclpy.ok():
-            node._publish_command(0.0, 0.0)
+        try:
+            if rclpy.ok():
+                node._publish_command(0.0, 0.0)
+        except Exception:
+            pass
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
