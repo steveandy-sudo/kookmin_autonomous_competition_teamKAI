@@ -312,9 +312,7 @@ def main(argv=None) -> int:
 
     collection = validate_sessions(sessions, args.total_samples)
     collection["sessions"] = [str(path) for path in sessions]
-    collection["rejected_sessions"] = [
-        str(dataset_root / "drive" / "sim_canonical_drive_01")
-    ]
+    collection["rejected_sessions"] = [str(path) for path in sorted(before)]
     write_json(run_dir / "collection_manifest.json", collection)
 
     processed_dir = project_root / "datasets" / "processed" / args.run_name

@@ -213,6 +213,8 @@ def generate_launch_description():
             DeclareLaunchArgument("scenario_warmup_sec", default_value="12.0"),
             DeclareLaunchArgument("scenario_settle_sec", default_value="0.8"),
             DeclareLaunchArgument("recovery_hold_sec", default_value="8.0"),
+            DeclareLaunchArgument("stop_retry_hold_sec", default_value="1.0"),
+            DeclareLaunchArgument("retry_delay_sec", default_value="1.0"),
             DeclareLaunchArgument(
                 "lane_offset_from_yellow_m",
                 default_value="0.05",
@@ -260,6 +262,14 @@ def generate_launch_description():
                         ),
                         "lane_offset_from_yellow_m": ParameterValue(
                             LaunchConfiguration("lane_offset_from_yellow_m"),
+                            value_type=float,
+                        ),
+                        "stop_retry_hold_sec": ParameterValue(
+                            LaunchConfiguration("stop_retry_hold_sec"),
+                            value_type=float,
+                        ),
+                        "retry_delay_sec": ParameterValue(
+                            LaunchConfiguration("retry_delay_sec"),
                             value_type=float,
                         ),
                     }

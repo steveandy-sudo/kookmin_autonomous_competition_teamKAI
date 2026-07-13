@@ -11,7 +11,7 @@ from typing import Dict, List, Sequence, Tuple
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from std_msgs.msg import String
+from std_msgs.msg import Float32MultiArray, String
 
 
 # Clockwise yellow centerline samples recovered from the final CAD-derived map.
@@ -112,6 +112,19 @@ def sample_recovery_pose(
     }
 
 
+def stopped_recovery_requires_retry(
+    has_seen_motion: bool,
+    phase: str,
+    stopped_duration_sec: float,
+    hold_sec: float,
+) -> bool:
+    return (
+        has_seen_motion
+        and phase in {"general_drive", "recovery"}
+        and stopped_duration_sec >= hold_sec
+    )
+
+
 class RecoveryScenarioManager(Node):
     def __init__(self) -> None:
         super().__init__("il_recovery_scenario_manager")
@@ -124,6 +137,10 @@ class RecoveryScenarioManager(Node):
         self.interval_sec = float(self.get_parameter("scenario_interval_sec").value)
         self.settle_sec = float(self.get_parameter("settle_sec").value)
         self.recovery_hold_sec = float(self.get_parameter("recovery_hold_sec").value)
+        self.stop_retry_hold_sec = float(
+            self.get_parameter("stop_retry_hold_sec").value
+        )
+        self.retry_delay_sec = float(self.get_parameter("retry_delay_sec").value)
         self.lane_offset = float(
             self.get_parameter("lane_offset_from_yellow_m").value
         )
@@ -153,6 +170,16 @@ class RecoveryScenarioManager(Node):
             str(self.get_parameter("scenario_state_topic").value),
             qos,
         )
+        motor_qos = QoSProfile(
+            depth=10,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
+        self.create_subscription(
+            Float32MultiArray,
+            str(self.get_parameter("motor_topic").value),
+            self._motor_cb,
+            motor_qos,
+        )
         self.rng = random.Random(self.seed + 100_003)
         self.phase = "general_drive"
         self.current_state: Dict[str, object] = {
@@ -165,6 +192,8 @@ class RecoveryScenarioManager(Node):
         self.next_intervention = now + max(1.0, self.warmup_sec)
         self.phase_deadline = 0.0
         self.scenario_id = 0
+        self.has_seen_motion = False
+        self.stopped_since: float | None = None
         self.create_timer(0.2, self._tick)
         self.get_logger().info(
             "recovery scenarios ready: "
@@ -179,11 +208,14 @@ class RecoveryScenarioManager(Node):
         self.declare_parameter("preset", "mixed")
         self.declare_parameter("mission_label_topic", "/il/mission_label")
         self.declare_parameter("scenario_state_topic", "/il/scenario_state")
+        self.declare_parameter("motor_topic", "/xycar_motor")
         self.declare_parameter("event_log_path", "/tmp/xycar_scenario_events.jsonl")
         self.declare_parameter("warmup_sec", 12.0)
         self.declare_parameter("scenario_interval_sec", 30.0)
         self.declare_parameter("settle_sec", 0.8)
         self.declare_parameter("recovery_hold_sec", 8.0)
+        self.declare_parameter("stop_retry_hold_sec", 1.0)
+        self.declare_parameter("retry_delay_sec", 1.0)
         self.declare_parameter("lane_offset_from_yellow_m", 0.05)
         self.declare_parameter(
             "lateral_offsets_m",
@@ -196,6 +228,11 @@ class RecoveryScenarioManager(Node):
 
     def _tick(self) -> None:
         now = time.monotonic()
+        if self.phase == "failed_wait":
+            if now >= self.phase_deadline:
+                self._start_intervention(now)
+            self._publish_state()
+            return
         if self.phase == "bad_data" and now >= self.phase_deadline:
             self.phase = "recovery"
             self.phase_deadline = now + self.recovery_hold_sec
@@ -209,7 +246,45 @@ class RecoveryScenarioManager(Node):
             self._start_intervention(now)
         self._publish_state()
 
+    def _motor_cb(self, msg: Float32MultiArray) -> None:
+        if len(msg.data) < 2:
+            return
+        now = time.monotonic()
+        speed = float(msg.data[1])
+        if abs(speed) > 1.0e-6:
+            self.has_seen_motion = True
+            self.stopped_since = None
+            return
+        if not self.has_seen_motion or self.phase not in {"general_drive", "recovery"}:
+            return
+        if self.stopped_since is None:
+            self.stopped_since = now
+            return
+        stopped_duration = now - self.stopped_since
+        if not stopped_recovery_requires_retry(
+            self.has_seen_motion,
+            self.phase,
+            stopped_duration,
+            self.stop_retry_hold_sec,
+        ):
+            return
+        self.phase = "failed_wait"
+        self.phase_deadline = now + self.retry_delay_sec
+        self.current_state.update(
+            {
+                "phase": self.phase,
+                "stop_duration_sec": stopped_duration,
+            }
+        )
+        self.stopped_since = None
+        self._append_event("recovery_stop_detected")
+        self._publish_state()
+        self.get_logger().warn(
+            "vehicle remained stopped during recovery; scheduling a new pose"
+        )
+
     def _start_intervention(self, now: float) -> None:
+        self.stopped_since = None
         pose = sample_recovery_pose(
             self.rng,
             self.lateral_offsets,
@@ -284,7 +359,12 @@ class RecoveryScenarioManager(Node):
 
     def _publish_state(self) -> None:
         label = String()
-        label.data = self.phase if self.phase in {"bad_data", "recovery"} else "general_drive"
+        if self.phase in {"bad_data", "failed_wait"}:
+            label.data = "bad_data"
+        elif self.phase == "recovery":
+            label.data = "recovery"
+        else:
+            label.data = "general_drive"
         self.label_pub.publish(label)
         state = String()
         state.data = json.dumps(self.current_state, sort_keys=True)
