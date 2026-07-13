@@ -1,5 +1,6 @@
 xycar_motor_bridge:
   ros__parameters:
+    use_sim_time: true
     motor_topics:
       - xycar_motor
       - /xycar_motor
@@ -8,15 +9,26 @@ xycar_motor_bridge:
 
     angle_command_min: -50.0
     angle_command_max: 100.0
+    # Linear fallback retained for comparisons with the VESC conversion code.
     steering_gain: -0.0068
-    steering_min: -0.2881
-    steering_max: 0.2888
+    steering_min: -0.55
+    steering_max: 0.55
+
+    # 2026-07-12 real-car medians, represented as command -> path curvature (1/m).
+    # The +/-42 endpoints temporarily extrapolate the measured 20-to-30 slopes.
+    # Signs follow the existing Xycar command convention: positive angle turns right.
+    use_measured_steering_map: true
+    steering_map_commands: [-42.0, -30.0, -20.0, -10.0, 0.0, 10.0, 20.0, 30.0, 42.0]
+    steering_map_curvatures: [1.366747, 0.922781, 0.552809, 0.194230, 0.0, -0.556883, -0.959829, -1.369323, -1.860716]
 
     speed_command_min: -50.0
     speed_command_max: 100.0
-    speed_gain: 0.08
+    speed_gain: 0.080191
     speed_min: -4.0
     speed_max: 8.0
 
+    steering_delay_sec: 0.035
+    speed_delay_sec: 0.094
+    command_update_period_sec: 0.005
     cmd_timeout_sec: 0.5
     debug_topic: /xycar_motor_bridge/debug

@@ -18,10 +18,10 @@ class BevPreviewHomography(Node):
         self.declare_parameter("calib_yaml", "")
 
         self.declare_parameter("enable_rectify", False)
-        self.declare_parameter("rect_balance", 0.8)
+        self.declare_parameter("rect_balance", 0.3)
 
-        self.declare_parameter("src_tl_x_ratio", 0.42)
-        self.declare_parameter("src_tr_x_ratio", 0.58)
+        self.declare_parameter("src_tl_x_ratio", 0.39)
+        self.declare_parameter("src_tr_x_ratio", 0.67)
         self.declare_parameter("src_br_x_ratio", 1.10)
         self.declare_parameter("src_bl_x_ratio", -0.10)
         self.declare_parameter("src_top_y_ratio", 0.48)
@@ -32,7 +32,7 @@ class BevPreviewHomography(Node):
         self.declare_parameter("dst_left_ratio", 0.10)
         self.declare_parameter("dst_right_ratio", 0.90)
 
-        self.declare_parameter("lateral_m_per_px", 0.00164)
+        self.declare_parameter("lateral_m_per_px", 0.0022)
         self.declare_parameter("forward_m_per_px", 0.005)
         self.declare_parameter("black_threshold", 70)
 

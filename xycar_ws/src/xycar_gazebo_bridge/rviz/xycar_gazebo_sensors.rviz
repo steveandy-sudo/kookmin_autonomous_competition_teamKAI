@@ -1,5 +1,6 @@
 Panels:
   - Class: rviz_common/Displays
+    Help Height: 70
     Name: Displays
     Property Tree Widget:
       Expanded:
@@ -12,12 +13,18 @@ Panels:
         - /Perception Markers1
         - /Rule Drive Markers1
       Splitter Ratio: 0.5
+    Tree Height: 371
   - Class: rviz_common/Selection
     Name: Selection
   - Class: rviz_common/Tool Properties
+    Expanded: ~
     Name: Tool Properties
+    Splitter Ratio: 0.5
   - Class: rviz_common/Views
+    Expanded:
+      - /Current View1
     Name: Views
+    Splitter Ratio: 0.5
 Visualization Manager:
   Class: ""
   Displays:
@@ -27,9 +34,14 @@ Visualization Manager:
       Color: 160; 160; 164
       Enabled: true
       Line Style:
-        Line Width: 0.03
+        Line Width: 0.029999999329447746
         Value: Lines
       Name: Grid
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
       Plane: XY
       Plane Cell Count: 20
       Reference Frame: <Fixed Frame>
@@ -39,11 +51,26 @@ Visualization Manager:
       Frame Timeout: 15
       Frames:
         All Enabled: true
-      Marker Scale: 0.6
+        base_footprint:
+          Value: true
+        base_link:
+          Value: true
+        xycar_ackermann/chassis/front_camera:
+          Value: true
+        xycar_ackermann/chassis/lidar:
+          Value: true
+      Marker Scale: 0.6000000238418579
       Name: TF
       Show Arrows: true
       Show Axes: true
       Show Names: true
+      Tree:
+        base_footprint:
+          base_link:
+            xycar_ackermann/chassis/front_camera:
+              {}
+            xycar_ackermann/chassis/lidar:
+              {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -66,10 +93,9 @@ Visualization Manager:
       Min Intensity: 0
       Name: LaserScan
       Position Transformer: XYZ
-      Queue Size: 10
       Selectable: true
       Size (Pixels): 4
-      Size (m): 0.04
+      Size (m): 0.03999999910593033
       Style: Flat Squares
       Topic:
         Depth: 5
@@ -83,30 +109,42 @@ Visualization Manager:
       Value: true
     - Class: rviz_default_plugins/Camera
       Enabled: true
+      Far Plane Distance: 100
       Image Rendering: background and overlay
       Name: Camera
-      Overlay Alpha: 0.45
-      Queue Size: 10
-      Topic: /image_raw
-      Unreliable: false
+      Overlay Alpha: 0.44999998807907104
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /image_raw
       Value: true
       Visibility:
         Grid: true
+        Image: true
         LaserScan: true
+        Legacy Hough Debug Image: true
+        Perception Debug Image: true
+        Perception Markers: true
+        Rule Drive Markers: true
         TF: true
         Value: true
       Zoom Factor: 1
     - Class: rviz_default_plugins/Image
-      Enabled: true
+      Enabled: false
       Max Value: 1
       Median window: 5
       Min Value: 0
       Name: Image
       Normalize Range: true
-      Queue Size: 10
-      Topic: /image_raw
-      Unreliable: false
-      Value: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /image_raw
+      Value: false
     - Class: rviz_default_plugins/Image
       Enabled: true
       Max Value: 1
@@ -114,28 +152,33 @@ Visualization Manager:
       Min Value: 0
       Name: Perception Debug Image
       Normalize Range: true
-      Queue Size: 10
-      Topic: /perception/debug_image
-      Unreliable: false
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /perception/debug_image
       Value: true
     - Class: rviz_default_plugins/Image
-      Enabled: true
+      Enabled: false
       Max Value: 1
       Median window: 5
       Min Value: 0
       Name: Legacy Hough Debug Image
       Normalize Range: true
-      Queue Size: 10
-      Topic: /rule_drive/legacy_debug_image
-      Unreliable: false
-      Value: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /rule_drive/legacy_debug_image
+      Value: false
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: Perception Markers
       Namespaces:
         centerline: true
         road_segments: true
-      Queue Size: 10
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -147,9 +190,9 @@ Visualization Manager:
       Enabled: true
       Name: Rule Drive Markers
       Namespaces:
+        rule_control_point: true
         rule_lookahead: true
         rule_target_path: true
-      Queue Size: 10
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -186,23 +229,32 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 7
+      Distance: 4.770303726196289
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
       Focal Point:
         X: 0
         Y: 0
         Z: 0
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05000000074505806
+      Invert Z Axis: false
       Name: Current View
-      Pitch: 1.2
+      Near Clip Distance: 0.009999999776482582
+      Pitch: 1.2699999809265137
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 3.14
+      Yaw: 3.0299999713897705
     Saved: ~
 Window Geometry:
   Camera:
     collapsed: false
   Displays:
     collapsed: false
-  Height: 900
+  Height: 796
   Hide Left Dock: false
   Hide Right Dock: false
   Image:
@@ -211,6 +263,13 @@ Window Geometry:
     collapsed: false
   Perception Debug Image:
     collapsed: false
-  Width: 1280
-  X: 40
-  Y: 40
+  QMainWindow State: 000000ff00000000fd00000001000000000000021d000002c2fc0200000008fb00000030004c0065006700610063007900200048006f00750067006800200044006500620075006700200049006d006100670065000000003d0000010a0000002800fffffffb0000002c00500065007200630065007000740069006f006e00200044006500620075006700200049006d006100670065010000003d0000015e0000002800fffffffb0000000a0049006d00610067006500000001d6000000c50000002800fffffffb0000000c00430061006d00650072006101000001a10000015e0000002800fffffffb000000100044006900730070006c0061007900730000000130000000c9000000c900fffffffb0000001200530065006c0065006300740069006f006e000000027d000000ea0000005c00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007300000002040000007d0000005c00fffffffb0000000a00560069006500770073000000025a0000010d000000a400ffffff00000250000002c200000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Selection:
+    collapsed: false
+  Tool Properties:
+    collapsed: false
+  Views:
+    collapsed: false
+  Width: 1139
+  X: 781
+  Y: 247

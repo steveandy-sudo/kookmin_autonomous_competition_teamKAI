@@ -18,18 +18,19 @@
 | wheel separation | `0.265 m` | `<wheel_separation>` |
 | kingpin width | `0.240 m` | `<kingpin_width>` |
 | wheel radius | `0.06 m` | `<wheel_radius>` |
-| steering limit | `0.289 rad` 약 `16.6 deg` | `<steering_limit>`, steering joint limit |
+| steering center limit | `0.550 rad` 약 `31.5 deg` | `<steering_limit>` |
+| steering joint limit | `0.700 rad` 약 `40.1 deg` | steering joint limit |
 | max velocity | `8.0 m/s` | `<max_velocity>` |
 | min velocity | `-4.0 m/s` | `<min_velocity>` |
-| camera | `/image_raw`, 1280x1024, 30Hz, HFOV 약 170도, equidistant fisheye | `front_camera` sensor |
+| camera | `/image_raw`, 1280x1024, 30Hz, 보정 K/D 역산 HFOV 약 102.95도, equidistant fisheye | `front_camera` sensor |
 | lidar | `/scan`, 505 samples, 10Hz, `-pi~pi`, `0.1~12 m` | `lidar` sensor |
 | sensor origin | 앞바퀴 중심 기준 | 실차 측정 기준 |
 | camera pose | `(-0.04, 0.00, 0.17) m` | 앞바퀴 중심 기준 |
-| lidar pose | `(0.08, 0.00, 0.06) m` | 앞바퀴 중심 기준 |
+| lidar pose | `(0.065, 0.00, 0.080) m` | 2026-07-12 사진의 camera-in-laser 상대 위치 반영 |
 
 실차 카메라 영상에서 보이는 실내 기준물도 시뮬에 추가했다. 벽, 나무 몰딩, 락커, 책상/의자, 천장 조명, 콘은 `room_*` 접두어를 가진 **독립 Gazebo 모델**이다. Entity Tree에서 각각 선택해 이동/저장할 수 있고, 주행 물리에는 간섭하지 않도록 충돌 없는 시각 객체로만 둔다.
 
-2026-07-07 실차 조사에서 ROS1 VESC 모터 경로의 변환식이 확인되었으므로, Gazebo wrapper는 아래 값을 우선 기준으로 둔다.
+2026-07-07 실차 조사에서 확인한 ROS1 VESC 변환식은 선형 fallback과 명령 부호의 기준으로 남겨 둔다.
 
 ```text
 steering_angle(rad) = -0.0068 * angle_command
@@ -39,7 +40,31 @@ speed_command clamp = -50 ~ 100
 servo clipping steering range ~= -0.2881 ~ +0.2888 rad
 ```
 
-이를 반영해 `xycar_ws/src/xycar_gazebo_bridge` 패키지를 추가했다. 이 패키지는 `std_msgs/msg/Float32MultiArray [angle, speed]`를 받아 `/model/xycar_ackermann/cmd_vel` `geometry_msgs/msg/Twist`로 바꾼다.
+2026-07-12 실차 주행에서는 `speed_cmd=3,5`, `angle_cmd=+-10,+-20,+-30` 조합을 측정했다. 최종 Gazebo wrapper는 `std_msgs/msg/Float32MultiArray [angle, speed]`를 받아 `/model/xycar_ackermann/cmd_vel`로 변환하면서 다음 값을 적용한다.
+
+```text
+speed_mps = 0.080191 * speed_command
+steering response = direction-aware command-to-curvature lookup
+steering delay = 0.035 s
+speed delay = 0.094 s
+```
+
+같은 절댓값에서도 양수 조향 명령이 음수보다 더 급하게 회전했으므로 단일 `steering_gain` 대신 좌우 비대칭 보간 테이블을 사용한다. 실차 VESC 변환과 기존 주행 코드의 부호를 유지해 양수 `angle_cmd`는 우회전으로 정의한다. 측정 그룹 CSV와 반영 근거는 `data/vehicle_dynamics/2026-07-12`에 있다.
+
+### 다음 실차 동역학 측정 우선순위
+
+| 우선순위 | 시험 | 권장 명령 | 얻을 값 |
+|---|---|---|---|
+| P0 | 최대 조향 정상상태 원주행 | angle `+-35, +-40, +-42`, speed `3, 5`, 각 3회 | 실제 포화 command, 좌우 회전반경, yaw rate |
+| P0 | 저속/데드존 속도 맵 | angle `0`, speed `0, 1, 2, 3, 5, 8, 10` | 출발 deadband, 정상 속도, 선형/비선형 구간 |
+| P0 | 가속/제동 step | speed `0->3, 0->5, 0->8, 5->0, 8->0` | 응답 지연, 10~90% 상승시간, 최대 가감속, 정지거리 |
+| P1 | 조향 step 및 좌우 반전 | `0->+-10/20/30/42`, `+30->-30` | 조향 지연, 조향 속도, 오버슈트, 복원 지연 |
+| P1 | 속도별 코너링 | angle `+-20, +-30, +-42`, speed `3, 5, 8` | 속도에 따른 언더스티어와 타이어 슬립 |
+| P1 | 타력 주행 | 정상속도 도달 후 speed `0` | 구름저항, 자연 감속 곡선 |
+| P2 | 하중/전압 변화 | 배터리 전압과 적재 질량을 바꿔 반복 | 배터리·적재 상태별 speed gain과 지연 |
+| P2 | 정적 차량값 | 전체 질량, 앞/뒤 축중, 무게중심 높이 | Gazebo mass, inertia, center of gravity |
+
+IMU가 고장 난 상태에서도 `/odom` 또는 VESC 속도 피드백과 천장/측면 영상을 함께 쓰면 속도, 반경, 지연, 조향 속도를 측정할 수 있다. 특히 최대 조향 시험은 바닥에 원 궤적을 표시하거나 위에서 영상을 찍으면 IMU 없이도 반경을 안정적으로 구할 수 있다.
 
 최종 맵 파일:
 
@@ -573,12 +598,12 @@ rosbag record /image_raw /scan /xycar_motor -O real_xycar_probe.bag
 
 ```yaml
 vehicle:
-  wheelbase_m:
-  wheel_separation_m:
-  wheel_radius_m:
-  outer_length_m:
-  outer_width_m:
-  mass_kg:
+  wheelbase_m: 0.32
+  wheel_separation_m: 0.265
+  wheel_radius_m: 0.06
+  outer_length_m: 0.55
+  outer_width_m: 0.30
+  mass_kg: 2.2
 
 steering:
   topic: /xycar_motor
@@ -587,16 +612,20 @@ steering:
   command_min: -50
   command_max: 100
   center_command: 0
-  steering_gain_rad_per_command: -0.0068
-  servo_limited_min_rad: -0.2881
-  servo_limited_max_rad: 0.2888
+  model: measured_curvature_lookup
+  command_lookup: [-42, -30, -20, -10, 0, 10, 20, 30, 42]
+  curvature_per_m: [1.366747, 0.922781, 0.552809, 0.194230, 0.0, -0.556883, -0.959829, -1.369323, -1.860716]
+  extrapolated_commands: [-42, 42]
+  delay_sec: 0.035
+  linear_fallback_gain_rad_per_command: -0.0068
 
 speed:
   topic: /xycar_motor
   message_type: std_msgs/msg/Float32MultiArray
   command_min: -50
   command_max: 100
-  speed_gain_mps_per_command: 0.08
+  speed_gain_mps_per_command: 0.080191
+  delay_sec: 0.094
   command_limited_min_mps: -4.0
   command_limited_max_mps: 8.0
 
@@ -605,14 +634,14 @@ camera:
   width: 1280
   height: 1024
   fps: 30
-  horizontal_fov_deg: 170
+  horizontal_fov_deg: 102.95
   lens: equidistant
   frame: front_wheel_center
   x_m: -0.04
   y_m: 0.0
   z_m: 0.17
   gazebo_chassis_pose_m: [0.120, 0.0, 0.095]
-  pitch_rad: 0.220
+  pitch_rad: 0.100
   roi_start_row: 300
   roi_end_row: 380
   roi_reference_row: 40
@@ -631,10 +660,10 @@ lidar:
   left_index_in_slice: 315
   right_index_in_slice: 189
   frame: front_wheel_center
-  x_m: 0.08
+  x_m: 0.065
   y_m: 0.0
-  z_m: 0.06
-  gazebo_chassis_pose_m: [0.240, 0.0, -0.015]
+  z_m: 0.080
+  gazebo_chassis_pose_m: [0.225, 0.0, 0.005]
   yaw_deg: 0.0
 ```
 

@@ -17,7 +17,7 @@ from kaiev26_msgs.msg import (
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CompressedImage, Image
 from visualization_msgs.msg import Marker, MarkerArray
 
 
@@ -48,10 +48,18 @@ def moving_average(values: list[float], window: int = 3) -> list[float]:
     return smoothed
 
 
+def decode_compressed_image(data: bytes | bytearray | memoryview) -> np.ndarray | None:
+    encoded = np.frombuffer(data, dtype=np.uint8)
+    if encoded.size == 0:
+        return None
+    return cv2.imdecode(encoded, cv2.IMREAD_COLOR)
+
+
 class CameraPerceptionNode(Node):
     def __init__(self) -> None:
         super().__init__("xycar_camera_perception")
         self.declare_parameter("image_topic", "/image_raw")
+        self.declare_parameter("use_compressed_image", False)
         self.declare_parameter("road_segments_topic", "/perception/road_segments")
         self.declare_parameter("centerline_topic", "/perception/centerline")
         self.declare_parameter("objects_topic", "/perception/objects")
@@ -76,9 +84,9 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("max_projected_x_m", 5.00)
         self.declare_parameter("calib_yaml", "")
         self.declare_parameter("enable_rectify", True)
-        self.declare_parameter("rect_balance", 0.8)
-        self.declare_parameter("src_tl_x_ratio", 0.42)
-        self.declare_parameter("src_tr_x_ratio", 0.58)
+        self.declare_parameter("rect_balance", 0.3)
+        self.declare_parameter("src_tl_x_ratio", 0.39)
+        self.declare_parameter("src_tr_x_ratio", 0.67)
         self.declare_parameter("src_br_x_ratio", 1.10)
         self.declare_parameter("src_bl_x_ratio", -0.10)
         self.declare_parameter("src_top_y_ratio", 0.48)
@@ -87,9 +95,10 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("bev_height", 220)
         self.declare_parameter("dst_left_ratio", 0.10)
         self.declare_parameter("dst_right_ratio", 0.90)
-        self.declare_parameter("lateral_m_per_px", 0.00164)
-        self.declare_parameter("forward_m_per_px", 0.005)
+        self.declare_parameter("lateral_m_per_px", 0.0022)
+        self.declare_parameter("forward_m_per_px", 0.010)
         self.declare_parameter("bev_x_offset_m", 0.0)
+        self.declare_parameter("bev_bottom_ignore_px", 28)
         self.declare_parameter("near_x_m", 0.20)
         self.declare_parameter("far_x_m", 2.20)
         self.declare_parameter("near_m_per_px", 0.0022)
@@ -108,8 +117,16 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("morphology_kernel_px", 3)
         self.declare_parameter("centerline_mode", "lane_midline")
         self.declare_parameter("use_yellow_as_centerline", True)
+        self.declare_parameter("centerline_polyfit_enabled", True)
+        self.declare_parameter("centerline_polyfit_degree", 2)
+        self.declare_parameter("centerline_sample_spacing_m", 0.05)
+        self.declare_parameter("centerline_temporal_alpha", 0.45)
+        self.declare_parameter("centerline_temporal_timeout_sec", 0.50)
 
         self.bridge = CvBridge()
+        self.use_compressed_image = bool(
+            self.get_parameter("use_compressed_image").value
+        )
         self.base_frame_id = str(self.get_parameter("base_frame_id").value)
         self.source_name = str(self.get_parameter("source_name").value)
         self.publish_empty_optional_topics = bool(
@@ -143,6 +160,9 @@ class CameraPerceptionNode(Node):
         self.lateral_m_per_px = float(self.get_parameter("lateral_m_per_px").value)
         self.forward_m_per_px = float(self.get_parameter("forward_m_per_px").value)
         self.bev_x_offset_m = float(self.get_parameter("bev_x_offset_m").value)
+        self.bev_bottom_ignore_px = max(
+            0, int(self.get_parameter("bev_bottom_ignore_px").value)
+        )
         self.near_x_m = float(self.get_parameter("near_x_m").value)
         self.far_x_m = float(self.get_parameter("far_x_m").value)
         self.near_m_per_px = float(self.get_parameter("near_m_per_px").value)
@@ -163,6 +183,21 @@ class CameraPerceptionNode(Node):
         self.use_yellow_as_centerline = bool(
             self.get_parameter("use_yellow_as_centerline").value
         )
+        self.centerline_polyfit_enabled = bool(
+            self.get_parameter("centerline_polyfit_enabled").value
+        )
+        self.centerline_polyfit_degree = max(
+            1, int(self.get_parameter("centerline_polyfit_degree").value)
+        )
+        self.centerline_sample_spacing_m = max(
+            0.01, float(self.get_parameter("centerline_sample_spacing_m").value)
+        )
+        self.centerline_temporal_alpha = float(
+            np.clip(self.get_parameter("centerline_temporal_alpha").value, 0.0, 1.0)
+        )
+        self.centerline_temporal_timeout_sec = max(
+            0.0, float(self.get_parameter("centerline_temporal_timeout_sec").value)
+        )
 
         rate_limit_hz = float(self.get_parameter("publish_rate_limit_hz").value)
         self.min_publish_period = 0.0 if rate_limit_hz <= 0.0 else 1.0 / rate_limit_hz
@@ -180,6 +215,8 @@ class CameraPerceptionNode(Node):
         self.homography_input_shape: tuple[int, int] | None = None
         self.homography_output_shape: tuple[int, int] | None = None
         self.current_projection_height = self.bev_height
+        self.previous_centerline_points: list[Point] = []
+        self.previous_centerline_wall_time = 0.0
         self.load_calib_yaml()
 
         self.road_segments_pub = self.create_publisher(
@@ -212,15 +249,27 @@ class CameraPerceptionNode(Node):
             str(self.get_parameter("debug_markers_topic").value),
             10,
         )
-        self.image_sub = self.create_subscription(
-            Image,
-            str(self.get_parameter("image_topic").value),
-            self.on_image,
-            10,
-        )
+        image_topic = str(self.get_parameter("image_topic").value)
+        if self.use_compressed_image:
+            self.image_sub = self.create_subscription(
+                CompressedImage,
+                image_topic,
+                self.on_compressed_image,
+                10,
+            )
+            transport = "sensor_msgs/CompressedImage"
+        else:
+            self.image_sub = self.create_subscription(
+                Image,
+                image_topic,
+                self.on_image,
+                10,
+            )
+            transport = "sensor_msgs/Image"
         self.get_logger().info(
-            f"camera perception ready: /image_raw -> /perception/road_segments, "
-            f"/perception/centerline, projection_mode={self.projection_mode}"
+            f"camera perception ready: {image_topic} ({transport}) -> "
+            f"/perception/road_segments, /perception/centerline, "
+            f"projection_mode={self.projection_mode}"
         )
 
     def next_detection_id(self) -> int:
@@ -229,19 +278,42 @@ class CameraPerceptionNode(Node):
         return value
 
     def on_image(self, msg: Image) -> None:
-        now = time.monotonic()
-        if now - self.last_publish_wall_time < self.min_publish_period:
+        if not self.should_process_image():
             return
-        self.last_publish_wall_time = now
 
         try:
             image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
         except Exception as exc:
             self.get_logger().warn(f"failed to convert image: {exc}", throttle_duration_sec=2.0)
             return
+        self.process_image(image, msg.header)
 
+    def on_compressed_image(self, msg: CompressedImage) -> None:
+        if not self.should_process_image():
+            return
+        image = decode_compressed_image(msg.data)
+        if image is None:
+            self.get_logger().warn(
+                "failed to decode compressed image",
+                throttle_duration_sec=2.0,
+            )
+            return
+        self.process_image(image, msg.header)
+
+    def should_process_image(self) -> bool:
+        now = time.monotonic()
+        if now - self.last_publish_wall_time < self.min_publish_period:
+            return False
+        self.last_publish_wall_time = now
+        return True
+
+    def process_image(self, image: np.ndarray, input_header) -> None:
         header = RoadSegmentArray().header
-        header.stamp = msg.header.stamp if msg.header.stamp.sec or msg.header.stamp.nanosec else self.get_clock().now().to_msg()
+        header.stamp = (
+            input_header.stamp
+            if input_header.stamp.sec or input_header.stamp.nanosec
+            else self.get_clock().now().to_msg()
+        )
         header.frame_id = self.base_frame_id
 
         road_segments, centerline, debug = self.detect_lanes(image, header)
@@ -265,13 +337,16 @@ class CameraPerceptionNode(Node):
         if self.debug_markers_pub.get_subscription_count() > 0:
             self.debug_markers_pub.publish(self.build_markers(header, road_segments, centerline))
 
-    def detect_lanes(self, image: np.ndarray, header) -> tuple[RoadSegmentArray, Centerline, np.ndarray]:
+    def detect_lanes(
+        self, image: np.ndarray, header
+    ) -> tuple[RoadSegmentArray, Centerline, np.ndarray]:
         image = self.prepare_projection_image(image)
         height, width = image.shape[:2]
         self.current_projection_height = height
         center_x = self.image_center_x_px if self.image_center_x_px >= 0.0 else width * 0.5
         roi_top = max(0, min(height - 1, self.roi_top_row))
         roi_bottom = max(roi_top + 1, min(height - 1, self.roi_bottom_row))
+        roi_bottom = max(roi_top + 1, roi_bottom - self.bev_bottom_ignore_px)
 
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         white_mask = cv2.inRange(
@@ -285,9 +360,9 @@ class CameraPerceptionNode(Node):
             np.array([self.yellow_h_max, 255, 255], dtype=np.uint8),
         )
         white_mask[:roi_top, :] = 0
-        white_mask[roi_bottom + 1 :, :] = 0
+        white_mask[roi_bottom + 1:, :] = 0
         yellow_mask[:roi_top, :] = 0
-        yellow_mask[roi_bottom + 1 :, :] = 0
+        yellow_mask[roi_bottom + 1:, :] = 0
 
         if self.morphology_kernel_px > 1:
             kernel = np.ones((self.morphology_kernel_px, self.morphology_kernel_px), np.uint8)
@@ -627,8 +702,14 @@ class CameraPerceptionNode(Node):
                 confidence_candidates = [
                     segment.confidence for segment in (left, right, yellow) if segment is not None
                 ]
-                centerline.confidence = float(min(confidence_candidates)) if confidence_candidates else 0.0
-        elif self.use_yellow_as_centerline and yellow is not None and len(yellow.points) >= self.min_centerline_points:
+                centerline.confidence = (
+                    float(min(confidence_candidates)) if confidence_candidates else 0.0
+                )
+        elif (
+            self.use_yellow_as_centerline
+            and yellow is not None
+            and len(yellow.points) >= self.min_centerline_points
+        ):
             centerline.points = list(yellow.points)
             centerline.confidence = float(yellow.confidence)
 
@@ -636,15 +717,21 @@ class CameraPerceptionNode(Node):
             centerline.points = self.midpoint_centerline_points(left.points, right.points)
             centerline.confidence = float(min(left.confidence, right.confidence))
         elif not centerline.points and left is not None:
-            centerline.points = [make_point(point.x, point.y - self.lane_width_m * 0.5, 0.0) for point in left.points]
+            centerline.points = [
+                make_point(point.x, point.y - self.lane_width_m * 0.5, 0.0)
+                for point in left.points
+            ]
             centerline.confidence = float(left.confidence * 0.70)
         elif not centerline.points and right is not None:
-            centerline.points = [make_point(point.x, point.y + self.lane_width_m * 0.5, 0.0) for point in right.points]
+            centerline.points = [
+                make_point(point.x, point.y + self.lane_width_m * 0.5, 0.0)
+                for point in right.points
+            ]
             centerline.confidence = float(right.confidence * 0.70)
         elif not centerline.points:
             centerline.confidence = 0.0
 
-        centerline.points = self.smooth_points(centerline.points)
+        centerline.points = self.fit_and_smooth_centerline(centerline.points)
         if len(centerline.points) < self.min_centerline_points:
             centerline.points = []
             centerline.confidence = 0.0
@@ -652,6 +739,63 @@ class CameraPerceptionNode(Node):
 
         centerline.detection_id = self.next_detection_id()
         return centerline
+
+    def fit_and_smooth_centerline(self, points: list[Point]) -> list[Point]:
+        if len(points) < self.min_centerline_points:
+            return points
+
+        source_points = points if self.centerline_polyfit_enabled else self.smooth_points(points)
+        current = sorted(source_points, key=lambda point: point.x)
+        if self.centerline_polyfit_enabled and len(current) >= 2:
+            x_values = np.asarray([point.x for point in current], dtype=np.float64)
+            y_values = np.asarray([point.y for point in current], dtype=np.float64)
+            unique_x, unique_indices = np.unique(x_values, return_index=True)
+            unique_y = y_values[unique_indices]
+            if unique_x.size >= 2:
+                degree = min(self.centerline_polyfit_degree, int(unique_x.size - 1))
+                try:
+                    coefficients = np.polyfit(unique_x, unique_y, degree)
+                    span = float(unique_x[-1] - unique_x[0])
+                    sample_count = max(
+                        self.min_centerline_points,
+                        min(
+                            40,
+                            int(math.ceil(span / self.centerline_sample_spacing_m)) + 1,
+                        ),
+                    )
+                    sample_x = np.linspace(unique_x[0], unique_x[-1], sample_count)
+                    sample_y = np.polyval(coefficients, sample_x)
+                    current = [
+                        make_point(x_value, y_value, 0.0)
+                        for x_value, y_value in zip(sample_x, sample_y)
+                        if np.isfinite(x_value) and np.isfinite(y_value)
+                    ]
+                except (TypeError, ValueError, np.linalg.LinAlgError):
+                    pass
+
+        now = time.monotonic()
+        previous_is_fresh = bool(self.previous_centerline_points) and (
+            now - self.previous_centerline_wall_time
+            <= self.centerline_temporal_timeout_sec
+        )
+        if previous_is_fresh:
+            alpha = self.centerline_temporal_alpha
+            blended = []
+            for point in current:
+                previous_y = self.y_at_x(self.previous_centerline_points, point.x)
+                y_value = (
+                    point.y
+                    if previous_y is None
+                    else alpha * point.y + (1.0 - alpha) * previous_y
+                )
+                blended.append(make_point(point.x, y_value, 0.0))
+            current = blended
+
+        self.previous_centerline_points = [
+            make_point(point.x, point.y, point.z) for point in current
+        ]
+        self.previous_centerline_wall_time = now
+        return current
 
     def best_yellow_boundary_midline(
         self,
@@ -798,7 +942,12 @@ class CameraPerceptionNode(Node):
         if self.lateral_m_per_px <= 0.0 or self.forward_m_per_px <= 0.0:
             return None
         image_height = max(1, self.current_projection_height)
-        pixel_y = int(round((image_height - 1) - (point.x - self.bev_x_offset_m) / self.forward_m_per_px))
+        pixel_y = int(
+            round(
+                (image_height - 1)
+                - (point.x - self.bev_x_offset_m) / self.forward_m_per_px
+            )
+        )
         pixel_x = int(round(center_x - point.y / self.lateral_m_per_px))
         return pixel_x, pixel_y
 
@@ -855,10 +1004,18 @@ def main(args=None) -> None:
     node = CameraPerceptionNode()
     try:
         rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
     finally:
-        node.destroy_node()
+        try:
+            node.destroy_node()
+        except KeyboardInterrupt:
+            pass
         if rclpy.ok():
-            rclpy.shutdown()
+            try:
+                rclpy.shutdown()
+            except KeyboardInterrupt:
+                pass
 
 
 if __name__ == "__main__":

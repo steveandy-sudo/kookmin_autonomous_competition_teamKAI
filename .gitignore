@@ -27,6 +27,12 @@ __pycache__/
 *.mp4
 *.avi
 
+# Imitation-learning datasets and trained weights
+datasets/
+models/
+!xycar_ws/src/il_data_tools/models/
+!xycar_ws/src/il_data_tools/models/drive_policy_scripted.pt
+
 # Generated debug images kept locally during map fitting
 alignment/debug_*.png
 

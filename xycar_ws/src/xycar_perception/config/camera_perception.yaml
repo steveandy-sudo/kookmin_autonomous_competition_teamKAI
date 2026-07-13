@@ -2,6 +2,7 @@ xycar_camera_perception:
   ros__parameters:
     use_sim_time: true
     image_topic: /image_raw
+    use_compressed_image: false
     road_segments_topic: /perception/road_segments
     centerline_topic: /perception/centerline
     objects_topic: /perception/objects
@@ -31,9 +32,9 @@ xycar_camera_perception:
     max_projected_x_m: 5.00
     calib_yaml: ""
     enable_rectify: true
-    rect_balance: 0.8
-    src_tl_x_ratio: 0.42
-    src_tr_x_ratio: 0.58
+    rect_balance: 0.3
+    src_tl_x_ratio: 0.39
+    src_tr_x_ratio: 0.67
     src_bl_x_ratio: -0.10
     src_br_x_ratio: 1.10
     src_top_y_ratio: 0.48
@@ -42,9 +43,11 @@ xycar_camera_perception:
     bev_height: 220
     dst_left_ratio: 0.10
     dst_right_ratio: 0.90
-    lateral_m_per_px: 0.00164
-    forward_m_per_px: 0.005
+    # Metric scale calibrated from the 0.30 m dashes and 0.40 m half-road width.
+    lateral_m_per_px: 0.0022
+    forward_m_per_px: 0.010
     bev_x_offset_m: 0.0
+    bev_bottom_ignore_px: 28
 
     # Row-linear projection calibration.
     near_x_m: 0.20
@@ -67,3 +70,8 @@ xycar_camera_perception:
     morphology_kernel_px: 3
     centerline_mode: lane_midline
     use_yellow_as_centerline: false
+    centerline_polyfit_enabled: true
+    centerline_polyfit_degree: 2
+    centerline_sample_spacing_m: 0.05
+    centerline_temporal_alpha: 0.45
+    centerline_temporal_timeout_sec: 0.50

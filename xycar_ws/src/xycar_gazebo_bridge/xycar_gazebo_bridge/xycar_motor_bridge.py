@@ -1,5 +1,7 @@
 import math
-from typing import Iterable
+from bisect import bisect_right
+from collections import deque
+from typing import Iterable, Sequence
 
 import rclpy
 from geometry_msgs.msg import Twist
@@ -9,6 +11,23 @@ from std_msgs.msg import Float32MultiArray
 
 def clamp(value: float, lower: float, upper: float) -> float:
     return min(max(value, lower), upper)
+
+
+def interpolate_clamped(value: float, inputs: Sequence[float], outputs: Sequence[float]) -> float:
+    """Piecewise-linear interpolation with endpoint clamping."""
+    if len(inputs) != len(outputs) or len(inputs) < 2:
+        raise ValueError("lookup inputs and outputs must have the same length >= 2")
+    if any(right <= left for left, right in zip(inputs, inputs[1:])):
+        raise ValueError("lookup inputs must be strictly increasing")
+    if value <= inputs[0]:
+        return float(outputs[0])
+    if value >= inputs[-1]:
+        return float(outputs[-1])
+
+    upper = bisect_right(inputs, value)
+    lower = upper - 1
+    fraction = (value - inputs[lower]) / (inputs[upper] - inputs[lower])
+    return float(outputs[lower] + fraction * (outputs[upper] - outputs[lower]))
 
 
 class XycarMotorBridge(Node):
@@ -23,13 +42,35 @@ class XycarMotorBridge(Node):
         self.declare_parameter("angle_command_min", -50.0)
         self.declare_parameter("angle_command_max", 100.0)
         self.declare_parameter("steering_gain", -0.0068)
-        self.declare_parameter("steering_min", -0.2881)
-        self.declare_parameter("steering_max", 0.2888)
+        self.declare_parameter("steering_min", -0.55)
+        self.declare_parameter("steering_max", 0.55)
+        self.declare_parameter("use_measured_steering_map", True)
+        self.declare_parameter(
+            "steering_map_commands",
+            [-42.0, -30.0, -20.0, -10.0, 0.0, 10.0, 20.0, 30.0, 42.0],
+        )
+        self.declare_parameter(
+            "steering_map_curvatures",
+            [
+                1.366747,
+                0.922781,
+                0.552809,
+                0.194230,
+                0.0,
+                -0.556883,
+                -0.959829,
+                -1.369323,
+                -1.860716,
+            ],
+        )
         self.declare_parameter("speed_command_min", -50.0)
         self.declare_parameter("speed_command_max", 100.0)
-        self.declare_parameter("speed_gain", 0.08)
+        self.declare_parameter("speed_gain", 0.080191)
         self.declare_parameter("speed_min", -4.0)
         self.declare_parameter("speed_max", 8.0)
+        self.declare_parameter("steering_delay_sec", 0.035)
+        self.declare_parameter("speed_delay_sec", 0.094)
+        self.declare_parameter("command_update_period_sec", 0.005)
         self.declare_parameter("cmd_timeout_sec", 0.5)
         self.declare_parameter("debug_topic", "/xycar_motor_bridge/debug")
 
@@ -39,11 +80,34 @@ class XycarMotorBridge(Node):
         self.steering_gain = float(self.get_parameter("steering_gain").value)
         self.steering_min = float(self.get_parameter("steering_min").value)
         self.steering_max = float(self.get_parameter("steering_max").value)
+        self.use_measured_steering_map = bool(
+            self.get_parameter("use_measured_steering_map").value
+        )
+        self.steering_map_commands = [
+            float(value) for value in self.get_parameter("steering_map_commands").value
+        ]
+        self.steering_map_curvatures = [
+            float(value) for value in self.get_parameter("steering_map_curvatures").value
+        ]
+        if self.use_measured_steering_map:
+            interpolate_clamped(
+                0.0,
+                self.steering_map_commands,
+                self.steering_map_curvatures,
+            )
+
         self.speed_command_min = float(self.get_parameter("speed_command_min").value)
         self.speed_command_max = float(self.get_parameter("speed_command_max").value)
         self.speed_gain = float(self.get_parameter("speed_gain").value)
         self.speed_min = float(self.get_parameter("speed_min").value)
         self.speed_max = float(self.get_parameter("speed_max").value)
+        self.steering_delay_sec = max(
+            0.0, float(self.get_parameter("steering_delay_sec").value)
+        )
+        self.speed_delay_sec = max(0.0, float(self.get_parameter("speed_delay_sec").value))
+        self.command_update_period_sec = max(
+            0.001, float(self.get_parameter("command_update_period_sec").value)
+        )
         self.cmd_timeout_sec = float(self.get_parameter("cmd_timeout_sec").value)
 
         cmd_vel_topic = str(self.get_parameter("cmd_vel_topic").value)
@@ -53,16 +117,25 @@ class XycarMotorBridge(Node):
 
         self.last_command_time = None
         self.stop_sent = True
+        self.active_angle_cmd = 0.0
+        self.active_speed_cmd = 0.0
+        self.angle_queue = deque()
+        self.speed_queue = deque()
         self._motor_subscriptions = []
         for topic in self._unique_resolved_topics(self.get_parameter("motor_topics").value):
             self._motor_subscriptions.append(
                 self.create_subscription(Float32MultiArray, topic, self.on_motor_command, 10)
             )
 
-        self.create_timer(0.05, self.on_timer)
+        self.create_timer(self.command_update_period_sec, self.on_timer)
+        profile = (
+            "2026-07-12 measured curvature map"
+            if self.use_measured_steering_map
+            else "linear"
+        )
         self.get_logger().info(
-            "Xycar motor bridge ready: angle->steering %.4f rad/cmd, speed->%.3f m/s/cmd"
-            % (self.steering_gain, self.speed_gain)
+            "Xycar motor bridge ready: %s, speed %.6f m/s/cmd, delays steer=%.3fs speed=%.3fs"
+            % (profile, self.speed_gain, self.steering_delay_sec, self.speed_delay_sec)
         )
 
     def _unique_resolved_topics(self, topics: Iterable[str]) -> list[str]:
@@ -85,15 +158,39 @@ class XycarMotorBridge(Node):
 
         angle_cmd = clamp(float(msg.data[0]), self.angle_command_min, self.angle_command_max)
         speed_cmd = clamp(float(msg.data[1]), self.speed_command_min, self.speed_command_max)
-        steering = clamp(
-            self.steering_gain * angle_cmd,
-            self.steering_min,
-            self.steering_max,
+        now = self.get_clock().now()
+        now_ns = now.nanoseconds
+        self.angle_queue.append(
+            (now_ns + int(self.steering_delay_sec * 1.0e9), angle_cmd)
         )
-        speed = clamp(self.speed_gain * speed_cmd, self.speed_min, self.speed_max)
-        yaw_rate = 0.0
-        if abs(speed) > 1.0e-4 and self.wheel_base > 1.0e-4:
-            yaw_rate = speed / self.wheel_base * math.tan(steering)
+        self.speed_queue.append((now_ns + int(self.speed_delay_sec * 1.0e9), speed_cmd))
+        self.last_command_time = now
+        self.stop_sent = False
+
+    def _steering_response(self, angle_cmd: float) -> tuple[float, float]:
+        if self.use_measured_steering_map:
+            curvature = interpolate_clamped(
+                angle_cmd,
+                self.steering_map_commands,
+                self.steering_map_curvatures,
+            )
+            steering = math.atan(self.wheel_base * curvature)
+        else:
+            steering = self.steering_gain * angle_cmd
+
+        steering = clamp(steering, self.steering_min, self.steering_max)
+        if self.wheel_base <= 1.0e-4:
+            return steering, 0.0
+        return steering, math.tan(steering) / self.wheel_base
+
+    def _publish_active_command(self) -> None:
+        steering, curvature = self._steering_response(self.active_angle_cmd)
+        speed = clamp(
+            self.speed_gain * self.active_speed_cmd,
+            self.speed_min,
+            self.speed_max,
+        )
+        yaw_rate = speed * curvature
 
         twist = Twist()
         twist.linear.x = speed
@@ -101,22 +198,40 @@ class XycarMotorBridge(Node):
         self.cmd_vel_pub.publish(twist)
 
         debug = Float32MultiArray()
-        debug.data = [angle_cmd, speed_cmd, steering, speed, yaw_rate]
+        debug.data = [
+            self.active_angle_cmd,
+            self.active_speed_cmd,
+            steering,
+            speed,
+            yaw_rate,
+            curvature,
+        ]
         self.debug_pub.publish(debug)
 
-        self.last_command_time = self.get_clock().now()
-        self.stop_sent = False
-
     def on_timer(self) -> None:
-        if self.last_command_time is None or self.stop_sent:
-            return
+        now = self.get_clock().now()
+        now_ns = now.nanoseconds
+        changed = False
+        while self.angle_queue and self.angle_queue[0][0] <= now_ns:
+            _, self.active_angle_cmd = self.angle_queue.popleft()
+            changed = True
+        while self.speed_queue and self.speed_queue[0][0] <= now_ns:
+            _, self.active_speed_cmd = self.speed_queue.popleft()
+            changed = True
 
-        age = (self.get_clock().now() - self.last_command_time).nanoseconds * 1.0e-9
-        if age < self.cmd_timeout_sec:
-            return
+        if self.last_command_time is not None and not self.stop_sent:
+            age = (now - self.last_command_time).nanoseconds * 1.0e-9
+            if age >= self.cmd_timeout_sec:
+                self.angle_queue.clear()
+                self.speed_queue.clear()
+                self.active_angle_cmd = 0.0
+                self.active_speed_cmd = 0.0
+                self.cmd_vel_pub.publish(Twist())
+                self.stop_sent = True
+                return
 
-        self.cmd_vel_pub.publish(Twist())
-        self.stop_sent = True
+        if changed and not self.stop_sent:
+            self._publish_active_command()
 
 
 def main(args=None) -> None:
@@ -124,10 +239,18 @@ def main(args=None) -> None:
     node = XycarMotorBridge()
     try:
         rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
     finally:
-        node.destroy_node()
+        try:
+            node.destroy_node()
+        except KeyboardInterrupt:
+            pass
         if rclpy.ok():
-            rclpy.shutdown()
+            try:
+                rclpy.shutdown()
+            except KeyboardInterrupt:
+                pass
 
 
 if __name__ == "__main__":

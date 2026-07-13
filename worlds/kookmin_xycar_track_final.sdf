@@ -4337,7 +4337,7 @@
           </material>
         </visual>
         <visual name='lidar_body'>
-          <pose>0.24 0 -0.05 0 0 0</pose>
+          <pose>0.22500000000000001 0 -0.012500000000000001 0 0 0</pose>
           <geometry>
             <cylinder>
               <length>0.035000000000000003</length>
@@ -4350,13 +4350,13 @@
           </material>
         </visual>
         <sensor name='front_camera' type='camera'>
-          <pose>0.12 0 0.095 0 0.22 0</pose>
+          <pose>0.12 0 0.095 0 0.10000000000000001 0</pose>
           <topic>/image_raw</topic>
           <update_rate>30</update_rate>
           <enable_metrics>false</enable_metrics>
           <camera name='__default__'>
             <pose>0 0 0 0 0 0</pose>
-            <horizontal_fov>2.9670999999999998</horizontal_fov>
+            <horizontal_fov>1.7968</horizontal_fov>
             <image>
               <width>1280</width>
               <height>1024</height>
@@ -4397,7 +4397,7 @@
           </camera>
         </sensor>
         <sensor name='lidar' type='gpu_lidar'>
-          <pose>0.24 0 -0.015 0 0 0</pose>
+          <pose>0.22500000000000001 0 0.0050000000000000001 0 0 0</pose>
           <topic>/scan</topic>
           <update_rate>10</update_rate>
           <enable_metrics>false</enable_metrics>
@@ -4645,8 +4645,8 @@
         <axis>
           <xyz>0 0 1</xyz>
           <limit>
-            <lower>-0.28899999999999998</lower>
-            <upper>0.28899999999999998</upper>
+            <lower>-0.69999999999999996</lower>
+            <upper>0.69999999999999996</upper>
             <effort>8</effort>
             <velocity>2</velocity>
             <stiffness>100000000</stiffness>
@@ -4667,8 +4667,8 @@
         <axis>
           <xyz>0 0 1</xyz>
           <limit>
-            <lower>-0.28899999999999998</lower>
-            <upper>0.28899999999999998</upper>
+            <lower>-0.69999999999999996</lower>
+            <upper>0.69999999999999996</upper>
             <effort>8</effort>
             <velocity>2</velocity>
             <stiffness>100000000</stiffness>
@@ -4779,7 +4779,7 @@
         <left_steering_joint>front_left_wheel_steering_joint</left_steering_joint>
         <right_steering_joint>front_right_wheel_steering_joint</right_steering_joint>
         <kingpin_width>0.240</kingpin_width>
-        <steering_limit>0.2890</steering_limit>
+        <steering_limit>0.5500</steering_limit>
         <wheel_base>0.32</wheel_base>
         <wheel_separation>0.265</wheel_separation>
         <wheel_radius>0.06</wheel_radius>

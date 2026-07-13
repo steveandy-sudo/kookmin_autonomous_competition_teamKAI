@@ -134,9 +134,9 @@ def generate_launch_description():
                 executable="static_transform_publisher",
                 name="xycar_base_to_laser_tf",
                 arguments=[
-                    "0.08",
+                    "0.065",
                     "0",
-                    "0.06",
+                    "0.08",
                     "0",
                     "0",
                     "0",

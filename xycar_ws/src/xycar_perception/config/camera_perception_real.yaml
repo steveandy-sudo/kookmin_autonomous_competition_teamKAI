@@ -1,0 +1,73 @@
+xycar_camera_perception:
+  ros__parameters:
+    use_sim_time: false
+    image_topic: /image_raw
+    use_compressed_image: false
+    road_segments_topic: /perception/road_segments
+    centerline_topic: /perception/centerline
+    objects_topic: /perception/objects
+    traffic_lights_topic: /perception/traffic_lights
+    debug_image_topic: /perception/debug_image
+    debug_markers_topic: /perception/debug_markers
+    base_frame_id: base_footprint
+    source_name: xycar_camera_perception
+    publish_rate_limit_hz: 15.0
+    publish_empty_optional_topics: true
+
+    # Initial real-car profile. Retune these ratios from a stationary debug image
+    # if the physical camera pitch or mounting position has changed.
+    roi_top_row: 0
+    roi_bottom_row: 219
+    row_step_px: 6
+    image_center_x_px: -1.0
+    projection_mode: bev_homography
+    horizon_row_px: 236.0
+    vanishing_point_x_px: -1.0
+    ipm_x_scale_m_px: 67.0
+    ipm_y_scale_m_px: 0.18
+    horizon_min_denom_px: 8.0
+    min_projected_x_m: 0.20
+    max_projected_x_m: 5.00
+    calib_yaml: ""
+    enable_rectify: true
+    rect_balance: 0.3
+    src_tl_x_ratio: 0.39
+    src_tr_x_ratio: 0.67
+    src_bl_x_ratio: -0.10
+    src_br_x_ratio: 1.10
+    src_top_y_ratio: 0.48
+    src_bottom_y_ratio: 0.72
+    bev_width: 640
+    bev_height: 220
+    dst_left_ratio: 0.10
+    dst_right_ratio: 0.90
+    # Initial metric scale from the known track markings; verify on real images.
+    lateral_m_per_px: 0.0022
+    forward_m_per_px: 0.010
+    bev_x_offset_m: 0.0
+    bev_bottom_ignore_px: 28
+
+    near_x_m: 0.20
+    far_x_m: 2.20
+    near_m_per_px: 0.0022
+    far_m_per_px: 0.0065
+    lane_width_m: 0.80
+    min_cluster_width_px: 3
+    max_cluster_gap_px: 8
+    min_segment_points: 4
+    min_centerline_points: 3
+
+    white_s_max: 80
+    white_v_min: 145
+    yellow_h_min: 15
+    yellow_h_max: 42
+    yellow_s_min: 60
+    yellow_v_min: 110
+    morphology_kernel_px: 3
+    centerline_mode: lane_midline
+    use_yellow_as_centerline: false
+    centerline_polyfit_enabled: true
+    centerline_polyfit_degree: 2
+    centerline_sample_spacing_m: 0.05
+    centerline_temporal_alpha: 0.45
+    centerline_temporal_timeout_sec: 0.50

@@ -3,7 +3,136 @@
 Gazebo Sim에서 국민대학교 Xycar 자율주행 트랙을 최대한 비슷하게 재현하고,
 실차 Xycar 주행 코드와 맞춰 rule-based 주행, 데이터 수집, 모방학습, Offline RL까지 이어가기 위한 작업 저장소입니다.
 
-현재 저장소의 1차 목표는 **트랙 맵 안정화와 실차 조건 정리**입니다.
+현재 트랙 맵, 카메라 차선 인지, 룰베이스 기본 주행까지 구현됐습니다.
+시뮬레이션에서 학습한 BC 모델의 실시간 카메라+LiDAR 추론까지 포함되어 있으며,
+다음 목표는 **실차 shadow 및 저속 폐루프 검증**입니다.
+
+처음부터 현재 룰베이스 주행까지 전체 구조와 실행 순서를 보려면
+[`docs/current_simulation_guide.md`](docs/current_simulation_guide.md)를 먼저 읽습니다.
+
+## 실차 Clone 후 바로 실행
+
+아래 절차는 Ubuntu 22.04, ROS 2 Humble, `ROS_DOMAIN_ID=7`인 Xycar
+실차 PC를 기준으로 합니다. 저장소에는 룰베이스 패키지와 학습 완료된
+TorchScript BC 모델이 함께 들어 있습니다.
+
+### 1. Clone 및 빌드
+
+```bash
+cd ~
+git clone --branch simulation \
+  https://github.com/yunny22/kookmin_sim_to_real.git
+cd ~/kookmin_sim_to_real
+
+source /opt/ros/humble/setup.bash
+sudo apt update
+sudo apt install -y python3-pip python3-opencv python3-numpy \
+  ros-humble-cv-bridge ros-humble-vision-msgs
+python3 -m pip install --user torch torchvision
+
+rosdep install --from-paths \
+  xycar_ws/src/kaiev26_msgs \
+  xycar_ws/src/xycar_perception \
+  xycar_ws/src/xycar_rule_drive \
+  xycar_ws/src/il_data_tools \
+  --ignore-src -r -y
+
+colcon build --packages-select \
+  kaiev26_msgs xycar_perception xycar_rule_drive il_data_tools \
+  --symlink-install
+source install/setup.bash
+export ROS_DOMAIN_ID=7
+```
+
+새 터미널마다 다음 환경을 다시 적용합니다.
+
+```bash
+cd ~/kookmin_sim_to_real
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=7
+```
+
+### 2. 실차 장치 확인
+
+차량의 기존 카메라, LiDAR, ROS1 모터 컨테이너와 dynamic bridge를 먼저
+실행한 뒤 확인합니다.
+
+```bash
+ros2 topic hz /image_raw
+ros2 topic hz /scan
+ros2 topic info /xycar_motor -v
+```
+
+필수 계약은 `/image_raw`의 `sensor_msgs/msg/Image`, `/scan`의
+`sensor_msgs/msg/LaserScan`, `/xycar_motor`의
+`std_msgs/msg/Float32MultiArray [angle, speed]`입니다. `/xycar_motor`에는
+실차 모터 bridge subscriber가 있어야 하며 자율주행 publisher는 하나만
+존재해야 합니다.
+
+### 3. 룰베이스 실차 테스트
+
+먼저 모터를 움직이지 않는 shadow 모드로 실행합니다.
+
+```bash
+ros2 launch xycar_rule_drive real_lane_drive.launch.py \
+  image_topic:=/image_raw \
+  use_compressed_image:=false \
+  drive_enabled:=false
+```
+
+```bash
+ros2 topic echo /xycar_motor_shadow
+rqt_image_view /perception/debug_image
+```
+
+조향 부호, 차선 검출과 정지 동작을 확인한 뒤 안전요원이 비상 정지를
+잡은 상태에서 속도 명령 1로 처음 주행합니다.
+
+```bash
+ros2 launch xycar_rule_drive real_lane_drive.launch.py \
+  image_topic:=/image_raw \
+  motor_topic:=/xycar_motor \
+  drive_enabled:=true \
+  speed_command:=1.0
+```
+
+### 4. 모방학습 BC 실차 테스트
+
+BC는 카메라와 LiDAR를 모두 사용합니다. 포함된 모델의 입력은 카메라
+`3x90x160`, LiDAR `2x360`이며, 출력은 조향 명령입니다. 속도는 안전을
+위해 실차 launch가 직선 1.0, 곡선 최소 0.8로 제한합니다.
+
+```bash
+ros2 launch il_data_tools real_policy_inference.launch.py \
+  image_topic:=/image_raw \
+  scan_topic:=/scan \
+  drive_enabled:=false
+```
+
+```bash
+ros2 topic echo /il/policy_motor_shadow
+ros2 topic echo /il/policy_debug
+```
+
+shadow 출력, 조향 부호, 카메라 또는 LiDAR 단절 시 0 속도 전환을 확인한
+뒤 처음 저속 주행을 시작합니다.
+
+```bash
+ros2 launch il_data_tools real_policy_inference.launch.py \
+  image_topic:=/image_raw \
+  scan_topic:=/scan \
+  motor_topic:=/xycar_motor \
+  drive_enabled:=true \
+  speed_command:=1.0 \
+  min_speed_command:=0.8
+```
+
+룰베이스, BC, 키보드 조종 노드는 모두 같은 `/xycar_motor`를 사용하므로
+절대 동시에 실행하지 않습니다. 첫 실차 테스트는 바퀴를 띄운 정지 시험,
+넓은 공간의 직선 저속 시험, 곡선 시험 순서로 진행하며 항상 물리 비상
+정지 수단을 준비합니다. 상세 체크리스트는
+[`docs/real_vehicle_deployment.md`](docs/real_vehicle_deployment.md)를 봅니다.
 
 ## 현재 상태
 
@@ -17,6 +146,7 @@ Gazebo Sim에서 국민대학교 Xycar 자율주행 트랙을 최대한 비슷�
 - 실차 모터 wrapper: `/xycar_motor` 또는 `xycar_motor`의 `Float32MultiArray [angle, speed]`를 Gazebo Ackermann `cmd_vel`로 변환
 - 실차 코드 참고본: `xycar_ws/src`
 - 실차-시뮬레이션 보정 문서: `docs/sim_to_real_vehicle_calibration.md`
+- hwj 카메라/차선 코드 비교: `docs/hwj_camera_lane_analysis.md`
 
 ## 실행
 
@@ -155,6 +285,19 @@ ros2 launch xycar_gazebo_bridge xycar_legacy_camera_drive_rviz.launch.py
 
 같은 `/xycar_motor`를 쓰기 때문에 `keyboard_teleop`, `lane_rule_driver`와 동시에 실행하지 않습니다. 전용 RViz 설정은 raw camera, LiDAR, TF, 그리고 `/rule_drive/legacy_debug_image`를 중심으로 보여줍니다.
 
+## 실차 실행 프로필
+
+실차에서는 Gazebo bridge를 실행하지 않고, 기본적으로 모터 출력을 차단한
+통합 launch를 사용합니다. raw/압축 카메라 선택, shadow 검증, 저속 auto
+전환 절차는 [실차 배포 가이드](docs/real_vehicle_deployment.md)에 정리되어 있습니다.
+
+```bash
+ros2 launch xycar_rule_drive real_lane_drive.launch.py \
+  image_topic:=/image_raw \
+  use_compressed_image:=false \
+  drive_enabled:=false
+```
+
 ## 맵 기준
 
 트랙은 CAD/DXF에서 가져온 차선 데이터를 바탕으로 만들었습니다.
@@ -176,7 +319,7 @@ ros2 launch xycar_gazebo_bridge xycar_legacy_camera_drive_rviz.launch.py
 ## 차량 모델
 
 월드에는 `xycar_ackermann`이 포함되어 있습니다.
-현재 값은 실차를 완전히 보정한 값이 아니라 rule-based 주행과 센서 파이프라인을 먼저 붙이기 위한 시작점입니다.
+차량 형상은 실측 치수를, 명령 응답은 2026-07-12 실차 주행 로그를 기준으로 보정했습니다.
 
 - 실차 프레임 기준: 약 `0.55 m x 0.30 m x 0.25 m`
 - Gazebo 차체 충돌 박스: `0.55 m x 0.30 m x 0.12 m`
@@ -184,19 +327,23 @@ ros2 launch xycar_gazebo_bridge xycar_legacy_camera_drive_rviz.launch.py
 - wheelbase: `0.32 m`
 - wheel separation: `0.265 m`
 - wheel radius: `0.06 m`
-- steering limit: `0.289 rad`
-- speed command scale: `speed_mps = 0.08 * speed_command`
-- steering command scale: `steering_rad = -0.0068 * angle_command`
+- steering center limit: `0.550 rad` (조향 joint limit `0.700 rad`)
+- speed command scale: `speed_mps = 0.080191 * speed_command`
+- steering response: 실측 `+-30`과 임시 외삽 `+-42`를 포함한 좌우 비대칭 곡률 테이블
+- measured steering delay: `0.035 s`
+- measured speed delay: `0.094 s`
 - command clamp: `angle -50~100`, `speed -50~100`
 - velocity range from command clamp: `-4.0 ~ 8.0 m/s`
-- camera: `/image_raw`, 1280x1024, 30Hz, HFOV 약 170도, equidistant fisheye lens
+- camera: `/image_raw`, 1280x1024, 30Hz, 보정 영상 유효 HFOV 약 102.95도, equidistant fisheye lens
 - lidar: `/scan`, 505 samples, 10Hz, -180~180도, range `0.1~12.0 m`
 - sensor origin: 앞바퀴 중심 기준
 - camera pose from front wheel center: `(-0.04, 0.00, 0.17) m`
-- lidar pose from front wheel center: `(0.08, 0.00, 0.06) m`
+- lidar pose from front wheel center: `(0.065, 0.00, 0.080) m`
 
 실차와 맞추기 위한 측정 항목과 ROS2 확인 명령은
 `docs/sim_to_real_vehicle_calibration.md`에 정리되어 있습니다.
+실차 원본 그룹 요약과 적용 근거는
+`data/vehicle_dynamics/2026-07-12`에 보존되어 있습니다.
 
 ## 실차 코드에서 확인한 ROS2 기준
 
@@ -244,9 +391,9 @@ ros2 topic info xycar_motor
 
 ## 다음 단계
 
-1. 실차에서 wheelbase, 카메라/라이다 장착 위치를 실측
-2. Gazebo 카메라 pitch/FOV를 실제 `/image_raw` 샘플과 맞게 보정
-3. Gazebo 라이다 index/각도 방향을 실제 `/scan`과 맞게 보정
-4. rule-based 차선 주행 노드 작성
-5. 주행 로그와 이미지/라이다 데이터를 수집
-6. Behavioral Cloning 학습 후 Offline RL과 supervisor 구조로 확장
+1. 시뮬 룰베이스 반복 주행으로 실패 구간과 명령 로그 수집
+2. 실차 shadow mode에서 카메라 BEV, 차선 검출, 조향 부호 검증
+3. 실차 최대 조향 반경, 저속 deadband, 가감속 응답 추가 측정
+4. 이미지, 인지 경로, 모터 명령을 동기화한 학습 데이터 수집
+5. Behavioral Cloning 학습과 closed-loop 평가
+6. Offline RL 및 안전 supervisor 구조로 확장

@@ -5,10 +5,10 @@ bev_preview_homography:
     use_compressed: false
     calib_yaml: ""
     enable_rectify: true
-    rect_balance: 0.8
+    rect_balance: 0.3
 
-    src_tl_x_ratio: 0.42
-    src_tr_x_ratio: 0.58
+    src_tl_x_ratio: 0.39
+    src_tr_x_ratio: 0.67
     src_bl_x_ratio: -0.10
     src_br_x_ratio: 1.10
     src_top_y_ratio: 0.48
@@ -19,6 +19,6 @@ bev_preview_homography:
     dst_left_ratio: 0.10
     dst_right_ratio: 0.90
 
-    lateral_m_per_px: 0.00164
-    forward_m_per_px: 0.005
+    lateral_m_per_px: 0.0022
+    forward_m_per_px: 0.010
     black_threshold: 70

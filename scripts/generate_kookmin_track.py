@@ -88,8 +88,8 @@ RIGHT_S_NEG_AMP = 0.600
 RIGHT_S_FREQ = 4.0
 LEFT_TURN_CENTER_X = -6.816
 
-# Real Xycar motor path measured from the ROS1 VESC stack:
-# steering_angle(rad) = -0.0068 * angle_command, servo-clipped near +/-0.289 rad.
+# Real Xycar geometry and the steering range needed to reproduce the
+# 2026-07-12 measured response and the temporary +/-42 curvature extrapolation.
 XYCAR_BODY_LENGTH = 0.55
 XYCAR_BODY_WIDTH = 0.30
 XYCAR_BODY_HEIGHT = 0.12
@@ -98,7 +98,8 @@ XYCAR_WHEEL_Y = 0.1325
 XYCAR_STEERING_LINK_Y = 0.1200
 XYCAR_WHEEL_SEPARATION = 0.265
 XYCAR_KINGPIN_WIDTH = 0.240
-XYCAR_STEERING_LIMIT = 0.289
+XYCAR_STEERING_LIMIT = 0.550
+XYCAR_STEERING_JOINT_LIMIT = 0.700
 XYCAR_SPEED_MIN = -4.0
 XYCAR_SPEED_MAX = 8.0
 XYCAR_CHASSIS_Z = 0.135
@@ -106,8 +107,10 @@ XYCAR_FRONT_WHEEL_CENTER_X = 0.16
 XYCAR_FRONT_WHEEL_CENTER_Z = 0.06
 XYCAR_CAMERA_FROM_FRONT_WHEEL_X = -0.04
 XYCAR_CAMERA_FROM_FRONT_WHEEL_Z = 0.17
-XYCAR_LIDAR_FROM_FRONT_WHEEL_X = 0.08
-XYCAR_LIDAR_FROM_FRONT_WHEEL_Z = 0.06
+# 2026-07-12 laser overlay: camera position in laser frame
+# (-0.105, 0.000, +0.090) m. Keep the measured camera origin fixed.
+XYCAR_LIDAR_FROM_FRONT_WHEEL_X = 0.065
+XYCAR_LIDAR_FROM_FRONT_WHEEL_Z = 0.080
 XYCAR_CAMERA_X = XYCAR_FRONT_WHEEL_CENTER_X + XYCAR_CAMERA_FROM_FRONT_WHEEL_X
 XYCAR_CAMERA_Z = (
     XYCAR_FRONT_WHEEL_CENTER_Z
@@ -122,10 +125,12 @@ XYCAR_LIDAR_Z = (
 )
 XYCAR_CAMERA_VISIBILITY_MASK = 4294967293
 XYCAR_SELF_VISIBILITY_FLAGS = 2
-XYCAR_CAMERA_HFOV = math.radians(170.0)
+# Effective raw-image FOV recovered from the measured OpenCV fisheye K/D.
+# The lens is marketed as 170 deg, but the calibrated 1280 px image spans 102.95 deg.
+XYCAR_CAMERA_HFOV = math.radians(102.95)
 XYCAR_CAMERA_WIDTH = 1280
 XYCAR_CAMERA_HEIGHT = 1024
-XYCAR_CAMERA_PITCH = 0.22
+XYCAR_CAMERA_PITCH = 0.10
 XYCAR_LIDAR_SAMPLES = 505
 XYCAR_LIDAR_RANGE_MAX = 12.0
 XYCAR_SPAWN_X = -2.70
@@ -2433,7 +2438,7 @@ def vehicle_model():
           <material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse></material>
         </visual>
         <visual name="lidar_body">
-          <pose>{XYCAR_LIDAR_X:.3f} 0 {XYCAR_LIDAR_Z - 0.035:.3f} 0 0 0</pose>
+          <pose>{XYCAR_LIDAR_X:.3f} 0 {XYCAR_LIDAR_Z - 0.0175:.4f} 0 0 0</pose>
           <geometry><cylinder><length>0.035</length><radius>0.040</radius></cylinder></geometry>
           <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
         </visual>
@@ -2510,11 +2515,11 @@ def vehicle_model():
       </link>
       <joint name="front_left_wheel_steering_joint" type="revolute">
         <parent>chassis</parent><child>front_left_wheel_steering_link</child>
-        <axis><xyz>0 0 1</xyz><limit><lower>-{XYCAR_STEERING_LIMIT:.4f}</lower><upper>{XYCAR_STEERING_LIMIT:.4f}</upper><velocity>2.0</velocity><effort>8</effort></limit></axis>
+        <axis><xyz>0 0 1</xyz><limit><lower>-{XYCAR_STEERING_JOINT_LIMIT:.4f}</lower><upper>{XYCAR_STEERING_JOINT_LIMIT:.4f}</upper><velocity>2.0</velocity><effort>8</effort></limit></axis>
       </joint>
       <joint name="front_right_wheel_steering_joint" type="revolute">
         <parent>chassis</parent><child>front_right_wheel_steering_link</child>
-        <axis><xyz>0 0 1</xyz><limit><lower>-{XYCAR_STEERING_LIMIT:.4f}</lower><upper>{XYCAR_STEERING_LIMIT:.4f}</upper><velocity>2.0</velocity><effort>8</effort></limit></axis>
+        <axis><xyz>0 0 1</xyz><limit><lower>-{XYCAR_STEERING_JOINT_LIMIT:.4f}</lower><upper>{XYCAR_STEERING_JOINT_LIMIT:.4f}</upper><velocity>2.0</velocity><effort>8</effort></limit></axis>
       </joint>
       <joint name="front_left_wheel_joint" type="revolute">
         <parent>front_left_wheel_steering_link</parent><child>front_left_wheel</child>
