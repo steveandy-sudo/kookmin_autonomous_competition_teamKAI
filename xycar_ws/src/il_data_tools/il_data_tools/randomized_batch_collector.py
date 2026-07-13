@@ -20,14 +20,18 @@ DEFAULT_PRESET_CYCLE = [
     "mixed",
 ]
 
-GAZEBO_CHILD_PATTERN = r"^gz sim (server|gui)"
+GAZEBO_PROCESS_PATTERN = r"^gz sim"
 
 
 def cleanup_gazebo_children() -> None:
     """Remove Gazebo children that survive a completed or interrupted launch."""
-    for signal_name, wait_sec in (("TERM", 1.0), ("KILL", 0.0)):
+    for signal_name, wait_sec in (
+        ("TERM", 1.0),
+        ("KILL", 0.5),
+        ("KILL", 0.5),
+    ):
         subprocess.run(
-            ["pkill", f"-{signal_name}", "-f", GAZEBO_CHILD_PATTERN],
+            ["pkill", f"-{signal_name}", "-f", GAZEBO_PROCESS_PATTERN],
             check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

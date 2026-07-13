@@ -10,6 +10,7 @@ from launch.actions import (
     OpaqueFunction,
     RegisterEventHandler,
     SetEnvironmentVariable,
+    TimerAction,
 )
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
@@ -72,16 +73,27 @@ def _prepare_environment(context):
         "yes",
         "on",
     }
-    command = ["gz", "sim", "-r", str(generated_world)]
-    if not show_gui:
-        command.insert(2, "-s")
-    return [
+    actions = [
         ExecuteProcess(
-            cmd=command,
-            name="kookmin_randomized_gazebo",
+            cmd=["gz", "sim", "-s", "-r", str(generated_world)],
+            name="kookmin_randomized_gazebo_server",
             output="screen",
         )
     ]
+    if show_gui:
+        actions.append(
+            TimerAction(
+                period=3.0,
+                actions=[
+                    ExecuteProcess(
+                        cmd=["gz", "sim", "-g"],
+                        name="kookmin_randomized_gazebo_gui",
+                        output="screen",
+                    )
+                ],
+            )
+        )
+    return actions
 
 
 def generate_launch_description():

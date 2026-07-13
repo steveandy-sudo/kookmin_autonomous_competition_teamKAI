@@ -81,6 +81,8 @@ class SimulationContractTests(unittest.TestCase):
         self.assertIn('"camera_front_topic": camera_front_topic', source)
         self.assertIn('"image_format": image_format', source)
         self.assertIn('"lane_offset_from_yellow_m": ParameterValue', source)
+        self.assertIn('["gz", "sim", "-s", "-r", str(generated_world)]', source)
+        self.assertIn('cmd=["gz", "sim", "-g"]', source)
 
     def test_randomized_batch_collector_can_store_canonical_recovery_data(self):
         source = (
