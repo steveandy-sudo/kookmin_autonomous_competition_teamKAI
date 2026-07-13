@@ -21,7 +21,7 @@ TorchScript BC 모델이 함께 들어 있습니다.
 ```bash
 cd ~
 git clone --branch simulation \
-  https://github.com/yunny22/kookmin_sim_to_real.git
+  git@github.com:yunny22/kookmin_sim_to_real.git
 cd ~/kookmin_sim_to_real
 
 source /opt/ros/humble/setup.bash
