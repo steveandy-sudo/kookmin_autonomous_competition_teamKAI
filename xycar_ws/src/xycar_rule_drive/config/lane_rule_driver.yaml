@@ -20,7 +20,7 @@ xycar_lane_rule_driver:
     yellow_offset_fallback_enabled: true
     lane_center_offset_m: 0.20
     # Keep the 0.30 m-wide vehicle farther from the inside white boundary.
-    path_bias_toward_yellow_m: 0.10
+    path_bias_toward_yellow_m: 0.15
     min_segment_points: 4
     min_target_points: 3
     sample_count: 18

@@ -9,9 +9,13 @@ xycar_camera_perception:
     traffic_lights_topic: /perception/traffic_lights
     debug_image_topic: /perception/debug_image
     debug_markers_topic: /perception/debug_markers
+    canonical_road_topic: /perception/canonical_road_image
+    canonical_white_mask_topic: /perception/canonical_white_mask
+    canonical_yellow_mask_topic: /perception/canonical_yellow_mask
     base_frame_id: base_footprint
     source_name: xycar_camera_perception
-    publish_rate_limit_hz: 15.0
+    # Process every freshest frame; the depth-1 sensor queue prevents stale backlog.
+    publish_rate_limit_hz: 0.0
     publish_empty_optional_topics: true
 
     # BEV ROI after the real-car homography-style projection.
@@ -31,7 +35,9 @@ xycar_camera_perception:
     min_projected_x_m: 0.20
     max_projected_x_m: 5.00
     calib_yaml: ""
-    enable_rectify: true
+    # Gazebo already renders the configured camera projection. Applying the
+    # physical fisheye calibration again creates invalid black arcs in the BEV.
+    enable_rectify: false
     rect_balance: 0.3
     src_tl_x_ratio: 0.39
     src_tr_x_ratio: 0.67
@@ -48,6 +54,8 @@ xycar_camera_perception:
     forward_m_per_px: 0.010
     bev_x_offset_m: 0.0
     bev_bottom_ignore_px: 28
+    bev_border_gray: 70
+    bev_valid_erode_px: 8
 
     # Row-linear projection calibration.
     near_x_m: 0.20
@@ -75,3 +83,17 @@ xycar_camera_perception:
     centerline_sample_spacing_m: 0.05
     centerline_temporal_alpha: 0.45
     centerline_temporal_timeout_sec: 0.50
+
+    # Fixed metric representation shared by simulation and the real vehicle.
+    canonical_width: 256
+    canonical_height: 144
+    canonical_lateral_range_m: 1.4
+    canonical_forward_range_m: 1.2
+    canonical_background_gray: 36
+    canonical_line_width_px: 5
+    canonical_white_s_max: 120
+    canonical_white_v_min: 145
+    canonical_white_v_floor: 70
+    canonical_white_relative_delta: 9.0
+    canonical_min_component_area_px: 8
+    canonical_bottom_ignore_m: 0.08

@@ -25,7 +25,8 @@ class SimulationContractTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn('SetParameter(name="use_sim_time", value=True)', source)
-        self.assertIn('"camera_front_topic": "/image_raw"', source)
+        self.assertIn('default_value="/image_raw"', source)
+        self.assertIn('"camera_front_topic": camera_front_topic', source)
         self.assertIn('"scan_topic": "/scan"', source)
         self.assertIn('"motor_topic": "/xycar_motor"', source)
         self.assertIn('"motor_msg_type": "float32_multi_array"', source)
@@ -45,6 +46,15 @@ class SimulationContractTests(unittest.TestCase):
         self.assertIn("target_action=recorder", source)
         self.assertIn("event=Shutdown(", source)
 
+    def test_canonical_collection_is_isolated_from_raw_dataset(self):
+        source = (
+            ROOT / "launch" / "collect_sim_canonical_drive_dataset.launch.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"datasets", "il_canonical"', source)
+        self.assertIn('"camera_front_topic": "/perception/canonical_road_image"', source)
+        self.assertIn('"session_name": "sim_canonical_drive"', source)
+        self.assertIn('"image_format": "png"', source)
+
     def test_sim_policy_drive_starts_inference_without_rule_driver(self):
         source = (ROOT / "launch" / "sim_policy_drive.launch.py").read_text(
             encoding="utf-8"
@@ -62,8 +72,38 @@ class SimulationContractTests(unittest.TestCase):
         self.assertIn("generate_randomized_assets", source)
         self.assertIn('"run_manifest_path": LaunchConfiguration', source)
         self.assertIn('"exclude_bad_data": True', source)
+        self.assertIn('"exclude_zero_speed": True', source)
+        self.assertIn('"bad_data_preroll_sec": 3.0', source)
         self.assertIn('executable="il_recovery_scenario_manager"', source)
         self.assertIn("target_action=recorder", source)
+        self.assertIn('"camera_front_topic": camera_front_topic', source)
+        self.assertIn('"image_format": image_format', source)
+        self.assertIn('"lane_offset_from_yellow_m": ParameterValue', source)
+
+    def test_randomized_batch_collector_can_store_canonical_recovery_data(self):
+        source = (
+            ROOT / "il_data_tools" / "randomized_batch_collector.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"--canonical-input"', source)
+        self.assertIn("/perception/canonical_road_image", source)
+        self.assertIn("image_format:=png", source)
+
+    def test_canonical_pipeline_has_quality_gates_before_poweroff(self):
+        source = (ROOT / "il_data_tools" / "canonical_pipeline.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("validate_sessions", source)
+        self.assertIn("max_test_mae_command", source)
+        self.assertLess(source.index("publish_model("), source.index("poweroff()"))
+
+    def test_real_canonical_policy_launch_starts_in_shadow(self):
+        source = (
+            ROOT / "launch" / "real_canonical_policy_drive.launch.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("real_canonical_perception.launch.py", source)
+        self.assertIn("real_policy_inference.launch.py", source)
+        self.assertIn("/perception/canonical_road_image", source)
+        self.assertIn('"drive_enabled",\n                default_value="false"', source)
 
     def test_recorder_does_not_shutdown_an_already_closed_context(self):
         source = (ROOT / "il_data_tools" / "common_recorder_node.py").read_text(

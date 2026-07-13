@@ -77,7 +77,7 @@ def sample_recovery_pose(
     rng: random.Random,
     lateral_offsets_m: Sequence[float],
     yaw_offsets_deg: Sequence[float],
-    lane_offset_from_yellow_m: float = 0.215,
+    lane_offset_from_yellow_m: float = 0.05,
 ) -> Dict[str, float]:
     lengths = _segment_lengths(YELLOW_ROUTE)
     segment_index = rng.choices(range(len(YELLOW_ROUTE)), weights=lengths, k=1)[0]
@@ -184,7 +184,7 @@ class RecoveryScenarioManager(Node):
         self.declare_parameter("scenario_interval_sec", 30.0)
         self.declare_parameter("settle_sec", 0.8)
         self.declare_parameter("recovery_hold_sec", 8.0)
-        self.declare_parameter("lane_offset_from_yellow_m", 0.215)
+        self.declare_parameter("lane_offset_from_yellow_m", 0.05)
         self.declare_parameter(
             "lateral_offsets_m",
             [-0.15, -0.10, -0.06, 0.06, 0.10, 0.15],

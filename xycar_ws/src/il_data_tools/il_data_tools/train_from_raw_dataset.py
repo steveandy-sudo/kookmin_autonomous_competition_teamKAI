@@ -122,7 +122,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     parser.add_argument("--use-phase", action="store_true")
     parser.add_argument("--pretrained", action="store_true")
+    parser.add_argument(
+        "--init-checkpoint",
+        default=None,
+        help=(
+            "Initialize from an existing project .pth checkpoint. Use this for "
+            "low-learning-rate sim-to-real fine-tuning."
+        ),
+    )
     parser.add_argument("--enable-flip", action="store_true")
+    parser.add_argument("--canonical-input", action="store_true")
+    parser.add_argument("--lane-dropout-probability", type=float, default=0.30)
     parser.add_argument("--recovery-weight", type=float, default=1.5)
     parser.add_argument("--steer-weight-gain", type=float, default=2.0)
     parser.add_argument("--early-stop-patience", type=int, default=10)
@@ -310,8 +320,19 @@ def make_train_command(
         cmd.append("--use-phase")
     if args.pretrained:
         cmd.append("--pretrained")
+    if args.init_checkpoint:
+        cmd += [
+            "--init-checkpoint",
+            str(Path(args.init_checkpoint).expanduser().resolve()),
+        ]
     if args.enable_flip:
         cmd.append("--enable-flip")
+    if args.canonical_input:
+        cmd += [
+            "--canonical-input",
+            "--lane-dropout-probability",
+            str(args.lane_dropout_probability),
+        ]
     if args.mark_final:
         cmd.append("--mark-final")
     return cmd

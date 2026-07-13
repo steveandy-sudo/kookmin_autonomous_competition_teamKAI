@@ -68,11 +68,18 @@ def preprocess_bgr_image(
     return np.transpose(normalized, (2, 0, 1))
 
 
-def preprocessing_contract(input_width: int, input_height: int) -> Dict[str, object]:
+def preprocessing_contract(
+    input_width: int,
+    input_height: int,
+    canonical_input: bool = False,
+) -> Dict[str, object]:
     """Machine-readable contract that runtime code must reproduce exactly."""
+    source_width, source_height = (256, 144) if canonical_input else (640, 480)
+    reference_crop = [0, 0, 256, 144] if canonical_input else [0, 80, 640, 440]
     return {
-        "source_camera_expected": {"width": 640, "height": 480},
-        "reference_crop_xyxy": [0, 80, 640, 440],
+        "input_representation": "canonical_bev" if canonical_input else "raw_camera_bgr",
+        "source_camera_expected": {"width": source_width, "height": source_height},
+        "reference_crop_xyxy": reference_crop,
         "crop_strategy": "target_aspect_with_vertical_bias",
         "vertical_crop_bias": VERTICAL_CROP_BIAS,
         "input_width": int(input_width),

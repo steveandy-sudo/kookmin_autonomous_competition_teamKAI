@@ -39,6 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--input-height", type=int, default=90)
     parser.add_argument("--max-steer-deg", type=float, default=100.0)
     parser.add_argument("--use-phase", action="store_true")
+    parser.add_argument("--canonical-input", action="store_true")
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     return parser
 
@@ -67,6 +68,7 @@ def main() -> None:
         use_phase=use_phase,
         use_lidar=use_lidar,
         enable_augment=False,
+        canonical_input=args.canonical_input,
     )
     loader = DataLoader(dataset, batch_size=128, shuffle=False, num_workers=0)
     model = torch.jit.load(str(Path(args.model).expanduser().resolve()), map_location=device)
@@ -116,6 +118,7 @@ def main() -> None:
             "model_type": args.model_type,
             "use_phase": use_phase,
             "use_lidar": use_lidar,
+            "canonical_input": args.canonical_input,
             "model_size_mb": Path(args.model).expanduser().resolve().stat().st_size / (1024 * 1024),
         }
     )

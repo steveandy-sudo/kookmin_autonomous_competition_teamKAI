@@ -26,6 +26,8 @@ def generate_launch_description():
     output_root = LaunchConfiguration("output_root")
     session_name = LaunchConfiguration("session_name")
     max_samples = LaunchConfiguration("max_samples")
+    camera_front_topic = LaunchConfiguration("camera_front_topic")
+    image_format = LaunchConfiguration("image_format")
 
     bridge_launch = PathJoinSubstitution(
         [FindPackageShare("xycar_gazebo_bridge"), "launch", "xycar_gazebo_rviz.launch.py"]
@@ -52,7 +54,7 @@ def generate_launch_description():
                 "session_auto_increment": True,
                 "dataset_profile": "drive",
                 "allowed_labels": "general_drive,lane_drive,hill_drive,shortcut,recovery",
-                "camera_front_topic": "/image_raw",
+                "camera_front_topic": camera_front_topic,
                 "scan_topic": "/scan",
                 "imu_topic": "/imu",
                 "odom_topic": "/odom",
@@ -69,7 +71,7 @@ def generate_launch_description():
                 "min_free_disk_gb": 10.0,
                 "disk_check_period_sec": 5.0,
                 "stop_on_low_disk": True,
-                "image_format": "jpg",
+                "image_format": image_format,
                 "jpeg_quality": 90,
                 "max_save_rate_hz": 10.0,
                 "enable_recording_on_start": True,
@@ -113,6 +115,16 @@ def generate_launch_description():
                 "max_samples",
                 default_value="50000",
                 description="Stop the recorder and the complete simulation at this count.",
+            ),
+            DeclareLaunchArgument(
+                "camera_front_topic",
+                default_value="/image_raw",
+                description="Image representation stored as the training input.",
+            ),
+            DeclareLaunchArgument(
+                "image_format",
+                default_value="jpg",
+                description="jpg for raw RGB; use png for canonical semantic images.",
             ),
             SetEnvironmentVariable(
                 name="GZ_SIM_RESOURCE_PATH",

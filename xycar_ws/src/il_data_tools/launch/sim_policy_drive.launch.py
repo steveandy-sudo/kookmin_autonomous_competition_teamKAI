@@ -26,6 +26,7 @@ def generate_launch_description():
     speed_command = LaunchConfiguration("speed_command")
     device = LaunchConfiguration("device")
     enable_rviz = LaunchConfiguration("enable_rviz")
+    image_topic = LaunchConfiguration("image_topic")
 
     bridge_launch = PathJoinSubstitution(
         [FindPackageShare("xycar_gazebo_bridge"), "launch", "xycar_gazebo_rviz.launch.py"]
@@ -88,6 +89,11 @@ def generate_launch_description():
                 default_value="true",
                 description="Show camera, LiDAR, and perception outputs in RViz.",
             ),
+            DeclareLaunchArgument(
+                "image_topic",
+                default_value="/image_raw",
+                description="Raw or canonical image topic expected by the model.",
+            ),
             SetEnvironmentVariable(
                 name="GZ_SIM_RESOURCE_PATH",
                 value=[
@@ -108,6 +114,7 @@ def generate_launch_description():
                     "drive_enabled": drive_enabled,
                     "speed_command": speed_command,
                     "device": device,
+                    "image_topic": image_topic,
                 }.items(),
             ),
             RegisterEventHandler(

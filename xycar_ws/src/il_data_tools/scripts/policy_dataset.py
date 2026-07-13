@@ -27,6 +27,8 @@ class PolicyCsvDataset(Dataset):
         lidar_points: int = 360,
         enable_augment: bool = False,
         enable_flip: bool = False,
+        canonical_input: bool = False,
+        lane_dropout_probability: float = 0.0,
     ) -> None:
         self.csv_path = Path(csv_path).expanduser().resolve()
         self.input_width = input_width
@@ -37,6 +39,8 @@ class PolicyCsvDataset(Dataset):
         self.lidar_points = lidar_points
         self.enable_augment = enable_augment
         self.enable_flip = enable_flip
+        self.canonical_input = canonical_input
+        self.lane_dropout_probability = lane_dropout_probability
 
         with self.csv_path.open("r", newline="", encoding="utf-8-sig") as handle:
             rows = list(csv.DictReader(handle))
@@ -90,6 +94,8 @@ class PolicyCsvDataset(Dataset):
                 image,
                 steer_norm,
                 enable_flip=self.enable_flip,
+                canonical_input=self.canonical_input,
+                lane_dropout_probability=self.lane_dropout_probability,
             )
             if flipped and self.use_lidar:
                 lidar = torch.flip(lidar, dims=[1])
@@ -167,15 +173,47 @@ def augment_image(
     image_bgr: np.ndarray,
     steer_norm: float,
     enable_flip: bool = False,
+    canonical_input: bool = False,
+    lane_dropout_probability: float = 0.0,
 ) -> Tuple[np.ndarray, float, bool]:
     image = image_bgr.copy()
-    image = random_brightness_contrast_gamma(image)
-    image = random_noise_blur(image)
+    if canonical_input:
+        image = random_canonical_boundary_dropout(image, lane_dropout_probability)
+    else:
+        image = random_brightness_contrast_gamma(image)
+        image = random_noise_blur(image)
     flipped = enable_flip and random.random() < 0.5
     if flipped:
         image = cv2.flip(image, 1)
         steer_norm = -steer_norm
     return image, steer_norm, flipped
+
+
+def random_canonical_boundary_dropout(
+    image: np.ndarray,
+    probability: float,
+) -> np.ndarray:
+    """Hide one white boundary while preserving yellow markings and the target."""
+    if probability <= 0.0 or random.random() >= probability:
+        return image
+
+    height, width = image.shape[:2]
+    white = np.all(image >= 235, axis=2)
+    columns = np.arange(width)[None, :]
+    side_masks = {
+        "left": white & (columns < width // 2),
+        "right": white & (columns >= width // 2),
+    }
+    min_pixels = max(8, height // 8)
+    available = [
+        name for name, mask in side_masks.items() if int(np.count_nonzero(mask)) >= min_pixels
+    ]
+    if len(available) < 2:
+        return image
+
+    output = image.copy()
+    output[side_masks[random.choice(available)]] = (36, 36, 36)
+    return output
 
 
 def random_brightness_contrast_gamma(image: np.ndarray) -> np.ndarray:

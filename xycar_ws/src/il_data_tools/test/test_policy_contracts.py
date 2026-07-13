@@ -2,10 +2,13 @@ import importlib.util
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
+sys.path.insert(0, str(PACKAGE_ROOT))
 
 
 class PolicyContractTests(unittest.TestCase):
@@ -42,6 +45,109 @@ class PolicyContractTests(unittest.TestCase):
         roi = crop_to_target_aspect(image, 160, 90)
         self.assertEqual(int(roi[0, 0, 0]), 80)
         self.assertEqual(int(roi[-1, 0, 0]), 439 % 256)
+
+    def test_model_input_debug_conversion_restores_bgr_pixels(self):
+        try:
+            import numpy as np
+            from il_data_tools.runtime_preprocessing import model_input_to_bgr
+        except ImportError:
+            self.skipTest("numpy is not installed")
+        image = np.zeros((3, 2, 3), dtype=np.float32)
+        image[0, :, :] = 1.0
+        bgr = model_input_to_bgr(image)
+        self.assertEqual(tuple(bgr.shape), (2, 3, 3))
+        self.assertEqual(bgr[0, 0].tolist(), [0, 0, 255])
+
+        with self.assertRaises(ValueError):
+            model_input_to_bgr(np.zeros((2, 2, 3), dtype=np.float32))
+
+    def test_training_wrapper_forwards_initial_checkpoint(self):
+        from il_data_tools.train_from_raw_dataset import (
+            PROFILE_CONFIG,
+            build_parser,
+            make_train_command,
+        )
+
+        args = build_parser().parse_args(
+            [
+                "--profile",
+                "drive",
+                "--init-checkpoint",
+                "~/models/sim_drive_best.pth",
+            ]
+        )
+        command = make_train_command(
+            args,
+            PROFILE_CONFIG["drive"],
+            "resnet18_lidar",
+            Path("/tmp/processed"),
+            Path("/tmp/model"),
+        )
+        option_index = command.index("--init-checkpoint")
+        self.assertEqual(
+            command[option_index + 1],
+            str(Path("~/models/sim_drive_best.pth").expanduser().resolve()),
+        )
+
+    def test_canonical_boundary_dropout_hides_only_selected_white_side(self):
+        try:
+            import numpy as np
+            from policy_dataset import random_canonical_boundary_dropout
+        except ImportError:
+            self.skipTest("training image dependencies are not installed")
+
+        image = np.full((144, 256, 3), 36, dtype=np.uint8)
+        image[:, 48:53] = (255, 255, 255)
+        image[:, 203:208] = (255, 255, 255)
+        image[20:120, 126:131] = (0, 220, 255)
+        with patch("policy_dataset.random.random", return_value=0.0), patch(
+            "policy_dataset.random.choice", return_value="left"
+        ):
+            output = random_canonical_boundary_dropout(image, 0.30)
+
+        self.assertTrue(np.all(output[:, 48:53] == 36))
+        self.assertTrue(np.all(output[:, 203:208] == 255))
+        self.assertTrue(np.all(output[20:120, 126:131] == (0, 220, 255)))
+
+    def test_training_wrapper_forwards_canonical_lane_dropout(self):
+        from il_data_tools.train_from_raw_dataset import (
+            PROFILE_CONFIG,
+            build_parser,
+            make_train_command,
+        )
+
+        args = build_parser().parse_args(
+            [
+                "--profile",
+                "drive",
+                "--canonical-input",
+                "--lane-dropout-probability",
+                "0.4",
+            ]
+        )
+        command = make_train_command(
+            args,
+            PROFILE_CONFIG["drive"],
+            "resnet18_lidar",
+            Path("/tmp/processed"),
+            Path("/tmp/model"),
+        )
+        self.assertIn("--canonical-input", command)
+        option_index = command.index("--lane-dropout-probability")
+        self.assertEqual(command[option_index + 1], "0.4")
+
+    def test_real_launch_exposes_steering_calibration(self):
+        source = (PACKAGE_ROOT / "launch" / "real_policy_inference.launch.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"steering_output_sign"', source)
+        self.assertIn('"max_steer_scale"', source)
+        self.assertIn('"steering_temporal_alpha"', source)
+
+    def test_offline_eval_supports_canonical_preprocessing(self):
+        source = (SCRIPTS / "eval_policy.py").read_text(encoding="utf-8")
+        self.assertIn('"--canonical-input"', source)
+        self.assertIn("canonical_input=args.canonical_input", source)
 
 
 if __name__ == "__main__":

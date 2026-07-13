@@ -3,7 +3,10 @@ import unittest
 import cv2
 import numpy as np
 
-from xycar_perception.camera_perception_node import decode_compressed_image
+from xycar_perception.camera_perception_node import (
+    decode_compressed_image,
+    scale_camera_matrix,
+)
 
 
 class ImageTransportTest(unittest.TestCase):
@@ -24,6 +27,49 @@ class ImageTransportTest(unittest.TestCase):
 
     def test_invalid_payload_is_rejected(self):
         self.assertIsNone(decode_compressed_image(b"not-an-image"))
+
+    def test_camera_matrix_scales_to_runtime_resolution(self):
+        matrix = np.array(
+            [[800.0, 0.0, 640.0], [0.0, 820.0, 512.0], [0.0, 0.0, 1.0]]
+        )
+        scaled = scale_camera_matrix(matrix, (1280, 1024), (640, 512))
+        np.testing.assert_allclose(
+            scaled,
+            np.array(
+                [[400.0, 0.0, 320.0], [0.0, 410.0, 256.0], [0.0, 0.0, 1.0]]
+            ),
+        )
+
+    def test_bev_outside_source_is_filled_with_neutral_gray(self):
+        from xycar_perception.camera_perception_node import CameraPerceptionNode
+
+        node = CameraPerceptionNode.__new__(CameraPerceptionNode)
+        node.projection_mode = "bev_homography"
+        node.enable_rectify = False
+        node.src_tl_x_ratio = 0.35
+        node.src_tr_x_ratio = 0.65
+        node.src_bl_x_ratio = 0.15
+        node.src_br_x_ratio = 0.85
+        node.src_top_y_ratio = 0.40
+        node.src_bottom_y_ratio = 0.80
+        node.bev_width = 80
+        node.bev_height = 40
+        node.dst_left_ratio = 0.20
+        node.dst_right_ratio = 0.80
+        node.bev_border_gray = 70
+        node.bev_valid_erode_px = 2
+        node.M = None
+        node.M_inv = None
+        node.homography_input_shape = None
+        node.homography_output_shape = None
+
+        source = np.full((60, 100, 3), 110, dtype=np.uint8)
+        bev = node.prepare_projection_image(source)
+
+        self.assertEqual(tuple(bev.shape), (40, 80, 3))
+        self.assertGreaterEqual(int(bev.min()), 70)
+        self.assertEqual(tuple(node.current_bev_valid_mask.shape), (40, 80))
+        self.assertEqual(int(node.current_bev_valid_mask[0, 0]), 0)
 
 
 if __name__ == "__main__":

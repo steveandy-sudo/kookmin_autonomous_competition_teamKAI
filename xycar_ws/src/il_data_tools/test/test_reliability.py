@@ -5,6 +5,7 @@ import time
 import unittest
 from unittest import mock
 
+from il_data_tools.common_recorder_node import BadDataPreroll, rate_limit_allows
 from il_data_tools.recorder_state import (
     DiskSpaceGuard,
     LabelLatch,
@@ -13,6 +14,27 @@ from il_data_tools.recorder_state import (
 
 
 class ReliabilityTests(unittest.TestCase):
+    class Sample:
+        def __init__(self, timestamp_ns):
+            self.timestamp_ns = timestamp_ns
+
+    def test_stop_discards_exact_three_second_preroll(self):
+        buffer = BadDataPreroll(window_ns=3_000_000_000)
+        released = []
+        for second in range(1, 7):
+            released += buffer.push(self.Sample(second * 1_000_000_000))
+        safe, discarded = buffer.stop(6_500_000_000)
+        released += safe
+        self.assertEqual([sample.timestamp_ns for sample in released], [1_000_000_000, 2_000_000_000, 3_000_000_000])
+        self.assertEqual(discarded, 3)
+        self.assertEqual(len(buffer), 0)
+
+    def test_rate_limit_accepts_small_nominal_timestamp_jitter(self):
+        self.assertTrue(rate_limit_allows(91_000_000, 0, 10.0))
+        self.assertFalse(rate_limit_allows(89_000_000, 0, 10.0))
+        self.assertTrue(rate_limit_allows(1, None, 10.0))
+        self.assertTrue(rate_limit_allows(1, 0, 0.0))
+
     def test_label_is_latched_until_changed(self):
         latch = LabelLatch("general_drive")
         self.assertEqual(latch.active, "general_drive")

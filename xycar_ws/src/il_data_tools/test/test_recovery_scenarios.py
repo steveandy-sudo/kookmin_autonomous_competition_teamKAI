@@ -6,6 +6,14 @@ from il_data_tools.recovery_scenario_manager import sample_recovery_pose
 
 
 class RecoveryScenarioTests(unittest.TestCase):
+    def test_default_nominal_pose_matches_current_rule_path_bias(self):
+        sample = sample_recovery_pose(random.Random(7), [0.0], [0.0])
+        distance = math.hypot(
+            sample["x"] - sample["yellow_x"],
+            sample["y"] - sample["yellow_y"],
+        )
+        self.assertAlmostEqual(distance, 0.05, places=6)
+
     def test_pose_sampling_is_seed_reproducible(self):
         first = sample_recovery_pose(random.Random(42), [-0.1, 0.1], [-7.0, 7.0])
         second = sample_recovery_pose(random.Random(42), [-0.1, 0.1], [-7.0, 7.0])

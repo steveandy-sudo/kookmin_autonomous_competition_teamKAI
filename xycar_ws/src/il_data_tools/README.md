@@ -29,7 +29,7 @@ recorder와 학습 코드는 `/xycar_motor`를 발행하지 않으며, 별도의
 - 차선 좌우 이탈과 yaw 오차를 이용한 recovery 구간 자동 라벨링
 - 여러 독립 환경 세션을 목표 장수까지 연속 실행
 
-랜덤 환경 5만 장 수집:
+Raw RGB 랜덤 환경 5만 장 수집:
 
 ```bash
 ros2 run il_data_tools collect_randomized_batches \
@@ -42,6 +42,21 @@ ros2 run il_data_tools collect_randomized_batches \
 
 상세 preset과 검증 방법은 저장소 루트의
 `docs/domain_randomized_collection.md`를 참고합니다.
+
+현재 sim-to-real용 canonical BEV 5만 장은 복구 데이터, 정지 직전 3초 폐기,
+학습·held-out 평가, 모델 게시와 성공 시 전원 종료를 하나로 묶은 명령을 쓴다.
+
+```bash
+ros2 run il_data_tools run_canonical_50k_pipeline \
+  --project-root "$PWD" --total-samples 50000 --batch-samples 5000 \
+  --seed 20260714 --epochs 50 --batch-size 256 --num-workers 8 \
+  --device cuda --show-gui-first --publish-model \
+  --git-remotes origin,teamkai --poweroff-on-success
+```
+
+완전 이탈로 룰베이스가 `speed=0`을 내리면 recorder는 정지 프레임과 직전
+3초를 `bad_data`로 폐기한다. 이 기능 때문에 후보 샘플은 디스크 기록 전에
+3초간 메모리 지연 버퍼에 머문다.
 
 ### 데이터 가공
 
@@ -138,6 +153,117 @@ ros2 launch il_data_tools sim_policy_drive.launch.py
 ros2 launch il_data_tools real_policy_inference.launch.py \
   image_topic:=/image_raw scan_topic:=/scan drive_enabled:=false
 ros2 topic echo /il/policy_motor_shadow
+rqt_image_view /il/policy_input_image
+```
+
+`/il/policy_input_image`는 crop, RGB 변환, 160x90 resize를 모두 거친 뒤
+모델이 실제로 받는 영상이다. 실차 원본이 정상이어도 이 영상에서 차선이나
+소실점이 시뮬 학습 영상과 다르면 먼저 카메라 정합 또는 실차 fine-tuning이
+필요하다. `/il/policy_debug`의 뒤쪽 세 값은 원본 width, height, 정규화된
+입력 평균 밝기이며 기존 앞 8개 값의 순서는 유지된다.
+
+Shadow의 조향 방향은 맞지만 실차 바퀴 방향만 반대라면
+`steering_output_sign:=-1.0`으로 바꾼다. 방향은 맞고 조향량만 일관되게
+부족할 때만 `max_steer_scale`을 조금씩 조정한다. 모델의 raw 예측 자체가
+틀리면 이 두 값으로 보상하지 말고 카메라 정합과 실차 fine-tuning을 먼저 한다.
+
+### Canonical BEV 기반 Sim-to-Real
+
+`xycar_perception`은 원본 영상의 BEV에서 공통 미터 범위를 잘라 다음 토픽을
+발행한다.
+
+```text
+/perception/canonical_road_image   256x144 bgr8
+/perception/canonical_white_mask  256x144 mono8
+/perception/canonical_yellow_mask 256x144 mono8
+```
+
+공통 범위는 차량 기준 전방 1.2m, 좌우 1.4m이다. 최종 영상은 배경 BGR
+`(36,36,36)`, 흰선 `(255,255,255)`, 노란선 `(0,220,255)`, 선 두께 5px로
+고정한다. 시뮬 2.2m BEV에서는 가까운 1.2m를 자르고, 실차 1.2m BEV는 전체를
+사용하므로 단순한 화면 resize와 다르다.
+
+실차 homography 확인 기준:
+
+```text
+가로 해상도: 1.4m / 256px = 약 5.47mm/px
+세로 해상도: 1.2m / 144px = 약 8.33mm/px
+24mm 차선: 약 4.4px -> canonical에서는 5px
+30cm 노란 점선 길이: 약 36px
+흰선 안쪽 간격 80cm: 약 146px
+```
+
+`rqt_image_view /perception/canonical_road_image`에서 실차와 Gazebo를 각각
+정지시켜 위 값을 비교한다. 색과 굵기는 자동으로 고정되지만, 간격과 길이가
+다르면 `camera_perception_real.yaml`의 source homography 비율을 실차 기준으로
+조정해야 한다. 원본에서 차선이 검출되지 않은 경우에는 canonical 변환이 선을
+새로 만들어낼 수 없으므로 카메라 노출과 adaptive threshold를 먼저 조정한다.
+
+Gazebo canonical 데이터 수집:
+
+```bash
+cd ~/xycar_kookmin_gazebo_track
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 launch il_data_tools collect_sim_canonical_drive_dataset.launch.py \
+  max_samples:=50000
+```
+
+출력은 기존 raw 데이터와 분리된
+`datasets/il_canonical/drive/sim_canonical_drive_XX`에 PNG로 저장된다.
+
+실차에서는 먼저 실제 카메라 설정으로 perception을 실행한다. 이미 보정된 카메라
+토픽이 있으면 기본 명령을 사용한다.
+
+```bash
+ros2 launch xycar_perception real_canonical_perception.launch.py
+```
+
+기본 실차 프로필은 현재 `my_rule_lane_node`와 동일하게
+`/wide_camera/rect/image_raw`, BEV `640x220`, source ROI
+`TL/TR/BL/BR=(0.357,0.777,0.170,0.965)`, y 범위 `0.520~0.625`를 사용한다.
+따라서 사진에 보이는 기존 rectified 영상을 그대로 입력으로 받고, 별도의 카메라
+드라이버를 추가로 실행하지 않는다.
+
+차량에 `/image_raw`만 있고 별도 rectified 토픽이 없다면 다음처럼 실행한다.
+
+```bash
+ros2 launch xycar_perception real_canonical_perception.launch.py \
+  image_topic:=/image_raw enable_rectify:=true
+```
+
+그 뒤 다른 터미널에서 canonical 토픽을 recorder 입력으로 사용한다.
+
+```bash
+ros2 launch il_data_tools record_drive_dataset.launch.py \
+  output_root:=$HOME/xycar_ws/datasets/il_canonical_real \
+  session_name:=real_canonical_drive \
+  camera_front_topic:=/perception/canonical_road_image \
+  image_format:=png
+```
+
+Canonical 영상은 raw RGB와 의미가 완전히 다르므로 기존 raw RGB 모델의 `.pth`를
+초기값으로 사용하지 않는다. 먼저 canonical 시뮬 데이터로 새 모델을 학습한다.
+
+```bash
+ros2 run il_data_tools train_from_raw_dataset.py \
+  --profile drive \
+  --dataset-root "$PWD/datasets/il_canonical/drive" \
+  --processed-dir "$PWD/datasets/processed/drive_canonical" \
+  --model-output-dir "$PWD/models/il_policies/drive_canonical" \
+  --canonical-input --lane-dropout-probability 0.30 \
+  --epochs 50 --batch-size 128 --num-workers 8 --device cuda \
+  --balance-steering --mark-final
+```
+
+Canonical 학습에서는 원본 RGB용 밝기/감마 증강을 사용하지 않는다. 대신 학습
+샘플의 30%에서 왼쪽 또는 오른쪽 흰 경계선 하나를 배경색으로 가린다. 조향 라벨과
+노란 중앙선은 유지되므로 실차에서 한쪽 흰선만 보이는 상황을 직접 학습할 수 있다.
+
+학습한 canonical 모델은 시뮬과 실차 모두 다음 image topic으로 실행한다.
+
+```text
+image_topic:=/perception/canonical_road_image
 ```
 
 ---
@@ -455,6 +581,33 @@ Cone은 파일 이름의 `drive`가 `cone`으로 바뀝니다.
 - 복구 성공률
 - TorchScript p95 latency
 - rule-based 안전 로직과의 호환성
+
+### 시뮬 모델을 실차 데이터로 fine-tuning
+
+실차에서는 먼저 수동 또는 검증된 rule-based 주행 명령을 정답으로 사용해
+서로 다른 주행 세션을 3개 이상 수집한다. 실패한 학습 모델의 출력은 정답으로
+기록하지 않는다. 실차 데이터는 CUDA가 있는 학습 PC로 옮긴 뒤 다음처럼 낮은
+학습률로 미세조정한다.
+
+```bash
+cd ~/xycar_kookmin_gazebo_track
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 run il_data_tools train_from_raw_dataset.py \
+  --profile drive \
+  --dataset-root "$PWD/datasets/il/real/drive" \
+  --processed-dir "$PWD/datasets/processed/drive_real_ft" \
+  --model-output-dir "$PWD/models/il_policies/drive_real_ft" \
+  --init-checkpoint \
+    "$PWD/models/il_policies/drive_resnet18_lidar_all_20260713/drive_resnet18_lidar_best.pth" \
+  --epochs 15 --batch-size 64 --num-workers 4 --device cuda \
+  --lr 1e-5 --early-stop-patience 5 --balance-steering --mark-final
+```
+
+`--init-checkpoint`에는 재학습 정보가 있는 `.pth` 파일을 사용한다. 실차 실행용
+TorchScript `.pt` 파일은 이 옵션에 사용할 수 없다. 모델 종류, 입력 크기,
+LiDAR 사용 여부 또는 조향 정규화 범위가 다르면 학습 도구가 시작 전에 중단한다.
 
 ---
 

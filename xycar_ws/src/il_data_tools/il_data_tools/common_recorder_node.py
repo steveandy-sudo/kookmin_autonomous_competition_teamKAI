@@ -57,6 +57,56 @@ from il_data_tools.recorder_state import (
 )
 
 
+def rate_limit_allows(
+    stamp_ns: int,
+    last_stamp_ns: Optional[int],
+    max_rate_hz: float,
+) -> bool:
+    """Accept near-periodic sensor stamps without halving a nominal rate."""
+    if max_rate_hz <= 0.0 or last_stamp_ns is None:
+        return True
+    period_ns = int(1e9 / max_rate_hz)
+    tolerance_ns = min(10_000_000, int(period_ns * 0.10))
+    return stamp_ns - last_stamp_ns >= period_ns - tolerance_ns
+
+
+class BadDataPreroll:
+    """Delay samples so a later stop can invalidate the preceding time window."""
+
+    def __init__(self, window_ns: int) -> None:
+        self.window_ns = max(0, int(window_ns))
+        self.samples = deque()
+
+    def push(self, sample: Any) -> list[Any]:
+        if self.window_ns <= 0:
+            return [sample]
+        ready = self._pop_before(sample.timestamp_ns - self.window_ns)
+        self.samples.append(sample)
+        return ready
+
+    def stop(self, stop_stamp_ns: int) -> tuple[list[Any], int]:
+        if self.window_ns <= 0:
+            return [], 0
+        safe = self._pop_before(stop_stamp_ns - self.window_ns)
+        discarded = len(self.samples)
+        self.samples.clear()
+        return safe, discarded
+
+    def discard_all(self) -> int:
+        discarded = len(self.samples)
+        self.samples.clear()
+        return discarded
+
+    def _pop_before(self, cutoff_ns: int) -> list[Any]:
+        ready = []
+        while self.samples and self.samples[0].timestamp_ns < cutoff_ns:
+            ready.append(self.samples.popleft())
+        return ready
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+
 @dataclass(frozen=True)
 class PendingSample:
     """A fully synchronized sample waiting for background disk I/O."""
@@ -116,6 +166,10 @@ class ILCommonRecorder(Node):
         # received value remains active until another label arrives.
         self.label_latch = LabelLatch(self.params["default_mission_label"])
         self.sync_pending_images = deque()
+        self.preroll_lock = threading.Lock()
+        self.bad_data_preroll = BadDataPreroll(
+            int(self.params["bad_data_preroll_sec"] * 1e9)
+        )
 
         self.recording_enabled = self.params["enable_recording_on_start"]
         self.started_at = datetime.now()
@@ -132,13 +186,16 @@ class ILCommonRecorder(Node):
         self.skipped_disk_limit = 0
         self.dropped_queue_full = 0
         self.dropped_sync_queue_full = 0
+        self.discarded_bad_data_preroll = 0
+        self.discarded_uncommitted_preroll = 0
         self.writer_errors = []
         self.stop_reason = ""
         self.auto_exit_requested = False
         self.auto_exit_triggered = False
         self.writer_shutdown_wait_sec = 0.0
         self._closed = False
-        self.last_enqueued_ns: Optional[int] = None
+        self.last_rate_accepted_ns: Optional[int] = None
+        self.last_zero_speed_ns: Optional[int] = None
         self.last_free_disk_gb: Optional[float] = None
         self.last_debug_sec = 0.0
         self.warnings = []
@@ -214,6 +271,7 @@ class ILCommonRecorder(Node):
             "exclude_bad_data": True,
             "exclude_idle": True,
             "exclude_zero_speed": False,
+            "bad_data_preroll_sec": 0.0,
             "debug_print_period_sec": 5.0,
         }
         for key, value in defaults.items():
@@ -269,6 +327,9 @@ class ILCommonRecorder(Node):
             "exclude_bad_data": self._get_bool("exclude_bad_data"),
             "exclude_idle": self._get_bool("exclude_idle"),
             "exclude_zero_speed": self._get_bool("exclude_zero_speed"),
+            "bad_data_preroll_sec": max(
+                0.0, self._get_float("bad_data_preroll_sec")
+            ),
             "debug_print_period_sec": max(self._get_float("debug_print_period_sec"), 1.0),
         }
 
@@ -474,7 +535,16 @@ class ILCommonRecorder(Node):
             self._try_record_sample(stamp_ns, msg)
 
     def _motor_cb(self, msg: Any) -> None:
-        self.motor_buffer.add(stamp_to_ns(msg, ros_time_to_ns(self.get_clock().now())), msg)
+        stamp_ns = stamp_to_ns(msg, ros_time_to_ns(self.get_clock().now()))
+        self.motor_buffer.add(stamp_ns, msg)
+        _, speed, _ = extract_motor_command(msg)
+        if speed is None or abs(float(speed)) > 1.0e-6:
+            return
+        self.last_zero_speed_ns = stamp_ns
+        with self.preroll_lock:
+            safe, discarded = self.bad_data_preroll.stop(stamp_ns)
+        self.discarded_bad_data_preroll += discarded
+        self._enqueue_pending_samples(safe)
 
     def _mission_label_cb(self, msg: String) -> None:
         now_ns = ros_time_to_ns(self.get_clock().now())
@@ -529,6 +599,10 @@ class ILCommonRecorder(Node):
             self.skipped_speed_filter += 1
             return
 
+        if self._inside_last_zero_speed_preroll(stamp_ns):
+            self.discarded_bad_data_preroll += 1
+            return
+
         if not self.accepting_samples:
             return
         scan_item = self.scan_buffer.nearest(stamp_ns, tolerance_ns)
@@ -558,15 +632,31 @@ class ILCommonRecorder(Node):
             motor_speed=motor_speed,
             mission_label=mission_label,
         )
-        try:
-            self.pending_queue.put_nowait(pending)
-            self.enqueued_sample_count += 1
-            self.last_enqueued_ns = stamp_ns
-            if self._sample_limit_reached():
-                self._request_sample_limit_stop()
-        except queue.Full:
-            self.dropped_queue_full += 1
-            self._warn_once("writer queue is full; newest samples are being dropped")
+        self.last_rate_accepted_ns = stamp_ns
+        with self.preroll_lock:
+            ready = self.bad_data_preroll.push(pending)
+        self._enqueue_pending_samples(ready)
+
+    def _inside_last_zero_speed_preroll(self, stamp_ns: int) -> bool:
+        if self.last_zero_speed_ns is None:
+            return False
+        window_ns = int(self.params["bad_data_preroll_sec"] * 1e9)
+        return self.last_zero_speed_ns - window_ns <= stamp_ns <= self.last_zero_speed_ns
+
+    def _enqueue_pending_samples(self, samples) -> None:
+        for pending in samples:
+            if not self.accepting_samples or self._sample_limit_reached():
+                return
+            try:
+                self.pending_queue.put_nowait(pending)
+                self.enqueued_sample_count += 1
+                if self._sample_limit_reached():
+                    self._request_sample_limit_stop()
+                    return
+            except queue.Full:
+                self.dropped_queue_full += 1
+                self._warn_once("writer queue is full; newest samples are being dropped")
+                return
 
     def _writer_loop(self) -> None:
         """Serialize JPEG/NPZ/CSV writes away from ROS callbacks."""
@@ -745,10 +835,11 @@ class ILCommonRecorder(Node):
         }
 
     def _within_rate_limit(self, stamp_ns: int) -> bool:
-        max_rate = self.params["max_save_rate_hz"]
-        if max_rate <= 0.0 or self.last_enqueued_ns is None:
-            return True
-        return stamp_ns - self.last_enqueued_ns >= int(1e9 / max_rate)
+        return rate_limit_allows(
+            stamp_ns,
+            self.last_rate_accepted_ns,
+            self.params["max_save_rate_hz"],
+        )
 
     def _sample_limit_reached(self) -> bool:
         limit = self.params["max_samples"]
@@ -762,6 +853,8 @@ class ILCommonRecorder(Node):
         self.stop_reason = "max_samples"
         self.auto_exit_requested = self.params["exit_on_limit_reached"]
         self.writer_stop.set()
+        with self.preroll_lock:
+            self.discarded_uncommitted_preroll += self.bad_data_preroll.discard_all()
         self.get_logger().info(
             "sample limit reached: %d; draining writer queue"
             % self.params["max_samples"]
@@ -877,6 +970,9 @@ class ILCommonRecorder(Node):
             "queue_size": self.pending_queue.qsize(),
             "dropped_queue_full": self.dropped_queue_full,
             "dropped_sync_queue_full": self.dropped_sync_queue_full,
+            "bad_data_preroll_buffer_size": len(self.bad_data_preroll),
+            "discarded_bad_data_preroll": self.discarded_bad_data_preroll,
+            "discarded_uncommitted_preroll": self.discarded_uncommitted_preroll,
             "writer_errors": list(self.writer_errors),
             "writer_shutdown_wait_sec": self.writer_shutdown_wait_sec,
             "stop_reason": self.stop_reason,
@@ -898,6 +994,8 @@ class ILCommonRecorder(Node):
             return
         self.recording_enabled = False
         self.accepting_samples = False
+        with self.preroll_lock:
+            self.discarded_uncommitted_preroll += self.bad_data_preroll.discard_all()
         self.writer_stop.set()
         warning_after = self.params["writer_shutdown_timeout_sec"]
         self.writer_shutdown_wait_sec = wait_for_thread_shutdown(

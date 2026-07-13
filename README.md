@@ -7,15 +7,32 @@ Gazebo Sim에서 국민대학교 Xycar 자율주행 트랙을 최대한 비슷�
 시뮬레이션에서 학습한 BC 모델의 실시간 카메라+LiDAR 추론까지 포함되어 있으며,
 다음 목표는 **실차 shadow 및 저속 폐루프 검증**입니다.
 
+## 2026-07-13 12:00 이후 작업과 현재 인수인계
+
+7월 13일 정오 이후 실차 동역학 반영, 실차 카메라 BEV 보정, 룰베이스 완성,
+raw RGB 모방학습과 실차 이식 시험을 진행했습니다. 실차에서 raw RGB 모델의
+조향이 시뮬레이션과 다르게 동작한 원인을 카메라 색·배경·왜곡의 domain gap으로
+판단했고, 현재는 시뮬과 실차를 동일한 `256x144` canonical BEV 차선 영상으로
+바꾸는 파이프라인을 사용합니다.
+
+작업 시간순 기록, 발생한 문제와 수정 근거, 5만 장 수집·학습 상태, 실차 PC의
+Codex가 바로 따라야 할 파일과 명령은
+[`docs/2026-07-13_canonical_sim_to_real_handoff.md`](docs/2026-07-13_canonical_sim_to_real_handoff.md)에
+모두 정리했습니다. 학습이 통과하면 최신 모델 해시와 실행 명령은
+[`docs/canonical_model_latest.md`](docs/canonical_model_latest.md)에 자동 기록됩니다.
+
 처음부터 현재 룰베이스 주행까지 전체 구조와 실행 순서를 보려면
 [`docs/current_simulation_guide.md`](docs/current_simulation_guide.md)를 먼저 읽습니다.
-학습 모델을 실차에서 실행하는 최종 명령과 안전 순서는
-[`docs/real_bc_vehicle_runbook.md`](docs/real_bc_vehicle_runbook.md)에 있습니다.
+기존 raw RGB 모델의 실차 명령은
+[`docs/real_bc_vehicle_runbook.md`](docs/real_bc_vehicle_runbook.md)에 남겨 두었지만,
+새 sim-to-real 시험에는 raw runbook이 아니라 아래 canonical 인수인계 문서를
+사용합니다.
 
 조명·배경·카메라·LiDAR·동역학을 seed별로 바꾸고 차선 이탈 복구 데이터를
 자동 수집하려면 [`docs/domain_randomized_collection.md`](docs/domain_randomized_collection.md)를
-따릅니다. 기본 5만 장 명령은 5천 장씩 10개 독립 세션을 생성하며 기존
-데이터는 유지합니다.
+따릅니다. 현재 5만 장 파이프라인은 canonical BEV를 5천 장씩 10개 독립
+세션에 저장하고, 각 세션에 차선 이탈 후 복귀 데이터를 포함하며 기존 데이터는
+유지합니다.
 
 ## 실차 Clone 후 바로 실행
 

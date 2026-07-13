@@ -13,6 +13,7 @@ from std_msgs.msg import Float32MultiArray
 
 from il_data_tools.record_schema import stamp_to_ns
 from il_data_tools.runtime_preprocessing import (
+    model_input_to_bgr,
     preprocess_bgr_image,
     preprocess_lidar_ranges,
 )
@@ -33,11 +34,16 @@ class PolicyInferenceNode(Node):
         self.motor_topic = str(self.get_parameter("motor_topic").value)
         self.shadow_topic = str(self.get_parameter("shadow_topic").value)
         self.debug_topic = str(self.get_parameter("debug_topic").value)
+        self.debug_image_topic = str(self.get_parameter("debug_image_topic").value)
         self.drive_enabled = bool(self.get_parameter("drive_enabled").value)
         self.input_width = int(self.get_parameter("input_width").value)
         self.input_height = int(self.get_parameter("input_height").value)
         self.lidar_points = int(self.get_parameter("lidar_points").value)
         self.max_steer_scale = float(self.get_parameter("max_steer_scale").value)
+        configured_sign = float(self.get_parameter("steering_output_sign").value)
+        if configured_sign not in (-1.0, 1.0):
+            raise ValueError("steering_output_sign must be exactly -1.0 or 1.0")
+        self.steering_output_sign = configured_sign
         self.angle_min = float(self.get_parameter("angle_command_min").value)
         self.angle_max = float(self.get_parameter("angle_command_max").value)
         self.speed_command = float(self.get_parameter("speed_command").value)
@@ -83,6 +89,11 @@ class PolicyInferenceNode(Node):
 
         self.shadow_pub = self.create_publisher(Float32MultiArray, self.shadow_topic, 10)
         self.debug_pub = self.create_publisher(Float32MultiArray, self.debug_topic, 10)
+        self.debug_image_pub = self.create_publisher(
+            Image,
+            self.debug_image_topic,
+            10,
+        )
         self.motor_pub = (
             self.create_publisher(Float32MultiArray, self.motor_topic, 10)
             if self.drive_enabled
@@ -122,11 +133,13 @@ class PolicyInferenceNode(Node):
         self.declare_parameter("motor_topic", "/xycar_motor")
         self.declare_parameter("shadow_topic", "/il/policy_motor_shadow")
         self.declare_parameter("debug_topic", "/il/policy_debug")
+        self.declare_parameter("debug_image_topic", "/il/policy_input_image")
         self.declare_parameter("drive_enabled", False)
         self.declare_parameter("input_width", 160)
         self.declare_parameter("input_height", 90)
         self.declare_parameter("lidar_points", 360)
         self.declare_parameter("max_steer_scale", 100.0)
+        self.declare_parameter("steering_output_sign", 1.0)
         self.declare_parameter("angle_command_min", -42.0)
         self.declare_parameter("angle_command_max", 42.0)
         self.declare_parameter("speed_command", 4.0)
@@ -179,6 +192,12 @@ class PolicyInferenceNode(Node):
             self.input_width,
             self.input_height,
         )
+        debug_image = self.bridge.cv2_to_imgmsg(
+            model_input_to_bgr(image_np),
+            encoding="bgr8",
+        )
+        debug_image.header = msg.header
+        self.debug_image_pub.publish(debug_image)
         scan = scan_item.msg
         lidar_np = preprocess_lidar_ranges(
             scan.ranges,
@@ -192,7 +211,7 @@ class PolicyInferenceNode(Node):
             steer_norm = float(self.model(image_tensor, lidar_tensor).reshape(-1)[0].item())
 
         raw_angle = clamp(
-            steer_norm * self.max_steer_scale,
+            steer_norm * self.max_steer_scale * self.steering_output_sign,
             self.angle_min,
             self.angle_max,
         )
@@ -221,6 +240,9 @@ class PolicyInferenceNode(Node):
             inference_ms,
             float(self.inference_count),
             float(self.missing_scan_count),
+            float(image_bgr.shape[1]),
+            float(image_bgr.shape[0]),
+            float(image_np.mean()),
         ]
         self.debug_pub.publish(debug)
 

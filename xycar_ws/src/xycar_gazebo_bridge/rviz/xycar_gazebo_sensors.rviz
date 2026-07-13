@@ -9,6 +9,9 @@ Panels:
         - /Camera1
         - /Image1
         - /Perception Debug Image1
+        - /Canonical Road Image1
+        - /Canonical White Mask1
+        - /Canonical Yellow Mask1
         - /Legacy Hough Debug Image1
         - /Perception Markers1
         - /Rule Drive Markers1
@@ -160,6 +163,48 @@ Visualization Manager:
         Value: /perception/debug_image
       Value: true
     - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Canonical Road Image
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /perception/canonical_road_image
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Canonical White Mask
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /perception/canonical_white_mask
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Canonical Yellow Mask
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /perception/canonical_yellow_mask
+      Value: true
+    - Class: rviz_default_plugins/Image
       Enabled: false
       Max Value: 1
       Median window: 5
@@ -251,6 +296,12 @@ Visualization Manager:
     Saved: ~
 Window Geometry:
   Camera:
+    collapsed: false
+  Canonical Road Image:
+    collapsed: false
+  Canonical White Mask:
+    collapsed: false
+  Canonical Yellow Mask:
     collapsed: false
   Displays:
     collapsed: false

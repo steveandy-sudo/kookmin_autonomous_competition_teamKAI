@@ -92,6 +92,9 @@ def generate_launch_description():
     seed = LaunchConfiguration("seed")
     preset = LaunchConfiguration("preset")
     show_gui = LaunchConfiguration("show_gui")
+    camera_front_topic = LaunchConfiguration("camera_front_topic")
+    image_format = LaunchConfiguration("image_format")
+    max_save_rate_hz = LaunchConfiguration("max_save_rate_hz")
 
     bridge_launch = PathJoinSubstitution(
         [FindPackageShare("xycar_gazebo_bridge"), "launch", "xycar_gazebo_rviz.launch.py"]
@@ -112,7 +115,7 @@ def generate_launch_description():
                 "session_auto_increment": True,
                 "dataset_profile": "drive",
                 "allowed_labels": "general_drive,lane_drive,hill_drive,shortcut,recovery",
-                "camera_front_topic": "/image_raw",
+                "camera_front_topic": camera_front_topic,
                 "scan_topic": "/scan",
                 "motor_topic": "/xycar_motor",
                 "motor_msg_type": "float32_multi_array",
@@ -128,12 +131,16 @@ def generate_launch_description():
                 "min_free_disk_gb": 10.0,
                 "disk_check_period_sec": 5.0,
                 "stop_on_low_disk": True,
-                "image_format": "jpg",
+                "image_format": image_format,
                 "jpeg_quality": 90,
-                "max_save_rate_hz": 10.0,
+                "max_save_rate_hz": ParameterValue(
+                    max_save_rate_hz, value_type=float
+                ),
                 "enable_recording_on_start": True,
                 "exclude_bad_data": True,
                 "exclude_idle": True,
+                "exclude_zero_speed": True,
+                "bad_data_preroll_sec": 3.0,
                 "max_samples": ParameterValue(max_samples, value_type=int),
                 "exit_on_limit_reached": True,
             }
@@ -176,6 +183,17 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("session_name", default_value="sim_randomized"),
             DeclareLaunchArgument("max_samples", default_value="5000"),
+            DeclareLaunchArgument(
+                "camera_front_topic",
+                default_value="/image_raw",
+                description="Raw RGB or canonical BEV image stored by the recorder.",
+            ),
+            DeclareLaunchArgument(
+                "image_format",
+                default_value="jpg",
+                description="Use png for canonical semantic images.",
+            ),
+            DeclareLaunchArgument("max_save_rate_hz", default_value="10.0"),
             DeclareLaunchArgument("seed", default_value="2026"),
             DeclareLaunchArgument(
                 "preset",
@@ -195,6 +213,11 @@ def generate_launch_description():
             DeclareLaunchArgument("scenario_warmup_sec", default_value="12.0"),
             DeclareLaunchArgument("scenario_settle_sec", default_value="0.8"),
             DeclareLaunchArgument("recovery_hold_sec", default_value="8.0"),
+            DeclareLaunchArgument(
+                "lane_offset_from_yellow_m",
+                default_value="0.05",
+                description="Nominal rule path offset from the yellow centerline.",
+            ),
             SetEnvironmentVariable(
                 name="GZ_SIM_RESOURCE_PATH",
                 value=[
@@ -234,6 +257,10 @@ def generate_launch_description():
                         ),
                         "recovery_hold_sec": ParameterValue(
                             LaunchConfiguration("recovery_hold_sec"), value_type=float
+                        ),
+                        "lane_offset_from_yellow_m": ParameterValue(
+                            LaunchConfiguration("lane_offset_from_yellow_m"),
+                            value_type=float,
                         ),
                     }
                 ],

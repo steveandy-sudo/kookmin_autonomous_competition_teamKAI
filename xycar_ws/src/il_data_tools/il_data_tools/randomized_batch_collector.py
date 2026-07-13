@@ -73,6 +73,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--scenario-interval-sec", type=float, default=30.0)
     parser.add_argument("--recovery-hold-sec", type=float, default=8.0)
+    parser.add_argument(
+        "--canonical-input",
+        action="store_true",
+        help="Store /perception/canonical_road_image as lossless PNG.",
+    )
+    parser.add_argument("--max-save-rate-hz", type=float, default=10.0)
+    parser.add_argument(
+        "--lane-offset-from-yellow-m",
+        type=float,
+        default=0.05,
+        help="Nominal rule path used as the center of recovery perturbations.",
+    )
     return parser
 
 
@@ -85,7 +97,9 @@ def main(argv=None) -> int:
     output_root = (
         Path(args.output_root).expanduser().resolve()
         if args.output_root
-        else args.project_root / "datasets" / "il"
+        else args.project_root
+        / "datasets"
+        / ("il_canonical" if args.canonical_input else "il")
     )
     generated_output_dir = (
         Path(args.generated_output_dir).expanduser().resolve()
@@ -101,7 +115,8 @@ def main(argv=None) -> int:
         preset = args.presets[index % len(args.presets)]
         seed = args.seed + index
         samples = min(args.batch_samples, remaining)
-        session_name = f"sim_{preset}_s{seed}"
+        representation = "canonical_" if args.canonical_input else ""
+        session_name = f"sim_{representation}{preset}_s{seed}"
         show_gui = args.show_gui_first and index == 0
         command = [
             "ros2",
@@ -118,7 +133,14 @@ def main(argv=None) -> int:
             f"show_gui:={'true' if show_gui else 'false'}",
             f"scenario_interval_sec:={args.scenario_interval_sec}",
             f"recovery_hold_sec:={args.recovery_hold_sec}",
+            f"max_save_rate_hz:={args.max_save_rate_hz}",
+            f"lane_offset_from_yellow_m:={args.lane_offset_from_yellow_m}",
         ]
+        if args.canonical_input:
+            command += [
+                "camera_front_topic:=/perception/canonical_road_image",
+                "image_format:=png",
+            ]
         print(
             f"\n[{index + 1}/{session_count}] preset={preset} seed={seed} "
             f"samples={samples} gui={show_gui}"

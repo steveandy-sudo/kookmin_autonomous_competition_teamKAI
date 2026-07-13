@@ -56,7 +56,26 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     parser.add_argument("--use-phase", action="store_true")
     parser.add_argument("--pretrained", action="store_true")
+    parser.add_argument(
+        "--init-checkpoint",
+        default=None,
+        help=(
+            "Initialize model weights from a compatible project .pth checkpoint. "
+            "Optimizer and scheduler state are intentionally not restored."
+        ),
+    )
     parser.add_argument("--enable-flip", action="store_true")
+    parser.add_argument(
+        "--canonical-input",
+        action="store_true",
+        help="Train on fixed-color canonical BEV images instead of raw camera RGB.",
+    )
+    parser.add_argument(
+        "--lane-dropout-probability",
+        type=float,
+        default=0.30,
+        help="Canonical mode only: probability of hiding one white boundary per sample.",
+    )
     parser.add_argument("--recovery-weight", type=float, default=1.5)
     parser.add_argument("--steer-weight-gain", type=float, default=2.0)
     parser.add_argument("--early-stop-patience", type=int, default=10)
@@ -92,6 +111,8 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
             "--pretrained is intentionally disabled: ImageNet normalization is not "
             "implemented consistently in training, evaluation, and runtime inference."
         )
+    if not 0.0 <= args.lane_dropout_probability <= 1.0:
+        raise ValueError("--lane-dropout-probability must be in [0, 1]")
     seed_everything(args.seed, torch)
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -117,6 +138,10 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
         use_lidar=use_lidar,
         enable_augment=True,
         enable_flip=args.enable_flip and args.policy_name in {"drive", "cone"},
+        canonical_input=args.canonical_input,
+        lane_dropout_probability=(
+            args.lane_dropout_probability if args.canonical_input else 0.0
+        ),
     )
     val_dataset = PolicyCsvDataset(
         args.val_csv,
@@ -127,6 +152,7 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
         use_lidar=use_lidar,
         enable_augment=False,
         enable_flip=False,
+        canonical_input=args.canonical_input,
     )
     shared_sessions = train_dataset.session_ids() & val_dataset.session_ids()
     if shared_sessions:
@@ -157,6 +183,18 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
         use_phase=use_phase,
         pretrained=args.pretrained,
     ).to(device)
+    init_checkpoint_path = initialize_from_checkpoint(
+        model,
+        getattr(args, "init_checkpoint", None),
+        policy_name=args.policy_name,
+        model_type=model_type,
+        input_width=args.input_width,
+        input_height=args.input_height,
+        max_steer_deg=args.max_steer_deg,
+        use_phase=use_phase,
+        use_lidar=use_lidar,
+        torch_module=torch,
+    )
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = create_scheduler(args.scheduler, optimizer, args.epochs)
     loss_fn = nn.SmoothL1Loss(reduction="none")
@@ -168,12 +206,19 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
             "use_phase_resolved": use_phase,
             "use_lidar_resolved": use_lidar,
             "device_resolved": str(device),
+            "init_checkpoint_resolved": (
+                str(init_checkpoint_path) if init_checkpoint_path is not None else None
+            ),
             "selection_warning": (
                 "Final model must be selected using offline eval, Jetson latency, "
                 "low-speed closed-loop driving, oscillation, and safety compatibility."
             ),
             "safety": "Model outputs steering only. Speed and safety remain rule-based.",
-            "preprocessing": preprocessing_contract(args.input_width, args.input_height),
+            "preprocessing": preprocessing_contract(
+                args.input_width,
+                args.input_height,
+                canonical_input=args.canonical_input,
+            ),
         }
     )
     write_json(output_dir / "train_config.json", train_config)
@@ -308,6 +353,72 @@ def run_training(args: argparse.Namespace) -> Dict[str, object]:
         "scripted_model": str(scripted_path),
         "metrics": metrics,
     }
+
+
+def initialize_from_checkpoint(
+    model,
+    checkpoint_value: Optional[str],
+    *,
+    policy_name: str,
+    model_type: str,
+    input_width: int,
+    input_height: int,
+    max_steer_deg: float,
+    use_phase: bool,
+    use_lidar: bool,
+    torch_module,
+) -> Optional[Path]:
+    if not checkpoint_value:
+        return None
+
+    checkpoint_path = Path(checkpoint_value).expanduser().resolve()
+    if not checkpoint_path.is_file():
+        raise FileNotFoundError(f"initial checkpoint not found: {checkpoint_path}")
+    try:
+        checkpoint = torch_module.load(
+            checkpoint_path,
+            map_location="cpu",
+            weights_only=True,
+        )
+    except TypeError:
+        checkpoint = torch_module.load(checkpoint_path, map_location="cpu")
+    if not isinstance(checkpoint, dict) or "state_dict" not in checkpoint:
+        raise ValueError(
+            "--init-checkpoint must be a project .pth checkpoint containing state_dict; "
+            "a TorchScript .pt deployment model cannot be fine-tuned"
+        )
+
+    expected = {
+        "policy_name": policy_name,
+        "model_type": model_type,
+        "input_width": int(input_width),
+        "input_height": int(input_height),
+        "use_phase": bool(use_phase),
+        "use_lidar": bool(use_lidar),
+    }
+    mismatches = []
+    for key, wanted in expected.items():
+        if key in checkpoint and checkpoint[key] != wanted:
+            mismatches.append(f"{key}: checkpoint={checkpoint[key]!r}, requested={wanted!r}")
+    if "max_steer_deg" in checkpoint and not math.isclose(
+        float(checkpoint["max_steer_deg"]),
+        float(max_steer_deg),
+        rel_tol=0.0,
+        abs_tol=1e-9,
+    ):
+        mismatches.append(
+            "max_steer_deg: "
+            f"checkpoint={checkpoint['max_steer_deg']!r}, requested={max_steer_deg!r}"
+        )
+    if mismatches:
+        raise ValueError(
+            "initial checkpoint is incompatible with this training run:\n- "
+            + "\n- ".join(mismatches)
+        )
+
+    model.load_state_dict(checkpoint["state_dict"], strict=True)
+    print(f"initialized model weights from checkpoint: {checkpoint_path}")
+    return checkpoint_path
 
 
 def run_epoch(

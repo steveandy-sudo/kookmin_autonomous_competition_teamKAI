@@ -12,9 +12,15 @@ def generate_launch_description():
     scan_topic = LaunchConfiguration("scan_topic")
     motor_topic = LaunchConfiguration("motor_topic")
     shadow_topic = LaunchConfiguration("shadow_topic")
+    debug_image_topic = LaunchConfiguration("debug_image_topic")
     drive_enabled = LaunchConfiguration("drive_enabled")
     speed_command = LaunchConfiguration("speed_command")
     min_speed_command = LaunchConfiguration("min_speed_command")
+    max_steer_scale = LaunchConfiguration("max_steer_scale")
+    steering_output_sign = LaunchConfiguration("steering_output_sign")
+    angle_command_min = LaunchConfiguration("angle_command_min")
+    angle_command_max = LaunchConfiguration("angle_command_max")
+    steering_temporal_alpha = LaunchConfiguration("steering_temporal_alpha")
     device = LaunchConfiguration("device")
 
     return LaunchDescription(
@@ -38,6 +44,11 @@ def generate_launch_description():
                 default_value="/il/policy_motor_shadow",
             ),
             DeclareLaunchArgument(
+                "debug_image_topic",
+                default_value="/il/policy_input_image",
+                description="Exact cropped and resized image received by the policy.",
+            ),
+            DeclareLaunchArgument(
                 "drive_enabled",
                 default_value="false",
                 description="Publish to the physical motor only when explicitly enabled.",
@@ -51,6 +62,23 @@ def generate_launch_description():
                 "min_speed_command",
                 default_value="3.0",
                 description="Keep curve speed at or above the measured launch threshold.",
+            ),
+            DeclareLaunchArgument(
+                "max_steer_scale",
+                default_value="100.0",
+                description="Convert normalized model output back to Xycar angle command.",
+            ),
+            DeclareLaunchArgument(
+                "steering_output_sign",
+                default_value="1.0",
+                description="Set to -1.0 only when shadow steering direction is reversed.",
+            ),
+            DeclareLaunchArgument("angle_command_min", default_value="-42.0"),
+            DeclareLaunchArgument("angle_command_max", default_value="42.0"),
+            DeclareLaunchArgument(
+                "steering_temporal_alpha",
+                default_value="0.55",
+                description="New steering sample weight; higher values respond faster.",
             ),
             DeclareLaunchArgument(
                 "device",
@@ -71,6 +99,7 @@ def generate_launch_description():
                         "scan_topic": scan_topic,
                         "motor_topic": motor_topic,
                         "shadow_topic": shadow_topic,
+                        "debug_image_topic": debug_image_topic,
                         "drive_enabled": ParameterValue(
                             drive_enabled, value_type=bool
                         ),
@@ -79,6 +108,21 @@ def generate_launch_description():
                         ),
                         "min_speed_command": ParameterValue(
                             min_speed_command, value_type=float
+                        ),
+                        "max_steer_scale": ParameterValue(
+                            max_steer_scale, value_type=float
+                        ),
+                        "steering_output_sign": ParameterValue(
+                            steering_output_sign, value_type=float
+                        ),
+                        "angle_command_min": ParameterValue(
+                            angle_command_min, value_type=float
+                        ),
+                        "angle_command_max": ParameterValue(
+                            angle_command_max, value_type=float
+                        ),
+                        "steering_temporal_alpha": ParameterValue(
+                            steering_temporal_alpha, value_type=float
                         ),
                         "sensor_timeout_sec": 0.5,
                     }

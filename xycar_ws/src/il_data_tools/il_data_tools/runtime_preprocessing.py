@@ -52,6 +52,15 @@ def preprocess_bgr_image(
     return np.transpose(normalized, (2, 0, 1))
 
 
+def model_input_to_bgr(image_chw: np.ndarray) -> np.ndarray:
+    """Convert normalized RGB CHW model input into a viewable BGR image."""
+    image = np.asarray(image_chw, dtype=np.float32)
+    if image.ndim != 3 or image.shape[0] != 3:
+        raise ValueError("model image must have shape (3, height, width)")
+    rgb = np.transpose(np.clip(image, 0.0, 1.0), (1, 2, 0))
+    return np.ascontiguousarray((rgb[:, :, ::-1] * 255.0).round().astype(np.uint8))
+
+
 def preprocess_lidar_ranges(
     ranges,
     range_min: float,

@@ -1,5 +1,8 @@
 import unittest
 
+from kaiev26_msgs.msg import RoadSegment
+from std_msgs.msg import Header
+
 from xycar_perception.camera_perception_node import CameraPerceptionNode, make_point
 
 
@@ -15,6 +18,14 @@ class CenterlineFitTest(unittest.TestCase):
         node.previous_centerline_points = []
         node.previous_centerline_wall_time = 0.0
         return node
+
+    def make_segment(self, y_value):
+        segment = RoadSegment()
+        segment.points = [
+            make_point(x_value, y_value) for x_value in (0.2, 0.4, 0.6, 0.8)
+        ]
+        segment.confidence = 0.9
+        return segment
 
     def test_quadratic_centerline_is_resampled(self):
         node = self.make_node()
@@ -39,6 +50,23 @@ class CenterlineFitTest(unittest.TestCase):
 
         for point in result:
             self.assertAlmostEqual(point.y, 0.045, places=5)
+
+    def test_yellow_and_one_visible_boundary_produce_lane_midline(self):
+        node = self.make_node()
+        node.centerline_mode = "lane_midline"
+        node.use_yellow_as_centerline = False
+        node.lane_width_m = 0.8
+        node.source_name = "test"
+        node.detection_id = 1
+
+        yellow = self.make_segment(0.0)
+        visible_boundary = self.make_segment(-0.4)
+        result = node.build_centerline(Header(), None, visible_boundary, yellow)
+
+        self.assertGreaterEqual(len(result.points), node.min_centerline_points)
+        for point in result.points:
+            self.assertAlmostEqual(point.y, -0.2, places=5)
+        self.assertGreater(result.confidence, 0.0)
 
 
 if __name__ == "__main__":

@@ -17,9 +17,11 @@ from kaiev26_msgs.msg import (
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import CompressedImage, Image
 from visualization_msgs.msg import Marker, MarkerArray
+
+from xycar_perception.canonical_road import make_canonical_road_image
 
 
 @dataclass
@@ -56,6 +58,29 @@ def decode_compressed_image(data: bytes | bytearray | memoryview) -> np.ndarray 
     return cv2.imdecode(encoded, cv2.IMREAD_COLOR)
 
 
+def scale_camera_matrix(
+    matrix: np.ndarray,
+    calibration_size: tuple[int, int] | None,
+    image_size: tuple[int, int],
+) -> np.ndarray:
+    scaled = np.asarray(matrix, dtype=np.float64).reshape(3, 3).copy()
+    if calibration_size is None or calibration_size == image_size:
+        return scaled
+    calibration_width, calibration_height = calibration_size
+    image_width, image_height = image_size
+    if calibration_width <= 0 or calibration_height <= 0:
+        return scaled
+    scale_x = image_width / float(calibration_width)
+    scale_y = image_height / float(calibration_height)
+    scaled[0, 0] *= scale_x
+    scaled[0, 1] *= scale_x
+    scaled[0, 2] *= scale_x
+    scaled[1, 0] *= scale_y
+    scaled[1, 1] *= scale_y
+    scaled[1, 2] *= scale_y
+    return scaled
+
+
 class CameraPerceptionNode(Node):
     def __init__(self) -> None:
         super().__init__("xycar_camera_perception")
@@ -67,6 +92,15 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("traffic_lights_topic", "/perception/traffic_lights")
         self.declare_parameter("debug_image_topic", "/perception/debug_image")
         self.declare_parameter("debug_markers_topic", "/perception/debug_markers")
+        self.declare_parameter(
+            "canonical_road_topic", "/perception/canonical_road_image"
+        )
+        self.declare_parameter(
+            "canonical_white_mask_topic", "/perception/canonical_white_mask"
+        )
+        self.declare_parameter(
+            "canonical_yellow_mask_topic", "/perception/canonical_yellow_mask"
+        )
         self.declare_parameter("base_frame_id", "base_footprint")
         self.declare_parameter("source_name", "xycar_camera_perception")
         self.declare_parameter("publish_rate_limit_hz", 15.0)
@@ -100,6 +134,8 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("forward_m_per_px", 0.010)
         self.declare_parameter("bev_x_offset_m", 0.0)
         self.declare_parameter("bev_bottom_ignore_px", 28)
+        self.declare_parameter("bev_border_gray", 70)
+        self.declare_parameter("bev_valid_erode_px", 8)
         self.declare_parameter("near_x_m", 0.20)
         self.declare_parameter("far_x_m", 2.20)
         self.declare_parameter("near_m_per_px", 0.0022)
@@ -123,6 +159,18 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("centerline_sample_spacing_m", 0.05)
         self.declare_parameter("centerline_temporal_alpha", 0.45)
         self.declare_parameter("centerline_temporal_timeout_sec", 0.50)
+        self.declare_parameter("canonical_width", 256)
+        self.declare_parameter("canonical_height", 144)
+        self.declare_parameter("canonical_lateral_range_m", 1.4)
+        self.declare_parameter("canonical_forward_range_m", 1.2)
+        self.declare_parameter("canonical_background_gray", 36)
+        self.declare_parameter("canonical_line_width_px", 5)
+        self.declare_parameter("canonical_white_s_max", 120)
+        self.declare_parameter("canonical_white_v_min", 145)
+        self.declare_parameter("canonical_white_v_floor", 70)
+        self.declare_parameter("canonical_white_relative_delta", 9.0)
+        self.declare_parameter("canonical_min_component_area_px", 8)
+        self.declare_parameter("canonical_bottom_ignore_m", 0.08)
 
         self.bridge = CvBridge()
         self.use_compressed_image = bool(
@@ -164,6 +212,12 @@ class CameraPerceptionNode(Node):
         self.bev_bottom_ignore_px = max(
             0, int(self.get_parameter("bev_bottom_ignore_px").value)
         )
+        self.bev_border_gray = int(
+            np.clip(self.get_parameter("bev_border_gray").value, 0, 255)
+        )
+        self.bev_valid_erode_px = max(
+            0, int(self.get_parameter("bev_valid_erode_px").value)
+        )
         self.near_x_m = float(self.get_parameter("near_x_m").value)
         self.far_x_m = float(self.get_parameter("far_x_m").value)
         self.near_m_per_px = float(self.get_parameter("near_m_per_px").value)
@@ -199,6 +253,38 @@ class CameraPerceptionNode(Node):
         self.centerline_temporal_timeout_sec = max(
             0.0, float(self.get_parameter("centerline_temporal_timeout_sec").value)
         )
+        self.canonical_width = int(self.get_parameter("canonical_width").value)
+        self.canonical_height = int(self.get_parameter("canonical_height").value)
+        self.canonical_lateral_range_m = float(
+            self.get_parameter("canonical_lateral_range_m").value
+        )
+        self.canonical_forward_range_m = float(
+            self.get_parameter("canonical_forward_range_m").value
+        )
+        self.canonical_background_gray = int(
+            self.get_parameter("canonical_background_gray").value
+        )
+        self.canonical_line_width_px = int(
+            self.get_parameter("canonical_line_width_px").value
+        )
+        self.canonical_white_s_max = int(
+            self.get_parameter("canonical_white_s_max").value
+        )
+        self.canonical_white_v_min = int(
+            self.get_parameter("canonical_white_v_min").value
+        )
+        self.canonical_white_v_floor = int(
+            self.get_parameter("canonical_white_v_floor").value
+        )
+        self.canonical_white_relative_delta = float(
+            self.get_parameter("canonical_white_relative_delta").value
+        )
+        self.canonical_min_component_area_px = int(
+            self.get_parameter("canonical_min_component_area_px").value
+        )
+        self.canonical_bottom_ignore_m = float(
+            self.get_parameter("canonical_bottom_ignore_m").value
+        )
 
         rate_limit_hz = float(self.get_parameter("publish_rate_limit_hz").value)
         self.min_publish_period = 0.0 if rate_limit_hz <= 0.0 else 1.0 / rate_limit_hz
@@ -206,6 +292,7 @@ class CameraPerceptionNode(Node):
         self.detection_id = 1
         self.K: np.ndarray | None = None
         self.D: np.ndarray | None = None
+        self.calib_size: tuple[int, int] | None = None
         self.distortion_model = "fisheye"
         self.K_rect: np.ndarray | None = None
         self.rect_map1: np.ndarray | None = None
@@ -216,6 +303,7 @@ class CameraPerceptionNode(Node):
         self.homography_input_shape: tuple[int, int] | None = None
         self.homography_output_shape: tuple[int, int] | None = None
         self.current_projection_height = self.bev_height
+        self.current_bev_valid_mask: np.ndarray | None = None
         self.previous_centerline_points: list[Point] = []
         self.previous_centerline_wall_time = 0.0
         self.load_calib_yaml()
@@ -250,13 +338,34 @@ class CameraPerceptionNode(Node):
             str(self.get_parameter("debug_markers_topic").value),
             10,
         )
+        self.canonical_road_pub = self.create_publisher(
+            Image,
+            str(self.get_parameter("canonical_road_topic").value),
+            10,
+        )
+        self.canonical_white_mask_pub = self.create_publisher(
+            Image,
+            str(self.get_parameter("canonical_white_mask_topic").value),
+            10,
+        )
+        self.canonical_yellow_mask_pub = self.create_publisher(
+            Image,
+            str(self.get_parameter("canonical_yellow_mask_topic").value),
+            10,
+        )
         image_topic = str(self.get_parameter("image_topic").value)
+        camera_qos = QoSProfile(
+            history=qos_profile_sensor_data.history,
+            depth=1,
+            reliability=qos_profile_sensor_data.reliability,
+            durability=qos_profile_sensor_data.durability,
+        )
         if self.use_compressed_image:
             self.image_sub = self.create_subscription(
                 CompressedImage,
                 image_topic,
                 self.on_compressed_image,
-                qos_profile_sensor_data,
+                camera_qos,
             )
             transport = "sensor_msgs/CompressedImage"
         else:
@@ -264,7 +373,7 @@ class CameraPerceptionNode(Node):
                 Image,
                 image_topic,
                 self.on_image,
-                qos_profile_sensor_data,
+                camera_qos,
             )
             transport = "sensor_msgs/Image"
         self.get_logger().info(
@@ -317,9 +426,26 @@ class CameraPerceptionNode(Node):
         )
         header.frame_id = self.base_frame_id
 
-        road_segments, centerline, debug = self.detect_lanes(image, header)
+        (
+            road_segments,
+            centerline,
+            debug,
+            canonical,
+            canonical_white,
+            canonical_yellow,
+        ) = self.detect_lanes(image, header)
         self.road_segments_pub.publish(road_segments)
         self.centerline_pub.publish(centerline)
+
+        canonical_msg = self.bridge.cv2_to_imgmsg(canonical, encoding="bgr8")
+        canonical_msg.header = header
+        self.canonical_road_pub.publish(canonical_msg)
+        white_msg = self.bridge.cv2_to_imgmsg(canonical_white, encoding="mono8")
+        white_msg.header = header
+        self.canonical_white_mask_pub.publish(white_msg)
+        yellow_msg = self.bridge.cv2_to_imgmsg(canonical_yellow, encoding="mono8")
+        yellow_msg.header = header
+        self.canonical_yellow_mask_pub.publish(yellow_msg)
 
         if self.publish_empty_optional_topics:
             objects = PerceptionObjectArray()
@@ -340,7 +466,14 @@ class CameraPerceptionNode(Node):
 
     def detect_lanes(
         self, image: np.ndarray, header
-    ) -> tuple[RoadSegmentArray, Centerline, np.ndarray]:
+    ) -> tuple[
+        RoadSegmentArray,
+        Centerline,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+    ]:
         image = self.prepare_projection_image(image)
         height, width = image.shape[:2]
         self.current_projection_height = height
@@ -360,6 +493,10 @@ class CameraPerceptionNode(Node):
             np.array([self.yellow_h_min, self.yellow_s_min, self.yellow_v_min], dtype=np.uint8),
             np.array([self.yellow_h_max, 255, 255], dtype=np.uint8),
         )
+        valid_mask = self.current_bev_valid_mask
+        if valid_mask is not None and valid_mask.shape == white_mask.shape:
+            white_mask = cv2.bitwise_and(white_mask, valid_mask)
+            yellow_mask = cv2.bitwise_and(yellow_mask, valid_mask)
         white_mask[:roi_top, :] = 0
         white_mask[roi_bottom + 1:, :] = 0
         yellow_mask[:roi_top, :] = 0
@@ -419,7 +556,36 @@ class CameraPerceptionNode(Node):
 
         centerline = self.build_centerline(header, left_segment, right_segment, yellow_segment)
         self.draw_centerline_on_debug(debug, centerline, center_x, roi_top, roi_bottom)
-        return road_segments, centerline, debug
+        canonical, canonical_white, canonical_yellow = make_canonical_road_image(
+            image,
+            valid_mask=valid_mask,
+            lateral_m_per_px=self.lateral_m_per_px,
+            forward_m_per_px=self.forward_m_per_px,
+            lateral_range_m=self.canonical_lateral_range_m,
+            forward_range_m=self.canonical_forward_range_m,
+            output_width=self.canonical_width,
+            output_height=self.canonical_height,
+            background_gray=self.canonical_background_gray,
+            line_width_px=self.canonical_line_width_px,
+            white_s_max=self.canonical_white_s_max,
+            white_v_min=self.canonical_white_v_min,
+            white_v_floor=self.canonical_white_v_floor,
+            white_relative_delta=self.canonical_white_relative_delta,
+            yellow_h_min=self.yellow_h_min,
+            yellow_h_max=self.yellow_h_max,
+            yellow_s_min=self.yellow_s_min,
+            yellow_v_min=self.yellow_v_min,
+            min_component_area_px=self.canonical_min_component_area_px,
+            bottom_ignore_m=self.canonical_bottom_ignore_m,
+        )
+        return (
+            road_segments,
+            centerline,
+            debug,
+            canonical,
+            canonical_white,
+            canonical_yellow,
+        )
 
     def row_clusters(self, row_mask: np.ndarray) -> list[float]:
         xs = np.flatnonzero(row_mask)
@@ -478,17 +644,26 @@ class CameraPerceptionNode(Node):
                 self.D = np.zeros(4, dtype=np.float64)
 
             self.distortion_model = str(data.get("distortion_model", "fisheye")).lower()
+            calibration_width = int(data.get("image_width") or 0)
+            calibration_height = int(data.get("image_height") or 0)
+            self.calib_size = (
+                (calibration_width, calibration_height)
+                if calibration_width > 0 and calibration_height > 0
+                else None
+            )
             self.get_logger().info(f"loaded camera calibration yaml: {self.calib_yaml}")
         except Exception as exc:
             self.get_logger().warn(f"failed to load calib_yaml: {exc}")
             self.K = None
             self.D = None
+            self.calib_size = None
 
     def build_rectify_map(self, width: int, height: int) -> bool:
         if self.K is None or self.D is None:
             return False
 
         size = (width, height)
+        camera_matrix = scale_camera_matrix(self.K, self.calib_size, size)
         R = np.eye(3, dtype=np.float64)
         try:
             if "fisheye" in self.distortion_model or "equidistant" in self.distortion_model:
@@ -496,7 +671,7 @@ class CameraPerceptionNode(Node):
                 count = min(4, len(self.D))
                 d4[:count, 0] = self.D[:count]
                 self.K_rect = cv2.fisheye.estimateNewCameraMatrixForUndistortRectify(
-                    self.K,
+                    camera_matrix,
                     d4,
                     size,
                     R,
@@ -504,7 +679,7 @@ class CameraPerceptionNode(Node):
                     new_size=size,
                 )
                 self.rect_map1, self.rect_map2 = cv2.fisheye.initUndistortRectifyMap(
-                    self.K,
+                    camera_matrix,
                     d4,
                     R,
                     self.K_rect,
@@ -513,14 +688,14 @@ class CameraPerceptionNode(Node):
                 )
             else:
                 self.K_rect, _ = cv2.getOptimalNewCameraMatrix(
-                    self.K,
+                    camera_matrix,
                     self.D,
                     size,
                     alpha=self.rect_balance,
                     newImgSize=size,
                 )
                 self.rect_map1, self.rect_map2 = cv2.initUndistortRectifyMap(
-                    self.K,
+                    camera_matrix,
                     self.D,
                     R,
                     self.K_rect,
@@ -571,6 +746,7 @@ class CameraPerceptionNode(Node):
 
     def prepare_projection_image(self, image: np.ndarray) -> np.ndarray:
         if self.projection_mode != "bev_homography":
+            self.current_bev_valid_mask = np.full(image.shape[:2], 255, dtype=np.uint8)
             return image
 
         rectified = self.rectify_image(image)
@@ -582,7 +758,32 @@ class CameraPerceptionNode(Node):
             or self.homography_output_shape != output_shape
         ):
             self.build_homography(width, height)
-        return cv2.warpPerspective(rectified, self.M, output_shape)
+        valid_mask = np.zeros((self.bev_height, self.bev_width), dtype=np.uint8)
+        valid_left = max(0, min(self.bev_width - 1, round(self.dst_left_ratio * self.bev_width)))
+        valid_right = max(
+            valid_left,
+            min(self.bev_width - 1, round(self.dst_right_ratio * self.bev_width)),
+        )
+        cv2.rectangle(
+            valid_mask,
+            (valid_left, 0),
+            (valid_right, self.bev_height - 1),
+            255,
+            thickness=-1,
+        )
+        if self.bev_valid_erode_px > 0:
+            size = self.bev_valid_erode_px * 2 + 1
+            valid_mask = cv2.erode(valid_mask, np.ones((size, size), dtype=np.uint8))
+        self.current_bev_valid_mask = valid_mask
+
+        border = (self.bev_border_gray,) * 3
+        return cv2.warpPerspective(
+            rectified,
+            self.M,
+            output_shape,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=border,
+        )
 
     def draw_bev_guides(self, image: np.ndarray) -> np.ndarray:
         out = image.copy()

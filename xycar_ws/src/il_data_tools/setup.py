@@ -29,6 +29,7 @@ setup(
             "il_policy_inference = il_data_tools.policy_inference_node:main",
             "il_recovery_scenario_manager = il_data_tools.recovery_scenario_manager:main",
             "collect_randomized_batches = il_data_tools.randomized_batch_collector:main",
+            "run_canonical_50k_pipeline = il_data_tools.canonical_pipeline:main",
             "train_from_raw_dataset.py = il_data_tools.train_from_raw_dataset:main",
         ],
     },

@@ -12,6 +12,7 @@ def generate_launch_description():
     speed_command = LaunchConfiguration("speed_command")
     sensor_timeout_sec = LaunchConfiguration("sensor_timeout_sec")
     device = LaunchConfiguration("device")
+    image_topic = LaunchConfiguration("image_topic")
 
     return LaunchDescription(
         [
@@ -46,6 +47,11 @@ def generate_launch_description():
                 default_value="cuda",
                 description="Torch inference device.",
             ),
+            DeclareLaunchArgument(
+                "image_topic",
+                default_value="/image_raw",
+                description="Raw or canonical image topic used by the trained model.",
+            ),
             Node(
                 package="il_data_tools",
                 executable="il_policy_inference",
@@ -56,6 +62,7 @@ def generate_launch_description():
                         "use_sim_time": True,
                         "model_path": model_path,
                         "device": device,
+                        "image_topic": image_topic,
                         "drive_enabled": ParameterValue(drive_enabled, value_type=bool),
                         "speed_command": ParameterValue(speed_command, value_type=float),
                         "sensor_timeout_sec": ParameterValue(

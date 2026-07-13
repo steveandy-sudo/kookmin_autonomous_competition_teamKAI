@@ -9,9 +9,13 @@ xycar_camera_perception:
     traffic_lights_topic: /perception/traffic_lights
     debug_image_topic: /perception/debug_image
     debug_markers_topic: /perception/debug_markers
+    canonical_road_topic: /perception/canonical_road_image
+    canonical_white_mask_topic: /perception/canonical_white_mask
+    canonical_yellow_mask_topic: /perception/canonical_yellow_mask
     base_frame_id: base_footprint
     source_name: xycar_camera_perception
-    publish_rate_limit_hz: 15.0
+    # Process every freshest frame; the depth-1 sensor queue prevents stale backlog.
+    publish_rate_limit_hz: 0.0
     publish_empty_optional_topics: true
 
     # Initial real-car profile. Retune these ratios from a stationary debug image
@@ -32,21 +36,25 @@ xycar_camera_perception:
     # /wide_camera/rect/image_raw is already rectified by app_wide_camera_calib.
     enable_rectify: false
     rect_balance: 0.3
-    src_tl_x_ratio: 0.16
-    src_tr_x_ratio: 0.84
-    src_bl_x_ratio: 0.00
-    src_br_x_ratio: 1.00
-    src_top_y_ratio: 0.64
-    src_bottom_y_ratio: 0.72
+    # Measured real-car lane ROI used by my_rule_lane_node.
+    src_tl_x_ratio: 0.357
+    src_tr_x_ratio: 0.777
+    src_bl_x_ratio: 0.170
+    src_br_x_ratio: 0.965
+    src_top_y_ratio: 0.520
+    src_bottom_y_ratio: 0.625
     bev_width: 640
-    bev_height: 120
+    bev_height: 220
     dst_left_ratio: 0.10
     dst_right_ratio: 0.90
     # Initial metric scale from the known track markings; verify on real images.
-    lateral_m_per_px: 0.0022
+    # 0.39 m / 256 px from the real Stanley controller calibration.
+    lateral_m_per_px: 0.0015234375
     forward_m_per_px: 0.010
     bev_x_offset_m: 0.0
     bev_bottom_ignore_px: 28
+    bev_border_gray: 70
+    bev_valid_erode_px: 8
 
     near_x_m: 0.20
     far_x_m: 2.20
@@ -58,12 +66,12 @@ xycar_camera_perception:
     min_segment_points: 4
     min_centerline_points: 3
 
-    white_s_max: 80
+    white_s_max: 120
     white_v_min: 145
-    yellow_h_min: 15
-    yellow_h_max: 42
+    yellow_h_min: 14
+    yellow_h_max: 45
     yellow_s_min: 60
-    yellow_v_min: 110
+    yellow_v_min: 80
     morphology_kernel_px: 3
     centerline_mode: lane_midline
     use_yellow_as_centerline: false
@@ -72,3 +80,17 @@ xycar_camera_perception:
     centerline_sample_spacing_m: 0.05
     centerline_temporal_alpha: 0.45
     centerline_temporal_timeout_sec: 0.50
+
+    # Must match the simulation canonical contract exactly.
+    canonical_width: 256
+    canonical_height: 144
+    canonical_lateral_range_m: 1.4
+    canonical_forward_range_m: 1.2
+    canonical_background_gray: 36
+    canonical_line_width_px: 5
+    canonical_white_s_max: 120
+    canonical_white_v_min: 145
+    canonical_white_v_floor: 70
+    canonical_white_relative_delta: 9.0
+    canonical_min_component_area_px: 8
+    canonical_bottom_ignore_m: 0.08

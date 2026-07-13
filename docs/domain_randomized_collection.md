@@ -29,6 +29,8 @@
 - 순간이동 직후 기본 0.8초: `bad_data`로 라벨링하여 저장 제외
 - 이후 기본 8초: `recovery`
 - 나머지 정상 주행: `general_drive`
+- 완전 이탈로 룰베이스 속도 명령이 0이 되면 해당 정지 프레임과 직전 3초를
+  지연 버퍼에서 폐기
 
 복구 조향 라벨은 현재 카메라 룰베이스가 생성합니다. 첫 GUI 점검에서 흰색
 경계를 완전히 놓치는 극단 자세가 보이면 lateral/yaw 범위를 넓히지 말고 해당
@@ -91,6 +93,29 @@ ros2 run il_data_tools collect_randomized_batches \
 
 GUI 확인이 이미 끝났다면 `--show-gui-first`를 생략하면 전 세션이 headless로
 실행됩니다. 기존 `sim_drive_01` 등의 세션은 삭제하거나 덮어쓰지 않습니다.
+
+현재 sim-to-real용 canonical BEV 데이터는 아래 단일 파이프라인을 사용합니다.
+수집 후 파일·복구 비율 검증, 세션 단위 split, 학습, held-out 평가, 모델 게시가
+모두 성공해야 전원을 끕니다.
+
+```bash
+ros2 run il_data_tools run_canonical_50k_pipeline \
+  --project-root "$PWD" \
+  --total-samples 50000 \
+  --batch-samples 5000 \
+  --seed 20260714 \
+  --epochs 50 \
+  --batch-size 256 \
+  --num-workers 8 \
+  --device cuda \
+  --show-gui-first \
+  --publish-model \
+  --git-remotes origin,teamkai \
+  --poweroff-on-success
+```
+
+이 명령은 `/perception/canonical_road_image`를 PNG로 저장하며, raw RGB 세션과
+수정 전 모서리 artifact가 포함된 `sim_canonical_drive_01`은 학습에 넣지 않습니다.
 
 생성 예시:
 

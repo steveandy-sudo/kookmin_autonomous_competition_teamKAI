@@ -13,6 +13,7 @@ def generate_launch_description():
     max_save_rate_hz = LaunchConfiguration("max_save_rate_hz")
     sync_tolerance_sec = LaunchConfiguration("sync_tolerance_sec")
     max_samples = LaunchConfiguration("max_samples")
+    camera_front_topic = LaunchConfiguration("camera_front_topic")
 
     drive_launch = PathJoinSubstitution(
         [FindPackageShare("il_data_tools"), "launch", "record_drive_dataset.launch.py"]
@@ -58,6 +59,11 @@ def generate_launch_description():
                 default_value="50000",
                 description="Stop and close the recorder after this many samples.",
             ),
+            DeclareLaunchArgument(
+                "camera_front_topic",
+                default_value="/image_raw",
+                description="Image representation stored as the training input.",
+            ),
             GroupAction(
                 [
                     # Headerless motor commands must use the same clock as Gazebo sensors.
@@ -70,7 +76,7 @@ def generate_launch_description():
                             "output_root": output_root,
                             "session_name": session_name,
                             "session_auto_increment": "true",
-                            "camera_front_topic": "/image_raw",
+                            "camera_front_topic": camera_front_topic,
                             "scan_topic": "/scan",
                             "motor_topic": "/xycar_motor",
                             "motor_msg_type": "float32_multi_array",
