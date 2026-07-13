@@ -7,6 +7,7 @@ xycar_lane_rule_driver:
     motor_topic: /xycar_motor
     shadow_motor_topic: /xycar_motor_shadow
     drive_enabled: false
+    steering_only: false
     target_path_topic: /rule_drive/target_path
     debug_markers_topic: /rule_drive/debug_markers
     base_frame_id: base_footprint

@@ -17,6 +17,10 @@ def clamp(value: float, lower: float, upper: float) -> float:
     return min(max(value, lower), upper)
 
 
+def apply_steering_only(speed_command: float, steering_only: bool) -> float:
+    return 0.0 if steering_only else float(speed_command)
+
+
 def interpolate_clamped(
     value: float,
     inputs: Sequence[float],
@@ -149,6 +153,7 @@ class LaneRuleDriver(Node):
         self.declare_parameter("motor_topic", "/xycar_motor")
         self.declare_parameter("shadow_motor_topic", "/xycar_motor_shadow")
         self.declare_parameter("drive_enabled", True)
+        self.declare_parameter("steering_only", False)
         self.declare_parameter("target_path_topic", "/rule_drive/target_path")
         self.declare_parameter("debug_markers_topic", "/rule_drive/debug_markers")
         self.declare_parameter("base_frame_id", "base_footprint")
@@ -201,6 +206,7 @@ class LaneRuleDriver(Node):
 
         self.base_frame_id = str(self.get_parameter("base_frame_id").value)
         self.drive_enabled = bool(self.get_parameter("drive_enabled").value)
+        self.steering_only = bool(self.get_parameter("steering_only").value)
         self.centerline_fallback_enabled = bool(
             self.get_parameter("centerline_fallback_enabled").value
         )
@@ -305,7 +311,12 @@ class LaneRuleDriver(Node):
         self.last_path_update_time = time.monotonic()
         self.prediction_active = False
         self.last_road_path_stamp: tuple[int, int] | None = None
-        mode = "AUTO" if self.drive_enabled else "SHADOW (motor output disabled)"
+        if not self.drive_enabled:
+            mode = "SHADOW (motor output disabled)"
+        elif self.steering_only:
+            mode = "STEERING-ONLY (propulsion locked at zero)"
+        else:
+            mode = "AUTO"
         self.get_logger().info(f"lane rule driver ready: {mode}")
 
     def on_road_segments(self, msg: RoadSegmentArray) -> None:
@@ -510,6 +521,7 @@ class LaneRuleDriver(Node):
                     self.last_target_path,
                     predicted=True,
                 )
+        speed_command = apply_steering_only(speed_command, self.steering_only)
         self.last_angle_command = angle_command
         self.last_speed_command = speed_command
         self.publish_motor(angle_command, speed_command)
