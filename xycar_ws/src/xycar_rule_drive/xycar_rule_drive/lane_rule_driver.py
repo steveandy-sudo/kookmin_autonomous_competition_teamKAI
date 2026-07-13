@@ -144,6 +144,8 @@ class LaneRuleDriver(Node):
     def __init__(self) -> None:
         super().__init__("xycar_lane_rule_driver")
         self.declare_parameter("road_segments_topic", "/perception/road_segments")
+        self.declare_parameter("centerline_topic", "/perception/centerline")
+        self.declare_parameter("centerline_fallback_enabled", True)
         self.declare_parameter("motor_topic", "/xycar_motor")
         self.declare_parameter("shadow_motor_topic", "/xycar_motor_shadow")
         self.declare_parameter("drive_enabled", True)
@@ -199,6 +201,9 @@ class LaneRuleDriver(Node):
 
         self.base_frame_id = str(self.get_parameter("base_frame_id").value)
         self.drive_enabled = bool(self.get_parameter("drive_enabled").value)
+        self.centerline_fallback_enabled = bool(
+            self.get_parameter("centerline_fallback_enabled").value
+        )
         self.lane_width_m = float(self.get_parameter("lane_width_m").value)
         self.min_lane_width_m = float(self.get_parameter("min_lane_width_m").value)
         self.max_lane_width_m = float(self.get_parameter("max_lane_width_m").value)
@@ -282,6 +287,12 @@ class LaneRuleDriver(Node):
             self.on_road_segments,
             10,
         )
+        self.create_subscription(
+            Centerline,
+            str(self.get_parameter("centerline_topic").value),
+            self.on_centerline,
+            10,
+        )
 
         rate_hz = max(1.0, float(self.get_parameter("command_rate_hz").value))
         self.create_timer(1.0 / rate_hz, self.on_timer)
@@ -293,6 +304,7 @@ class LaneRuleDriver(Node):
         self.last_speed_command = 0.0
         self.last_path_update_time = time.monotonic()
         self.prediction_active = False
+        self.last_road_path_stamp: tuple[int, int] | None = None
         mode = "AUTO" if self.drive_enabled else "SHADOW (motor output disabled)"
         self.get_logger().info(f"lane rule driver ready: {mode}")
 
@@ -300,14 +312,35 @@ class LaneRuleDriver(Node):
         target_path = self.build_target_path(msg)
         if len(target_path) < self.min_target_points:
             return
+        self.last_road_path_stamp = self.header_stamp_key(msg.header)
+        self.accept_target_path(msg.header, target_path)
+
+    def on_centerline(self, msg: Centerline) -> None:
+        if not self.centerline_fallback_enabled:
+            return
+        if len(msg.points) < self.min_target_points:
+            return
+        if self.header_stamp_key(msg.header) == self.last_road_path_stamp:
+            return
+        self.get_logger().warn(
+            "using perception centerline fallback",
+            throttle_duration_sec=2.0,
+        )
+        self.accept_target_path(msg.header, list(msg.points))
+
+    @staticmethod
+    def header_stamp_key(header) -> tuple[int, int]:
+        return int(header.stamp.sec), int(header.stamp.nanosec)
+
+    def accept_target_path(self, header, target_path: list[Point]) -> None:
         self.last_target_path = target_path
-        self.last_header = msg.header
+        self.last_header = header
         now = time.monotonic()
         self.last_segments_time = now
         self.last_path_update_time = now
         self.prediction_active = False
-        self.publish_target_path(msg.header, target_path, predicted=False)
-        self.publish_debug_markers(msg.header, target_path, predicted=False)
+        self.publish_target_path(header, target_path, predicted=False)
+        self.publish_debug_markers(header, target_path, predicted=False)
 
     def build_target_path(self, msg: RoadSegmentArray) -> list[Point]:
         yellow_segments = [

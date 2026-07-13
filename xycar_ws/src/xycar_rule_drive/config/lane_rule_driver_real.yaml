@@ -2,6 +2,8 @@ xycar_lane_rule_driver:
   ros__parameters:
     use_sim_time: false
     road_segments_topic: /perception/road_segments
+    centerline_topic: /perception/centerline
+    centerline_fallback_enabled: true
     motor_topic: /xycar_motor
     shadow_motor_topic: /xycar_motor_shadow
     drive_enabled: false
