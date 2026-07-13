@@ -29,6 +29,20 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(discarded, 3)
         self.assertEqual(len(buffer), 0)
 
+    def test_stop_keeps_only_samples_older_than_the_bad_window(self):
+        buffer = BadDataPreroll(window_ns=3_000_000_000)
+        released = []
+        for tenth in range(50, 101):
+            released += buffer.push(self.Sample(tenth * 100_000_000))
+
+        safe, discarded = buffer.stop(10_000_000_000)
+        released += safe
+
+        self.assertTrue(released)
+        self.assertLess(released[-1].timestamp_ns, 7_000_000_000)
+        self.assertEqual(discarded, 31)
+        self.assertTrue(all(sample.timestamp_ns < 7_000_000_000 for sample in released))
+
     def test_rate_limit_accepts_small_nominal_timestamp_jitter(self):
         self.assertTrue(rate_limit_allows(91_000_000, 0, 10.0))
         self.assertFalse(rate_limit_allows(89_000_000, 0, 10.0))

@@ -89,6 +89,8 @@ class SimulationContractTests(unittest.TestCase):
         self.assertIn('"--canonical-input"', source)
         self.assertIn("/perception/canonical_road_image", source)
         self.assertIn("image_format:=png", source)
+        self.assertIn("def cleanup_gazebo_children()", source)
+        self.assertIn("finally:\n            cleanup_gazebo_children()", source)
 
     def test_canonical_pipeline_has_quality_gates_before_poweroff(self):
         source = (ROOT / "il_data_tools" / "canonical_pipeline.py").read_text(

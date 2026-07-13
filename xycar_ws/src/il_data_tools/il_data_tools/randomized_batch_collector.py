@@ -4,6 +4,7 @@ import argparse
 import math
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import List
 
@@ -18,6 +19,21 @@ DEFAULT_PRESET_CYCLE = [
     "dynamics",
     "mixed",
 ]
+
+GAZEBO_CHILD_PATTERN = r"^gz sim (server|gui)"
+
+
+def cleanup_gazebo_children() -> None:
+    """Remove Gazebo children that survive a completed or interrupted launch."""
+    for signal_name, wait_sec in (("TERM", 1.0), ("KILL", 0.0)):
+        subprocess.run(
+            ["pkill", f"-{signal_name}", "-f", GAZEBO_CHILD_PATTERN],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if wait_sec:
+            time.sleep(wait_sec)
 
 
 def _parse_presets(value: str) -> List[str]:
@@ -111,6 +127,7 @@ def main(argv=None) -> int:
         f"sessions={session_count}, root={args.project_root}"
     )
 
+    cleanup_gazebo_children()
     for index in range(session_count):
         preset = args.presets[index % len(args.presets)]
         seed = args.seed + index
@@ -150,6 +167,8 @@ def main(argv=None) -> int:
         except KeyboardInterrupt:
             print("\ncollection interrupted; completed sessions remain on disk")
             return 130
+        finally:
+            cleanup_gazebo_children()
         if result.returncode != 0:
             print(
                 f"session failed with exit code {result.returncode}: {' '.join(command)}",
