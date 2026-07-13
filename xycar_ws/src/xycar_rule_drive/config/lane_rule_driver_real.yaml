@@ -35,7 +35,7 @@ xycar_lane_rule_driver:
     lookahead_distance_m: 0.40
     min_lookahead_x_m: 0.25
 
-    # Shadow mode remains the default. Command 3 is the measured launch threshold.
+    # Validated command 3; drive_enabled still defaults to false.
     speed_command: 3.0
     min_speed_command: 3.0
     slow_down_angle_cmd: 18.0

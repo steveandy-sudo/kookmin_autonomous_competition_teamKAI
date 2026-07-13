@@ -31,9 +31,10 @@ CURVATURES = [
 
 
 class LaneRuleDriverMathTest(unittest.TestCase):
-    def test_steering_only_forces_zero_speed(self):
-        self.assertEqual(apply_steering_only(3.0, True), 0.0)
-        self.assertEqual(apply_steering_only(3.0, False), 3.0)
+    def test_steering_only_forces_propulsion_to_zero(self):
+        self.assertEqual(apply_steering_only(4.0, True), 0.0)
+        self.assertEqual(apply_steering_only(-2.0, True), 0.0)
+        self.assertEqual(apply_steering_only(4.0, False), 4.0)
 
     def test_midpoint_bias_moves_away_from_white_boundary(self):
         self.assertAlmostEqual(

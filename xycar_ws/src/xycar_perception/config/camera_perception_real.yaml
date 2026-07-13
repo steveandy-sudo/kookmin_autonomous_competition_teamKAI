@@ -29,7 +29,7 @@ xycar_camera_perception:
     min_projected_x_m: 0.20
     max_projected_x_m: 5.00
     calib_yaml: ""
-    # This topic is already rectified by app_wide_camera_calib.
+    # /wide_camera/rect/image_raw is already rectified by app_wide_camera_calib.
     enable_rectify: false
     rect_balance: 0.3
     src_tl_x_ratio: 0.16
