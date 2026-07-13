@@ -70,13 +70,13 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "speed_command",
-                default_value="1.0",
-                description="Initial real-car speed command; raise only after shadow checks.",
+                default_value="3.0",
+                description="Validated real-car straight speed command.",
             ),
             DeclareLaunchArgument(
                 "min_speed_command",
-                default_value="0.8",
-                description="Minimum speed command while cornering.",
+                default_value="3.0",
+                description="Validated real-car cornering speed command.",
             ),
             DeclareLaunchArgument(
                 "angle_command_min",
