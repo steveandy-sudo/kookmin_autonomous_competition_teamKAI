@@ -170,6 +170,8 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("canonical_white_v_floor", 70)
         self.declare_parameter("canonical_white_relative_delta", 9.0)
         self.declare_parameter("canonical_min_component_area_px", 8)
+        self.declare_parameter("canonical_white_max_component_thickness_px", 0.0)
+        self.declare_parameter("canonical_yellow_max_component_thickness_px", 0.0)
         self.declare_parameter("canonical_bottom_ignore_m", 0.08)
 
         self.bridge = CvBridge()
@@ -281,6 +283,12 @@ class CameraPerceptionNode(Node):
         )
         self.canonical_min_component_area_px = int(
             self.get_parameter("canonical_min_component_area_px").value
+        )
+        self.canonical_white_max_component_thickness_px = float(
+            self.get_parameter("canonical_white_max_component_thickness_px").value
+        )
+        self.canonical_yellow_max_component_thickness_px = float(
+            self.get_parameter("canonical_yellow_max_component_thickness_px").value
         )
         self.canonical_bottom_ignore_m = float(
             self.get_parameter("canonical_bottom_ignore_m").value
@@ -576,6 +584,12 @@ class CameraPerceptionNode(Node):
             yellow_s_min=self.yellow_s_min,
             yellow_v_min=self.yellow_v_min,
             min_component_area_px=self.canonical_min_component_area_px,
+            white_max_component_thickness_px=(
+                self.canonical_white_max_component_thickness_px
+            ),
+            yellow_max_component_thickness_px=(
+                self.canonical_yellow_max_component_thickness_px
+            ),
             bottom_ignore_m=self.canonical_bottom_ignore_m,
         )
         return (

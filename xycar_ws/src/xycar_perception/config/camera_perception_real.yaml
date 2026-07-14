@@ -68,10 +68,11 @@ xycar_camera_perception:
 
     white_s_max: 120
     white_v_min: 145
-    yellow_h_min: 14
-    yellow_h_max: 45
-    yellow_s_min: 60
-    yellow_v_min: 80
+    # Tuned on 40 evenly sampled frames from two 2026-07-14 bags (4,431 frames).
+    yellow_h_min: 16
+    yellow_h_max: 38
+    yellow_s_min: 62
+    yellow_v_min: 70
     morphology_kernel_px: 3
     centerline_mode: lane_midline
     use_yellow_as_centerline: false
@@ -88,9 +89,12 @@ xycar_camera_perception:
     canonical_forward_range_m: 1.2
     canonical_background_gray: 36
     canonical_line_width_px: 5
-    canonical_white_s_max: 120
-    canonical_white_v_min: 145
-    canonical_white_v_floor: 70
-    canonical_white_relative_delta: 9.0
-    canonical_min_component_area_px: 8
+    # Prefer narrow, locally brighter tape over broad ceiling-light reflections.
+    canonical_white_s_max: 80
+    canonical_white_v_min: 245
+    canonical_white_v_floor: 95
+    canonical_white_relative_delta: 20.0
+    canonical_min_component_area_px: 12
+    canonical_white_max_component_thickness_px: 28.0
+    canonical_yellow_max_component_thickness_px: 24.0
     canonical_bottom_ignore_m: 0.08

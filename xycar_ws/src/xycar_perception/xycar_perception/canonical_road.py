@@ -4,15 +4,32 @@ import cv2
 import numpy as np
 
 
-def _remove_small_components(mask: np.ndarray, min_area_px: int) -> np.ndarray:
+def _filter_components(
+    mask: np.ndarray,
+    min_area_px: int,
+    max_thickness_px: float = 0.0,
+) -> np.ndarray:
     binary = (mask > 0).astype(np.uint8)
-    if min_area_px <= 1:
+    if min_area_px <= 1 and max_thickness_px <= 0.0:
         return binary * 255
     count, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
     cleaned = np.zeros_like(binary)
     for label in range(1, count):
-        if int(stats[label, cv2.CC_STAT_AREA]) >= min_area_px:
-            cleaned[labels == label] = 1
+        if int(stats[label, cv2.CC_STAT_AREA]) < min_area_px:
+            continue
+        component = labels == label
+        if max_thickness_px > 0.0:
+            x = int(stats[label, cv2.CC_STAT_LEFT])
+            y = int(stats[label, cv2.CC_STAT_TOP])
+            width = int(stats[label, cv2.CC_STAT_WIDTH])
+            height = int(stats[label, cv2.CC_STAT_HEIGHT])
+            roi = component[y : y + height, x : x + width].astype(np.uint8)
+            padded = cv2.copyMakeBorder(roi, 1, 1, 1, 1, cv2.BORDER_CONSTANT)
+            distance = cv2.distanceTransform(padded, cv2.DIST_L2, 5)
+            thickness = 2.0 * float(distance.max())
+            if thickness > max_thickness_px:
+                continue
+        cleaned[component] = 1
     return cleaned * 255
 
 
@@ -103,6 +120,8 @@ def make_canonical_road_image(
     yellow_s_min: int = 55,
     yellow_v_min: int = 90,
     min_component_area_px: int = 8,
+    white_max_component_thickness_px: float = 0.0,
+    yellow_max_component_thickness_px: float = 0.0,
     bottom_ignore_m: float = 0.08,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Build a fixed metric, fixed-color road representation from a BEV image."""
@@ -161,8 +180,16 @@ def make_canonical_road_image(
     close_kernel = np.ones((3, 3), dtype=np.uint8)
     white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_CLOSE, close_kernel)
     yellow_mask = cv2.morphologyEx(yellow_mask, cv2.MORPH_CLOSE, close_kernel)
-    white_mask = _remove_small_components(white_mask, min_component_area_px)
-    yellow_mask = _remove_small_components(yellow_mask, min_component_area_px)
+    white_mask = _filter_components(
+        white_mask,
+        min_component_area_px,
+        white_max_component_thickness_px,
+    )
+    yellow_mask = _filter_components(
+        yellow_mask,
+        min_component_area_px,
+        yellow_max_component_thickness_px,
+    )
 
     output_size = (int(output_width), int(output_height))
     white_mask = cv2.resize(white_mask, output_size, interpolation=cv2.INTER_NEAREST)

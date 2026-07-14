@@ -100,6 +100,39 @@ class CanonicalRoadTest(unittest.TestCase):
         self.assertEqual(int(np.count_nonzero(white)), 0)
         self.assertEqual(int(np.count_nonzero(yellow)), 0)
 
+    def test_thickness_filter_keeps_tape_and_removes_broad_reflection(self):
+        image = np.full((120, 640, 3), 90, dtype=np.uint8)
+        cv2.line(image, (150, 0), (150, 105), (220, 220, 220), 7)
+        cv2.rectangle(image, (250, 15), (390, 100), (225, 225, 225), -1)
+
+        _, unfiltered, _ = make_canonical_road_image(
+            image,
+            lateral_m_per_px=0.0022,
+            forward_m_per_px=0.01,
+            white_s_max=80,
+            white_v_min=200,
+            white_v_floor=95,
+            white_relative_delta=20.0,
+            bottom_ignore_m=0.0,
+        )
+        _, filtered, _ = make_canonical_road_image(
+            image,
+            lateral_m_per_px=0.0022,
+            forward_m_per_px=0.01,
+            white_s_max=80,
+            white_v_min=200,
+            white_v_floor=95,
+            white_relative_delta=20.0,
+            white_max_component_thickness_px=28.0,
+            bottom_ignore_m=0.0,
+        )
+
+        self.assertGreater(int(np.count_nonzero(filtered)), 0)
+        self.assertLess(
+            int(np.count_nonzero(filtered)),
+            int(np.count_nonzero(unfiltered)) * 0.50,
+        )
+
     def test_real_config_matches_measured_lane_pipeline(self):
         config_path = Path(__file__).resolve().parents[1] / "config" / "camera_perception_real.yaml"
         with config_path.open(encoding="utf-8") as config_file:
@@ -120,10 +153,17 @@ class CanonicalRoadTest(unittest.TestCase):
         self.assertAlmostEqual(params["lateral_m_per_px"], 0.39 / 256.0)
         self.assertEqual(params["white_s_max"], 120)
         self.assertEqual(params["white_v_min"], 145)
-        self.assertEqual(params["yellow_h_min"], 14)
-        self.assertEqual(params["yellow_h_max"], 45)
-        self.assertEqual(params["yellow_s_min"], 60)
-        self.assertEqual(params["yellow_v_min"], 80)
+        self.assertEqual(params["yellow_h_min"], 16)
+        self.assertEqual(params["yellow_h_max"], 38)
+        self.assertEqual(params["yellow_s_min"], 62)
+        self.assertEqual(params["yellow_v_min"], 70)
+        self.assertEqual(params["canonical_white_s_max"], 80)
+        self.assertEqual(params["canonical_white_v_min"], 245)
+        self.assertEqual(params["canonical_white_v_floor"], 95)
+        self.assertEqual(params["canonical_white_relative_delta"], 20.0)
+        self.assertEqual(params["canonical_min_component_area_px"], 12)
+        self.assertEqual(params["canonical_white_max_component_thickness_px"], 28.0)
+        self.assertEqual(params["canonical_yellow_max_component_thickness_px"], 24.0)
 
     def test_sim_config_does_not_apply_real_fisheye_rectification(self):
         config_path = Path(__file__).resolve().parents[1] / "config" / "camera_perception.yaml"
