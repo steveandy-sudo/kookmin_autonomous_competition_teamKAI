@@ -124,6 +124,7 @@ class CanonicalPipelineTests(unittest.TestCase):
                         "run_manifest": {
                             "canonical_artifacts": {
                                 "enabled": True,
+                                "mode": "real_visibility",
                                 "event_log": str(event_log),
                             }
                         },

@@ -4,8 +4,10 @@ import numpy as np
 
 from il_data_tools.canonical_artifacts import (
     CanonicalArtifactAugmenter,
+    CanonicalVisibilityAugmenter,
     apply_center_jump,
     apply_line_dropout,
+    apply_visibility_profile,
     apply_white_bend,
     canonical_masks,
 )
@@ -82,6 +84,49 @@ class CanonicalArtifactTests(unittest.TestCase):
         self.assertFalse(np.array_equal(first, image))
         self.assertFalse(np.array_equal(second, image))
         self.assertTrue(np.array_equal(third, image))
+
+    def test_real_visibility_never_moves_the_retained_components(self):
+        image = canonical_test_image()
+        output, forced = apply_visibility_profile(
+            image,
+            white_state="one",
+            keep_white_side="left",
+            yellow_visible=True,
+        )
+        white, yellow = canonical_masks(output)
+
+        self.assertFalse(forced)
+        self.assertTrue(np.all(white[10:140, 48:53]))
+        self.assertFalse(np.any(white[:, 203:208]))
+        self.assertTrue(np.all(yellow[20:125, 126:131]))
+
+    def test_real_visibility_prevents_synthetic_blank_inputs(self):
+        image = canonical_test_image()
+        output, forced = apply_visibility_profile(
+            image,
+            white_state="none",
+            keep_white_side="right",
+            yellow_visible=False,
+            prevent_blank=True,
+        )
+        white, yellow = canonical_masks(output)
+
+        self.assertTrue(forced)
+        self.assertFalse(np.any(white))
+        self.assertTrue(np.any(yellow))
+
+    def test_visibility_state_is_temporally_held(self):
+        image = canonical_test_image()
+        augmenter = CanonicalVisibilityAugmenter(
+            seed=9,
+            white_duration_frames=(4, 4),
+            yellow_duration_frames=(4, 4),
+        )
+        states = []
+        for _ in range(4):
+            _, event, _ = augmenter.process(image)
+            states.append(event.parameters)
+        self.assertTrue(all(state == states[0] for state in states))
 
 
 if __name__ == "__main__":

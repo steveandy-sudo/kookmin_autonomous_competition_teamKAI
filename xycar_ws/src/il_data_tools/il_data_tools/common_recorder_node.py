@@ -49,6 +49,7 @@ from il_data_tools.record_schema import (
     stamp_to_ns,
     string_from_msg,
 )
+from il_data_tools.canonical_artifacts import canonical_lane_observation_present
 from il_data_tools.sync_buffer import TimedBuffer
 from il_data_tools.recorder_state import (
     DiskSpaceGuard,
@@ -182,6 +183,7 @@ class ILCommonRecorder(Node):
         self.skipped_unsynced_scan = 0
         self.skipped_label_filter = 0
         self.skipped_speed_filter = 0
+        self.skipped_blank_canonical = 0
         self.skipped_rate_limit = 0
         self.skipped_disk_limit = 0
         self.dropped_queue_full = 0
@@ -271,6 +273,9 @@ class ILCommonRecorder(Node):
             "exclude_bad_data": True,
             "exclude_idle": True,
             "exclude_zero_speed": False,
+            "exclude_blank_canonical": False,
+            "canonical_min_lane_pixels": 15,
+            "canonical_min_lane_rows": 6,
             "bad_data_preroll_sec": 0.0,
             "debug_print_period_sec": 5.0,
         }
@@ -327,6 +332,15 @@ class ILCommonRecorder(Node):
             "exclude_bad_data": self._get_bool("exclude_bad_data"),
             "exclude_idle": self._get_bool("exclude_idle"),
             "exclude_zero_speed": self._get_bool("exclude_zero_speed"),
+            "exclude_blank_canonical": self._get_bool(
+                "exclude_blank_canonical"
+            ),
+            "canonical_min_lane_pixels": max(
+                1, self._get_int("canonical_min_lane_pixels")
+            ),
+            "canonical_min_lane_rows": max(
+                1, self._get_int("canonical_min_lane_rows")
+            ),
             "bad_data_preroll_sec": max(
                 0.0, self._get_float("bad_data_preroll_sec")
             ),
@@ -564,6 +578,26 @@ class ILCommonRecorder(Node):
         if not self._within_rate_limit(stamp_ns):
             self.skipped_rate_limit += 1
             return
+        if self.params["exclude_blank_canonical"]:
+            if self.bridge is None:
+                raise RuntimeError(
+                    "cv_bridge is required when exclude_blank_canonical=true"
+                )
+            try:
+                canonical_image = self.bridge.imgmsg_to_cv2(
+                    front_msg, desired_encoding="bgr8"
+                )
+            except Exception as exc:
+                self.skipped_blank_canonical += 1
+                self._warn_once(f"canonical image decode failed: {exc}")
+                return
+            if not canonical_lane_observation_present(
+                canonical_image,
+                min_lane_pixels=self.params["canonical_min_lane_pixels"],
+                min_lane_rows=self.params["canonical_min_lane_rows"],
+            ):
+                self.skipped_blank_canonical += 1
+                return
         if not self._disk_space_available():
             self.skipped_disk_limit += 1
             self.recording_enabled = False
@@ -916,7 +950,7 @@ class ILCommonRecorder(Node):
             )
         self.get_logger().info(
             "samples=%d images=%d scans=%d queue=%d dropped_queue=%d "
-            "skipped(motor=%d,scan=%d,label=%d,speed=%d,rate=%d) "
+            "skipped(motor=%d,scan=%d,label=%d,speed=%d,blank=%d,rate=%d) "
             "buffers(front=%d,motor=%d,scan=%d) now_ns=%d"
             % (
                 self.sample_count,
@@ -928,6 +962,7 @@ class ILCommonRecorder(Node):
                 self.skipped_missing_scan,
                 self.skipped_label_filter,
                 self.skipped_speed_filter,
+                self.skipped_blank_canonical,
                 self.skipped_rate_limit,
                 len(self.front_buffer),
                 len(self.motor_buffer),
@@ -965,6 +1000,7 @@ class ILCommonRecorder(Node):
             "skipped_unsynced_scan": self.skipped_unsynced_scan,
             "skipped_label_filter": self.skipped_label_filter,
             "skipped_speed_filter": self.skipped_speed_filter,
+            "skipped_blank_canonical": self.skipped_blank_canonical,
             "skipped_rate_limit": self.skipped_rate_limit,
             "skipped_disk_limit": self.skipped_disk_limit,
             "queue_size": self.pending_queue.qsize(),

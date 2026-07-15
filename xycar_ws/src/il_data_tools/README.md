@@ -44,20 +44,35 @@ ros2 run il_data_tools collect_randomized_batches \
 `docs/domain_randomized_collection.md`를 참고합니다.
 
 sim-to-real용 canonical BEV는 복구 데이터, 정지 직전 10초 폐기, 학습·held-out
-평가, 모델 게시와 성공 시 전원 종료를 하나로 묶은 명령을 쓴다. 최신 게시
-모델은 2026-07-15에 5천 장씩 6세션, 총 3만 장으로 생성했다.
+평가를 하나로 묶은 명령을 쓴다. 2026-07-15 실차 주행 결과를 반영한 현재 목표는
+신규 10만 장과 기존 clean 5만 장의 가시성 파생본 두 개를 합친 약 20만 장이다.
+현재 게시된 3만 장 모델은 새 20만 장 모델의 평가가 끝날 때까지만 유지한다.
 
 ```bash
-ros2 run il_data_tools run_canonical_50k_pipeline \
-  --project-root "$PWD" --total-samples 30000 --batch-samples 5000 \
-  --seed 2026071500 --epochs 50 --batch-size 256 --num-workers 8 \
-  --device cuda --show-gui-first --publish-model \
-  --git-remotes origin,teamkai --poweroff-on-success
+PROFILE="$PWD/xycar_ws/src/il_data_tools/config/real_reference_profile_20260715.json"
+ros2 run il_data_tools run_canonical_pipeline \
+  --project-root "$PWD" --total-samples 100000 --batch-samples 5000 \
+  --seed 2026071524 \
+  --run-name drive_canonical_real_reference_200k_20260715 \
+  --real-reference-profile "$PROFILE" \
+  --include-run drive_canonical_50k_20260714 \
+  --existing-visibility-variants 2 \
+  --epochs 50 --batch-size 256 --num-workers 8 --device cuda
 ```
 
 완전 이탈로 룰베이스가 `speed=0`을 내리면 recorder는 정지 프레임과 직전
 10초를 `bad_data`로 폐기한다. 이 기능 때문에 후보 샘플은 디스크 기록 전에
-10초간 메모리 지연 버퍼에 머문다.
+10초간 메모리 지연 버퍼에 머문다. canonical 수집에서는 흰선·노란선이 모두
+없는 프레임도 저장하지 않는다.
+
+실차 기준 profile은 본선 rosbag, 임시트랙 `track_run_02`, 5만 장 모델 실차
+주행 백 3개에서 회차·차선 단절을 제외해 계산했다. 목표 가시성은 흰선
+`2개 46.2% / 1개 51.2% / 0개 2.5%`, 노란선 `57.1%`다. augmentation은
+관측 선을 가릴 수만 있고 위치나 곡률을 바꾸지 않으며, 인위적인 완전 빈
+canonical 입력은 만들지 않는다. 본선 로스백은 시뮬 배경 복제가 아니라 실제
+canonical 관측 분포를 맞추는 기준으로 사용한다. 기존 clean 5만 장에서 발견한
+완전 빈 프레임 51장은 두 파생본 모두에서 제외하므로 실제 학습 입력은 신규
+10만 장을 포함한 199,898장이다.
 
 ### 데이터 가공
 

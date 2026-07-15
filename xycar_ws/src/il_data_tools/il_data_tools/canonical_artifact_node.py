@@ -11,7 +11,10 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 
-from il_data_tools.canonical_artifacts import CanonicalArtifactAugmenter
+from il_data_tools.canonical_artifacts import (
+    CanonicalArtifactAugmenter,
+    CanonicalVisibilityAugmenter,
+)
 
 
 class CanonicalArtifactNode(Node):
@@ -19,31 +22,59 @@ class CanonicalArtifactNode(Node):
         super().__init__("il_canonical_artifact_augmenter")
         self._declare_parameters()
         self.bridge = CvBridge()
-        self.augmenter = CanonicalArtifactAugmenter(
-            seed=int(self.get_parameter("seed").value),
-            event_start_probability=float(
-                self.get_parameter("event_start_probability").value
-            ),
-            min_duration_frames=int(
-                self.get_parameter("min_duration_frames").value
-            ),
-            max_duration_frames=int(
-                self.get_parameter("max_duration_frames").value
-            ),
-            center_jump_min_px=float(
-                self.get_parameter("center_jump_min_px").value
-            ),
-            center_jump_max_px=float(
-                self.get_parameter("center_jump_max_px").value
-            ),
-            white_bend_min_px=float(
-                self.get_parameter("white_bend_min_px").value
-            ),
-            white_bend_max_px=float(
-                self.get_parameter("white_bend_max_px").value
-            ),
-            background_gray=int(self.get_parameter("background_gray").value),
-        )
+        self.mode = str(self.get_parameter("mode").value)
+        seed = int(self.get_parameter("seed").value)
+        background_gray = int(self.get_parameter("background_gray").value)
+        if self.mode == "real_visibility":
+            self.augmenter = CanonicalVisibilityAugmenter(
+                seed=seed,
+                white_probabilities=(
+                    float(self.get_parameter("white_both_probability").value),
+                    float(self.get_parameter("white_one_probability").value),
+                    float(self.get_parameter("white_none_probability").value),
+                ),
+                yellow_visible_probability=float(
+                    self.get_parameter("yellow_visible_probability").value
+                ),
+                white_duration_frames=(
+                    int(self.get_parameter("white_min_duration_frames").value),
+                    int(self.get_parameter("white_max_duration_frames").value),
+                ),
+                yellow_duration_frames=(
+                    int(self.get_parameter("yellow_min_duration_frames").value),
+                    int(self.get_parameter("yellow_max_duration_frames").value),
+                ),
+                background_gray=background_gray,
+                prevent_blank=bool(self.get_parameter("prevent_blank").value),
+            )
+        elif self.mode == "legacy":
+            self.augmenter = CanonicalArtifactAugmenter(
+                seed=seed,
+                event_start_probability=float(
+                    self.get_parameter("event_start_probability").value
+                ),
+                min_duration_frames=int(
+                    self.get_parameter("min_duration_frames").value
+                ),
+                max_duration_frames=int(
+                    self.get_parameter("max_duration_frames").value
+                ),
+                center_jump_min_px=float(
+                    self.get_parameter("center_jump_min_px").value
+                ),
+                center_jump_max_px=float(
+                    self.get_parameter("center_jump_max_px").value
+                ),
+                white_bend_min_px=float(
+                    self.get_parameter("white_bend_min_px").value
+                ),
+                white_bend_max_px=float(
+                    self.get_parameter("white_bend_max_px").value
+                ),
+                background_gray=background_gray,
+            )
+        else:
+            raise ValueError("mode must be real_visibility or legacy")
         output_topic = str(self.get_parameter("output_topic").value)
         self.publisher = self.create_publisher(Image, output_topic, 10)
         self.state_publisher = self.create_publisher(
@@ -67,7 +98,7 @@ class CanonicalArtifactNode(Node):
         self.artifact_frame_count = 0
         self.event_count = 0
         self.get_logger().info(
-            "canonical artifact augmentation ready: "
+            f"canonical augmentation ready: mode={self.mode} "
             f"{self.get_parameter('input_topic').value} -> {output_topic}"
         )
 
@@ -79,6 +110,16 @@ class CanonicalArtifactNode(Node):
         self.declare_parameter("state_topic", "/il/canonical_artifact_state")
         self.declare_parameter("event_log_path", "")
         self.declare_parameter("seed", 20260715)
+        self.declare_parameter("mode", "real_visibility")
+        self.declare_parameter("white_both_probability", 0.462)
+        self.declare_parameter("white_one_probability", 0.512)
+        self.declare_parameter("white_none_probability", 0.026)
+        self.declare_parameter("yellow_visible_probability", 0.571)
+        self.declare_parameter("white_min_duration_frames", 3)
+        self.declare_parameter("white_max_duration_frames", 40)
+        self.declare_parameter("yellow_min_duration_frames", 3)
+        self.declare_parameter("yellow_max_duration_frames", 30)
+        self.declare_parameter("prevent_blank", True)
         self.declare_parameter("event_start_probability", 0.018)
         self.declare_parameter("min_duration_frames", 3)
         self.declare_parameter("max_duration_frames", 9)

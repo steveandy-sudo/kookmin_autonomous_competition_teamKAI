@@ -14,6 +14,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Sequence
 
+from il_data_tools.canonical_dataset_converter import convert_session, load_visibility
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -23,10 +25,10 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
     parser.add_argument("--project-root", type=Path, required=True)
-    parser.add_argument("--total-samples", type=int, default=50_000)
+    parser.add_argument("--total-samples", type=int, default=100_000)
     parser.add_argument("--batch-samples", type=int, default=5_000)
     parser.add_argument("--seed", type=int, default=20260714)
-    parser.add_argument("--run-name", default="drive_canonical_50k_20260714")
+    parser.add_argument("--run-name", default="drive_canonical_real_reference_200k_20260715")
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--num-workers", type=int, default=8)
@@ -48,6 +50,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Train from sessions listed by repeated --session-dir.",
     )
     parser.add_argument("--session-dir", action="append", default=[])
+    parser.add_argument(
+        "--real-reference-profile",
+        default="",
+        help="Visibility JSON made from valid real competition and temporary-track frames.",
+    )
+    parser.add_argument(
+        "--include-run",
+        action="append",
+        default=[],
+        help="Existing collection run name whose clean sessions will be converted and reused.",
+    )
+    parser.add_argument(
+        "--existing-visibility-variants",
+        type=int,
+        default=2,
+        help="Number of current-format visibility variants per included clean session.",
+    )
     return parser
 
 
@@ -69,6 +88,25 @@ def session_set(dataset_root: Path) -> set[Path]:
     }
 
 
+def sessions_from_run(dataset_root: Path, run_name: str) -> list[Path]:
+    manifest = dataset_root / "runs" / run_name / "collection_manifest.json"
+    if not manifest.is_file():
+        raise RuntimeError(f"included collection manifest not found: {manifest}")
+    sessions = [Path(value).expanduser().resolve() for value in load_json(manifest)["sessions"]]
+    missing = [str(path) for path in sessions if not (path / "samples.csv").is_file()]
+    if missing:
+        raise RuntimeError(f"included run has missing sessions: {missing}")
+    return sessions
+
+
+def row_count(sessions: Sequence[Path]) -> int:
+    total = 0
+    for session in sessions:
+        with (session / "samples.csv").open(newline="", encoding="utf-8-sig") as handle:
+            total += sum(1 for _ in csv.DictReader(handle))
+    return total
+
+
 def validate_sessions(
     sessions: Sequence[Path],
     expected_samples: int,
@@ -80,6 +118,7 @@ def validate_sessions(
     stopped_rows = 0
     discarded_bad_preroll = 0
     artifact_event_count = 0
+    artifact_modes: Counter[str] = Counter()
     for session in sessions:
         csv_path = session / "samples.csv"
         with csv_path.open(newline="", encoding="utf-8-sig") as handle:
@@ -93,6 +132,13 @@ def validate_sessions(
                 raise RuntimeError(
                     f"{session.name} did not enable canonical artifact injection"
                 )
+            artifact_mode = str(artifact_manifest.get("mode", ""))
+            if artifact_mode != "real_visibility":
+                raise RuntimeError(
+                    f"{session.name} used unsupported canonical artifact mode: "
+                    f"{artifact_mode or 'missing'}"
+                )
+            artifact_modes[artifact_mode] += 1
             if (
                 metadata.get("parameters", {}).get("camera_front_topic")
                 != "/perception/canonical_road_image_augmented"
@@ -169,6 +215,7 @@ def validate_sessions(
         "stopped_rows": stopped_rows,
         "discarded_bad_data_preroll": discarded_bad_preroll,
         "canonical_artifact_events": artifact_event_count,
+        "canonical_artifact_modes": dict(artifact_modes),
     }
 
 
@@ -334,12 +381,16 @@ def main(argv=None) -> int:
             str(args.seed),
             "--canonical-input",
             "--scenario-interval-sec",
-            "30.0",
+            "24.0",
             "--recovery-hold-sec",
-            "8.0",
+            "9.0",
             "--lane-offset-from-yellow-m",
             "0.05",
+            "--canonical-artifact-mode",
+            "real_visibility",
         ]
+        if args.real_reference_profile:
+            command += ["--real-reference-profile", args.real_reference_profile]
         if not args.no_canonical_artifacts:
             command.append("--canonical-artifacts")
         if args.show_gui_first:
@@ -359,6 +410,44 @@ def main(argv=None) -> int:
     )
     collection["sessions"] = [str(path) for path in sessions]
     collection["rejected_sessions"] = [str(path) for path in sorted(before)]
+    collection["real_reference_profile"] = args.real_reference_profile or None
+
+    included_clean: list[Path] = []
+    for included_run in args.include_run:
+        included_clean.extend(sessions_from_run(dataset_root, included_run))
+    included_clean = list(dict.fromkeys(included_clean))
+    derived_sessions: list[Path] = []
+    if included_clean and args.existing_visibility_variants <= 0:
+        raise RuntimeError("existing visibility variants must be positive")
+    visibility = load_visibility(args.real_reference_profile)
+    derived_root = dataset_root / "derived" / "drive"
+    for variant_index in range(args.existing_visibility_variants):
+        variant = f"v{variant_index + 1}"
+        for session_index, source_session in enumerate(included_clean):
+            derived_sessions.append(
+                convert_session(
+                    source_session,
+                    derived_root,
+                    visibility,
+                    args.seed + 100_000 + variant_index * 10_000 + session_index,
+                    variant,
+                )
+            )
+
+    training_sessions = [*sessions, *derived_sessions]
+    training_rows = row_count(training_sessions)
+    collection["training_dataset"] = {
+        "new_sessions": [str(path) for path in sessions],
+        "included_clean_sources": [str(path) for path in included_clean],
+        "derived_visibility_sessions": [str(path) for path in derived_sessions],
+        "training_sessions": [str(path) for path in training_sessions],
+        "raw_rows_before_split": training_rows,
+        "source_trajectory_rows": args.total_samples + row_count(included_clean),
+        "split_leakage_guard": (
+            "derived variants preserve source session_id so all views of one drive "
+            "remain in the same train/val/test split"
+        ),
+    }
     write_json(run_dir / "collection_manifest.json", collection)
 
     processed_dir = project_root / "datasets" / "processed" / args.run_name
@@ -371,7 +460,7 @@ def main(argv=None) -> int:
         "--profile",
         "drive",
     ]
-    for session in sessions:
+    for session in training_sessions:
         train_command += ["--session-dir", str(session)]
     train_command += [
         "--processed-dir",
@@ -386,12 +475,12 @@ def main(argv=None) -> int:
         str(args.num_workers),
         "--device",
         args.device,
-        "--balance-steering",
         "--recovery-oversample-factor",
-        "2",
+        "1",
         "--canonical-input",
         "--lane-dropout-probability",
-        "0.30",
+        "0.05",
+        "--enable-flip",
         "--mark-final",
     ]
     run(train_command, project_root)

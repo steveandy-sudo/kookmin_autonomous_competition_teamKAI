@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import random
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -31,6 +31,84 @@ def canonical_masks(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         & ((red.astype(np.int16) - blue.astype(np.int16)) >= 100)
     )
     return white, yellow
+
+
+def canonical_lane_observation_present(
+    image: np.ndarray,
+    min_lane_pixels: int = 15,
+    min_lane_rows: int = 6,
+) -> bool:
+    """Return whether a canonical BGR image contains a usable lane fragment."""
+    white, yellow = canonical_masks(image)
+    lane = white | yellow
+    pixel_count = int(np.count_nonzero(lane))
+    occupied_rows = int(np.count_nonzero(np.any(lane, axis=1)))
+    return pixel_count >= max(1, int(min_lane_pixels)) and occupied_rows >= max(
+        1, int(min_lane_rows)
+    )
+
+
+def _line_component_masks(mask: np.ndarray) -> list[np.ndarray]:
+    """Return substantial line components ordered from left to right."""
+    import cv2
+
+    count, labels, stats, centroids = cv2.connectedComponentsWithStats(
+        mask.astype(np.uint8), connectivity=8
+    )
+    components: list[tuple[float, np.ndarray]] = []
+    for label in range(1, count):
+        area = int(stats[label, cv2.CC_STAT_AREA])
+        height = int(stats[label, cv2.CC_STAT_HEIGHT])
+        if area < 12 or height < 6:
+            continue
+        components.append((float(centroids[label, 0]), labels == label))
+    components.sort(key=lambda item: item[0])
+    return [component for _, component in components]
+
+
+def apply_visibility_profile(
+    image: np.ndarray,
+    white_state: str,
+    keep_white_side: str,
+    yellow_visible: bool,
+    background_gray: int = BACKGROUND_GRAY,
+    prevent_blank: bool = True,
+) -> tuple[np.ndarray, bool]:
+    """Apply real-camera visibility loss without moving observed lane geometry."""
+    if white_state not in {"both", "one", "none"}:
+        raise ValueError("white_state must be both, one, or none")
+    if keep_white_side not in {"left", "right"}:
+        raise ValueError("keep_white_side must be left or right")
+
+    output = image.copy()
+    white, yellow = canonical_masks(output)
+    components = _line_component_masks(white)
+
+    if white_state == "none":
+        _paint_background(output, white, background_gray)
+    elif white_state == "one" and len(components) >= 2:
+        keep_index = 0 if keep_white_side == "left" else len(components) - 1
+        remove = np.zeros_like(white)
+        for index, component in enumerate(components):
+            if index != keep_index:
+                remove |= component
+        _paint_background(output, remove, background_gray)
+
+    if not yellow_visible:
+        _paint_background(output, yellow, background_gray)
+
+    forced_observation = False
+    if prevent_blank:
+        visible_white, visible_yellow = canonical_masks(output)
+        if not np.any(visible_white) and not np.any(visible_yellow):
+            if np.any(yellow):
+                output[yellow] = YELLOW_BGR
+                forced_observation = True
+            elif components:
+                keep_index = 0 if keep_white_side == "left" else len(components) - 1
+                output[components[keep_index]] = WHITE_BGR
+                forced_observation = True
+    return output, forced_observation
 
 
 def cv_channels(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -282,4 +360,105 @@ class CanonicalArtifactAugmenter:
         event.remaining_frames -= 1
         if event.remaining_frames <= 0:
             self.current_event = None
+        return output, event, started
+
+
+class CanonicalVisibilityAugmenter:
+    """Match real canonical lane visibility while retaining measured geometry.
+
+    White and yellow visibility are sampled as independent, temporally held
+    states. Unlike the legacy artifact augmenter, this class never translates
+    or bends a line. A source frame that already contains no lane observation
+    remains blank, but augmentation never removes the final observed class.
+    """
+
+    def __init__(
+        self,
+        seed: int,
+        white_probabilities: Sequence[float] = (0.462, 0.512, 0.026),
+        yellow_visible_probability: float = 0.571,
+        white_duration_frames: Sequence[int] = (3, 40),
+        yellow_duration_frames: Sequence[int] = (3, 30),
+        background_gray: int = BACKGROUND_GRAY,
+        prevent_blank: bool = True,
+    ) -> None:
+        if len(white_probabilities) != 3:
+            raise ValueError("white_probabilities must contain both, one, none")
+        if any(value < 0.0 for value in white_probabilities):
+            raise ValueError("white probabilities must be non-negative")
+        total = float(sum(white_probabilities))
+        if total <= 0.0:
+            raise ValueError("white probabilities must have a positive sum")
+        if not 0.0 <= yellow_visible_probability <= 1.0:
+            raise ValueError("yellow_visible_probability must be in [0, 1]")
+        if (
+            len(white_duration_frames) != 2
+            or len(yellow_duration_frames) != 2
+            or int(white_duration_frames[0]) <= 0
+            or int(white_duration_frames[1]) < int(white_duration_frames[0])
+            or int(yellow_duration_frames[0]) <= 0
+            or int(yellow_duration_frames[1]) < int(yellow_duration_frames[0])
+        ):
+            raise ValueError("invalid visibility duration range")
+
+        self.rng = random.Random(int(seed))
+        self.white_probabilities = tuple(float(value) / total for value in white_probabilities)
+        self.yellow_visible_probability = float(yellow_visible_probability)
+        self.white_duration_frames = tuple(int(value) for value in white_duration_frames)
+        self.yellow_duration_frames = tuple(int(value) for value in yellow_duration_frames)
+        self.background_gray = int(background_gray)
+        self.prevent_blank = bool(prevent_blank)
+        self.white_state = "both"
+        self.keep_white_side = "left"
+        self.yellow_visible = True
+        self.white_remaining = 0
+        self.yellow_remaining = 0
+        self.last_started_event: Optional[ArtifactEvent] = None
+
+    def _sample_white_state(self) -> None:
+        self.white_state = self.rng.choices(
+            ("both", "one", "none"),
+            weights=self.white_probabilities,
+            k=1,
+        )[0]
+        self.keep_white_side = self.rng.choice(("left", "right"))
+        low, high = self.white_duration_frames
+        self.white_remaining = self.rng.randint(low, high)
+
+    def _sample_yellow_state(self) -> None:
+        self.yellow_visible = self.rng.random() < self.yellow_visible_probability
+        low, high = self.yellow_duration_frames
+        self.yellow_remaining = self.rng.randint(low, high)
+
+    def process(self, image: np.ndarray) -> Tuple[np.ndarray, ArtifactEvent, bool]:
+        started = False
+        if self.white_remaining <= 0:
+            self._sample_white_state()
+            started = True
+        if self.yellow_remaining <= 0:
+            self._sample_yellow_state()
+            started = True
+
+        output, forced_observation = apply_visibility_profile(
+            image,
+            self.white_state,
+            self.keep_white_side,
+            self.yellow_visible,
+            self.background_gray,
+            self.prevent_blank,
+        )
+        event = ArtifactEvent(
+            "real_visibility",
+            min(self.white_remaining, self.yellow_remaining),
+            {
+                "white_state": self.white_state,
+                "keep_white_side": self.keep_white_side,
+                "yellow_visible": str(self.yellow_visible).lower(),
+                "forced_observation": str(forced_observation).lower(),
+            },
+        )
+        self.white_remaining -= 1
+        self.yellow_remaining -= 1
+        if started:
+            self.last_started_event = event
         return output, event, started

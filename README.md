@@ -7,6 +7,129 @@ Gazebo Sim에서 국민대학교 Xycar 자율주행 트랙을 최대한 비슷�
 시뮬레이션에서 학습한 BC 모델의 실시간 카메라+LiDAR 추론까지 포함되어 있으며,
 다음 목표는 **실차 shadow 및 저속 폐루프 검증**입니다.
 
+## 2026-07-15 실차 주행 결과와 20만 장 재학습 진행
+
+### 어제 인지 문제와 해결 과정
+
+2026-07-14 실차 rosbag을 처음 canonical BEV로 바꿨을 때 시뮬과 달리 한쪽
+흰선만 보이는 프레임이 많았고, 조명 반사·바닥 이음새·벽이 흰선이나 노란
+중앙선으로 들어왔다. 기존 tracker가 이전 프레임의 선을 계속 예측하면서 실제
+관측과 예측선의 위치도 벌어졌다. 특히 흰 경계 바깥에 있는 노란 후보가
+중앙선으로 채택되고, 차선이 물리적으로 끊긴 구간에서도 과거 선이 남는 문제가
+있었다.
+
+해결은 다음 순서로 진행했다.
+
+1. 실차와 Gazebo 입력을 동일한 `256x144`, 전방 `1.5m`, 좌우 `1.4m` canonical
+   BEV 계약으로 고정했다.
+2. 흰선·노란선의 색과 두께를 각각 고정하고, 카메라에 보인 선만 출력하는
+   observation-only 방식으로 바꿨다.
+3. 바닥 이음새와 가로 방향 반사를 제거하고, 가까운 흰 경계를 기준으로 물리적
+   좌우를 판정했다.
+4. 가장 신뢰도 높은 흰 경계 바깥에 놓인 노란 후보를 중앙선에서 제외했다.
+5. 임시 조립식 트랙과 본선 rosbag을 같은 최신 인지 코드로 다시 처리해 실제
+   프레임과 canonical 결과를 비교했다.
+
+이 수정은 `6f8596b`까지 반영됐다. 현재 본선과 임시트랙은 같은 인지 코드를
+사용하지만, 차선이 완전히 끊겨 회차하는 구간은 학습 기준에서 제외한다.
+
+### 실차 5만 장 모델 폐루프 결과
+
+기존 5만 장 canonical 모델은 실차에서 트랙 주행에 성공했다. 다만 모델 출력을
+그대로 쓸 때보다 조향 scale을 `130~150%`로 올렸을 때 더 안정적이었다. 세 주행
+백의 `/il/policy_debug`에서 실제 scale은 `115`, `130`, `150`으로 확인됐다.
+
+- 추론 시간 중앙값: 약 `61~66ms`
+- 영상-LiDAR timestamp 차 중앙값: 약 `24ms`
+- 유효 구간 실차 조향 `|angle|>=35` 비율: 약 `19.5%`
+- 기존 시뮬 5만 장의 `|angle|>=35` 비율: 약 `3.1%`
+
+따라서 `130~150%`는 당장 제거할 임의 보정이 아니라 현재 모델과 실차 사이의
+확인된 조향 scale 보정이다. 새 모델이 나오기 전 실차 기준값은 `140%`로 두고
+`-42~42` clamp를 유지한다.
+
+```bash
+ros2 launch il_data_tools real_canonical_policy_drive.launch.py \
+  max_steer_scale:=140.0 drive_enabled:=false
+```
+
+먼저 shadow로 부호와 포화를 확인한 뒤 저속 폐루프로 전환한다. 새 20만 장 모델은
+`100/130/140/150`을 다시 비교해 scale을 재확정한다. 새 모델에도 140%가 계속
+필요하면 카메라·인지 지연과 실차 조향 전달함수를 별도 보정한다.
+
+### 실차 기준 데이터
+
+시뮬 가시성 목표는 다음 자료를 최신 인지로 처리해 계산했다.
+
+- 본선트랙 rosbag 최신 canonical: 유효 `3,438`프레임
+- 임시트랙 `track_run_02`: 유효 `1,490`프레임
+- 5만 장 모델 실차 주행 백 3개: 유효 `829`프레임
+- 자동 제외: 0.6초 이상 완전 차선 소실, 정지·회차
+- 수동 제외: 임시트랙 도로 단절 `18.5~24.5초`, 회차 `45.5~50.5초`, 종료 이탈
+
+유효 프레임을 합친 목표는 흰선 `2개 46.2% / 1개 51.2% / 0개 2.5%`, 노란선
+관측 `57.1%`다. 설정은
+`xycar_ws/src/il_data_tools/config/real_reference_profile_20260715.json`에 저장된다.
+시뮬 augmentation은 선을 옮기거나 휘지 않고 관측된 class만 시간 연속적으로
+가린다. 본선 로스백은 배경을 복제하는 자료가 아니라 이 canonical 가시성 분포를
+정하는 실차 기준으로 사용한다. CAD 기반 트랙 형상과 차량 경로는 그대로 둔다.
+원본에 선이 있는데 인위적으로 완전 빈 입력을 만드는 것은 금지하며, 원본 인지
+자체가 완전히 빈 프레임도 recorder에서 저장하지 않는다.
+
+### 신규 10만 장과 총 20만 장 학습
+
+신규 데이터는 5천 장씩 20개 독립 Gazebo 세션으로 모은다. 복귀 자세는 좌우
+`8~22cm`, yaw `4~14도`, 24초 간격, 9초 복귀 구간으로 강화했다. 완전 이탈로
+`speed=0`이 되면 해당 순간과 직전 10초는 계속 폐기한다.
+
+기존 데이터 중 선을 인위적으로 이동·굽힌 3만 장은 오프라인 test MAE가
+`2.70 -> 3.38`로 나빠졌으므로 제외한다. 검증된 과거 clean canonical 5만 장은
+새 가시성 형식으로 seed가 다른 두 파생본을 만든다. 두 파생본은 원본
+`session_id`를 유지해 같은 주행이 train과 validation에 갈라지는 누수를 막는다.
+
+```text
+신규 실차 가시성 시뮬                 100,000장
+기존 clean 50k -> 가시성 변환 v1       49,949장
+기존 clean 50k -> 가시성 변환 v2       49,949장
+------------------------------------------------
+학습 전 전체                           199,898장
+```
+
+과거 clean 데이터에서 발견된 완전 빈 프레임 51장은 각 파생본에서 제외했다.
+불량 프레임을 채워 숫자만 20만 장으로 맞추지 않고 약 20만 장의 유효 데이터만
+사용한다.
+
+GUI 소규모 확인:
+
+```bash
+ros2 launch il_data_tools collect_randomized_sim_dataset.launch.py \
+  project_root:="$PWD" max_samples:=500 preset:=mixed seed:=2026071524 \
+  canonical_artifacts_enabled:=true canonical_artifact_mode:=real_visibility \
+  camera_front_topic:=/perception/canonical_road_image_augmented \
+  image_format:=png exclude_blank_canonical:=true show_gui:=true
+```
+
+확인 후 신규 10만 장 수집, 기존 변환 10만 장, 총 20만 장 학습과 평가를 한 번에
+실행한다.
+
+```bash
+PROFILE="$PWD/xycar_ws/src/il_data_tools/config/real_reference_profile_20260715.json"
+
+ros2 run il_data_tools run_canonical_pipeline \
+  --project-root "$PWD" \
+  --total-samples 100000 --batch-samples 5000 \
+  --seed 2026071524 \
+  --run-name drive_canonical_real_reference_200k_20260715 \
+  --real-reference-profile "$PROFILE" \
+  --include-run drive_canonical_50k_20260714 \
+  --existing-visibility-variants 2 \
+  --epochs 50 --batch-size 256 --num-workers 8 --device cuda
+```
+
+최종 모델은 세션 단위 train/validation/test 분할, 좌우 영상·LiDAR 동시 반전,
+복귀·큰 조향 weighted loss를 사용한다. 신규 10만 장 수집이 끝나기 전에는 기존
+배포 모델을 덮어쓰지 않는다.
+
 ## 2026-07-13 12:00 이후 작업과 현재 인수인계
 
 7월 13일 정오 이후 실차 동역학 반영, 실차 카메라 BEV 보정, 룰베이스 완성,
@@ -42,9 +165,9 @@ Codex가 바로 따라야 할 파일과 명령은
 
 조명·배경·카메라·LiDAR·동역학을 seed별로 바꾸고 차선 이탈 복구 데이터를
 자동 수집하려면 [`docs/domain_randomized_collection.md`](docs/domain_randomized_collection.md)를
-따릅니다. 최신 모델은 canonical BEV를 5천 장씩 6개 독립 세션에 저장한
-30,000장으로 학습했으며, 각 세션에 차선 이탈 후 복귀 데이터와 실차에서
-관측한 중앙선 위치 튐·흰 경계 휨·차선 소실을 포함합니다.
+따릅니다. 현재 저장소에 배포된 모델은 30,000장 모델이지만, 선 위치를 직접
+변형한 augmentation의 성능 저하가 확인되어 2026-07-15부터 위 20만 장 파이프라인으로
+교체 작업을 진행합니다. 새 평가가 끝날 때까지 기존 모델 파일은 유지합니다.
 
 ## 실차 Clone 후 Canonical BC 실행
 

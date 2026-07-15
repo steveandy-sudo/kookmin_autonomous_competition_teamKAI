@@ -211,19 +211,19 @@ class RecoveryScenarioManager(Node):
         self.declare_parameter("motor_topic", "/xycar_motor")
         self.declare_parameter("event_log_path", "/tmp/xycar_scenario_events.jsonl")
         self.declare_parameter("warmup_sec", 12.0)
-        self.declare_parameter("scenario_interval_sec", 30.0)
+        self.declare_parameter("scenario_interval_sec", 24.0)
         self.declare_parameter("settle_sec", 0.8)
-        self.declare_parameter("recovery_hold_sec", 8.0)
+        self.declare_parameter("recovery_hold_sec", 9.0)
         self.declare_parameter("stop_retry_hold_sec", 1.0)
         self.declare_parameter("retry_delay_sec", 1.0)
         self.declare_parameter("lane_offset_from_yellow_m", 0.05)
         self.declare_parameter(
             "lateral_offsets_m",
-            [-0.15, -0.10, -0.06, 0.06, 0.10, 0.15],
+            [-0.22, -0.17, -0.12, -0.08, 0.08, 0.12, 0.17, 0.22],
         )
         self.declare_parameter(
             "yaw_offsets_deg",
-            [-10.0, -7.0, -4.0, 4.0, 7.0, 10.0],
+            [-14.0, -10.0, -7.0, -4.0, 4.0, 7.0, 10.0, 14.0],
         )
 
     def _tick(self) -> None:

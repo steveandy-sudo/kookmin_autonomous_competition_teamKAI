@@ -5,7 +5,13 @@ import time
 import unittest
 from unittest import mock
 
-from il_data_tools.common_recorder_node import BadDataPreroll, rate_limit_allows
+import numpy as np
+
+from il_data_tools.common_recorder_node import (
+    BadDataPreroll,
+    canonical_lane_observation_present,
+    rate_limit_allows,
+)
 from il_data_tools.recorder_state import (
     DiskSpaceGuard,
     LabelLatch,
@@ -60,6 +66,17 @@ class ReliabilityTests(unittest.TestCase):
         self.assertFalse(rate_limit_allows(89_000_000, 0, 10.0))
         self.assertTrue(rate_limit_allows(1, None, 10.0))
         self.assertTrue(rate_limit_allows(1, 0, 0.0))
+
+    def test_canonical_blank_filter_requires_a_substantial_lane_fragment(self):
+        blank = np.full((90, 160, 3), 36, dtype=np.uint8)
+        speck = blank.copy()
+        speck[10:12, 20:23] = (255, 255, 255)
+        observed = blank.copy()
+        observed[20:40, 78:81] = (0, 220, 255)
+
+        self.assertFalse(canonical_lane_observation_present(blank))
+        self.assertFalse(canonical_lane_observation_present(speck))
+        self.assertTrue(canonical_lane_observation_present(observed))
 
     def test_label_is_latched_until_changed(self):
         latch = LabelLatch("general_drive")

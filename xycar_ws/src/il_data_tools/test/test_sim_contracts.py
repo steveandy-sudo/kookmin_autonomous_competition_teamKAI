@@ -117,6 +117,8 @@ class SimulationContractTests(unittest.TestCase):
 
         self.assertIn("il_canonical_artifact_augmenter", launch_source)
         self.assertIn("/perception/canonical_road_image_augmented", collector_source)
+        self.assertIn('"exclude_blank_canonical"', launch_source)
+        self.assertIn('"exclude_blank_canonical:=true"', collector_source)
         self.assertIn('command.append("--canonical-artifacts")', pipeline_source)
 
     def test_canonical_pipeline_has_quality_gates_before_poweroff(self):

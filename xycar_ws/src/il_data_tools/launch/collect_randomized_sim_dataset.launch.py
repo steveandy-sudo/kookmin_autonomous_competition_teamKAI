@@ -63,6 +63,7 @@ def _prepare_environment(context):
     ).lower() in {"1", "true", "yes", "on"}
     result["canonical_artifacts"] = {
         "enabled": artifact_enabled,
+        "mode": LaunchConfiguration("canonical_artifact_mode").perform(context),
         "event_log": str(artifact_event_log),
         "event_start_probability": float(
             LaunchConfiguration("artifact_event_start_probability").perform(context)
@@ -79,6 +80,23 @@ def _prepare_environment(context):
             float(LaunchConfiguration("artifact_white_bend_min_px").perform(context)),
             float(LaunchConfiguration("artifact_white_bend_max_px").perform(context)),
         ],
+        "visibility_target": {
+            "white_both_probability": float(
+                LaunchConfiguration("visibility_white_both_probability").perform(context)
+            ),
+            "white_one_probability": float(
+                LaunchConfiguration("visibility_white_one_probability").perform(context)
+            ),
+            "white_none_probability": float(
+                LaunchConfiguration("visibility_white_none_probability").perform(context)
+            ),
+            "yellow_visible_probability": float(
+                LaunchConfiguration("visibility_yellow_probability").perform(context)
+            ),
+            "prevent_blank": LaunchConfiguration(
+                "visibility_prevent_blank"
+            ).perform(context).lower() in {"1", "true", "yes", "on"},
+        },
     }
     manifest.write_text(
         json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
@@ -179,6 +197,11 @@ def generate_launch_description():
                 "exclude_bad_data": True,
                 "exclude_idle": True,
                 "exclude_zero_speed": True,
+                "exclude_blank_canonical": ParameterValue(
+                    LaunchConfiguration("exclude_blank_canonical"), value_type=bool
+                ),
+                "canonical_min_lane_pixels": 15,
+                "canonical_min_lane_rows": 6,
                 "bad_data_preroll_sec": 10.0,
                 "max_samples": ParameterValue(max_samples, value_type=int),
                 "exit_on_limit_reached": True,
@@ -234,12 +257,22 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("max_save_rate_hz", default_value="10.0"),
             DeclareLaunchArgument(
+                "exclude_blank_canonical",
+                default_value="false",
+                description="Skip canonical frames that contain no usable lane pixels.",
+            ),
+            DeclareLaunchArgument(
                 "canonical_artifacts_enabled",
                 default_value="false",
                 description=(
                     "Inject short real-camera-like canonical lane artifacts into "
                     "the recorder input while the expert uses the clean stream."
                 ),
+            ),
+            DeclareLaunchArgument(
+                "canonical_artifact_mode",
+                default_value="real_visibility",
+                description="real_visibility preserves geometry; legacy bends or moves lines.",
             ),
             DeclareLaunchArgument(
                 "canonical_artifact_input_topic",
@@ -259,6 +292,23 @@ def generate_launch_description():
             DeclareLaunchArgument("artifact_center_jump_max_px", default_value="22.0"),
             DeclareLaunchArgument("artifact_white_bend_min_px", default_value="18.0"),
             DeclareLaunchArgument("artifact_white_bend_max_px", default_value="58.0"),
+            DeclareLaunchArgument(
+                "visibility_white_both_probability", default_value="0.462"
+            ),
+            DeclareLaunchArgument(
+                "visibility_white_one_probability", default_value="0.512"
+            ),
+            DeclareLaunchArgument(
+                "visibility_white_none_probability", default_value="0.026"
+            ),
+            DeclareLaunchArgument(
+                "visibility_yellow_probability", default_value="0.571"
+            ),
+            DeclareLaunchArgument("visibility_white_min_frames", default_value="3"),
+            DeclareLaunchArgument("visibility_white_max_frames", default_value="40"),
+            DeclareLaunchArgument("visibility_yellow_min_frames", default_value="3"),
+            DeclareLaunchArgument("visibility_yellow_max_frames", default_value="30"),
+            DeclareLaunchArgument("visibility_prevent_blank", default_value="true"),
             DeclareLaunchArgument("seed", default_value="2026"),
             DeclareLaunchArgument(
                 "preset",
@@ -274,10 +324,10 @@ def generate_launch_description():
             DeclareLaunchArgument("generated_bridge_config", default_value=""),
             DeclareLaunchArgument("run_manifest_path", default_value=""),
             DeclareLaunchArgument("scenario_event_log", default_value=""),
-            DeclareLaunchArgument("scenario_interval_sec", default_value="30.0"),
+            DeclareLaunchArgument("scenario_interval_sec", default_value="24.0"),
             DeclareLaunchArgument("scenario_warmup_sec", default_value="12.0"),
             DeclareLaunchArgument("scenario_settle_sec", default_value="0.8"),
-            DeclareLaunchArgument("recovery_hold_sec", default_value="8.0"),
+            DeclareLaunchArgument("recovery_hold_sec", default_value="9.0"),
             DeclareLaunchArgument("stop_retry_hold_sec", default_value="1.0"),
             DeclareLaunchArgument("retry_delay_sec", default_value="1.0"),
             DeclareLaunchArgument(
@@ -314,6 +364,7 @@ def generate_launch_description():
                     {
                         "use_sim_time": True,
                         "seed": ParameterValue(seed, value_type=int),
+                        "mode": LaunchConfiguration("canonical_artifact_mode"),
                         "input_topic": LaunchConfiguration(
                             "canonical_artifact_input_topic"
                         ),
@@ -348,6 +399,42 @@ def generate_launch_description():
                         "white_bend_max_px": ParameterValue(
                             LaunchConfiguration("artifact_white_bend_max_px"),
                             value_type=float,
+                        ),
+                        "white_both_probability": ParameterValue(
+                            LaunchConfiguration("visibility_white_both_probability"),
+                            value_type=float,
+                        ),
+                        "white_one_probability": ParameterValue(
+                            LaunchConfiguration("visibility_white_one_probability"),
+                            value_type=float,
+                        ),
+                        "white_none_probability": ParameterValue(
+                            LaunchConfiguration("visibility_white_none_probability"),
+                            value_type=float,
+                        ),
+                        "yellow_visible_probability": ParameterValue(
+                            LaunchConfiguration("visibility_yellow_probability"),
+                            value_type=float,
+                        ),
+                        "white_min_duration_frames": ParameterValue(
+                            LaunchConfiguration("visibility_white_min_frames"),
+                            value_type=int,
+                        ),
+                        "white_max_duration_frames": ParameterValue(
+                            LaunchConfiguration("visibility_white_max_frames"),
+                            value_type=int,
+                        ),
+                        "yellow_min_duration_frames": ParameterValue(
+                            LaunchConfiguration("visibility_yellow_min_frames"),
+                            value_type=int,
+                        ),
+                        "yellow_max_duration_frames": ParameterValue(
+                            LaunchConfiguration("visibility_yellow_max_frames"),
+                            value_type=int,
+                        ),
+                        "prevent_blank": ParameterValue(
+                            LaunchConfiguration("visibility_prevent_blank"),
+                            value_type=bool,
                         ),
                     }
                 ],

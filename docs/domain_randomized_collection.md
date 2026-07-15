@@ -23,14 +23,15 @@
 시나리오 관리자는 트랙 전체의 직선·좌우 곡선·S자에서 다음 오차를
 무작위로 만듭니다.
 
-- 기준 경로 좌우 `6, 10, 15cm`
-- 기준 진행 방향 대비 `4, 7, 10도`
-- 기본 30초 간격
+- 기준 경로 좌우 `8, 12, 17, 22cm`
+- 기준 진행 방향 대비 `4, 7, 10, 14도`
+- 기본 24초 간격
 - 순간이동 직후 기본 0.8초: `bad_data`로 라벨링하여 저장 제외
-- 이후 기본 8초: `recovery`
+- 이후 기본 9초: `recovery`
 - 나머지 정상 주행: `general_drive`
 - 완전 이탈로 룰베이스 속도 명령이 0이 되면 해당 정지 프레임과 직전 10초를
   지연 버퍼에서 폐기
+- canonical 흰선·노란선이 모두 없는 프레임은 저장 전에 폐기
 - 정지가 1초 지속되면 1초 뒤 새 복구 위치로 재배치
 
 복구 조향 라벨은 현재 카메라 룰베이스가 생성합니다. 첫 GUI 점검에서 흰색
@@ -74,9 +75,9 @@ ros2 launch il_data_tools collect_randomized_sim_dataset.launch.py \
 
 500장에 도달하면 recorder, 룰베이스, bridge와 Gazebo가 함께 종료됩니다.
 
-## 2. 새 데이터 5만 장 자동 수집
+## 2. 새 데이터 10만 장 자동 수집
 
-기본값은 5천 장씩 10개 독립 세션입니다. 첫 세션만 GUI로 보고 나머지는
+기본값은 5천 장씩 20개 독립 세션입니다. 첫 세션만 GUI로 보고 나머지는
 headless로 실행합니다.
 
 ```bash
@@ -84,11 +85,17 @@ cd ~/xycar_kookmin_gazebo_track
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 
+PROFILE="$PWD/xycar_ws/src/il_data_tools/config/real_reference_profile_20260715.json"
+
 ros2 run il_data_tools collect_randomized_batches \
   --project-root "$PWD" \
-  --total-samples 50000 \
+  --output-root "$PWD/datasets/il_canonical" \
+  --total-samples 100000 \
   --batch-samples 5000 \
-  --seed 2026 \
+  --seed 2026071524 \
+  --canonical-input --canonical-artifacts \
+  --canonical-artifact-mode real_visibility \
+  --real-reference-profile "$PROFILE" \
   --show-gui-first
 ```
 
@@ -100,11 +107,17 @@ GUI 확인이 이미 끝났다면 `--show-gui-first`를 생략하면 전 세션�
 모두 성공해야 전원을 끕니다.
 
 ```bash
-ros2 run il_data_tools run_canonical_50k_pipeline \
+PROFILE="$PWD/xycar_ws/src/il_data_tools/config/real_reference_profile_20260715.json"
+
+ros2 run il_data_tools run_canonical_pipeline \
   --project-root "$PWD" \
-  --total-samples 50000 \
+  --total-samples 100000 \
   --batch-samples 5000 \
-  --seed 20260714 \
+  --seed 2026071524 \
+  --run-name drive_canonical_real_reference_200k_20260715 \
+  --real-reference-profile "$PROFILE" \
+  --include-run drive_canonical_50k_20260714 \
+  --existing-visibility-variants 2 \
   --epochs 50 \
   --batch-size 256 \
   --num-workers 8 \
@@ -115,8 +128,16 @@ ros2 run il_data_tools run_canonical_50k_pipeline \
   --poweroff-on-success
 ```
 
-이 명령은 `/perception/canonical_road_image`를 PNG로 저장하며, raw RGB 세션과
-수정 전 모서리 artifact가 포함된 `sim_canonical_drive_01`은 학습에 넣지 않습니다.
+이 명령은 `/perception/canonical_road_image_augmented`를 PNG로 저장한다. 실제
+본선·임시트랙에서 측정한 흰선 2개/1개/0개와 노란선 관측 비율을 시간 연속
+가림으로 재현하지만 선의 위치와 곡률은 바꾸지 않는다. 과거 clean canonical
+5만 장은 같은 형식의 두 파생본으로 변환하므로 신규 10만 장과 합쳐 총 20만
+장에 가까운 199,898장이 된다. 과거 데이터의 완전 빈 프레임 51장은 각 파생본에서
+제외한다. raw RGB 세션과 선을 직접 옮기거나 굽힌 legacy 3만 장은 넣지 않는다.
+본선 로스백에서 0.6초 이상 차선이 완전히 사라진 구간과 임시트랙의 물리적 도로
+단절·회차 구간은 profile 계산에서 제외했으며, 시뮬 recorder도 완전 빈 canonical
+프레임을 저장하지 않는다. 200장 스모크 검증에서는 빈 후보 12장을 제외한 뒤
+저장된 빈 프레임이 0장임을 확인했다.
 
 생성 예시:
 
@@ -168,7 +189,7 @@ for session in sorted(root.glob('sim_*')):
 PY
 ```
 
-기본 설정에서는 세션 전체의 약 25~30%가 `recovery`가 되는 것을 목표로
+기본 설정에서는 세션 전체의 약 35~40%가 `recovery`가 되는 것을 목표로
 합니다. 실제 비율은 카메라 저장률과 scenario 시점에 따라 달라집니다.
 
 ## 재학습
@@ -185,8 +206,9 @@ ros2 run il_data_tools train_from_raw_dataset.py \
   --batch-size 256 \
   --num-workers 8 \
   --device cuda \
-  --balance-steering \
-  --recovery-oversample-factor 2 \
+  --canonical-input \
+  --enable-flip \
+  --recovery-oversample-factor 1 \
   --mark-final
 ```
 
