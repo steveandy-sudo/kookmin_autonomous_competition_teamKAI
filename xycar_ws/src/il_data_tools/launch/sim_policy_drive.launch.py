@@ -60,11 +60,9 @@ def generate_launch_description():
                 "model_path",
                 default_value=PathJoinSubstitution(
                     [
-                        project_root,
+                        FindPackageShare("il_data_tools"),
                         "models",
-                        "il_policies",
-                        "drive_resnet18_lidar_all_20260713",
-                        "drive_policy_scripted.pt",
+                        "drive_canonical_policy_scripted.pt",
                     ]
                 ),
                 description="TorchScript camera and LiDAR steering policy.",
@@ -91,7 +89,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "image_topic",
-                default_value="/image_raw",
+                default_value="/perception/canonical_road_image",
                 description="Raw or canonical image topic expected by the model.",
             ),
             SetEnvironmentVariable(

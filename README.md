@@ -15,7 +15,14 @@ raw RGB 모방학습과 실차 이식 시험을 진행했습니다. 실차에서
 판단했고, 현재는 시뮬과 실차를 동일한 `256x144` canonical BEV 차선 영상으로
 바꾸는 파이프라인을 사용합니다.
 
-작업 시간순 기록, 발생한 문제와 수정 근거, 5만 장 수집·학습 상태, 실차 PC의
+현재 canonical 물리 계약은 좌우 `1.4 m`, 전방 `1.5 m`입니다. 1.0 m에서
+중앙 점선이 한 개만 보이고 2.0 m에서 3~4개가 보이던 문제를 절충해, 실차와
+시뮬 모두 한 화면에 중앙 점선 2~3개가 들어오도록 보정했습니다. 검증값은
+[`docs/2026-07-15_1p5m_canonical_validation.md`](docs/2026-07-15_1p5m_canonical_validation.md)에 있습니다.
+현재 canonical 모델 입력은 관측 전용입니다. 현재 카메라 프레임에 보인 선만
+출력하며, 사라진 흰 경계를 합성하거나 이전 프레임의 차선을 유지하지 않습니다.
+
+작업 시간순 기록, 발생한 문제와 수정 근거, canonical 수집·학습 상태, 실차 PC의
 Codex가 바로 따라야 할 파일과 명령은
 [`docs/2026-07-13_canonical_sim_to_real_handoff.md`](docs/2026-07-13_canonical_sim_to_real_handoff.md)에
 모두 정리했습니다. 학습이 통과하면 최신 모델 해시와 실행 명령은
@@ -30,30 +37,53 @@ Codex가 바로 따라야 할 파일과 명령은
 
 조명·배경·카메라·LiDAR·동역학을 seed별로 바꾸고 차선 이탈 복구 데이터를
 자동 수집하려면 [`docs/domain_randomized_collection.md`](docs/domain_randomized_collection.md)를
-따릅니다. 현재 5만 장 파이프라인은 canonical BEV를 5천 장씩 10개 독립
-세션에 저장하고, 각 세션에 차선 이탈 후 복귀 데이터를 포함하며 기존 데이터는
-유지합니다.
+따릅니다. 최신 모델은 canonical BEV를 5천 장씩 6개 독립 세션에 저장한
+30,000장으로 학습했으며, 각 세션에 차선 이탈 후 복귀 데이터와 실차에서
+관측한 중앙선 위치 튐·흰 경계 휨·차선 소실을 포함합니다.
 
-## 실차 Clone 후 바로 실행
+## 실차 Clone 후 Canonical BC 실행
 
-아래 절차는 Ubuntu 22.04, ROS 2 Humble, `ROS_DOMAIN_ID=7`인 Xycar
-실차 PC를 기준으로 합니다. 저장소에는 룰베이스 패키지와 학습 완료된
-TorchScript BC 모델이 함께 들어 있습니다.
+이 절차는 Ubuntu 22.04, ROS 2 Humble, `ROS_DOMAIN_ID=7`인 실차 Xycar를
+기준으로 합니다. **Gazebo는 실차 PC에서 실행하지 않습니다.** 실차에서는
+카메라를 canonical BEV로 바꾸는 `xycar_perception`과 TorchScript 정책을
+실행하는 `il_data_tools`만 사용합니다.
 
-### 1. Clone 및 빌드
+최신 모델 상태:
+
+```text
+파일: drive_canonical_policy_scripted.pt
+SHA-256: dd8cb6c2ccfca5a438b08e90f930f50527a88b5169cae9e8239dd129f78dbb21
+학습: canonical 30,000장 (정상 21,547 / 복귀 8,453)
+실차형 canonical 오류 이벤트: 1,041회
+정지 샘플: 0장, 정지 직전 불량 샘플 폐기: 433장
+독립 테스트: 5,000장
+전체 조향 MAE: 3.379, 정상 MAE: 3.031, 복귀 MAE: 4.284
+```
+
+오프라인 평가와 시뮬 초기 구동은 통과했지만 아직 실차 완주를 보장하는 모델은
+아닙니다. 실차에서는 아래 shadow 검증을 생략하지 않습니다.
+
+### 1. Clone, 업데이트 및 빌드
+
+처음 받는 실차 PC:
 
 ```bash
 cd ~
 git clone --branch simulation \
-  git@github.com:steveandy-sudo/kookmin_autonomous_competition_teamKAI.git \
+  https://github.com/steveandy-sudo/kookmin_autonomous_competition_teamKAI.git \
   kookmin_sim_to_real
 cd ~/kookmin_sim_to_real
 
+export ROS_DOMAIN_ID=7
 source /opt/ros/humble/setup.bash
+
 sudo apt update
 sudo apt install -y python3-pip python3-opencv python3-numpy \
-  ros-humble-cv-bridge ros-humble-vision-msgs
-python3 -m pip install --user torch torchvision
+  ros-humble-cv-bridge ros-humble-vision-msgs \
+  ros-humble-rqt-image-view
+
+python3 -c "import torch; print(torch.__version__)" || \
+  python3 -m pip install --user torch torchvision
 
 rosdep install --from-paths \
   xycar_ws/src/kaiev26_msgs \
@@ -66,104 +96,221 @@ colcon build --packages-select \
   kaiev26_msgs xycar_perception xycar_rule_drive il_data_tools \
   --symlink-install
 source install/setup.bash
-export ROS_DOMAIN_ID=7
-
-MODEL="$(ros2 pkg prefix il_data_tools)/share/il_data_tools/models/drive_policy_scripted.pt"
-sha256sum "$MODEL"
 ```
 
-새 터미널마다 다음 환경을 다시 적용합니다.
+이미 clone되어 있다면 임의 로컬 수정을 먼저 확인하고 fast-forward로 받습니다.
 
 ```bash
 cd ~/kookmin_sim_to_real
+git status -sb
+git switch simulation
+git pull --ff-only origin simulation
+
 source /opt/ros/humble/setup.bash
+colcon build --packages-select \
+  kaiev26_msgs xycar_perception xycar_rule_drive il_data_tools \
+  --symlink-install
 source install/setup.bash
 export ROS_DOMAIN_ID=7
 ```
 
-### 2. 실차 장치 확인
-
-차량의 기존 카메라, LiDAR, ROS1 모터 컨테이너와 dynamic bridge를 먼저
-실행한 뒤 확인합니다.
+모델이 정확한지 반드시 확인합니다.
 
 ```bash
+MODEL="$(ros2 pkg prefix il_data_tools)/share/il_data_tools/models/drive_canonical_policy_scripted.pt"
+test -f "$MODEL"
+sha256sum "$MODEL"
+```
+
+출력 해시는 위의 `dd8cb6...dbb21`과 같아야 합니다. 새 터미널마다 다음 환경을
+다시 적용합니다.
+
+```bash
+cd ~/kookmin_sim_to_real
+export ROS_DOMAIN_ID=7
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+```
+
+### 2. 실차 토픽과 카메라 형식 판별
+
+차량의 기존 카메라, LiDAR, ROS1 VESC 컨테이너와 dynamic bridge를 평소 방식으로
+먼저 실행합니다. 그 뒤 실차 Codex는 다음 결과를 저장하고 확인합니다.
+
+```bash
+ros2 topic list -t | grep -E 'wide_camera|image_raw|compressed|scan|xycar_motor'
+ros2 topic info /wide_camera/rect/image_raw -v
+ros2 topic info /scan -v
+ros2 topic info /xycar_motor -v
 ros2 topic hz /wide_camera/rect/image_raw
 ros2 topic hz /scan
-ros2 topic info /xycar_motor -v
 ```
 
-현재 룰베이스 기본 계약은 `/wide_camera/rect/image_raw`의
-`sensor_msgs/msg/Image`, `/scan`의
-`sensor_msgs/msg/LaserScan`, `/xycar_motor`의
-`std_msgs/msg/Float32MultiArray [angle, speed]`입니다. `/xycar_motor`에는
-실차 모터 bridge subscriber가 있어야 하며 자율주행 publisher는 하나만
-존재해야 합니다.
+기본 계약은 다음과 같습니다.
 
-### 3. 룰베이스 실차 테스트
+```text
+/wide_camera/rect/image_raw  sensor_msgs/msg/Image, 권장 1280x1024 약 30Hz
+/scan                        sensor_msgs/msg/LaserScan, 약 10Hz
+/xycar_motor                 std_msgs/msg/Float32MultiArray [angle, speed]
+```
 
-먼저 모터를 움직이지 않는 shadow 모드로 실행합니다.
+카메라 입력별 launch 설정:
+
+| 실차 카메라 토픽 | 설정 |
+|---|---|
+| 이미 보정된 `sensor_msgs/Image` | `source_image_topic:=/wide_camera/rect/image_raw enable_rectify:=false use_compressed_image:=false` |
+| 보정 전 fisheye `sensor_msgs/Image` | 실제 토픽과 `enable_rectify:=true use_compressed_image:=false` |
+| `sensor_msgs/CompressedImage` | 실제 토픽과 `use_compressed_image:=true`; 보정 전이면 `enable_rectify:=true` |
+
+이미 rectified인 영상을 다시 보정하면 BEV가 심하게 휘므로
+`/wide_camera/rect/image_raw`에는 `enable_rectify:=false`를 유지합니다.
+
+### 3. Canonical 인지만 단독 검증
+
+모터를 발행하지 않는 perception만 먼저 실행합니다.
 
 ```bash
-ros2 launch xycar_rule_drive real_lane_drive.launch.py \
+ros2 launch xycar_perception real_canonical_perception.launch.py \
   image_topic:=/wide_camera/rect/image_raw \
+  enable_rectify:=false \
+  use_compressed_image:=false
+```
+
+다른 터미널에서 출력 주기와 화면을 확인합니다.
+
+```bash
+ros2 topic hz /perception/canonical_road_image
+ros2 topic echo --once /perception/canonical_road_image | \
+  grep -E 'height:|width:|encoding:'
+ros2 run rqt_image_view rqt_image_view /perception/canonical_road_image
+```
+
+RViz로 source, BEV, mask와 경로를 함께 보려면 다음처럼 표시 설정만 엽니다.
+
+```bash
+rviz2 -d "$(ros2 pkg prefix xycar_rule_drive)/share/xycar_rule_drive/rviz/real_lane_drive.rviz"
+```
+
+정상 canonical 계약:
+
+```text
+크기 256x144 bgr8
+범위 좌우 1.4m, 전방 1.5m
+배경 BGR (36,36,36)
+흰 경계 BGR (255,255,255), 5px
+노란 중앙선 BGR (0,220,255), 5px
+흰선 중심 간격 약 0.824m, 영상에서 약 151px
+30cm 중앙 점선 길이 약 29px
+```
+
+직선에서 선이 크게 휘거나 조명 반사가 흰선이 되거나 벽이 중앙선으로 분류되면
+모델을 실행하지 않습니다. 먼저
+`xycar_ws/src/xycar_perception/config/camera_perception_real.yaml`의 homography와
+HSV 임계값을 실차 영상에 맞추고, 수정 전후 rosbag과 canonical 화면을 남깁니다.
+
+### 4. 통합 Shadow 추론
+
+단독 perception을 `Ctrl+C`로 종료한 뒤 아래 통합 launch를 실행합니다. 이 launch는
+실차 canonical perception과 모델을 함께 띄우지만 기본값으로 `/xycar_motor`에는
+발행하지 않습니다.
+
+```bash
+MODEL="$(ros2 pkg prefix il_data_tools)/share/il_data_tools/models/drive_canonical_policy_scripted.pt"
+
+ros2 launch il_data_tools real_canonical_policy_drive.launch.py \
+  model_path:="$MODEL" \
+  source_image_topic:=/wide_camera/rect/image_raw \
+  enable_rectify:=false \
   use_compressed_image:=false \
-  drive_enabled:=false
-```
-
-```bash
-ros2 topic echo /xycar_motor_shadow
-rqt_image_view /perception/debug_image
-```
-
-조향 부호, 차선 검출과 정지 동작을 확인한 뒤 안전요원이 비상 정지를
-잡은 상태에서 실측 출발 하한인 속도 명령 3으로 처음 주행합니다.
-
-```bash
-ros2 launch xycar_rule_drive real_lane_drive.launch.py \
-  image_topic:=/wide_camera/rect/image_raw \
-  motor_topic:=/xycar_motor \
-  drive_enabled:=true \
-  speed_command:=3.0
-```
-
-### 4. 모방학습 BC 실차 테스트
-
-BC는 카메라와 LiDAR를 모두 사용합니다. 포함된 모델의 입력은 카메라
-`3x90x160`, LiDAR `2x360`이며, 출력은 조향 명령입니다. 속도는 안전을
-위해 실차 launch가 직선과 곡선 모두 출발 하한인 3.0으로 제한합니다.
-
-```bash
-ros2 launch il_data_tools real_policy_inference.launch.py \
-  image_topic:=/image_raw \
   scan_topic:=/scan \
-  device:=cpu \
-  drive_enabled:=false
+  drive_enabled:=false \
+  device:=cpu
 ```
 
+별도 터미널에서 확인합니다.
+
 ```bash
+ros2 topic hz /perception/canonical_road_image
+ros2 topic hz /il/policy_motor_shadow
 ros2 topic echo /il/policy_motor_shadow
 ros2 topic echo /il/policy_debug
+ros2 run rqt_image_view rqt_image_view /il/policy_input_image
 ```
 
-shadow 출력, 조향 부호, 카메라 또는 LiDAR 단절 시 0 속도 전환을 확인한
-뒤 처음 저속 주행을 시작합니다.
+`/il/policy_input_image`는 모델이 실제로 받은 `160x90` canonical 영상입니다.
+`/il/policy_debug` 배열은 다음 순서입니다.
+
+```text
+[0] normalized steering
+[1] raw Xycar angle command
+[2] temporal-filtered angle command
+[3] speed command
+[4] image-LiDAR timestamp offset (ms)
+[5] inference latency (ms)
+[6] inference count
+[7] missing synchronized scan count
+[8] source width
+[9] source height
+[10] normalized input mean
+```
+
+필수 shadow 통과 조건:
+
+1. `/il/policy_motor_shadow`가 약 8~10Hz 이상 지속적으로 나온다.
+2. timestamp offset은 기본 `50ms` 안이며 missing scan count가 계속 증가하지 않는다.
+3. 카메라나 LiDAR를 끊으면 0.5초 안에 `[0.0, 0.0]`이 나온다.
+4. 오른쪽 경로에서 오른쪽 바퀴 방향, 왼쪽 경로에서 왼쪽 바퀴 방향 명령이다.
+5. 조향은 `-42~42` 안이고 NaN이나 순간적인 포화가 반복되지 않는다.
+
+방향이 반대면 코드나 학습 데이터를 바꾸기 전에
+`steering_output_sign:=-1.0`으로 shadow를 다시 확인합니다. 동기화가 실패할 때만
+`sync_tolerance_sec:=0.08`처럼 조금 늘리고, 원인을 기록합니다.
+
+### 5. 실차 저속 주행
+
+다음을 모두 만족한 뒤에만 모터 출력을 켭니다.
+
+- 물리 비상 정지 담당자가 차량 옆에 있음
+- 바퀴를 띄운 상태의 조향 부호와 watchdog 정지 검증 완료
+- `/xycar_motor`의 자율주행 publisher가 현재 launch 하나뿐임
+- 룰베이스, 키보드, 기존 모방학습 노드가 모두 종료됨
+- `/xycar_motor`에 VESC bridge subscriber가 존재함
 
 ```bash
-ros2 launch il_data_tools real_policy_inference.launch.py \
-  image_topic:=/image_raw \
+ros2 topic info /xycar_motor -v
+
+MODEL="$(ros2 pkg prefix il_data_tools)/share/il_data_tools/models/drive_canonical_policy_scripted.pt"
+
+ros2 launch il_data_tools real_canonical_policy_drive.launch.py \
+  model_path:="$MODEL" \
+  source_image_topic:=/wide_camera/rect/image_raw \
+  enable_rectify:=false \
+  use_compressed_image:=false \
   scan_topic:=/scan \
   motor_topic:=/xycar_motor \
-  device:=cpu \
   drive_enabled:=true \
   speed_command:=3.0 \
-  min_speed_command:=3.0
+  max_steer_scale:=100.0 \
+  steering_output_sign:=1.0 \
+  steering_temporal_alpha:=0.55 \
+  sensor_timeout_sec:=0.50 \
+  device:=cpu
 ```
 
-룰베이스, BC, 키보드 조종 노드는 모두 같은 `/xycar_motor`를 사용하므로
-절대 동시에 실행하지 않습니다. 첫 실차 테스트는 바퀴를 띄운 정지 시험,
-넓은 공간의 직선 저속 시험, 곡선 시험 순서로 진행하며 항상 물리 비상
-정지 수단을 준비합니다. 상세 체크리스트는
-[`docs/real_bc_vehicle_runbook.md`](docs/real_bc_vehicle_runbook.md)를 봅니다.
+첫 시험 순서는 바퀴를 띄운 상태, 직선 2~3m, 완만한 단일 곡선, 전체 트랙입니다.
+모델은 조향만 예측하며 속도 감속, `-42~42` 제한과 sensor timeout 정지는 코드가
+담당합니다. 종료는 `Ctrl+C`이며 필요하면 즉시 정지 명령을 한 번 더 보냅니다.
+
+```bash
+ros2 topic pub --once /xycar_motor std_msgs/msg/Float32MultiArray \
+  "{data: [0.0, 0.0]}"
+```
+
+실차 Codex는 첫 시험 후 canonical 원본/모델 입력 화면, `/il/policy_debug`,
+`/il/policy_motor_shadow`, 실제 바퀴 방향과 지연을 함께 보고해야 합니다. 조향량이
+일관되게 클 때만 `max_steer_scale`을 줄이고, canonical 형상이나 모델 예측 자체가
+틀리면 gain으로 숨기지 말고 인지 보정 또는 실차 canonical 데이터 fine-tuning을
+진행합니다.
 
 ## 현재 상태
 
@@ -284,7 +431,7 @@ ros2 launch xycar_rule_drive lane_rule_driver.launch.py
 ros2 run xycar_rule_drive lane_rule_driver --ros-args -p speed_command:=0.0 -p min_speed_command:=0.0
 ```
 
-전체 수집 세션으로 학습한 카메라+LiDAR BC 모델을 시뮬에서 주행시키려면
+최신 canonical 카메라+LiDAR BC 모델을 시뮬에서 주행시키려면
 기존 Gazebo와 룰베이스를 모두 종료한 뒤 아래 한 명령을 실행합니다.
 
 ```bash
@@ -294,9 +441,14 @@ source install/setup.bash
 ros2 launch il_data_tools sim_policy_drive.launch.py
 ```
 
-이 launch는 Gazebo, 센서 bridge/RViz, BC 추론만 시작합니다. 기본 모델은
-`models/il_policies/drive_resnet18_lidar_all_20260713/drive_policy_scripted.pt`이고
-주행 속도는 룰베이스와 같은 직선 `4`, 곡선 최저 `3`입니다.
+이 launch는 Gazebo, 센서 bridge/RViz, canonical perception과 BC 추론만
+시작합니다. 기본 모델은 패키지의 `drive_canonical_policy_scripted.pt`이고
+입력 토픽은 `/perception/canonical_road_image`입니다. 룰베이스는 동시에
+실행하지 않습니다.
+
+2026-07-14 실차 rosbag의 조명 반사와 compressed fisheye 입력을 반영한
+canonical 보정 및 안전한 재생 절차는
+[`docs/2026-07-14_real_camera_canonical_tuning.md`](docs/2026-07-14_real_camera_canonical_tuning.md)에 정리되어 있습니다.
 
 수동 조종은 rule-based 주행 노드를 끄고 아래처럼 실행합니다. 같은 `/xycar_motor` 토픽을 쓰므로 `lane_rule_driver`와 동시에 실행하지 않습니다.
 

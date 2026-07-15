@@ -49,6 +49,59 @@ def generate_launch_description():
                 description="Subscribe with sensor_msgs/CompressedImage.",
             ),
             DeclareLaunchArgument(
+                "enable_rectify",
+                default_value="false",
+                description="Rectify an unrectified fisheye camera input.",
+            ),
+            DeclareLaunchArgument(
+                "src_tl_x_ratio",
+                default_value="0.442578",
+                description="Top-left source x ratio used by the BEV warp.",
+            ),
+            DeclareLaunchArgument(
+                "src_tr_x_ratio",
+                default_value="0.688281",
+                description="Top-right source x ratio used by the BEV warp.",
+            ),
+            DeclareLaunchArgument(
+                "src_bl_x_ratio",
+                default_value="0.190625",
+                description="Bottom-left source x ratio used by the BEV warp.",
+            ),
+            DeclareLaunchArgument(
+                "src_br_x_ratio",
+                default_value="0.919141",
+                description="Bottom-right source x ratio used by the BEV warp.",
+            ),
+            DeclareLaunchArgument(
+                "src_top_y_ratio",
+                default_value="0.480781",
+                description="Top source-row ratio used by the real-camera BEV warp.",
+            ),
+            DeclareLaunchArgument("src_bottom_y_ratio", default_value="0.614189"),
+            DeclareLaunchArgument("dst_left_ratio", default_value="0.205714"),
+            DeclareLaunchArgument("dst_right_ratio", default_value="0.794286"),
+            DeclareLaunchArgument("dst_top_y_ratio", default_value="0.0"),
+            DeclareLaunchArgument(
+                "dst_bottom_y_ratio", default_value="0.666666667"
+            ),
+            DeclareLaunchArgument("lateral_m_per_px", default_value="0.0021875"),
+            DeclareLaunchArgument(
+                "forward_m_per_px",
+                default_value="0.006818182",
+                description="Forward metres represented by one canonical BEV pixel.",
+            ),
+            DeclareLaunchArgument(
+                "canonical_forward_range_m",
+                default_value="1.5",
+                description="Forward distance represented by the canonical output.",
+            ),
+            DeclareLaunchArgument(
+                "canonical_top_ignore_m",
+                default_value="0.0",
+                description="Far-end strip ignored after canonical conversion.",
+            ),
+            DeclareLaunchArgument(
                 "motor_topic",
                 default_value="/xycar_motor",
                 description="Float32MultiArray [angle, speed] motor command topic.",
@@ -111,6 +164,66 @@ def generate_launch_description():
                         "use_compressed_image": ParameterValue(
                             LaunchConfiguration("use_compressed_image"),
                             value_type=bool,
+                        ),
+                        "enable_rectify": ParameterValue(
+                            LaunchConfiguration("enable_rectify"),
+                            value_type=bool,
+                        ),
+                        "src_tl_x_ratio": ParameterValue(
+                            LaunchConfiguration("src_tl_x_ratio"),
+                            value_type=float,
+                        ),
+                        "src_tr_x_ratio": ParameterValue(
+                            LaunchConfiguration("src_tr_x_ratio"),
+                            value_type=float,
+                        ),
+                        "src_bl_x_ratio": ParameterValue(
+                            LaunchConfiguration("src_bl_x_ratio"),
+                            value_type=float,
+                        ),
+                        "src_br_x_ratio": ParameterValue(
+                            LaunchConfiguration("src_br_x_ratio"),
+                            value_type=float,
+                        ),
+                        "src_top_y_ratio": ParameterValue(
+                            LaunchConfiguration("src_top_y_ratio"),
+                            value_type=float,
+                        ),
+                        "src_bottom_y_ratio": ParameterValue(
+                            LaunchConfiguration("src_bottom_y_ratio"),
+                            value_type=float,
+                        ),
+                        "dst_left_ratio": ParameterValue(
+                            LaunchConfiguration("dst_left_ratio"),
+                            value_type=float,
+                        ),
+                        "dst_right_ratio": ParameterValue(
+                            LaunchConfiguration("dst_right_ratio"),
+                            value_type=float,
+                        ),
+                        "dst_top_y_ratio": ParameterValue(
+                            LaunchConfiguration("dst_top_y_ratio"),
+                            value_type=float,
+                        ),
+                        "dst_bottom_y_ratio": ParameterValue(
+                            LaunchConfiguration("dst_bottom_y_ratio"),
+                            value_type=float,
+                        ),
+                        "lateral_m_per_px": ParameterValue(
+                            LaunchConfiguration("lateral_m_per_px"),
+                            value_type=float,
+                        ),
+                        "forward_m_per_px": ParameterValue(
+                            LaunchConfiguration("forward_m_per_px"),
+                            value_type=float,
+                        ),
+                        "canonical_forward_range_m": ParameterValue(
+                            LaunchConfiguration("canonical_forward_range_m"),
+                            value_type=float,
+                        ),
+                        "canonical_top_ignore_m": ParameterValue(
+                            LaunchConfiguration("canonical_top_ignore_m"),
+                            value_type=float,
                         ),
                     },
                 ],

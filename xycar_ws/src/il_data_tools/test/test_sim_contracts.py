@@ -62,8 +62,18 @@ class SimulationContractTests(unittest.TestCase):
         self.assertIn('default_value="true"', source)
         self.assertIn('default_value="4.0"', source)
         self.assertIn("policy_inference.launch.py", source)
-        self.assertIn("drive_resnet18_lidar_all_20260713", source)
+        self.assertIn("drive_canonical_policy_scripted.pt", source)
+        self.assertIn('/perception/canonical_road_image', source)
         self.assertNotIn("lane_rule_driver.launch.py", source)
+
+    def test_packaged_canonical_policy_is_the_30k_validated_model(self):
+        model = ROOT / "models" / "drive_canonical_policy_scripted.pt"
+        self.assertGreater(model.stat().st_size, 40_000_000)
+        digest = hashlib.sha256(model.read_bytes()).hexdigest()
+        self.assertEqual(
+            digest,
+            "dd8cb6c2ccfca5a438b08e90f930f50527a88b5169cae9e8239dd129f78dbb21",
+        )
 
     def test_randomized_collection_keeps_manifest_and_recovery_labels(self):
         source = (
@@ -93,6 +103,21 @@ class SimulationContractTests(unittest.TestCase):
         self.assertIn("image_format:=png", source)
         self.assertIn("def cleanup_gazebo_children()", source)
         self.assertIn("finally:\n            cleanup_gazebo_children()", source)
+
+    def test_real_artifacts_are_applied_only_to_recorded_canonical_input(self):
+        launch_source = (
+            ROOT / "launch" / "collect_randomized_sim_dataset.launch.py"
+        ).read_text(encoding="utf-8")
+        collector_source = (
+            ROOT / "il_data_tools" / "randomized_batch_collector.py"
+        ).read_text(encoding="utf-8")
+        pipeline_source = (
+            ROOT / "il_data_tools" / "canonical_pipeline.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("il_canonical_artifact_augmenter", launch_source)
+        self.assertIn("/perception/canonical_road_image_augmented", collector_source)
+        self.assertIn('command.append("--canonical-artifacts")', pipeline_source)
 
     def test_canonical_pipeline_has_quality_gates_before_poweroff(self):
         source = (ROOT / "il_data_tools" / "canonical_pipeline.py").read_text(

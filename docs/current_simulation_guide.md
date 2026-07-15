@@ -148,9 +148,10 @@ data[1]: speed command
 인지 설정은 `xycar_perception/config/camera_perception.yaml`에 있다.
 
 1. `/image_raw`의 `1280x1024` 광각 영상을 받는다.
-2. 실차 K/D 캘리브레이션과 `rect_balance=0.3`으로 fisheye 왜곡을 보정한다.
+2. Gazebo 입력은 이미 설정된 카메라 투영이므로 실차 K/D를 다시 적용하지 않는다.
 3. 도로가 있는 사다리꼴 영역을 homography로 `640x220` BEV로 펼친다.
-4. 차량/LiDAR가 보이는 BEV 아래쪽 `28 px`는 검출에서 제외한다.
+4. 원본 카메라 픽셀을 함께 warp한 유효 마스크로 보이지 않는 근거리와 모서리를
+   검출에서 제외한다.
 5. HSV 색 공간에서 흰색과 노란색 마스크를 각각 만든다.
 6. morphology open/close로 작은 점 노이즈를 없애고 끊어진 픽셀을 연결한다.
 7. 아래에서 위로 `6 px` 간격으로 가로줄을 검사한다.
@@ -161,9 +162,14 @@ data[1]: speed command
 
 BEV meter 변환 기준은 다음과 같다.
 
-- 좌우: `0.0022 m/px`
-- 전후: `0.010 m/px`
+- 좌우: `0.0021875 m/px`
+- 전후: `0.006818182 m/px`
+- canonical 범위: `256x144`, 좌우 `1.4 m`, 전방 `1.5 m`
 - 좌표계: `x`는 차량 앞쪽, `y`는 차량 왼쪽, 원점 frame은 `base_footprint`
+
+canonical 모델 입력은 현재 프레임 관측만 사용한다. 색이 바랜 노란 점선을
+현재 프레임의 좌우 경계 기하로 재분류하고 반사 후보를 제거하지만, 보이지 않는
+흰 선을 합성하거나 마지막 차선을 다음 프레임까지 유지하지는 않는다.
 
 인지 노드는 흰 실선은 `TYPE_WHSOL`, 노란 점선은 `TYPE_YEDOT`으로
 `/perception/road_segments`에 발행한다. 인지용 `/perception/centerline`은

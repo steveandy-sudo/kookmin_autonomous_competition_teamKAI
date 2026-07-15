@@ -32,6 +32,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-workers", type=int, default=8)
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="cuda")
     parser.add_argument("--show-gui-first", action="store_true")
+    parser.add_argument(
+        "--no-canonical-artifacts",
+        action="store_true",
+        help="Disable real-camera-like canonical artifact injection.",
+    )
     parser.add_argument("--max-test-mae-command", type=float, default=8.0)
     parser.add_argument("--max-recovery-mae-command", type=float, default=12.0)
     parser.add_argument("--publish-model", action="store_true")
@@ -65,18 +70,52 @@ def session_set(dataset_root: Path) -> set[Path]:
 
 
 def validate_sessions(
-    sessions: Sequence[Path], expected_samples: int
+    sessions: Sequence[Path],
+    expected_samples: int,
+    require_canonical_artifacts: bool = False,
 ) -> Dict[str, object]:
     label_counts: Counter[str] = Counter()
     session_rows: Dict[str, int] = {}
     missing_files: List[str] = []
     stopped_rows = 0
     discarded_bad_preroll = 0
+    artifact_event_count = 0
     for session in sessions:
         csv_path = session / "samples.csv"
         with csv_path.open(newline="", encoding="utf-8-sig") as handle:
             rows = list(csv.DictReader(handle))
         metadata = load_json(session / "metadata.json")
+        if require_canonical_artifacts:
+            artifact_manifest = metadata.get("run_manifest", {}).get(
+                "canonical_artifacts", {}
+            )
+            if not artifact_manifest.get("enabled", False):
+                raise RuntimeError(
+                    f"{session.name} did not enable canonical artifact injection"
+                )
+            if (
+                metadata.get("parameters", {}).get("camera_front_topic")
+                != "/perception/canonical_road_image_augmented"
+            ):
+                raise RuntimeError(
+                    f"{session.name} did not record the augmented canonical topic"
+                )
+            event_log = Path(str(artifact_manifest.get("event_log", "")))
+            if not event_log.is_file():
+                raise RuntimeError(
+                    f"{session.name} canonical artifact event log is missing: "
+                    f"{event_log}"
+                )
+            session_events = sum(
+                1
+                for line in event_log.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            )
+            if session_events <= 0:
+                raise RuntimeError(
+                    f"{session.name} contains no canonical artifact events"
+                )
+            artifact_event_count += session_events
         preroll_sec = float(
             metadata.get("parameters", {}).get("bad_data_preroll_sec", 0.0)
         )
@@ -129,6 +168,7 @@ def validate_sessions(
         "recovery_ratio": recovery_ratio,
         "stopped_rows": stopped_rows,
         "discarded_bad_data_preroll": discarded_bad_preroll,
+        "canonical_artifact_events": artifact_event_count,
     }
 
 
@@ -300,6 +340,8 @@ def main(argv=None) -> int:
             "--lane-offset-from-yellow-m",
             "0.05",
         ]
+        if not args.no_canonical_artifacts:
+            command.append("--canonical-artifacts")
         if args.show_gui_first:
             command.append("--show-gui-first")
         run(command, project_root)
@@ -310,7 +352,11 @@ def main(argv=None) -> int:
                 f"expected {expected_sessions} new sessions, found {len(sessions)}"
             )
 
-    collection = validate_sessions(sessions, args.total_samples)
+    collection = validate_sessions(
+        sessions,
+        args.total_samples,
+        require_canonical_artifacts=not args.no_canonical_artifacts,
+    )
     collection["sessions"] = [str(path) for path in sessions]
     collection["rejected_sessions"] = [str(path) for path in sorted(before)]
     write_json(run_dir / "collection_manifest.json", collection)

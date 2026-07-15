@@ -56,6 +56,8 @@ class ImageTransportTest(unittest.TestCase):
         node.bev_height = 40
         node.dst_left_ratio = 0.20
         node.dst_right_ratio = 0.80
+        node.dst_top_y_ratio = 0.0
+        node.dst_bottom_y_ratio = 1.0
         node.bev_border_gray = 70
         node.bev_valid_erode_px = 2
         node.M = None
@@ -69,7 +71,13 @@ class ImageTransportTest(unittest.TestCase):
         self.assertEqual(tuple(bev.shape), (40, 80, 3))
         self.assertGreaterEqual(int(bev.min()), 70)
         self.assertEqual(tuple(node.current_bev_valid_mask.shape), (40, 80))
-        self.assertEqual(int(node.current_bev_valid_mask[0, 0]), 0)
+        invalid = np.argwhere(node.current_bev_valid_mask == 0)
+        self.assertGreater(len(invalid), 0)
+        neutral_border = np.all(bev == 70, axis=2)
+        self.assertGreater(int(np.count_nonzero(neutral_border)), 0)
+        self.assertTrue(
+            np.all(node.current_bev_valid_mask[neutral_border] == 0)
+        )
 
 
 if __name__ == "__main__":

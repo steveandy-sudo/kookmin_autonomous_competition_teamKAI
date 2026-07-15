@@ -98,6 +98,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Store /perception/canonical_road_image as lossless PNG.",
     )
+    parser.add_argument(
+        "--canonical-artifacts",
+        action="store_true",
+        help=(
+            "Store a label-preserving canonical stream with short centerline "
+            "jumps, white-boundary bends, and line dropouts."
+        ),
+    )
     parser.add_argument("--max-save-rate-hz", type=float, default=10.0)
     parser.add_argument(
         "--lane-offset-from-yellow-m",
@@ -159,8 +167,15 @@ def main(argv=None) -> int:
         ]
         if args.canonical_input:
             command += [
-                "camera_front_topic:=/perception/canonical_road_image",
+                "camera_front_topic:="
+                + (
+                    "/perception/canonical_road_image_augmented"
+                    if args.canonical_artifacts
+                    else "/perception/canonical_road_image"
+                ),
                 "image_format:=png",
+                "canonical_artifacts_enabled:="
+                + ("true" if args.canonical_artifacts else "false"),
             ]
         print(
             f"\n[{index + 1}/{session_count}] preset={preset} seed={seed} "

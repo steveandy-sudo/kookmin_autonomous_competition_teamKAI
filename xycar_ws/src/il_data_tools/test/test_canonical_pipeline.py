@@ -82,6 +82,61 @@ class CanonicalPipelineTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "recovery data ratio"):
                 validate_sessions([session], 1)
 
+    def test_session_validation_requires_augmented_topic_and_event_log(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            session = root / "sim_canonical_artifacts_s1_01"
+            image_dir = session / "images" / "front"
+            scan_dir = session / "scan"
+            image_dir.mkdir(parents=True)
+            scan_dir.mkdir()
+            event_log = root / "events.jsonl"
+            event_log.write_text('{"kind":"center_jump"}\n', encoding="utf-8")
+            rows = []
+            for index in range(10):
+                image = image_dir / f"{index}.png"
+                scan = scan_dir / f"{index}.npz"
+                image.touch()
+                scan.touch()
+                rows.append(
+                    {
+                        "front_image_path": str(image.relative_to(session)),
+                        "scan_npz_path": str(scan.relative_to(session)),
+                        "mission_label": "recovery" if index < 2 else "general_drive",
+                        "motor_speed": "3.0",
+                    }
+                )
+            with (session / "samples.csv").open(
+                "w", newline="", encoding="utf-8"
+            ) as handle:
+                writer = csv.DictWriter(handle, fieldnames=rows[0].keys())
+                writer.writeheader()
+                writer.writerows(rows)
+            (session / "metadata.json").write_text(
+                json.dumps(
+                    {
+                        "parameters": {
+                            "bad_data_preroll_sec": 10.0,
+                            "camera_front_topic": (
+                                "/perception/canonical_road_image_augmented"
+                            ),
+                        },
+                        "run_manifest": {
+                            "canonical_artifacts": {
+                                "enabled": True,
+                                "event_log": str(event_log),
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = validate_sessions(
+                [session], 10, require_canonical_artifacts=True
+            )
+            self.assertEqual(report["canonical_artifact_events"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

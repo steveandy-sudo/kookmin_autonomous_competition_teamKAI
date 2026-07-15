@@ -143,6 +143,23 @@ class PolicyContractTests(unittest.TestCase):
         self.assertIn('"steering_output_sign"', source)
         self.assertIn('"max_steer_scale"', source)
         self.assertIn('"steering_temporal_alpha"', source)
+        self.assertIn('"sync_tolerance_sec"', source)
+        self.assertIn('"sensor_timeout_sec"', source)
+
+    def test_real_canonical_launch_exposes_camera_transport(self):
+        source = (
+            PACKAGE_ROOT / "launch" / "real_canonical_policy_drive.launch.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"enable_rectify"', source)
+        self.assertIn('"use_compressed_image"', source)
+        self.assertIn('"sync_tolerance_sec"', source)
+
+    def test_policy_republishes_stop_while_waiting_for_sensors(self):
+        source = (
+            PACKAGE_ROOT / "il_data_tools" / "policy_inference_node.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("self.last_stop_wall", source)
+        self.assertIn("now_wall - self.last_stop_wall >= 0.5", source)
 
     def test_offline_eval_supports_canonical_preprocessing(self):
         source = (SCRIPTS / "eval_policy.py").read_text(encoding="utf-8")

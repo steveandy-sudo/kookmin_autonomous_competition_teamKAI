@@ -115,6 +115,7 @@ class PolicyInferenceNode(Node):
 
         self.last_inference_wall = 0.0
         self.last_valid_wall = 0.0
+        self.last_stop_wall = 0.0
         self.last_angle = 0.0
         self.stop_sent = False
         self.inference_count = 0
@@ -268,12 +269,22 @@ class PolicyInferenceNode(Node):
             self.motor_pub.publish(msg)
 
     def _watchdog(self) -> None:
-        if self.stop_sent or self.last_valid_wall <= 0.0:
+        now_wall = time.monotonic()
+        if self.last_valid_wall <= 0.0:
+            if now_wall - self.last_stop_wall >= 0.5:
+                self.last_angle = 0.0
+                self._publish_command(0.0, 0.0)
+                self.last_stop_wall = now_wall
             return
-        if time.monotonic() - self.last_valid_wall <= self.timeout_sec:
+        if now_wall - self.last_valid_wall <= self.timeout_sec:
+            return
+        if self.stop_sent and now_wall - self.last_stop_wall < 0.5:
             return
         self.last_angle = 0.0
         self._publish_command(0.0, 0.0)
+        self.last_stop_wall = now_wall
+        if self.stop_sent:
+            return
         self.stop_sent = True
         self.get_logger().warn("policy sensor timeout: stop command published")
 

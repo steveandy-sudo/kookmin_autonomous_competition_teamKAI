@@ -109,6 +109,7 @@ class CanonicalRoadTest(unittest.TestCase):
             image,
             lateral_m_per_px=0.0022,
             forward_m_per_px=0.01,
+            forward_range_m=1.2,
             white_s_max=80,
             white_v_min=200,
             white_v_floor=95,
@@ -119,6 +120,7 @@ class CanonicalRoadTest(unittest.TestCase):
             image,
             lateral_m_per_px=0.0022,
             forward_m_per_px=0.01,
+            forward_range_m=1.2,
             white_s_max=80,
             white_v_min=200,
             white_v_floor=95,
@@ -133,8 +135,41 @@ class CanonicalRoadTest(unittest.TestCase):
             int(np.count_nonzero(unfiltered)) * 0.50,
         )
 
+    def test_geometry_filter_keeps_outer_boundaries_and_rejects_reflection(
+        self,
+    ):
+        image = np.full((144, 256, 3), 90, dtype=np.uint8)
+        cv2.line(image, (28, 0), (42, 143), (230, 230, 230), 5)
+        cv2.line(image, (225, 0), (210, 143), (230, 230, 230), 5)
+        cv2.line(image, (170, 0), (165, 143), (255, 255, 255), 3)
+
+        _, white, _ = make_canonical_road_image(
+            image,
+            lateral_m_per_px=1.4 / 256.0,
+            forward_m_per_px=1.5 / 144.0,
+            forward_range_m=1.5,
+            white_v_min=200,
+            white_relative_delta=4.0,
+            min_component_area_px=4,
+            geometry_filter_enabled=True,
+            white_min_line_span_px=12,
+            min_line_elongation=1.5,
+            min_line_verticality=0.3,
+            white_max_components_per_side=1,
+            max_line_fit_rmse_px=4.0,
+            bottom_ignore_m=0.0,
+        )
+
+        self.assertGreater(int(np.count_nonzero(white[:, :80])), 0)
+        self.assertGreater(int(np.count_nonzero(white[:, 190:])), 0)
+        self.assertEqual(int(np.count_nonzero(white[:, 145:185])), 0)
+
     def test_real_config_matches_measured_lane_pipeline(self):
-        config_path = Path(__file__).resolve().parents[1] / "config" / "camera_perception_real.yaml"
+        config_path = (
+            Path(__file__).resolve().parents[1]
+            / "config"
+            / "camera_perception_real.yaml"
+        )
         with config_path.open(encoding="utf-8") as config_file:
             config = yaml.safe_load(config_file)
 
@@ -144,13 +179,17 @@ class CanonicalRoadTest(unittest.TestCase):
         self.assertEqual(params["publish_rate_limit_hz"], 0.0)
         self.assertEqual(params["bev_width"], 640)
         self.assertEqual(params["bev_height"], 220)
-        self.assertAlmostEqual(params["src_tl_x_ratio"], 0.357)
-        self.assertAlmostEqual(params["src_tr_x_ratio"], 0.777)
-        self.assertAlmostEqual(params["src_bl_x_ratio"], 0.170)
-        self.assertAlmostEqual(params["src_br_x_ratio"], 0.965)
-        self.assertAlmostEqual(params["src_top_y_ratio"], 0.520)
-        self.assertAlmostEqual(params["src_bottom_y_ratio"], 0.625)
-        self.assertAlmostEqual(params["lateral_m_per_px"], 0.39 / 256.0)
+        self.assertAlmostEqual(params["src_tl_x_ratio"], 0.442578)
+        self.assertAlmostEqual(params["src_tr_x_ratio"], 0.688281)
+        self.assertAlmostEqual(params["src_bl_x_ratio"], 0.190625)
+        self.assertAlmostEqual(params["src_br_x_ratio"], 0.919141)
+        self.assertAlmostEqual(params["src_top_y_ratio"], 0.480781)
+        self.assertAlmostEqual(params["src_bottom_y_ratio"], 0.614189)
+        self.assertAlmostEqual(params["dst_top_y_ratio"], 0.0)
+        self.assertAlmostEqual(params["dst_bottom_y_ratio"], 2.0 / 3.0)
+        self.assertAlmostEqual(params["lateral_m_per_px"], 0.0021875)
+        self.assertAlmostEqual(params["forward_m_per_px"], 1.5 / 220.0)
+        self.assertAlmostEqual(params["canonical_forward_range_m"], 1.5)
         self.assertEqual(params["white_s_max"], 120)
         self.assertEqual(params["white_v_min"], 145)
         self.assertEqual(params["yellow_h_min"], 16)
@@ -162,8 +201,34 @@ class CanonicalRoadTest(unittest.TestCase):
         self.assertEqual(params["canonical_white_v_floor"], 95)
         self.assertEqual(params["canonical_white_relative_delta"], 20.0)
         self.assertEqual(params["canonical_min_component_area_px"], 12)
-        self.assertEqual(params["canonical_white_max_component_thickness_px"], 28.0)
-        self.assertEqual(params["canonical_yellow_max_component_thickness_px"], 24.0)
+        self.assertEqual(
+            params["canonical_white_max_component_thickness_px"], 28.0
+        )
+        self.assertEqual(
+            params["canonical_yellow_max_component_thickness_px"], 24.0
+        )
+        self.assertTrue(params["canonical_geometry_filter_enabled"])
+        self.assertEqual(params["canonical_white_max_components_per_side"], 3)
+        self.assertAlmostEqual(params["canonical_max_line_fit_rmse_px"], 4.0)
+        self.assertAlmostEqual(params["canonical_top_ignore_m"], 0.0)
+        self.assertTrue(params["canonical_tracking_enabled"])
+        self.assertFalse(params["canonical_width_prediction_enabled"])
+        self.assertEqual(params["canonical_tracking_confirmation_frames"], 1)
+        self.assertAlmostEqual(params["canonical_tracking_coast_sec"], 0.0)
+        self.assertAlmostEqual(params["canonical_tracking_search_sec"], 0.0)
+        self.assertAlmostEqual(
+            params["canonical_tracking_smoothing_alpha"], 1.0
+        )
+        self.assertEqual(
+            params["canonical_width_prediction_replacement_frames"], 1
+        )
+        self.assertAlmostEqual(
+            params["canonical_transverse_clutter_row_fraction"], 0.12
+        )
+        self.assertFalse(params["canonical_persistent_prediction_enabled"])
+        self.assertAlmostEqual(
+            params["canonical_expected_half_lane_width_m"], 0.412
+        )
 
     def test_sim_config_does_not_apply_real_fisheye_rectification(self):
         config_path = Path(__file__).resolve().parents[1] / "config" / "camera_perception.yaml"
@@ -174,6 +239,20 @@ class CanonicalRoadTest(unittest.TestCase):
         self.assertEqual(params["image_topic"], "/image_raw")
         self.assertFalse(params["enable_rectify"])
         self.assertEqual(params["publish_rate_limit_hz"], 0.0)
+        self.assertAlmostEqual(params["src_top_y_ratio"], 0.517754)
+        self.assertAlmostEqual(params["src_bottom_y_ratio"], 0.671241)
+        self.assertAlmostEqual(params["dst_bottom_y_ratio"], 2.0 / 3.0)
+        self.assertAlmostEqual(params["lateral_m_per_px"], 1.4 / 640.0)
+        self.assertAlmostEqual(params["forward_m_per_px"], 1.5 / 220.0)
+        self.assertAlmostEqual(params["canonical_forward_range_m"], 1.5)
+        self.assertTrue(params["canonical_tracking_enabled"])
+        self.assertFalse(params["canonical_width_prediction_enabled"])
+        self.assertFalse(params["canonical_persistent_prediction_enabled"])
+        self.assertAlmostEqual(params["canonical_tracking_coast_sec"], 0.0)
+        self.assertAlmostEqual(params["canonical_tracking_search_sec"], 0.0)
+        self.assertAlmostEqual(
+            params["canonical_tracking_smoothing_alpha"], 1.0
+        )
 
 
 if __name__ == "__main__":

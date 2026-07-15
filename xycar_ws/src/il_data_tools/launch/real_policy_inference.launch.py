@@ -12,6 +12,7 @@ def generate_launch_description():
     scan_topic = LaunchConfiguration("scan_topic")
     motor_topic = LaunchConfiguration("motor_topic")
     shadow_topic = LaunchConfiguration("shadow_topic")
+    debug_topic = LaunchConfiguration("debug_topic")
     debug_image_topic = LaunchConfiguration("debug_image_topic")
     drive_enabled = LaunchConfiguration("drive_enabled")
     speed_command = LaunchConfiguration("speed_command")
@@ -21,6 +22,11 @@ def generate_launch_description():
     angle_command_min = LaunchConfiguration("angle_command_min")
     angle_command_max = LaunchConfiguration("angle_command_max")
     steering_temporal_alpha = LaunchConfiguration("steering_temporal_alpha")
+    slow_down_angle_cmd = LaunchConfiguration("slow_down_angle_cmd")
+    max_abs_angle_for_drive = LaunchConfiguration("max_abs_angle_for_drive")
+    sync_tolerance_sec = LaunchConfiguration("sync_tolerance_sec")
+    sensor_timeout_sec = LaunchConfiguration("sensor_timeout_sec")
+    max_inference_rate_hz = LaunchConfiguration("max_inference_rate_hz")
     device = LaunchConfiguration("device")
 
     return LaunchDescription(
@@ -42,6 +48,10 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "shadow_topic",
                 default_value="/il/policy_motor_shadow",
+            ),
+            DeclareLaunchArgument(
+                "debug_topic",
+                default_value="/il/policy_debug",
             ),
             DeclareLaunchArgument(
                 "debug_image_topic",
@@ -81,6 +91,31 @@ def generate_launch_description():
                 description="New steering sample weight; higher values respond faster.",
             ),
             DeclareLaunchArgument(
+                "slow_down_angle_cmd",
+                default_value="18.0",
+                description="Begin reducing speed above this absolute steering command.",
+            ),
+            DeclareLaunchArgument(
+                "max_abs_angle_for_drive",
+                default_value="43.0",
+                description="Publish zero speed when steering reaches this magnitude.",
+            ),
+            DeclareLaunchArgument(
+                "sync_tolerance_sec",
+                default_value="0.05",
+                description="Maximum camera-to-LiDAR timestamp difference.",
+            ),
+            DeclareLaunchArgument(
+                "sensor_timeout_sec",
+                default_value="0.50",
+                description="Stop if no synchronized inference completes in this time.",
+            ),
+            DeclareLaunchArgument(
+                "max_inference_rate_hz",
+                default_value="15.0",
+                description="Maximum policy inference frequency.",
+            ),
+            DeclareLaunchArgument(
                 "device",
                 default_value="cpu",
                 description="Use CPU on the AMD real-car mini PC unless CUDA is available.",
@@ -99,6 +134,7 @@ def generate_launch_description():
                         "scan_topic": scan_topic,
                         "motor_topic": motor_topic,
                         "shadow_topic": shadow_topic,
+                        "debug_topic": debug_topic,
                         "debug_image_topic": debug_image_topic,
                         "drive_enabled": ParameterValue(
                             drive_enabled, value_type=bool
@@ -124,7 +160,21 @@ def generate_launch_description():
                         "steering_temporal_alpha": ParameterValue(
                             steering_temporal_alpha, value_type=float
                         ),
-                        "sensor_timeout_sec": 0.5,
+                        "slow_down_angle_cmd": ParameterValue(
+                            slow_down_angle_cmd, value_type=float
+                        ),
+                        "max_abs_angle_for_drive": ParameterValue(
+                            max_abs_angle_for_drive, value_type=float
+                        ),
+                        "sync_tolerance_sec": ParameterValue(
+                            sync_tolerance_sec, value_type=float
+                        ),
+                        "sensor_timeout_sec": ParameterValue(
+                            sensor_timeout_sec, value_type=float
+                        ),
+                        "max_inference_rate_hz": ParameterValue(
+                            max_inference_rate_hz, value_type=float
+                        ),
                     }
                 ],
             ),

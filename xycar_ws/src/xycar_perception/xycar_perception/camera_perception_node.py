@@ -21,6 +21,7 @@ from rclpy.qos import QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import CompressedImage, Image
 from visualization_msgs.msg import Marker, MarkerArray
 
+from xycar_perception.canonical_lane_tracker import CanonicalLaneTracker
 from xycar_perception.canonical_road import make_canonical_road_image
 
 
@@ -90,6 +91,9 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("centerline_topic", "/perception/centerline")
         self.declare_parameter("objects_topic", "/perception/objects")
         self.declare_parameter("traffic_lights_topic", "/perception/traffic_lights")
+        self.declare_parameter(
+            "rectified_image_topic", "/perception/rectified_camera_image"
+        )
         self.declare_parameter("debug_image_topic", "/perception/debug_image")
         self.declare_parameter("debug_markers_topic", "/perception/debug_markers")
         self.declare_parameter(
@@ -100,6 +104,10 @@ class CameraPerceptionNode(Node):
         )
         self.declare_parameter(
             "canonical_yellow_mask_topic", "/perception/canonical_yellow_mask"
+        )
+        self.declare_parameter(
+            "canonical_tracking_debug_topic",
+            "/perception/canonical_tracking_debug",
         )
         self.declare_parameter("base_frame_id", "base_footprint")
         self.declare_parameter("source_name", "xycar_camera_perception")
@@ -130,6 +138,8 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("bev_height", 220)
         self.declare_parameter("dst_left_ratio", 0.10)
         self.declare_parameter("dst_right_ratio", 0.90)
+        self.declare_parameter("dst_top_y_ratio", 0.0)
+        self.declare_parameter("dst_bottom_y_ratio", 1.0)
         self.declare_parameter("lateral_m_per_px", 0.0022)
         self.declare_parameter("forward_m_per_px", 0.010)
         self.declare_parameter("bev_x_offset_m", 0.0)
@@ -162,7 +172,7 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("canonical_width", 256)
         self.declare_parameter("canonical_height", 144)
         self.declare_parameter("canonical_lateral_range_m", 1.4)
-        self.declare_parameter("canonical_forward_range_m", 1.2)
+        self.declare_parameter("canonical_forward_range_m", 1.5)
         self.declare_parameter("canonical_background_gray", 36)
         self.declare_parameter("canonical_line_width_px", 5)
         self.declare_parameter("canonical_white_s_max", 120)
@@ -172,7 +182,49 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("canonical_min_component_area_px", 8)
         self.declare_parameter("canonical_white_max_component_thickness_px", 0.0)
         self.declare_parameter("canonical_yellow_max_component_thickness_px", 0.0)
+        self.declare_parameter("canonical_geometry_filter_enabled", False)
+        self.declare_parameter("canonical_white_min_line_span_px", 14)
+        self.declare_parameter("canonical_yellow_min_line_span_px", 7)
+        self.declare_parameter("canonical_min_line_elongation", 1.8)
+        self.declare_parameter("canonical_min_line_verticality", 0.30)
+        self.declare_parameter("canonical_white_max_components_per_side", 1)
+        self.declare_parameter("canonical_yellow_max_components", 5)
+        self.declare_parameter("canonical_white_clutter_component_limit", 5)
+        self.declare_parameter("canonical_white_max_mask_fraction", 0.0)
+        self.declare_parameter("canonical_yellow_max_mask_fraction", 0.0)
+        self.declare_parameter("canonical_max_line_fit_rmse_px", 0.0)
+        self.declare_parameter("canonical_top_ignore_m", 0.0)
         self.declare_parameter("canonical_bottom_ignore_m", 0.08)
+        self.declare_parameter("canonical_tracking_enabled", False)
+        self.declare_parameter(
+            "canonical_expected_half_lane_width_m", 0.412
+        )
+        self.declare_parameter("canonical_lane_width_tolerance_m", 0.18)
+        self.declare_parameter(
+            "canonical_min_white_yellow_offset_m", 0.18
+        )
+        self.declare_parameter("canonical_tracking_base_gate_m", 0.08)
+        self.declare_parameter("canonical_tracking_max_gate_m", 0.25)
+        self.declare_parameter("canonical_tracking_continuation_m", 0.38)
+        self.declare_parameter("canonical_tracking_curvature_gate_gain", 1.0)
+        self.declare_parameter(
+            "canonical_tracking_curvature_max_extra_m", 0.10
+        )
+        self.declare_parameter("canonical_tracking_confirmation_frames", 1)
+        self.declare_parameter("canonical_tracking_coast_sec", 0.0)
+        self.declare_parameter("canonical_tracking_search_sec", 0.0)
+        self.declare_parameter("canonical_tracking_smoothing_alpha", 1.0)
+        self.declare_parameter("canonical_width_prediction_enabled", False)
+        self.declare_parameter(
+            "canonical_width_prediction_replacement_frames", 1
+        )
+        self.declare_parameter(
+            "canonical_transverse_clutter_row_fraction", 0.0
+        )
+        self.declare_parameter("canonical_transverse_clutter_min_rows", 6)
+        self.declare_parameter(
+            "canonical_persistent_prediction_enabled", False
+        )
 
         self.bridge = CvBridge()
         self.use_compressed_image = bool(
@@ -208,6 +260,12 @@ class CameraPerceptionNode(Node):
         self.bev_height = int(self.get_parameter("bev_height").value)
         self.dst_left_ratio = float(self.get_parameter("dst_left_ratio").value)
         self.dst_right_ratio = float(self.get_parameter("dst_right_ratio").value)
+        self.dst_top_y_ratio = float(
+            self.get_parameter("dst_top_y_ratio").value
+        )
+        self.dst_bottom_y_ratio = float(
+            self.get_parameter("dst_bottom_y_ratio").value
+        )
         self.lateral_m_per_px = float(self.get_parameter("lateral_m_per_px").value)
         self.forward_m_per_px = float(self.get_parameter("forward_m_per_px").value)
         self.bev_x_offset_m = float(self.get_parameter("bev_x_offset_m").value)
@@ -290,8 +348,118 @@ class CameraPerceptionNode(Node):
         self.canonical_yellow_max_component_thickness_px = float(
             self.get_parameter("canonical_yellow_max_component_thickness_px").value
         )
+        self.canonical_geometry_filter_enabled = bool(
+            self.get_parameter("canonical_geometry_filter_enabled").value
+        )
+        self.canonical_white_min_line_span_px = int(
+            self.get_parameter("canonical_white_min_line_span_px").value
+        )
+        self.canonical_yellow_min_line_span_px = int(
+            self.get_parameter("canonical_yellow_min_line_span_px").value
+        )
+        self.canonical_min_line_elongation = float(
+            self.get_parameter("canonical_min_line_elongation").value
+        )
+        self.canonical_min_line_verticality = float(
+            self.get_parameter("canonical_min_line_verticality").value
+        )
+        self.canonical_white_max_components_per_side = int(
+            self.get_parameter("canonical_white_max_components_per_side").value
+        )
+        self.canonical_yellow_max_components = int(
+            self.get_parameter("canonical_yellow_max_components").value
+        )
+        self.canonical_white_clutter_component_limit = int(
+            self.get_parameter("canonical_white_clutter_component_limit").value
+        )
+        self.canonical_white_max_mask_fraction = float(
+            self.get_parameter("canonical_white_max_mask_fraction").value
+        )
+        self.canonical_yellow_max_mask_fraction = float(
+            self.get_parameter("canonical_yellow_max_mask_fraction").value
+        )
+        self.canonical_max_line_fit_rmse_px = float(
+            self.get_parameter("canonical_max_line_fit_rmse_px").value
+        )
+        self.canonical_top_ignore_m = float(
+            self.get_parameter("canonical_top_ignore_m").value
+        )
         self.canonical_bottom_ignore_m = float(
             self.get_parameter("canonical_bottom_ignore_m").value
+        )
+        self.canonical_tracking_enabled = bool(
+            self.get_parameter("canonical_tracking_enabled").value
+        )
+        self.canonical_expected_half_lane_width_m = float(
+            self.get_parameter(
+                "canonical_expected_half_lane_width_m"
+            ).value
+        )
+        self.canonical_lane_width_tolerance_m = float(
+            self.get_parameter("canonical_lane_width_tolerance_m").value
+        )
+        self.canonical_min_white_yellow_offset_m = float(
+            self.get_parameter(
+                "canonical_min_white_yellow_offset_m"
+            ).value
+        )
+        self.canonical_tracking_base_gate_m = float(
+            self.get_parameter("canonical_tracking_base_gate_m").value
+        )
+        self.canonical_tracking_max_gate_m = float(
+            self.get_parameter("canonical_tracking_max_gate_m").value
+        )
+        self.canonical_tracking_continuation_m = float(
+            self.get_parameter("canonical_tracking_continuation_m").value
+        )
+        self.canonical_tracking_curvature_gate_gain = float(
+            self.get_parameter(
+                "canonical_tracking_curvature_gate_gain"
+            ).value
+        )
+        self.canonical_tracking_curvature_max_extra_m = float(
+            self.get_parameter(
+                "canonical_tracking_curvature_max_extra_m"
+            ).value
+        )
+        self.canonical_tracking_confirmation_frames = int(
+            self.get_parameter(
+                "canonical_tracking_confirmation_frames"
+            ).value
+        )
+        self.canonical_tracking_coast_sec = float(
+            self.get_parameter("canonical_tracking_coast_sec").value
+        )
+        self.canonical_tracking_search_sec = float(
+            self.get_parameter("canonical_tracking_search_sec").value
+        )
+        self.canonical_tracking_smoothing_alpha = float(
+            self.get_parameter(
+                "canonical_tracking_smoothing_alpha"
+            ).value
+        )
+        self.canonical_width_prediction_enabled = bool(
+            self.get_parameter("canonical_width_prediction_enabled").value
+        )
+        self.canonical_width_prediction_replacement_frames = int(
+            self.get_parameter(
+                "canonical_width_prediction_replacement_frames"
+            ).value
+        )
+        self.canonical_transverse_clutter_row_fraction = float(
+            self.get_parameter(
+                "canonical_transverse_clutter_row_fraction"
+            ).value
+        )
+        self.canonical_transverse_clutter_min_rows = int(
+            self.get_parameter(
+                "canonical_transverse_clutter_min_rows"
+            ).value
+        )
+        self.canonical_persistent_prediction_enabled = bool(
+            self.get_parameter(
+                "canonical_persistent_prediction_enabled"
+            ).value
         )
 
         rate_limit_hz = float(self.get_parameter("publish_rate_limit_hz").value)
@@ -312,8 +480,63 @@ class CameraPerceptionNode(Node):
         self.homography_output_shape: tuple[int, int] | None = None
         self.current_projection_height = self.bev_height
         self.current_bev_valid_mask: np.ndarray | None = None
+        self.current_rectified_image: np.ndarray | None = None
+        self.current_canonical_tracking_debug: np.ndarray | None = None
         self.previous_centerline_points: list[Point] = []
         self.previous_centerline_wall_time = 0.0
+        self.canonical_lane_tracker = (
+            CanonicalLaneTracker(
+                width=self.canonical_width,
+                height=self.canonical_height,
+                lateral_range_m=self.canonical_lateral_range_m,
+                forward_range_m=self.canonical_forward_range_m,
+                expected_half_lane_width_m=(
+                    self.canonical_expected_half_lane_width_m
+                ),
+                lane_width_tolerance_m=(
+                    self.canonical_lane_width_tolerance_m
+                ),
+                min_white_yellow_offset_m=(
+                    self.canonical_min_white_yellow_offset_m
+                ),
+                base_search_gate_m=self.canonical_tracking_base_gate_m,
+                max_search_gate_m=self.canonical_tracking_max_gate_m,
+                continuation_distance_m=(
+                    self.canonical_tracking_continuation_m
+                ),
+                curvature_gate_gain=(
+                    self.canonical_tracking_curvature_gate_gain
+                ),
+                curvature_max_extra_m=(
+                    self.canonical_tracking_curvature_max_extra_m
+                ),
+                confirmation_frames=(
+                    self.canonical_tracking_confirmation_frames
+                ),
+                coast_sec=self.canonical_tracking_coast_sec,
+                search_sec=self.canonical_tracking_search_sec,
+                smoothing_alpha=self.canonical_tracking_smoothing_alpha,
+                width_prediction_enabled=(
+                    self.canonical_width_prediction_enabled
+                ),
+                width_prediction_replacement_frames=(
+                    self.canonical_width_prediction_replacement_frames
+                ),
+                transverse_clutter_row_fraction=(
+                    self.canonical_transverse_clutter_row_fraction
+                ),
+                transverse_clutter_min_rows=(
+                    self.canonical_transverse_clutter_min_rows
+                ),
+                persistent_prediction_enabled=(
+                    self.canonical_persistent_prediction_enabled
+                ),
+                line_width_px=self.canonical_line_width_px,
+                background_gray=self.canonical_background_gray,
+            )
+            if self.canonical_tracking_enabled
+            else None
+        )
         self.load_calib_yaml()
 
         self.road_segments_pub = self.create_publisher(
@@ -334,6 +557,11 @@ class CameraPerceptionNode(Node):
         self.traffic_lights_pub = self.create_publisher(
             TrafficLightObservationArray,
             str(self.get_parameter("traffic_lights_topic").value),
+            10,
+        )
+        self.rectified_image_pub = self.create_publisher(
+            Image,
+            str(self.get_parameter("rectified_image_topic").value),
             10,
         )
         self.debug_image_pub = self.create_publisher(
@@ -359,6 +587,15 @@ class CameraPerceptionNode(Node):
         self.canonical_yellow_mask_pub = self.create_publisher(
             Image,
             str(self.get_parameter("canonical_yellow_mask_topic").value),
+            10,
+        )
+        self.canonical_tracking_debug_pub = self.create_publisher(
+            Image,
+            str(
+                self.get_parameter(
+                    "canonical_tracking_debug_topic"
+                ).value
+            ),
             10,
         )
         image_topic = str(self.get_parameter("image_topic").value)
@@ -454,6 +691,27 @@ class CameraPerceptionNode(Node):
         yellow_msg = self.bridge.cv2_to_imgmsg(canonical_yellow, encoding="mono8")
         yellow_msg.header = header
         self.canonical_yellow_mask_pub.publish(yellow_msg)
+
+        if (
+            self.canonical_tracking_debug_pub.get_subscription_count() > 0
+            and self.current_canonical_tracking_debug is not None
+        ):
+            tracking_msg = self.bridge.cv2_to_imgmsg(
+                self.current_canonical_tracking_debug,
+                encoding="bgr8",
+            )
+            tracking_msg.header = header
+            self.canonical_tracking_debug_pub.publish(tracking_msg)
+
+        if (
+            self.rectified_image_pub.get_subscription_count() > 0
+            and self.current_rectified_image is not None
+        ):
+            rectified_msg = self.bridge.cv2_to_imgmsg(
+                self.current_rectified_image, encoding="bgr8"
+            )
+            rectified_msg.header = header
+            self.rectified_image_pub.publish(rectified_msg)
 
         if self.publish_empty_optional_topics:
             objects = PerceptionObjectArray()
@@ -590,8 +848,42 @@ class CameraPerceptionNode(Node):
             yellow_max_component_thickness_px=(
                 self.canonical_yellow_max_component_thickness_px
             ),
+            geometry_filter_enabled=self.canonical_geometry_filter_enabled,
+            white_min_line_span_px=self.canonical_white_min_line_span_px,
+            yellow_min_line_span_px=self.canonical_yellow_min_line_span_px,
+            min_line_elongation=self.canonical_min_line_elongation,
+            min_line_verticality=self.canonical_min_line_verticality,
+            white_max_components_per_side=(
+                self.canonical_white_max_components_per_side
+            ),
+            yellow_max_components=self.canonical_yellow_max_components,
+            white_clutter_component_limit=(
+                self.canonical_white_clutter_component_limit
+            ),
+            white_max_mask_fraction=self.canonical_white_max_mask_fraction,
+            yellow_max_mask_fraction=self.canonical_yellow_max_mask_fraction,
+            max_line_fit_rmse_px=self.canonical_max_line_fit_rmse_px,
+            top_ignore_m=self.canonical_top_ignore_m,
             bottom_ignore_m=self.canonical_bottom_ignore_m,
         )
+        if self.canonical_lane_tracker is not None:
+            timestamp_sec = (
+                float(header.stamp.sec)
+                + float(header.stamp.nanosec) * 1.0e-9
+            )
+            if timestamp_sec <= 0.0:
+                timestamp_sec = time.monotonic()
+            tracked = self.canonical_lane_tracker.update(
+                canonical_white,
+                canonical_yellow,
+                timestamp_sec,
+            )
+            canonical = tracked.road_image
+            canonical_white = tracked.white_mask
+            canonical_yellow = tracked.yellow_mask
+            self.current_canonical_tracking_debug = tracked.debug_image
+        else:
+            self.current_canonical_tracking_debug = None
         return (
             road_segments,
             centerline,
@@ -748,10 +1040,17 @@ class CameraPerceptionNode(Node):
         bottom_y = self.src_bottom_y_ratio * height
         dst_l = self.dst_left_ratio * self.bev_width
         dst_r = self.dst_right_ratio * self.bev_width
+        dst_top = self.dst_top_y_ratio * self.bev_height
+        dst_bottom = self.dst_bottom_y_ratio * self.bev_height
 
         src = np.float32([[tl_x, top_y], [tr_x, top_y], [br_x, bottom_y], [bl_x, bottom_y]])
         dst = np.float32(
-            [[dst_l, 0], [dst_r, 0], [dst_r, self.bev_height], [dst_l, self.bev_height]]
+            [
+                [dst_l, dst_top],
+                [dst_r, dst_top],
+                [dst_r, dst_bottom],
+                [dst_l, dst_bottom],
+            ]
         )
         self.M = cv2.getPerspectiveTransform(src, dst)
         self.M_inv = cv2.getPerspectiveTransform(dst, src)
@@ -760,10 +1059,12 @@ class CameraPerceptionNode(Node):
 
     def prepare_projection_image(self, image: np.ndarray) -> np.ndarray:
         if self.projection_mode != "bev_homography":
+            self.current_rectified_image = image
             self.current_bev_valid_mask = np.full(image.shape[:2], 255, dtype=np.uint8)
             return image
 
         rectified = self.rectify_image(image)
+        self.current_rectified_image = rectified
         height, width = rectified.shape[:2]
         output_shape = (self.bev_width, self.bev_height)
         if (
@@ -772,18 +1073,23 @@ class CameraPerceptionNode(Node):
             or self.homography_output_shape != output_shape
         ):
             self.build_homography(width, height)
-        valid_mask = np.zeros((self.bev_height, self.bev_width), dtype=np.uint8)
-        valid_left = max(0, min(self.bev_width - 1, round(self.dst_left_ratio * self.bev_width)))
-        valid_right = max(
-            valid_left,
-            min(self.bev_width - 1, round(self.dst_right_ratio * self.bev_width)),
-        )
-        cv2.rectangle(
-            valid_mask,
-            (valid_left, 0),
-            (valid_right, self.bev_height - 1),
-            255,
-            thickness=-1,
+        source_valid = np.full(image.shape[:2], 255, dtype=np.uint8)
+        if self.enable_rectify and self.rect_map1 is not None:
+            source_valid = cv2.remap(
+                source_valid,
+                self.rect_map1,
+                self.rect_map2,
+                interpolation=cv2.INTER_NEAREST,
+                borderMode=cv2.BORDER_CONSTANT,
+                borderValue=0,
+            )
+        valid_mask = cv2.warpPerspective(
+            source_valid,
+            self.M,
+            output_shape,
+            flags=cv2.INTER_NEAREST,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0,
         )
         if self.bev_valid_erode_px > 0:
             size = self.bev_valid_erode_px * 2 + 1
@@ -819,8 +1125,36 @@ class CameraPerceptionNode(Node):
                 cv2.line(out, (col, 0), (col, height - 1), color, 1)
                 cv2.putText(out, label, (col + 5, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
 
-        for row in range(0, height, 20):
-            cv2.line(out, (0, row), (width - 1, row), (70, 70, 70), 1)
+        if self.forward_m_per_px > 0.0:
+            forward_range_m = height * self.forward_m_per_px
+            distance_m = 0.5
+            while distance_m <= forward_range_m + 1.0e-6:
+                row = int(
+                    round(
+                        height
+                        - (distance_m - self.bev_x_offset_m)
+                        / self.forward_m_per_px
+                    )
+                )
+                if 0 <= row < height:
+                    cv2.line(
+                        out,
+                        (0, row),
+                        (width - 1, row),
+                        (70, 70, 70),
+                        1,
+                    )
+                    cv2.putText(
+                        out,
+                        f"{distance_m:.1f}m",
+                        (4, max(14, row - 4)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.42,
+                        (80, 210, 80),
+                        1,
+                        cv2.LINE_AA,
+                    )
+                distance_m += 0.5
         return out
 
     def pixel_to_vehicle(

@@ -77,7 +77,8 @@ canonical BEV 방식으로 전환한 이유, 현재 자동 수집·학습 절차
 
 - Gazebo와 실차 perception이 같은 토픽
   `/perception/canonical_road_image`를 발행하도록 구현했다.
-- canonical 계약은 `256x144`, 전방 `1.2m`, 횡방향 `1.4m`, 배경 gray `36`,
+- 7월 15일 실측 재보정 후 canonical 계약은 `256x144`, 전방 `1.5m`,
+  횡방향 `1.4m`, 배경 gray `36`,
   흰 선 `255`, 노란 선 BGR `(0,220,255)`, 선 두께 `5px`이다.
 - raw 색·배경을 버리고 흰 경계와 노란 중앙선의 기하만 모델 입력에 남긴다.
 - 한쪽 흰 경계만 보이는 실차 상황을 대비해 canonical 영상에 없는 선을 억지로
@@ -120,7 +121,7 @@ canonical BEV 방식으로 전환한 이유, 현재 자동 수집·학습 절차
 - 각 세션의 이미지·LiDAR 파일, 총 행 수, recovery 비율을 검증한 뒤에만
   학습으로 넘어간다.
 
-## 자동 5만 장 수집·학습·종료
+## 2026-07-15 검증된 3만 장 수집·학습·종료
 
 코드와 문서를 먼저 빌드한 뒤 다음 명령을 실행한다. 첫 세션은 Gazebo/RViz로
 보이고 나머지는 headless로 진행된다.
@@ -134,9 +135,9 @@ source install/setup.bash
 
 ros2 run il_data_tools run_canonical_50k_pipeline \
   --project-root "$PWD" \
-  --total-samples 50000 \
+  --total-samples 30000 \
   --batch-samples 5000 \
-  --seed 20260714 \
+  --seed 2026071500 \
   --epochs 50 \
   --batch-size 256 \
   --num-workers 8 \
@@ -149,8 +150,8 @@ ros2 run il_data_tools run_canonical_50k_pipeline \
 
 파이프라인은 다음 조건을 모두 만족할 때만 전원을 끈다.
 
-1. 새 세션이 정확히 10개 생성된다.
-2. 새 canonical 이미지와 LiDAR가 정확히 50,000쌍 존재한다.
+1. 새 세션이 정확히 6개 생성된다.
+2. 새 canonical 이미지와 LiDAR가 정확히 30,000쌍 존재한다.
 3. recovery 비율이 10% 이상이다.
 4. train/validation/test가 서로 다른 세션으로 생성된다.
 5. best validation epoch의 TorchScript 모델이 생성된다.
@@ -160,6 +161,11 @@ ros2 run il_data_tools run_canonical_50k_pipeline \
 
 어느 단계든 실패하면 전원을 끄지 않고 로그와 중간 세션을 그대로 남긴다.
 수집 세션은 자동 증가 이름을 사용하므로 기존 데이터가 덮어써지지 않는다.
+
+최종 결과는 정상 21,547장, 복귀 8,453장, 정지 0장이다. 실차 rosbag에서
+측정한 중앙선 위치 튐, 흰 경계 휨과 선 소실을 1,041개 temporal event로
+시뮬 입력에 넣었고 조향 라벨은 오염시키지 않았다. 5천 장 held-out test에서
+전체 MAE 3.379, 복귀 MAE 4.284로 품질 게이트를 통과했다.
 
 ## 실차 PC Codex가 바로 해야 할 일
 

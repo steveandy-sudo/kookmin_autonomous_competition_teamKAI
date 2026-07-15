@@ -15,6 +15,7 @@ from launch.actions import (
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.conditions import IfCondition
 from launch.substitutions import (
     EnvironmentVariable,
     LaunchConfiguration,
@@ -41,8 +42,11 @@ def _prepare_environment(context):
     generated_bridge = output_dir / f"{stem}_bridge.yaml"
     manifest = output_dir / f"{stem}_manifest.json"
     event_log = output_dir / f"{stem}_scenario_events.jsonl"
+    artifact_event_log = output_dir / f"{stem}_canonical_artifacts.jsonl"
     if event_log.exists():
         event_log.unlink()
+    if artifact_event_log.exists():
+        artifact_event_log.unlink()
 
     result = generate_randomized_assets(
         source_world=source_world,
@@ -54,6 +58,28 @@ def _prepare_environment(context):
         preset=preset,
     )
     result["scenario_event_log"] = str(event_log)
+    artifact_enabled = LaunchConfiguration("canonical_artifacts_enabled").perform(
+        context
+    ).lower() in {"1", "true", "yes", "on"}
+    result["canonical_artifacts"] = {
+        "enabled": artifact_enabled,
+        "event_log": str(artifact_event_log),
+        "event_start_probability": float(
+            LaunchConfiguration("artifact_event_start_probability").perform(context)
+        ),
+        "duration_frames": [
+            int(LaunchConfiguration("artifact_min_duration_frames").perform(context)),
+            int(LaunchConfiguration("artifact_max_duration_frames").perform(context)),
+        ],
+        "center_jump_px": [
+            float(LaunchConfiguration("artifact_center_jump_min_px").perform(context)),
+            float(LaunchConfiguration("artifact_center_jump_max_px").perform(context)),
+        ],
+        "white_bend_px": [
+            float(LaunchConfiguration("artifact_white_bend_min_px").perform(context)),
+            float(LaunchConfiguration("artifact_white_bend_max_px").perform(context)),
+        ],
+    }
     manifest.write_text(
         json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -62,6 +88,7 @@ def _prepare_environment(context):
     context.launch_configurations["generated_bridge_config"] = str(generated_bridge)
     context.launch_configurations["run_manifest_path"] = str(manifest)
     context.launch_configurations["scenario_event_log"] = str(event_log)
+    context.launch_configurations["artifact_event_log"] = str(artifact_event_log)
     print(
         "[domain-randomization] "
         f"preset={result['preset']} seed={result['seed']} world={generated_world}"
@@ -206,6 +233,32 @@ def generate_launch_description():
                 description="Use png for canonical semantic images.",
             ),
             DeclareLaunchArgument("max_save_rate_hz", default_value="10.0"),
+            DeclareLaunchArgument(
+                "canonical_artifacts_enabled",
+                default_value="false",
+                description=(
+                    "Inject short real-camera-like canonical lane artifacts into "
+                    "the recorder input while the expert uses the clean stream."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "canonical_artifact_input_topic",
+                default_value="/perception/canonical_road_image",
+            ),
+            DeclareLaunchArgument(
+                "canonical_artifact_output_topic",
+                default_value="/perception/canonical_road_image_augmented",
+            ),
+            DeclareLaunchArgument("artifact_event_log", default_value=""),
+            DeclareLaunchArgument(
+                "artifact_event_start_probability", default_value="0.018"
+            ),
+            DeclareLaunchArgument("artifact_min_duration_frames", default_value="3"),
+            DeclareLaunchArgument("artifact_max_duration_frames", default_value="9"),
+            DeclareLaunchArgument("artifact_center_jump_min_px", default_value="7.0"),
+            DeclareLaunchArgument("artifact_center_jump_max_px", default_value="22.0"),
+            DeclareLaunchArgument("artifact_white_bend_min_px", default_value="18.0"),
+            DeclareLaunchArgument("artifact_white_bend_max_px", default_value="58.0"),
             DeclareLaunchArgument("seed", default_value="2026"),
             DeclareLaunchArgument(
                 "preset",
@@ -249,6 +302,56 @@ def generate_launch_description():
                 }.items(),
             ),
             IncludeLaunchDescription(PythonLaunchDescriptionSource(rule_launch)),
+            Node(
+                package="il_data_tools",
+                executable="il_canonical_artifact_augmenter",
+                name="il_canonical_artifact_augmenter",
+                output="screen",
+                condition=IfCondition(
+                    LaunchConfiguration("canonical_artifacts_enabled")
+                ),
+                parameters=[
+                    {
+                        "use_sim_time": True,
+                        "seed": ParameterValue(seed, value_type=int),
+                        "input_topic": LaunchConfiguration(
+                            "canonical_artifact_input_topic"
+                        ),
+                        "output_topic": LaunchConfiguration(
+                            "canonical_artifact_output_topic"
+                        ),
+                        "event_log_path": LaunchConfiguration("artifact_event_log"),
+                        "event_start_probability": ParameterValue(
+                            LaunchConfiguration("artifact_event_start_probability"),
+                            value_type=float,
+                        ),
+                        "min_duration_frames": ParameterValue(
+                            LaunchConfiguration("artifact_min_duration_frames"),
+                            value_type=int,
+                        ),
+                        "max_duration_frames": ParameterValue(
+                            LaunchConfiguration("artifact_max_duration_frames"),
+                            value_type=int,
+                        ),
+                        "center_jump_min_px": ParameterValue(
+                            LaunchConfiguration("artifact_center_jump_min_px"),
+                            value_type=float,
+                        ),
+                        "center_jump_max_px": ParameterValue(
+                            LaunchConfiguration("artifact_center_jump_max_px"),
+                            value_type=float,
+                        ),
+                        "white_bend_min_px": ParameterValue(
+                            LaunchConfiguration("artifact_white_bend_min_px"),
+                            value_type=float,
+                        ),
+                        "white_bend_max_px": ParameterValue(
+                            LaunchConfiguration("artifact_white_bend_max_px"),
+                            value_type=float,
+                        ),
+                    }
+                ],
+            ),
             Node(
                 package="il_data_tools",
                 executable="il_recovery_scenario_manager",

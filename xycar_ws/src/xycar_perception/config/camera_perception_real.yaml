@@ -7,11 +7,13 @@ xycar_camera_perception:
     centerline_topic: /perception/centerline
     objects_topic: /perception/objects
     traffic_lights_topic: /perception/traffic_lights
+    rectified_image_topic: /perception/rectified_camera_image
     debug_image_topic: /perception/debug_image
     debug_markers_topic: /perception/debug_markers
     canonical_road_topic: /perception/canonical_road_image
     canonical_white_mask_topic: /perception/canonical_white_mask
     canonical_yellow_mask_topic: /perception/canonical_yellow_mask
+    canonical_tracking_debug_topic: /perception/canonical_tracking_debug
     base_frame_id: base_footprint
     source_name: xycar_camera_perception
     # Process every freshest frame; the depth-1 sensor queue prevents stale backlog.
@@ -36,25 +38,32 @@ xycar_camera_perception:
     # /wide_camera/rect/image_raw is already rectified by app_wide_camera_calib.
     enable_rectify: false
     rect_balance: 0.3
-    # Measured real-car lane ROI used by my_rule_lane_node.
-    src_tl_x_ratio: 0.357
-    src_tr_x_ratio: 0.777
-    src_bl_x_ratio: 0.170
-    src_br_x_ratio: 0.965
-    src_top_y_ratio: 0.520
-    src_bottom_y_ratio: 0.625
+    # Calibrated on 2026-07-14 from transverse marks placed every 0.50m from
+    # the camera lens. The top pair is at 1.5m and the bottom pair at 0.5m.
+    # A 1.5m view contains two or three 0.30m dashes without the excess seen
+    # in the earlier 2.0m preview.
+    src_tl_x_ratio: 0.442578
+    src_tr_x_ratio: 0.688281
+    src_bl_x_ratio: 0.190625
+    src_br_x_ratio: 0.919141
+    src_top_y_ratio: 0.480781
+    src_bottom_y_ratio: 0.614189
     bev_width: 640
     bev_height: 220
-    dst_left_ratio: 0.10
-    dst_right_ratio: 0.90
-    # Initial metric scale from the known track markings; verify on real images.
-    # 0.39 m / 256 px from the real Stanley controller calibration.
-    lateral_m_per_px: 0.0015234375
-    forward_m_per_px: 0.010
+    # White-line centers are +/-0.412m. Map them to the matching metric
+    # columns while preserving a 1.4m-wide rectangular output.
+    dst_left_ratio: 0.205714
+    dst_right_ratio: 0.794286
+    dst_top_y_ratio: 0.0
+    # 0.5m is row 146.7 in a 220-row, 1.5m BEV. Rows below it are retained as
+    # invalid because the physical camera cannot see the near-field floor.
+    dst_bottom_y_ratio: 0.666666667
+    lateral_m_per_px: 0.0021875
+    forward_m_per_px: 0.006818182
     bev_x_offset_m: 0.0
-    bev_bottom_ignore_px: 28
+    bev_bottom_ignore_px: 0
     bev_border_gray: 70
-    bev_valid_erode_px: 8
+    bev_valid_erode_px: 4
 
     near_x_m: 0.20
     far_x_m: 2.20
@@ -86,7 +95,7 @@ xycar_camera_perception:
     canonical_width: 256
     canonical_height: 144
     canonical_lateral_range_m: 1.4
-    canonical_forward_range_m: 1.2
+    canonical_forward_range_m: 1.5
     canonical_background_gray: 36
     canonical_line_width_px: 5
     # Prefer narrow, locally brighter tape over broad ceiling-light reflections.
@@ -97,4 +106,48 @@ xycar_camera_perception:
     canonical_min_component_area_px: 12
     canonical_white_max_component_thickness_px: 28.0
     canonical_yellow_max_component_thickness_px: 24.0
-    canonical_bottom_ignore_m: 0.08
+    # Keep at most one coherent white boundary per side and elongated yellow
+    # dashes. This rejects narrow ceiling reflections that pass the HSV filter.
+    canonical_geometry_filter_enabled: true
+    canonical_white_min_line_span_px: 14
+    canonical_yellow_min_line_span_px: 7
+    canonical_min_line_elongation: 1.8
+    canonical_min_line_verticality: 0.30
+    # Preserve several candidates so the temporal tracker can reject a bright
+    # reflection without discarding the real outer boundary first.
+    canonical_white_max_components_per_side: 3
+    canonical_yellow_max_components: 5
+    canonical_white_clutter_component_limit: 0
+    canonical_white_max_mask_fraction: 0.08
+    canonical_yellow_max_mask_fraction: 0.06
+    canonical_max_line_fit_rmse_px: 4.0
+    canonical_top_ignore_m: 0.0
+    canonical_bottom_ignore_m: 0.0
+    canonical_tracking_enabled: true
+    # White-line center offset from the yellow center: 0.80m inner width plus
+    # half of each 24mm marking gives 0.412m per side.
+    canonical_expected_half_lane_width_m: 0.412
+    canonical_lane_width_tolerance_m: 0.18
+    canonical_min_white_yellow_offset_m: 0.18
+    canonical_tracking_base_gate_m: 0.08
+    canonical_tracking_max_gate_m: 0.25
+    canonical_tracking_continuation_m: 0.38
+    # Curved dashed lines need a slightly wider lateral association gate than
+    # straight lines. The extra allowance is capped to reject remote clutter.
+    canonical_tracking_curvature_gate_gain: 1.0
+    canonical_tracking_curvature_max_extra_m: 0.10
+    # Geometry-filtered candidates and physical lines matching a width
+    # prediction are accepted immediately on their first frame.
+    canonical_tracking_confirmation_frames: 1
+    # Observation-only model input: publish current-frame detections without
+    # coasting, temporal prediction, or a synthesized hidden boundary.
+    canonical_tracking_coast_sec: 0.0
+    canonical_tracking_search_sec: 0.0
+    canonical_tracking_smoothing_alpha: 1.0
+    canonical_width_prediction_enabled: false
+    canonical_width_prediction_replacement_frames: 1
+    # Ignore checkerboard / transverse start-line frames and hold the previous
+    # longitudinal lane curves until normal lane pixels return.
+    canonical_transverse_clutter_row_fraction: 0.12
+    canonical_transverse_clutter_min_rows: 6
+    canonical_persistent_prediction_enabled: false

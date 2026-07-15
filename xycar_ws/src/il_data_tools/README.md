@@ -43,13 +43,14 @@ ros2 run il_data_tools collect_randomized_batches \
 상세 preset과 검증 방법은 저장소 루트의
 `docs/domain_randomized_collection.md`를 참고합니다.
 
-현재 sim-to-real용 canonical BEV 5만 장은 복구 데이터, 정지 직전 10초 폐기,
-학습·held-out 평가, 모델 게시와 성공 시 전원 종료를 하나로 묶은 명령을 쓴다.
+sim-to-real용 canonical BEV는 복구 데이터, 정지 직전 10초 폐기, 학습·held-out
+평가, 모델 게시와 성공 시 전원 종료를 하나로 묶은 명령을 쓴다. 최신 게시
+모델은 2026-07-15에 5천 장씩 6세션, 총 3만 장으로 생성했다.
 
 ```bash
 ros2 run il_data_tools run_canonical_50k_pipeline \
-  --project-root "$PWD" --total-samples 50000 --batch-samples 5000 \
-  --seed 20260714 --epochs 50 --batch-size 256 --num-workers 8 \
+  --project-root "$PWD" --total-samples 30000 --batch-samples 5000 \
+  --seed 2026071500 --epochs 50 --batch-size 256 --num-workers 8 \
   --device cuda --show-gui-first --publish-model \
   --git-remotes origin,teamkai --poweroff-on-success
 ```
@@ -140,18 +141,22 @@ steer_norm = model(image, lidar)
 ros2 launch il_data_tools sim_policy_drive.launch.py
 ```
 
-이 launch는 Gazebo, 센서 bridge/RViz, BC 추론을 함께 시작하며 룰베이스
-주행 노드는 시작하지 않습니다. 기본 모델은 전체 수집 세션을 합쳐 학습한
-`models/il_policies/drive_resnet18_lidar_all_20260713/drive_policy_scripted.pt`입니다.
+이 launch는 Gazebo, 센서 bridge/RViz, canonical perception과 BC 추론을 함께
+시작하며 룰베이스 주행 노드는 시작하지 않습니다. 기본 모델은 패키지의
+`drive_canonical_policy_scripted.pt`, 기본 입력은
+`/perception/canonical_road_image`입니다.
 
-`real_policy_inference.launch.py`는 학습 완료 TorchScript 모델과 실차 추론
-노드를 실행하며 기본값은 모터 출력이 차단된 shadow 모드입니다.
+실차에서는 raw 추론 launch를 직접 쓰지 않고
+`real_canonical_policy_drive.launch.py`로 실차 canonical perception과 모델을
+함께 실행합니다. 기본값은 모터 출력이 차단된 shadow 모드입니다.
 
 실차 shadow 실행:
 
 ```bash
-ros2 launch il_data_tools real_policy_inference.launch.py \
-  image_topic:=/image_raw scan_topic:=/scan drive_enabled:=false
+ros2 launch il_data_tools real_canonical_policy_drive.launch.py \
+  source_image_topic:=/wide_camera/rect/image_raw \
+  enable_rectify:=false use_compressed_image:=false \
+  scan_topic:=/scan drive_enabled:=false device:=cpu
 ros2 topic echo /il/policy_motor_shadow
 rqt_image_view /il/policy_input_image
 ```
@@ -178,19 +183,20 @@ Shadow의 조향 방향은 맞지만 실차 바퀴 방향만 반대라면
 /perception/canonical_yellow_mask 256x144 mono8
 ```
 
-공통 범위는 차량 기준 전방 1.2m, 좌우 1.4m이다. 최종 영상은 배경 BGR
+공통 범위는 카메라 렌즈 기준 전방 1.5m, 좌우 1.4m이다. 최종 영상은 배경 BGR
 `(36,36,36)`, 흰선 `(255,255,255)`, 노란선 `(0,220,255)`, 선 두께 5px로
-고정한다. 시뮬 2.2m BEV에서는 가까운 1.2m를 자르고, 실차 1.2m BEV는 전체를
-사용하므로 단순한 화면 resize와 다르다.
+고정한다. 실차와 시뮬 모두 0.5m 및 1.5m의 물리 기준점을 homography에 직접
+대응시키므로 단순한 화면 resize와 다르다. 카메라에 보이지 않는 약 0~0.5m
+근거리 영역은 유효 마스크에서 제외한다.
 
 실차 homography 확인 기준:
 
 ```text
 가로 해상도: 1.4m / 256px = 약 5.47mm/px
-세로 해상도: 1.2m / 144px = 약 8.33mm/px
+세로 해상도: 1.5m / 144px = 약 10.42mm/px
 24mm 차선: 약 4.4px -> canonical에서는 5px
-30cm 노란 점선 길이: 약 36px
-흰선 안쪽 간격 80cm: 약 146px
+30cm 노란 점선 길이: 약 29px
+흰선 중심 간격 82.4cm: 약 151px
 ```
 
 `rqt_image_view /perception/canonical_road_image`에서 실차와 Gazebo를 각각
@@ -219,9 +225,10 @@ ros2 launch il_data_tools collect_sim_canonical_drive_dataset.launch.py \
 ros2 launch xycar_perception real_canonical_perception.launch.py
 ```
 
-기본 실차 프로필은 현재 `my_rule_lane_node`와 동일하게
-`/wide_camera/rect/image_raw`, BEV `640x220`, source ROI
-`TL/TR/BL/BR=(0.357,0.777,0.170,0.965)`, y 범위 `0.520~0.625`를 사용한다.
+기본 실차 프로필은 `/wide_camera/rect/image_raw`, BEV `640x220`, source ROI
+`TL/TR/BL/BR=(0.442578,0.688281,0.190625,0.919141)`, y 범위
+`0.480781~0.614189`를 사용한다. 0.5m 간격 실측 표식과 2026-07-14 대회 트랙
+rosbag을 함께 사용해 전방 1.5m가 canonical 전체 높이에 대응하도록 보정했다.
 따라서 사진에 보이는 기존 rectified 영상을 그대로 입력으로 받고, 별도의 카메라
 드라이버를 추가로 실행하지 않는다.
 

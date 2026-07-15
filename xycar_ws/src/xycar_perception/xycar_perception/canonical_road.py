@@ -12,7 +12,9 @@ def _filter_components(
     binary = (mask > 0).astype(np.uint8)
     if min_area_px <= 1 and max_thickness_px <= 0.0:
         return binary * 255
-    count, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(
+        binary, connectivity=8
+    )
     cleaned = np.zeros_like(binary)
     for label in range(1, count):
         if int(stats[label, cv2.CC_STAT_AREA]) < min_area_px:
@@ -23,7 +25,7 @@ def _filter_components(
             y = int(stats[label, cv2.CC_STAT_TOP])
             width = int(stats[label, cv2.CC_STAT_WIDTH])
             height = int(stats[label, cv2.CC_STAT_HEIGHT])
-            roi = component[y : y + height, x : x + width].astype(np.uint8)
+            roi = component[y:y + height, x:x + width].astype(np.uint8)
             padded = cv2.copyMakeBorder(roi, 1, 1, 1, 1, cv2.BORDER_CONSTANT)
             distance = cv2.distanceTransform(padded, cv2.DIST_L2, 5)
             thickness = 2.0 * float(distance.max())
@@ -99,6 +101,139 @@ def _fixed_width_mask(mask: np.ndarray, line_width_px: int) -> np.ndarray:
     return cv2.dilate(skeleton, kernel)
 
 
+def _filter_lane_geometry(
+    mask: np.ndarray,
+    *,
+    min_span_px: int,
+    min_elongation: float,
+    min_verticality: float,
+    max_components: int = 0,
+    max_components_per_side: int = 0,
+    clutter_component_limit: int = 0,
+    max_mask_fraction: float = 0.0,
+    max_fit_rmse_px: float = 0.0,
+) -> np.ndarray:
+    """Keep sparse, longitudinal lane-like components in canonical space."""
+    binary = (mask > 0).astype(np.uint8)
+    if not np.any(binary):
+        return binary * 255
+    if max_mask_fraction > 0.0 and float(np.mean(binary)) > max_mask_fraction:
+        return np.zeros_like(mask)
+
+    count, labels, stats, centroids = cv2.connectedComponentsWithStats(
+        binary, connectivity=8
+    )
+    candidates: list[tuple[float, int, float]] = []
+    for label in range(1, count):
+        width = int(stats[label, cv2.CC_STAT_WIDTH])
+        height = int(stats[label, cv2.CC_STAT_HEIGHT])
+        area = int(stats[label, cv2.CC_STAT_AREA])
+        if max(width, height) < max(1, int(min_span_px)):
+            continue
+
+        ys, xs = np.nonzero(labels == label)
+        if xs.size < 2:
+            continue
+        points = np.column_stack((ys, xs)).astype(np.float32)
+        covariance = np.cov(points, rowvar=False)
+        eigenvalues, eigenvectors = np.linalg.eigh(covariance)
+        major_index = int(np.argmax(eigenvalues))
+        major = max(float(eigenvalues[major_index]), 0.0)
+        minor = max(float(eigenvalues[1 - major_index]), 0.0)
+        elongation = float(np.sqrt((major + 1.0) / (minor + 1.0)))
+        verticality = abs(float(eigenvectors[0, major_index]))
+        if elongation < float(min_elongation):
+            continue
+        if verticality < float(min_verticality):
+            continue
+
+        center_x = float(centroids[label, 0])
+        side_distance = abs(center_x - mask.shape[1] * 0.5)
+        score = (
+            float(max(width, height)) * 2.0
+            + min(elongation, 20.0) * 5.0
+            + float(area) * 0.15
+            + side_distance * 0.25
+        )
+        candidates.append((score, label, center_x))
+
+    if (
+        clutter_component_limit > 0
+        and len(candidates) > clutter_component_limit
+    ):
+        return np.zeros_like(mask)
+
+    selected: list[int] = []
+    if max_components_per_side > 0:
+        center_x = mask.shape[1] * 0.5
+        for is_left in (True, False):
+            side = [
+                item
+                for item in candidates
+                if (item[2] < center_x) == is_left
+            ]
+            side.sort(reverse=True)
+            selected.extend(item[1] for item in side[:max_components_per_side])
+    else:
+        candidates.sort(reverse=True)
+        limit = len(candidates) if max_components <= 0 else max_components
+        selected.extend(item[1] for item in candidates[:limit])
+
+    cleaned = np.zeros_like(binary)
+    for label in selected:
+        component = labels == label
+        if max_fit_rmse_px <= 0.0:
+            cleaned[component] = 1
+            continue
+
+        ys, xs = np.nonzero(component)
+        rows = np.unique(ys)
+        if rows.size < 2:
+            continue
+        centers = np.array(
+            [float(np.median(xs[ys == row])) for row in rows], dtype=np.float64
+        )
+        degree = min(2, int(rows.size) - 1)
+        keep = np.ones(rows.size, dtype=bool)
+        for _ in range(3):
+            if int(np.count_nonzero(keep)) <= degree:
+                break
+            coefficients = np.polyfit(rows[keep], centers[keep], degree)
+            residuals = np.abs(centers - np.polyval(coefficients, rows))
+            median = float(np.median(residuals[keep]))
+            mad = float(np.median(np.abs(residuals[keep] - median)))
+            robust_limit = max(
+                float(max_fit_rmse_px) * 1.5,
+                2.5 * 1.4826 * mad,
+            )
+            next_keep = residuals <= robust_limit
+            if np.array_equal(next_keep, keep):
+                break
+            keep = next_keep
+        if int(np.count_nonzero(keep)) <= degree:
+            continue
+        coefficients = np.polyfit(rows[keep], centers[keep], degree)
+        fitted = np.polyval(coefficients, rows[keep])
+        rmse = float(np.sqrt(np.mean((centers[keep] - fitted) ** 2)))
+        if rmse > float(max_fit_rmse_px):
+            continue
+        fitted_x = np.clip(
+            np.rint(fitted), 0, mask.shape[1] - 1
+        ).astype(np.int32)
+        points = np.column_stack(
+            (fitted_x, rows[keep].astype(np.int32))
+        )
+        cv2.polylines(
+            cleaned,
+            [points],
+            False,
+            1,
+            thickness=1,
+            lineType=cv2.LINE_8,
+        )
+    return cleaned * 255
+
+
 def make_canonical_road_image(
     bev_bgr: np.ndarray,
     *,
@@ -106,7 +241,7 @@ def make_canonical_road_image(
     lateral_m_per_px: float,
     forward_m_per_px: float,
     lateral_range_m: float = 1.4,
-    forward_range_m: float = 1.2,
+    forward_range_m: float = 1.5,
     output_width: int = 256,
     output_height: int = 144,
     background_gray: int = 36,
@@ -122,9 +257,21 @@ def make_canonical_road_image(
     min_component_area_px: int = 8,
     white_max_component_thickness_px: float = 0.0,
     yellow_max_component_thickness_px: float = 0.0,
+    geometry_filter_enabled: bool = False,
+    white_min_line_span_px: int = 14,
+    yellow_min_line_span_px: int = 7,
+    min_line_elongation: float = 1.8,
+    min_line_verticality: float = 0.30,
+    white_max_components_per_side: int = 1,
+    yellow_max_components: int = 5,
+    white_clutter_component_limit: int = 5,
+    white_max_mask_fraction: float = 0.0,
+    yellow_max_mask_fraction: float = 0.0,
+    max_line_fit_rmse_px: float = 0.0,
+    top_ignore_m: float = 0.0,
     bottom_ignore_m: float = 0.08,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Build a fixed metric, fixed-color road representation from a BEV image."""
+    """Build a fixed metric, fixed-color road representation from a BEV."""
     if bev_bgr is None or bev_bgr.size == 0:
         raise ValueError("BEV image is empty")
     if output_width <= 0 or output_height <= 0:
@@ -154,14 +301,19 @@ def make_canonical_road_image(
 
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(value)
     local_background = cv2.GaussianBlur(clahe, (0, 0), sigmaX=5.0, sigmaY=5.0)
-    relative_brightness = clahe.astype(np.float32) - local_background.astype(np.float32)
+    relative_brightness = (
+        clahe.astype(np.float32) - local_background.astype(np.float32)
+    )
     low_saturation = saturation <= int(white_s_max)
     absolute_white = value >= int(white_v_min)
     relative_white = (
         (value >= int(white_v_floor))
         & (relative_brightness >= float(white_relative_delta))
     )
-    white_mask = (low_saturation & (absolute_white | relative_white)).astype(np.uint8) * 255
+    white_mask = (
+        (low_saturation & (absolute_white | relative_white)).astype(np.uint8)
+        * 255
+    )
 
     yellow_mask = cv2.inRange(
         hsv,
@@ -176,6 +328,10 @@ def make_canonical_road_image(
     if ignore_rows > 0:
         white_mask[-ignore_rows:, :] = 0
         yellow_mask[-ignore_rows:, :] = 0
+    top_ignore_rows = max(0, int(round(top_ignore_m / forward_m_per_px)))
+    if top_ignore_rows > 0:
+        white_mask[:top_ignore_rows, :] = 0
+        yellow_mask[:top_ignore_rows, :] = 0
 
     close_kernel = np.ones((3, 3), dtype=np.uint8)
     white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_CLOSE, close_kernel)
@@ -192,14 +348,38 @@ def make_canonical_road_image(
     )
 
     output_size = (int(output_width), int(output_height))
-    white_mask = cv2.resize(white_mask, output_size, interpolation=cv2.INTER_NEAREST)
-    yellow_mask = cv2.resize(yellow_mask, output_size, interpolation=cv2.INTER_NEAREST)
+    white_mask = cv2.resize(
+        white_mask, output_size, interpolation=cv2.INTER_NEAREST
+    )
+    yellow_mask = cv2.resize(
+        yellow_mask, output_size, interpolation=cv2.INTER_NEAREST
+    )
     output_valid = None
     if metric_valid is not None:
         output_valid = cv2.resize(
             (metric_valid > 0).astype(np.uint8) * 255,
             output_size,
             interpolation=cv2.INTER_NEAREST,
+        )
+    if geometry_filter_enabled:
+        white_mask = _filter_lane_geometry(
+            white_mask,
+            min_span_px=white_min_line_span_px,
+            min_elongation=min_line_elongation,
+            min_verticality=min_line_verticality,
+            max_components_per_side=white_max_components_per_side,
+            clutter_component_limit=white_clutter_component_limit,
+            max_mask_fraction=white_max_mask_fraction,
+            max_fit_rmse_px=max_line_fit_rmse_px,
+        )
+        yellow_mask = _filter_lane_geometry(
+            yellow_mask,
+            min_span_px=yellow_min_line_span_px,
+            min_elongation=min_line_elongation,
+            min_verticality=min_line_verticality,
+            max_components=yellow_max_components,
+            max_mask_fraction=yellow_max_mask_fraction,
+            max_fit_rmse_px=max_line_fit_rmse_px,
         )
     white_mask = _fixed_width_mask(white_mask, line_width_px)
     yellow_mask = _fixed_width_mask(yellow_mask, line_width_px)
