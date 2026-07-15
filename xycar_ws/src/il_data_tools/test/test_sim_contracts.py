@@ -66,13 +66,13 @@ class SimulationContractTests(unittest.TestCase):
         self.assertIn('/perception/canonical_road_image', source)
         self.assertNotIn("lane_rule_driver.launch.py", source)
 
-    def test_packaged_canonical_policy_is_the_30k_validated_model(self):
+    def test_packaged_canonical_policy_is_the_200k_validated_model(self):
         model = ROOT / "models" / "drive_canonical_policy_scripted.pt"
         self.assertGreater(model.stat().st_size, 40_000_000)
         digest = hashlib.sha256(model.read_bytes()).hexdigest()
         self.assertEqual(
             digest,
-            "dd8cb6c2ccfca5a438b08e90f930f50527a88b5169cae9e8239dd129f78dbb21",
+            "8da35fa8a56904f9970679da0af68d938f60848991af3abf9a37027d9195b58b",
         )
 
     def test_randomized_collection_keeps_manifest_and_recovery_labels(self):

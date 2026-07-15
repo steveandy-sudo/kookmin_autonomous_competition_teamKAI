@@ -285,11 +285,15 @@ MODEL=\"$(ros2 pkg prefix il_data_tools)/share/il_data_tools/models/drive_canoni
 ros2 launch il_data_tools real_canonical_policy_drive.launch.py \\
   model_path:=\"$MODEL\" \\
   source_image_topic:=/wide_camera/rect/image_raw \\
-  scan_topic:=/scan drive_enabled:=false device:=cpu
+  scan_topic:=/scan max_steer_scale:=140.0 \\
+  drive_enabled:=false device:=cpu
 ```
 
 Only after the shadow steering sign and sensor timeout stop have been checked,
 repeat the second command with `drive_enabled:=true speed_command:=3.0`.
+The previous 50k policy was more stable at 130--150% steering, so 140% is the
+initial calibration candidate rather than a value baked into the model. Recheck
+100/130/140/150% with this policy and keep the lowest stable value.
 """
     path.write_text(text, encoding="utf-8")
 
