@@ -153,6 +153,10 @@ class PolicyContractTests(unittest.TestCase):
         self.assertIn('"enable_rectify"', source)
         self.assertIn('"use_compressed_image"', source)
         self.assertIn('"sync_tolerance_sec"', source)
+        self.assertIn('"perception_launch_file"', source)
+        self.assertIn(
+            "real_temp_track_canonical_perception.launch.py", source
+        )
 
     def test_policy_republishes_stop_while_waiting_for_sensors(self):
         source = (

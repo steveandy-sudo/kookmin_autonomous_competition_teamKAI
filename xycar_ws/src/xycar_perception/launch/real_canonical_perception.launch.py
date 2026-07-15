@@ -32,6 +32,18 @@ def generate_launch_description():
     forward_m_per_px = LaunchConfiguration("forward_m_per_px")
     canonical_forward_range_m = LaunchConfiguration("canonical_forward_range_m")
     canonical_top_ignore_m = LaunchConfiguration("canonical_top_ignore_m")
+    canonical_expected_half_lane_width_m = LaunchConfiguration(
+        "canonical_expected_half_lane_width_m"
+    )
+    canonical_lane_width_tolerance_m = LaunchConfiguration(
+        "canonical_lane_width_tolerance_m"
+    )
+    canonical_white_min_component_median_v = LaunchConfiguration(
+        "canonical_white_min_component_median_v"
+    )
+    canonical_yellow_fit_gate_m = LaunchConfiguration(
+        "canonical_yellow_fit_gate_m"
+    )
 
     return LaunchDescription(
         [
@@ -116,6 +128,24 @@ def generate_launch_description():
                 default_value="0.0",
                 description="Far-end strip ignored after canonical conversion.",
             ),
+            DeclareLaunchArgument(
+                "canonical_expected_half_lane_width_m",
+                default_value="0.412",
+                description="Expected yellow-center to white-boundary distance.",
+            ),
+            DeclareLaunchArgument(
+                "canonical_lane_width_tolerance_m", default_value="0.18"
+            ),
+            DeclareLaunchArgument(
+                "canonical_white_min_component_median_v",
+                default_value="0.0",
+                description="Reject dim white components such as floor seams.",
+            ),
+            DeclareLaunchArgument(
+                "canonical_yellow_fit_gate_m",
+                default_value="0.0",
+                description="Prune yellow components away from one fitted curve.",
+            ),
             Node(
                 package="xycar_perception",
                 executable="camera_perception_node",
@@ -175,6 +205,22 @@ def generate_launch_description():
                         ),
                         "canonical_top_ignore_m": ParameterValue(
                             canonical_top_ignore_m, value_type=float
+                        ),
+                        "canonical_expected_half_lane_width_m": ParameterValue(
+                            canonical_expected_half_lane_width_m,
+                            value_type=float,
+                        ),
+                        "canonical_lane_width_tolerance_m": ParameterValue(
+                            canonical_lane_width_tolerance_m,
+                            value_type=float,
+                        ),
+                        "canonical_white_min_component_median_v": ParameterValue(
+                            canonical_white_min_component_median_v,
+                            value_type=float,
+                        ),
+                        "canonical_yellow_fit_gate_m": ParameterValue(
+                            canonical_yellow_fit_gate_m,
+                            value_type=float,
                         ),
                     },
                 ],

@@ -1,0 +1,52 @@
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.substitutions import FindPackageShare
+
+
+def generate_launch_description():
+    image_topic = LaunchConfiguration("image_topic")
+    use_compressed_image = LaunchConfiguration("use_compressed_image")
+    enable_rectify = LaunchConfiguration("enable_rectify")
+    use_sim_time = LaunchConfiguration("use_sim_time")
+    real_launch = PathJoinSubstitution(
+        [
+            FindPackageShare("xycar_perception"),
+            "launch",
+            "real_canonical_perception.launch.py",
+        ]
+    )
+
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "image_topic",
+                default_value="/wide_camera_mjpeg/image_raw/compressed",
+            ),
+            DeclareLaunchArgument(
+                "use_compressed_image", default_value="true"
+            ),
+            DeclareLaunchArgument("enable_rectify", default_value="true"),
+            DeclareLaunchArgument("use_sim_time", default_value="false"),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(real_launch),
+                launch_arguments={
+                    "image_topic": image_topic,
+                    "use_compressed_image": use_compressed_image,
+                    "enable_rectify": enable_rectify,
+                    "use_sim_time": use_sim_time,
+                    # This temporary modular track measures about 0.49m from
+                    # its yellow centerline to either white boundary in BEV.
+                    "canonical_expected_half_lane_width_m": "0.49",
+                    "canonical_lane_width_tolerance_m": "0.14",
+                    # Floor seams are dim (median V 98-130); physical white
+                    # tape in this bag is normally above V 140.
+                    "canonical_white_min_component_median_v": "140.0",
+                    # Keep disconnected dashes on one fitted center curve and
+                    # discard nearby yellow-tinted floor/background clutter.
+                    "canonical_yellow_fit_gate_m": "0.08",
+                }.items(),
+            ),
+        ]
+    )

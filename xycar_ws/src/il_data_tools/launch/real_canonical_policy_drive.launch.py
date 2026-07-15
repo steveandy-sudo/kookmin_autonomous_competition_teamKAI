@@ -6,11 +6,14 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
+    perception_launch_file = LaunchConfiguration(
+        "perception_launch_file"
+    )
     perception_launch = PathJoinSubstitution(
         [
             FindPackageShare("xycar_perception"),
             "launch",
-            "real_canonical_perception.launch.py",
+            perception_launch_file,
         ]
     )
     inference_launch = PathJoinSubstitution(
@@ -34,6 +37,15 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "perception_launch_file",
+                default_value="real_canonical_perception.launch.py",
+                description=(
+                    "Perception profile launch file. Use "
+                    "real_temp_track_canonical_perception.launch.py only "
+                    "on the measured temporary modular track."
+                ),
+            ),
             DeclareLaunchArgument(
                 "model_path",
                 default_value=PathJoinSubstitution(

@@ -9,6 +9,7 @@ from xycar_perception.canonical_lane_tracker import (
     _component_candidates,
     _continuation_chain,
     _is_curve_continuation,
+    _prune_curve_components,
 )
 
 
@@ -321,6 +322,166 @@ class CanonicalLaneTrackerTest(unittest.TestCase):
         )
         self.assertLessEqual(combined.row_min, 52)
         self.assertGreater(np.count_nonzero(combined.mask[48:68]), 0)
+
+    def test_yellow_fit_gate_removes_off_curve_chained_component(self):
+        mask = np.zeros((144, 256), dtype=np.uint8)
+        cv2.line(mask, (128, 96), (128, 136), 255, 5)
+        cv2.line(mask, (128, 48), (128, 70), 255, 5)
+        cv2.line(mask, (170, 20), (170, 42), 255, 5)
+        candidate = CurveCandidate(
+            coefficients=np.array([0.0, 0.0, 128.0]),
+            mask=mask,
+            row_min=20,
+            row_max=136,
+            area=int(np.count_nonzero(mask)),
+            span=117,
+        )
+
+        pruned = _prune_curve_components(candidate, max_residual_px=15.0)
+
+        self.assertGreater(np.count_nonzero(pruned.mask[:, 123:134]), 0)
+        self.assertEqual(np.count_nonzero(pruned.mask[:, 165:176]), 0)
+
+    def test_rejects_short_white_center_impostor_without_yellow(self):
+        tracker = CanonicalLaneTracker(
+            width=256,
+            height=144,
+            lateral_range_m=1.4,
+            forward_range_m=1.5,
+            expected_half_lane_width_m=0.49,
+            lane_width_tolerance_m=0.14,
+            confirmation_frames=1,
+            coast_sec=0.0,
+            search_sec=0.0,
+            width_prediction_enabled=False,
+            persistent_prediction_enabled=False,
+        )
+        white = np.zeros((144, 256), dtype=np.uint8)
+        cv2.line(white, (45, 8), (55, 136), 255, 5)
+        cv2.line(white, (135, 75), (135, 105), 255, 5)
+
+        result = tracker.update(
+            white, np.zeros_like(white), timestamp_sec=0.0
+        )
+
+        self.assertGreater(np.count_nonzero(result.white_mask[:, 40:61]), 0)
+        self.assertEqual(np.count_nonzero(result.white_mask[:, 130:141]), 0)
+
+    def test_stale_yellow_does_not_bypass_white_pair_check(self):
+        tracker = CanonicalLaneTracker(
+            width=256,
+            height=144,
+            lateral_range_m=1.4,
+            forward_range_m=1.5,
+            expected_half_lane_width_m=0.49,
+            lane_width_tolerance_m=0.14,
+            confirmation_frames=1,
+            coast_sec=0.0,
+            search_sec=0.0,
+            smoothing_alpha=1.0,
+            width_prediction_enabled=False,
+            persistent_prediction_enabled=False,
+        )
+        initial_white = np.zeros((144, 256), dtype=np.uint8)
+        initial_yellow = np.zeros_like(initial_white)
+        cv2.line(initial_white, (35, 8), (35, 136), 255, 5)
+        cv2.line(initial_white, (215, 8), (215, 136), 255, 5)
+        cv2.line(initial_yellow, (125, 30), (125, 90), 255, 5)
+        tracker.update(initial_white, initial_yellow, timestamp_sec=0.0)
+
+        next_white = np.zeros_like(initial_white)
+        cv2.line(next_white, (45, 8), (55, 136), 255, 5)
+        cv2.line(next_white, (135, 75), (135, 105), 255, 5)
+        result = tracker.update(
+            next_white,
+            np.zeros_like(initial_yellow),
+            timestamp_sec=1.0 / 30.0,
+        )
+
+        self.assertGreater(np.count_nonzero(result.white_mask[:, 40:61]), 0)
+        self.assertEqual(np.count_nonzero(result.white_mask[:, 130:141]), 0)
+
+    def test_short_curved_yellow_uses_only_overlapping_white_rows(self):
+        tracker = CanonicalLaneTracker(
+            width=256,
+            height=144,
+            lateral_range_m=1.4,
+            forward_range_m=1.5,
+            expected_half_lane_width_m=0.49,
+            lane_width_tolerance_m=0.14,
+            confirmation_frames=1,
+            coast_sec=0.0,
+            search_sec=0.0,
+            smoothing_alpha=1.0,
+            width_prediction_enabled=False,
+            persistent_prediction_enabled=False,
+        )
+        white = np.zeros((144, 256), dtype=np.uint8)
+        yellow = np.zeros_like(white)
+        white_rows = np.arange(33, 113, dtype=np.float64)
+        white_x = np.polyval(
+            np.array([0.0141894624, -4.01056043, 330.596988]),
+            white_rows,
+        )
+        yellow_rows = np.arange(80, 105, dtype=np.float64)
+        yellow_x = np.polyval(
+            np.array([0.0238294314, -6.17038462, 558.023946]),
+            yellow_rows,
+        )
+        cv2.polylines(
+            white,
+            [
+                np.column_stack((white_x, white_rows))
+                .round()
+                .astype(np.int32)
+            ],
+            False,
+            255,
+            5,
+        )
+        cv2.polylines(
+            yellow,
+            [
+                np.column_stack((yellow_x, yellow_rows))
+                .round()
+                .astype(np.int32)
+            ],
+            False,
+            255,
+            5,
+        )
+
+        result = tracker.update(white, yellow, timestamp_sec=0.0)
+
+        self.assertGreater(np.count_nonzero(result.white_mask), 0)
+        self.assertGreater(np.count_nonzero(result.yellow_mask), 0)
+
+    def test_observation_only_replaces_distant_curve_in_one_frame(self):
+        tracker = CanonicalLaneTracker(
+            width=256,
+            height=144,
+            lateral_range_m=1.4,
+            forward_range_m=1.5,
+            confirmation_frames=1,
+            coast_sec=0.0,
+            search_sec=0.0,
+            smoothing_alpha=1.0,
+            width_prediction_enabled=False,
+            persistent_prediction_enabled=False,
+        )
+        first = np.zeros((144, 256), dtype=np.uint8)
+        shifted = np.zeros_like(first)
+        empty = np.zeros_like(first)
+        cv2.line(first, (35, 8), (35, 136), 255, 5)
+        cv2.line(shifted, (80, 8), (80, 136), 255, 5)
+        tracker.update(first, empty, timestamp_sec=0.0)
+
+        result = tracker.update(
+            shifted, empty, timestamp_sec=1.0 / 30.0
+        )
+
+        self.assertGreater(np.count_nonzero(result.white_mask[:, 75:86]), 0)
+        self.assertEqual(np.count_nonzero(result.white_mask[:, 30:41]), 0)
 
     def test_curvature_adaptive_gate_connects_a_bending_dash(self):
         shape = (144, 256)

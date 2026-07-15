@@ -5,7 +5,10 @@ import cv2
 import numpy as np
 import yaml
 
-from xycar_perception.canonical_road import make_canonical_road_image
+from xycar_perception.canonical_road import (
+    _filter_lane_geometry,
+    make_canonical_road_image,
+)
 
 
 class CanonicalRoadTest(unittest.TestCase):
@@ -163,6 +166,27 @@ class CanonicalRoadTest(unittest.TestCase):
         self.assertGreater(int(np.count_nonzero(white[:, :80])), 0)
         self.assertGreater(int(np.count_nonzero(white[:, 190:])), 0)
         self.assertEqual(int(np.count_nonzero(white[:, 145:185])), 0)
+
+    def test_component_brightness_filter_rejects_dim_floor_seam(self):
+        mask = np.zeros((144, 256), dtype=np.uint8)
+        brightness = np.full_like(mask, 100)
+        cv2.line(mask, (60, 8), (60, 136), 255, 5)
+        cv2.line(mask, (195, 8), (195, 136), 255, 5)
+        brightness[:, 190:201] = 210
+
+        filtered = _filter_lane_geometry(
+            mask,
+            brightness=brightness,
+            min_component_median_brightness=140.0,
+            min_span_px=12,
+            min_elongation=1.5,
+            min_verticality=0.3,
+            max_components_per_side=3,
+            max_fit_rmse_px=4.0,
+        )
+
+        self.assertEqual(int(np.count_nonzero(filtered[:, 55:66])), 0)
+        self.assertGreater(int(np.count_nonzero(filtered[:, 190:201])), 0)
 
     def test_real_config_matches_measured_lane_pipeline(self):
         config_path = (

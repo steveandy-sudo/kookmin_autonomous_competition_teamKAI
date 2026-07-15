@@ -270,6 +270,38 @@ def _continuation_chain(
     return _combine_candidates(selected, shape) or seed
 
 
+def _prune_curve_components(
+    candidate: CurveCandidate,
+    max_residual_px: float,
+) -> CurveCandidate:
+    """Remove chained components that do not follow the robust fitted curve."""
+    if max_residual_px <= 0.0:
+        return candidate
+    components = _component_candidates(candidate.mask, min_span_px=3)
+    kept: list[CurveCandidate] = []
+    scored: list[tuple[float, CurveCandidate]] = []
+    for component in components:
+        rows = np.linspace(
+            component.row_min,
+            component.row_max,
+            9,
+            dtype=np.float64,
+        )
+        residuals = np.abs(
+            component.x_at(rows) - candidate.x_at(rows)
+        )
+        median_residual = float(np.median(residuals))
+        scored.append((median_residual, component))
+        if median_residual > max_residual_px:
+            continue
+        if float(np.percentile(residuals, 90)) > max_residual_px * 1.5:
+            continue
+        kept.append(component)
+    if not kept and scored:
+        kept.append(min(scored, key=lambda item: item[0])[1])
+    return _combine_candidates(kept, candidate.mask.shape) or candidate
+
+
 class CanonicalLaneTracker:
     def __init__(
         self,
@@ -284,6 +316,7 @@ class CanonicalLaneTracker:
         base_search_gate_m: float = 0.08,
         max_search_gate_m: float = 0.25,
         continuation_distance_m: float = 0.38,
+        yellow_fit_gate_m: float = 0.0,
         curvature_gate_gain: float = 1.0,
         curvature_max_extra_m: float = 0.10,
         confirmation_frames: int = 1,
@@ -310,6 +343,9 @@ class CanonicalLaneTracker:
         self.max_continuation_gap_px = max(
             1.0,
             float(continuation_distance_m) / self.forward_m_per_px,
+        )
+        self.yellow_fit_gate_px = max(
+            0.0, float(yellow_fit_gate_m) / self.m_per_px
         )
         self.curvature_gate_gain = max(0.0, float(curvature_gate_gain))
         self.curvature_max_extra_px = max(
@@ -437,6 +473,15 @@ class CanonicalLaneTracker:
             if self._update_pending(track, candidate, required_frames):
                 self._accept(track, candidate, timestamp_sec, replace=True)
         else:
+            if (
+                not self.persistent_prediction_enabled
+                and track.elapsed(timestamp_sec) > self.search_sec
+            ):
+                if self._update_pending(track, candidate, required_frames):
+                    self._accept(
+                        track, candidate, timestamp_sec, replace=True
+                    )
+                return
             tracked_curve = CurveCandidate(
                 coefficients=track.coefficients,
                 mask=np.zeros_like(candidate.mask),
@@ -520,7 +565,7 @@ class CanonicalLaneTracker:
             )
 
         merge_gate = max(self.base_gate_px * 1.5, 8.0)
-        return _continuation_chain(
+        combined = _continuation_chain(
             candidates,
             seed,
             shape=mask.shape,
@@ -529,6 +574,7 @@ class CanonicalLaneTracker:
             curvature_gate_gain=self.curvature_gate_gain,
             curvature_max_extra_px=self.curvature_max_extra_px,
         )
+        return _prune_curve_components(combined, self.yellow_fit_gate_px)
 
     def _yellow_white_offset(
         self,
@@ -676,7 +722,7 @@ class CanonicalLaneTracker:
         if not eligible:
             return None
         seed = min(eligible, key=lambda item: item[0])[1]
-        return _continuation_chain(
+        combined = _continuation_chain(
             [item[1] for item in eligible],
             seed,
             shape=white_mask.shape,
@@ -685,6 +731,7 @@ class CanonicalLaneTracker:
             curvature_gate_gain=self.curvature_gate_gain,
             curvature_max_extra_px=self.curvature_max_extra_px,
         )
+        return _prune_curve_components(combined, self.yellow_fit_gate_px)
 
     def _white_candidates(
         self,
@@ -702,15 +749,33 @@ class CanonicalLaneTracker:
             "right_white": [],
         }
         yellow_coefficients = None
-        if self.tracks["yellow"].coefficients is not None:
-            yellow_coefficients = self.tracks["yellow"].coefficients
-        elif yellow is not None:
+        yellow_row_min = 0
+        yellow_row_max = self.height - 1
+        if yellow is not None:
             yellow_coefficients = yellow.coefficients
+            yellow_row_min = yellow.row_min
+            yellow_row_max = yellow.row_max
+        else:
+            yellow_track = self.tracks["yellow"]
+            if (
+                yellow_track.coefficients is not None
+                and yellow_track.elapsed(timestamp_sec) <= self.search_sec
+            ):
+                yellow_coefficients = yellow_track.coefficients
+                yellow_row_min = yellow_track.row_min
+                yellow_row_max = yellow_track.row_max
 
         for candidate in candidates:
+            sample_row_min = candidate.row_min
+            sample_row_max = candidate.row_max
+            if yellow_coefficients is not None:
+                sample_row_min = max(sample_row_min, yellow_row_min)
+                sample_row_max = min(sample_row_max, yellow_row_max)
+                if sample_row_max < sample_row_min:
+                    continue
             sample_rows = np.linspace(
-                candidate.row_min,
-                candidate.row_max,
+                sample_row_min,
+                sample_row_max,
                 7,
                 dtype=np.float64,
             )
@@ -806,6 +871,35 @@ class CanonicalLaneTracker:
                     curvature_gate_gain=self.curvature_gate_gain,
                     curvature_max_extra_px=self.curvature_max_extra_px,
                 )
+        if yellow_coefficients is None:
+            left = output["left_white"]
+            right = output["right_white"]
+            if left is not None and right is not None:
+                row_min = max(left.row_min, right.row_min)
+                row_max = min(left.row_max, right.row_max)
+                if row_max >= row_min:
+                    rows = np.linspace(
+                        row_min, row_max, 9, dtype=np.float64
+                    )
+                    separation = right.x_at(rows) - left.x_at(rows)
+                    min_pair_width_px = max(
+                        2.0 * self.min_offset_px,
+                        2.0 * self.expected_offset_px
+                        - self.width_tolerance_px,
+                    )
+                    if (
+                        float(np.median(separation))
+                        < min_pair_width_px
+                        or float(np.mean(separation > 0.0)) < 0.85
+                    ):
+                        left_quality = left.span * 3.0 + left.area * 0.1
+                        right_quality = right.span * 3.0 + right.area * 0.1
+                        weaker_side = (
+                            "left_white"
+                            if left_quality < right_quality
+                            else "right_white"
+                        )
+                        output[weaker_side] = None
         return output
 
     def _draw_curve(
@@ -1092,6 +1186,9 @@ class CanonicalLaneTracker:
                     lateral_gate_px=max(self.base_gate_px * 1.5, 8.0),
                     curvature_gate_gain=self.curvature_gate_gain,
                     curvature_max_extra_px=self.curvature_max_extra_px,
+                )
+                yellow_candidate = _prune_curve_components(
+                    yellow_candidate, self.yellow_fit_gate_px
                 )
 
             white_tracking_mask = white_mask

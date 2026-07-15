@@ -266,6 +266,40 @@ ros2 run rqt_image_view rqt_image_view /il/policy_input_image
 `steering_output_sign:=-1.0`으로 shadow를 다시 확인합니다. 동기화가 실패할 때만
 `sync_tolerance_sec:=0.08`처럼 조금 늘리고, 원인을 기록합니다.
 
+#### 임시 조립식 트랙 profile
+
+`track_run_02`를 촬영한 임시 트랙은 노란 중앙선에서 흰 경계선까지 약
+`0.49m`이며, 본선 트랙의 `0.412m`와 다릅니다. 이 트랙에서만 다음 profile을
+지정합니다. 바닥 이음새와 곡선 노란 점선 필터도 함께 적용됩니다.
+
+```bash
+MODEL="$(ros2 pkg prefix il_data_tools)/share/il_data_tools/models/drive_canonical_policy_scripted.pt"
+
+ros2 launch il_data_tools real_canonical_policy_drive.launch.py \
+  perception_launch_file:=real_temp_track_canonical_perception.launch.py \
+  model_path:="$MODEL" \
+  source_image_topic:=/wide_camera/rect/image_raw \
+  enable_rectify:=false \
+  use_compressed_image:=false \
+  scan_topic:=/scan \
+  drive_enabled:=false \
+  device:=cpu
+```
+
+RViz에서는 `Rectified Camera`, `Canonical Model Input`,
+`Canonical Tracking Debug`를 켜고 `/il/policy_motor_shadow`의 조향 부호를 함께
+확인합니다. Snap으로 설치한 VS Code 터미널에서 RViz 라이브러리 충돌이 나면
+다음 명령을 사용합니다.
+
+```bash
+env -u GTK_PATH -u GTK_EXE_PREFIX -u GIO_MODULE_DIR \
+  -u GTK_IM_MODULE_FILE -u SNAP -u SNAP_LIBRARY_PATH \
+  rviz2 -d "$(ros2 pkg prefix xycar_rule_drive)/share/xycar_rule_drive/rviz/real_lane_drive.rviz"
+```
+
+본선 트랙에서는 `perception_launch_file` 인자를 빼고 기본
+`real_canonical_perception.launch.py`를 사용합니다.
+
 ### 5. 실차 저속 주행
 
 다음을 모두 만족한 뒤에만 모터 출력을 켭니다.
@@ -305,6 +339,31 @@ ros2 launch il_data_tools real_canonical_policy_drive.launch.py \
 ros2 topic pub --once /xycar_motor std_msgs/msg/Float32MultiArray \
   "{data: [0.0, 0.0]}"
 ```
+
+임시 조립식 트랙에서 shadow 검증을 통과한 뒤 저속으로 전환할 때는 위 명령에
+profile 인자 하나를 추가합니다.
+
+```bash
+ros2 launch il_data_tools real_canonical_policy_drive.launch.py \
+  perception_launch_file:=real_temp_track_canonical_perception.launch.py \
+  model_path:="$MODEL" \
+  source_image_topic:=/wide_camera/rect/image_raw \
+  enable_rectify:=false \
+  use_compressed_image:=false \
+  scan_topic:=/scan \
+  motor_topic:=/xycar_motor \
+  drive_enabled:=true \
+  speed_command:=3.0 \
+  max_steer_scale:=100.0 \
+  steering_output_sign:=1.0 \
+  steering_temporal_alpha:=0.55 \
+  sensor_timeout_sec:=0.50 \
+  device:=cpu
+```
+
+첫 실차 시험에서 이번 인지 수정의 동작은 확인할 수 있지만, 기존 모델은 수정된
+임시 트랙 실차 canonical 영상으로 다시 학습한 모델이 아닙니다. 반드시 shadow
+출력을 먼저 확인하고 즉시 전체 속도로 올리지 않습니다.
 
 실차 Codex는 첫 시험 후 canonical 원본/모델 입력 화면, `/il/policy_debug`,
 `/il/policy_motor_shadow`, 실제 바퀴 방향과 지연을 함께 보고해야 합니다. 조향량이

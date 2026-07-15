@@ -104,6 +104,8 @@ def _fixed_width_mask(mask: np.ndarray, line_width_px: int) -> np.ndarray:
 def _filter_lane_geometry(
     mask: np.ndarray,
     *,
+    brightness: np.ndarray | None = None,
+    min_component_median_brightness: float = 0.0,
     min_span_px: int,
     min_elongation: float,
     min_verticality: float,
@@ -133,6 +135,13 @@ def _filter_lane_geometry(
 
         ys, xs = np.nonzero(labels == label)
         if xs.size < 2:
+            continue
+        if (
+            brightness is not None
+            and min_component_median_brightness > 0.0
+            and float(np.median(brightness[ys, xs]))
+            < float(min_component_median_brightness)
+        ):
             continue
         points = np.column_stack((ys, xs)).astype(np.float32)
         covariance = np.cov(points, rowvar=False)
@@ -268,6 +277,7 @@ def make_canonical_road_image(
     white_max_mask_fraction: float = 0.0,
     yellow_max_mask_fraction: float = 0.0,
     max_line_fit_rmse_px: float = 0.0,
+    white_min_component_median_v: float = 0.0,
     top_ignore_m: float = 0.0,
     bottom_ignore_m: float = 0.08,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -354,6 +364,9 @@ def make_canonical_road_image(
     yellow_mask = cv2.resize(
         yellow_mask, output_size, interpolation=cv2.INTER_NEAREST
     )
+    output_value = cv2.resize(
+        value, output_size, interpolation=cv2.INTER_AREA
+    )
     output_valid = None
     if metric_valid is not None:
         output_valid = cv2.resize(
@@ -364,6 +377,8 @@ def make_canonical_road_image(
     if geometry_filter_enabled:
         white_mask = _filter_lane_geometry(
             white_mask,
+            brightness=output_value,
+            min_component_median_brightness=white_min_component_median_v,
             min_span_px=white_min_line_span_px,
             min_elongation=min_line_elongation,
             min_verticality=min_line_verticality,

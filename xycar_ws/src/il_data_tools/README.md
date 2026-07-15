@@ -161,6 +161,18 @@ ros2 topic echo /il/policy_motor_shadow
 rqt_image_view /il/policy_input_image
 ```
 
+`track_run_02` 임시 조립식 트랙에서는 측정된 `0.49m` 중앙선-흰선 간격과
+바닥 이음새 필터를 적용하도록 perception profile을 바꾼다. 본선 트랙에서는
+이 인자를 사용하지 않는다.
+
+```bash
+ros2 launch il_data_tools real_canonical_policy_drive.launch.py \
+  perception_launch_file:=real_temp_track_canonical_perception.launch.py \
+  source_image_topic:=/wide_camera/rect/image_raw \
+  enable_rectify:=false use_compressed_image:=false \
+  scan_topic:=/scan drive_enabled:=false device:=cpu
+```
+
 `/il/policy_input_image`는 crop, RGB 변환, 160x90 resize를 모두 거친 뒤
 모델이 실제로 받는 영상이다. 실차 원본이 정상이어도 이 영상에서 차선이나
 소실점이 시뮬 학습 영상과 다르면 먼저 카메라 정합 또는 실차 fine-tuning이

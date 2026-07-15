@@ -179,6 +179,7 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("canonical_white_v_min", 145)
         self.declare_parameter("canonical_white_v_floor", 70)
         self.declare_parameter("canonical_white_relative_delta", 9.0)
+        self.declare_parameter("canonical_white_min_component_median_v", 0.0)
         self.declare_parameter("canonical_min_component_area_px", 8)
         self.declare_parameter("canonical_white_max_component_thickness_px", 0.0)
         self.declare_parameter("canonical_yellow_max_component_thickness_px", 0.0)
@@ -206,6 +207,7 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("canonical_tracking_base_gate_m", 0.08)
         self.declare_parameter("canonical_tracking_max_gate_m", 0.25)
         self.declare_parameter("canonical_tracking_continuation_m", 0.38)
+        self.declare_parameter("canonical_yellow_fit_gate_m", 0.0)
         self.declare_parameter("canonical_tracking_curvature_gate_gain", 1.0)
         self.declare_parameter(
             "canonical_tracking_curvature_max_extra_m", 0.10
@@ -339,6 +341,11 @@ class CameraPerceptionNode(Node):
         self.canonical_white_relative_delta = float(
             self.get_parameter("canonical_white_relative_delta").value
         )
+        self.canonical_white_min_component_median_v = float(
+            self.get_parameter(
+                "canonical_white_min_component_median_v"
+            ).value
+        )
         self.canonical_min_component_area_px = int(
             self.get_parameter("canonical_min_component_area_px").value
         )
@@ -411,6 +418,9 @@ class CameraPerceptionNode(Node):
         )
         self.canonical_tracking_continuation_m = float(
             self.get_parameter("canonical_tracking_continuation_m").value
+        )
+        self.canonical_yellow_fit_gate_m = float(
+            self.get_parameter("canonical_yellow_fit_gate_m").value
         )
         self.canonical_tracking_curvature_gate_gain = float(
             self.get_parameter(
@@ -504,6 +514,7 @@ class CameraPerceptionNode(Node):
                 continuation_distance_m=(
                     self.canonical_tracking_continuation_m
                 ),
+                yellow_fit_gate_m=self.canonical_yellow_fit_gate_m,
                 curvature_gate_gain=(
                     self.canonical_tracking_curvature_gate_gain
                 ),
@@ -863,6 +874,9 @@ class CameraPerceptionNode(Node):
             white_max_mask_fraction=self.canonical_white_max_mask_fraction,
             yellow_max_mask_fraction=self.canonical_yellow_max_mask_fraction,
             max_line_fit_rmse_px=self.canonical_max_line_fit_rmse_px,
+            white_min_component_median_v=(
+                self.canonical_white_min_component_median_v
+            ),
             top_ignore_m=self.canonical_top_ignore_m,
             bottom_ignore_m=self.canonical_bottom_ignore_m,
         )

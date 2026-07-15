@@ -78,7 +78,7 @@ Visualization Manager:
         Value: /rule_drive/debug_markers
       Value: true
     - Class: rviz_default_plugins/Image
-      Enabled: false
+      Enabled: true
       Max Value: 1
       Median window: 5
       Min Value: 0
@@ -90,7 +90,7 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /perception/rectified_camera_image
-      Value: false
+      Value: true
     - Class: rviz_default_plugins/Image
       Enabled: true
       Max Value: 1
