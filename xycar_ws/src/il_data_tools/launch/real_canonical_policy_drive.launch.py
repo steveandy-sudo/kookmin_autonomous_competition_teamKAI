@@ -41,9 +41,8 @@ def generate_launch_description():
                 "perception_launch_file",
                 default_value="real_canonical_perception.launch.py",
                 description=(
-                    "Perception profile launch file. Use "
-                    "real_temp_track_canonical_perception.launch.py only "
-                    "on the measured temporary modular track."
+                    "Perception profile launch file. The default shared "
+                    "real profile is used on competition and temporary tracks."
                 ),
             ),
             DeclareLaunchArgument(

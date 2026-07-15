@@ -608,6 +608,26 @@ class CanonicalLaneTracker:
             <= self.expected_offset_px + self.width_tolerance_px
         )
 
+    def _boundary_side_from_near_field(
+        self,
+        candidate: CurveCandidate,
+    ) -> str | None:
+        """Infer a physical boundary side from its closest visible rows."""
+        band_rows = np.linspace(
+            max(candidate.row_min, candidate.row_max - 5),
+            candidate.row_max,
+            6,
+            dtype=np.float64,
+        )
+        near_x = float(np.median(candidate.x_at(band_rows)))
+        center_x = self.width * 0.5
+        margin = max(float(self.line_width_px), self.base_gate_px)
+        if near_x < center_x - margin:
+            return "left_white"
+        if near_x > center_x + margin:
+            return "right_white"
+        return None
+
     def _yellow_respects_white_corridor(
         self,
         yellow: CurveCandidate | None,
@@ -649,6 +669,15 @@ class CanonicalLaneTracker:
                 white.row_min,
                 white.row_max,
             )
+            boundary_side = self._boundary_side_from_near_field(white)
+            if boundary_side is not None and offset is not None:
+                if not self._yellow_matches_side(offset, boundary_side):
+                    return False
+                if boundary_side == "left_white":
+                    has_left_support = True
+                else:
+                    has_right_support = True
+                continue
             if self._yellow_matches_side(offset, "left_white"):
                 has_left_support = True
             if self._yellow_matches_side(offset, "right_white"):
@@ -662,6 +691,40 @@ class CanonicalLaneTracker:
             (has_left_support or has_right_support)
             and self.width * 0.20 <= midpoint_x <= self.width * 0.80
         )
+
+    def _yellow_respects_dominant_near_boundaries(
+        self,
+        yellow: CurveCandidate,
+        white_mask: np.ndarray,
+    ) -> bool:
+        strongest: dict[str, tuple[float, CurveCandidate]] = {}
+        for white in _component_candidates(white_mask, min_span_px=10):
+            side = self._boundary_side_from_near_field(white)
+            if side is None:
+                continue
+            offset = self._yellow_white_offset(
+                yellow,
+                white.coefficients,
+                white.row_min,
+                white.row_max,
+            )
+            if offset is None:
+                continue
+            quality = white.span * 3.0 + white.area * 0.1
+            previous = strongest.get(side)
+            if previous is None or quality > previous[0]:
+                strongest[side] = (quality, white)
+
+        for side, (_, white) in strongest.items():
+            offset = self._yellow_white_offset(
+                yellow,
+                white.coefficients,
+                white.row_min,
+                white.row_max,
+            )
+            if not self._yellow_matches_side(offset, side):
+                return False
+        return True
 
     def _recover_yellow_from_white_corridor(
         self,
@@ -766,6 +829,7 @@ class CanonicalLaneTracker:
                 yellow_row_max = yellow_track.row_max
 
         for candidate in candidates:
+            near_field_side = self._boundary_side_from_near_field(candidate)
             sample_row_min = candidate.row_min
             sample_row_max = candidate.row_max
             if yellow_coefficients is not None:
@@ -798,15 +862,16 @@ class CanonicalLaneTracker:
                 if same_side_ratio < 0.85:
                     continue
                 side = "left_white" if median_offset < 0.0 else "right_white"
+                if near_field_side is not None and near_field_side != side:
+                    continue
                 topology_score = (
                     abs(abs(median_offset) - self.expected_offset_px)
                     / max(1.0, self.width_tolerance_px)
                 )
             else:
                 median_x = float(np.median(candidate_x))
-                side = (
-                    "left_white"
-                    if median_x < self.width * 0.5
+                side = near_field_side or (
+                    "left_white" if median_x < self.width * 0.5
                     else "right_white"
                 )
                 topology_score = 0.5
@@ -1190,6 +1255,16 @@ class CanonicalLaneTracker:
                 yellow_candidate = _prune_curve_components(
                     yellow_candidate, self.yellow_fit_gate_px
                 )
+
+            if (
+                yellow_candidate is not None
+                and not self._yellow_respects_dominant_near_boundaries(
+                    yellow_candidate,
+                    white_mask,
+                )
+            ):
+                yellow_candidate = None
+                recovered_yellow = None
 
             white_tracking_mask = white_mask
             if recovered_yellow is not None:

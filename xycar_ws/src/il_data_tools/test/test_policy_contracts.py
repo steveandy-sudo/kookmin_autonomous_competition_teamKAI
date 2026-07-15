@@ -155,8 +155,9 @@ class PolicyContractTests(unittest.TestCase):
         self.assertIn('"sync_tolerance_sec"', source)
         self.assertIn('"perception_launch_file"', source)
         self.assertIn(
-            "real_temp_track_canonical_perception.launch.py", source
+            'default_value="real_canonical_perception.launch.py"', source
         )
+        self.assertIn("competition and temporary tracks", source)
 
     def test_policy_republishes_stop_while_waiting_for_sensors(self):
         source = (

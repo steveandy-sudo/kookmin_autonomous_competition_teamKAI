@@ -21,6 +21,11 @@ raw RGB 모방학습과 실차 이식 시험을 진행했습니다. 실차에서
 [`docs/2026-07-15_1p5m_canonical_validation.md`](docs/2026-07-15_1p5m_canonical_validation.md)에 있습니다.
 현재 canonical 모델 입력은 관측 전용입니다. 현재 카메라 프레임에 보인 선만
 출력하며, 사라진 흰 경계를 합성하거나 이전 프레임의 차선을 유지하지 않습니다.
+2026-07-15부터 본선과 임시 조립식 트랙 모두 임시트랙에서 검증한 실차 인지
+프로필을 공통으로 사용합니다. 노란선-흰선 기준 거리는 `0.49m`, 흰 성분 중간
+밝기 하한은 `V=140`, 노란 곡선 이탈 허용은 `0.08m`입니다. 차량 가까운 쪽
+흰선으로 물리적 좌우를 판정하고, 같은 쪽 후보 중 가장 길고 큰 흰 경계 바깥에
+놓인 노란 후보는 canonical 중앙선으로 출력하지 않습니다.
 
 작업 시간순 기록, 발생한 문제와 수정 근거, canonical 수집·학습 상태, 실차 PC의
 Codex가 바로 따라야 할 파일과 명령은
@@ -199,7 +204,7 @@ rviz2 -d "$(ros2 pkg prefix xycar_rule_drive)/share/xycar_rule_drive/rviz/real_l
 배경 BGR (36,36,36)
 흰 경계 BGR (255,255,255), 5px
 노란 중앙선 BGR (0,220,255), 5px
-흰선 중심 간격 약 0.824m, 영상에서 약 151px
+흰선 중심 간격 약 0.98m, 영상에서 약 179px
 30cm 중앙 점선 길이 약 29px
 ```
 
@@ -266,17 +271,18 @@ ros2 run rqt_image_view rqt_image_view /il/policy_input_image
 `steering_output_sign:=-1.0`으로 shadow를 다시 확인합니다. 동기화가 실패할 때만
 `sync_tolerance_sec:=0.08`처럼 조금 늘리고, 원인을 기록합니다.
 
-#### 임시 조립식 트랙 profile
+#### 본선·임시트랙 공통 perception profile
 
-`track_run_02`를 촬영한 임시 트랙은 노란 중앙선에서 흰 경계선까지 약
-`0.49m`이며, 본선 트랙의 `0.412m`와 다릅니다. 이 트랙에서만 다음 profile을
-지정합니다. 바닥 이음새와 곡선 노란 점선 필터도 함께 적용됩니다.
+본선과 `track_run_02` 임시트랙 모두 기본
+`real_canonical_perception.launch.py`를 사용합니다. 기본값에 `0.49m` 차폭
+기준, `V=140` 흰 성분 필터, `0.08m` 노란선 곡선 필터와 흰 경계 바깥 중앙선
+제거가 모두 포함됩니다. 아래처럼 별도 profile 인자를 주지 않는 명령이 권장
+실행법입니다.
 
 ```bash
 MODEL="$(ros2 pkg prefix il_data_tools)/share/il_data_tools/models/drive_canonical_policy_scripted.pt"
 
 ros2 launch il_data_tools real_canonical_policy_drive.launch.py \
-  perception_launch_file:=real_temp_track_canonical_perception.launch.py \
   model_path:="$MODEL" \
   source_image_topic:=/wide_camera/rect/image_raw \
   enable_rectify:=false \
@@ -297,12 +303,13 @@ env -u GTK_PATH -u GTK_EXE_PREFIX -u GIO_MODULE_DIR \
   rviz2 -d "$(ros2 pkg prefix xycar_rule_drive)/share/xycar_rule_drive/rviz/real_lane_drive.rviz"
 ```
 
-본선 트랙에서는 `perception_launch_file` 인자를 빼고 기본
-`real_canonical_perception.launch.py`를 사용합니다.
+기존 자동화와의 호환성을 위해
+`real_temp_track_canonical_perception.launch.py`도 남아 있지만 현재는 같은 값을
+전달하는 별칭입니다.
 
 본선 로스백을 본선 profile로 RViz에서 다시 처리할 때는 다음 통합 launch를
-사용합니다. 임시 트랙의 `0.49m`, 밝기 `V 140`, 노란선 `0.08m` 필터는 적용되지
-않고 본선의 `0.412m` 계약과 공통 추적기 개선만 적용됩니다.
+사용합니다. 본선 로스백에도 공통 `0.49m`, 밝기 `V=140`, 노란선 `0.08m`
+필터와 경계 바깥 중앙선 제거가 적용됩니다.
 
 ```bash
 ros2 launch xycar_rule_drive real_competition_track_bag_rviz.launch.py
@@ -348,12 +355,11 @@ ros2 topic pub --once /xycar_motor std_msgs/msg/Float32MultiArray \
   "{data: [0.0, 0.0]}"
 ```
 
-임시 조립식 트랙에서 shadow 검증을 통과한 뒤 저속으로 전환할 때는 위 명령에
-profile 인자 하나를 추가합니다.
+임시 조립식 트랙도 동일한 기본 perception을 사용하므로 별도 profile 인자가
+필요하지 않습니다.
 
 ```bash
 ros2 launch il_data_tools real_canonical_policy_drive.launch.py \
-  perception_launch_file:=real_temp_track_canonical_perception.launch.py \
   model_path:="$MODEL" \
   source_image_topic:=/wide_camera/rect/image_raw \
   enable_rectify:=false \
@@ -370,7 +376,7 @@ ros2 launch il_data_tools real_canonical_policy_drive.launch.py \
 ```
 
 첫 실차 시험에서 이번 인지 수정의 동작은 확인할 수 있지만, 기존 모델은 수정된
-임시 트랙 실차 canonical 영상으로 다시 학습한 모델이 아닙니다. 반드시 shadow
+공통 실차 canonical 영상으로 다시 학습한 모델이 아닙니다. 반드시 shadow
 출력을 먼저 확인하고 즉시 전체 속도로 올리지 않습니다.
 
 실차 Codex는 첫 시험 후 canonical 원본/모델 입력 화면, `/il/policy_debug`,

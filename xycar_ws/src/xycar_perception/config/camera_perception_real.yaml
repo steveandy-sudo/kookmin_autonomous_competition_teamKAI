@@ -50,8 +50,8 @@ xycar_camera_perception:
     src_bottom_y_ratio: 0.614189
     bev_width: 640
     bev_height: 220
-    # White-line centers are +/-0.412m. Map them to the matching metric
-    # columns while preserving a 1.4m-wide rectangular output.
+    # Preserve the measured 2026-07-14 source-to-BEV calibration anchors.
+    # The shared real-track topology gate is configured separately below.
     dst_left_ratio: 0.205714
     dst_right_ratio: 0.794286
     dst_top_y_ratio: 0.0
@@ -103,6 +103,7 @@ xycar_camera_perception:
     canonical_white_v_min: 245
     canonical_white_v_floor: 95
     canonical_white_relative_delta: 20.0
+    canonical_white_min_component_median_v: 140.0
     canonical_min_component_area_px: 12
     canonical_white_max_component_thickness_px: 28.0
     canonical_yellow_max_component_thickness_px: 24.0
@@ -124,14 +125,14 @@ xycar_camera_perception:
     canonical_top_ignore_m: 0.0
     canonical_bottom_ignore_m: 0.0
     canonical_tracking_enabled: true
-    # White-line center offset from the yellow center: 0.80m inner width plus
-    # half of each 24mm marking gives 0.412m per side.
-    canonical_expected_half_lane_width_m: 0.412
-    canonical_lane_width_tolerance_m: 0.18
+    # Shared real-track profile, calibrated on the temporary modular track.
+    canonical_expected_half_lane_width_m: 0.49
+    canonical_lane_width_tolerance_m: 0.14
     canonical_min_white_yellow_offset_m: 0.18
     canonical_tracking_base_gate_m: 0.08
     canonical_tracking_max_gate_m: 0.25
     canonical_tracking_continuation_m: 0.38
+    canonical_yellow_fit_gate_m: 0.08
     # Curved dashed lines need a slightly wider lateral association gate than
     # straight lines. The extra allowance is capped to reject remote clutter.
     canonical_tracking_curvature_gate_gain: 1.0

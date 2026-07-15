@@ -161,13 +161,12 @@ ros2 topic echo /il/policy_motor_shadow
 rqt_image_view /il/policy_input_image
 ```
 
-`track_run_02` 임시 조립식 트랙에서는 측정된 `0.49m` 중앙선-흰선 간격과
-바닥 이음새 필터를 적용하도록 perception profile을 바꾼다. 본선 트랙에서는
-이 인자를 사용하지 않는다.
+본선과 `track_run_02` 임시 조립식 트랙은 공통 기본 perception profile을
+사용한다. 기본값에 `0.49m` 중앙선-흰선 기준, 바닥 이음새 필터와 흰 경계
+바깥쪽 중앙선 제거가 포함되므로 별도 profile 인자가 필요하지 않다.
 
 ```bash
 ros2 launch il_data_tools real_canonical_policy_drive.launch.py \
-  perception_launch_file:=real_temp_track_canonical_perception.launch.py \
   source_image_topic:=/wide_camera/rect/image_raw \
   enable_rectify:=false use_compressed_image:=false \
   scan_topic:=/scan drive_enabled:=false device:=cpu

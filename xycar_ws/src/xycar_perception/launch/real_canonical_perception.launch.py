@@ -130,20 +130,20 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "canonical_expected_half_lane_width_m",
-                default_value="0.412",
+                default_value="0.49",
                 description="Expected yellow-center to white-boundary distance.",
             ),
             DeclareLaunchArgument(
-                "canonical_lane_width_tolerance_m", default_value="0.18"
+                "canonical_lane_width_tolerance_m", default_value="0.14"
             ),
             DeclareLaunchArgument(
                 "canonical_white_min_component_median_v",
-                default_value="0.0",
+                default_value="140.0",
                 description="Reject dim white components such as floor seams.",
             ),
             DeclareLaunchArgument(
                 "canonical_yellow_fit_gate_m",
-                default_value="0.0",
+                default_value="0.08",
                 description="Prune yellow components away from one fitted curve.",
             ),
             Node(

@@ -456,6 +456,56 @@ class CanonicalLaneTrackerTest(unittest.TestCase):
         self.assertGreater(np.count_nonzero(result.white_mask), 0)
         self.assertGreater(np.count_nonzero(result.yellow_mask), 0)
 
+    def test_rejects_yellow_outside_near_field_right_boundary(self):
+        tracker = CanonicalLaneTracker(
+            width=256,
+            height=144,
+            lateral_range_m=1.4,
+            forward_range_m=1.5,
+            expected_half_lane_width_m=0.49,
+            lane_width_tolerance_m=0.14,
+            confirmation_frames=1,
+            coast_sec=0.0,
+            search_sec=0.0,
+            smoothing_alpha=1.0,
+            width_prediction_enabled=False,
+            persistent_prediction_enabled=False,
+        )
+        white = np.zeros((144, 256), dtype=np.uint8)
+        yellow = np.zeros_like(white)
+        white_rows = np.arange(20, 119, dtype=np.float64)
+        white_x = np.polyval(
+            np.polyfit(
+                np.array([20.0, 40.0, 118.0]),
+                np.array([30.0, 76.0, 178.0]),
+                2,
+            ),
+            white_rows,
+        )
+        cv2.polylines(
+            white,
+            [
+                np.column_stack((white_x, white_rows))
+                .round()
+                .astype(np.int32)
+            ],
+            False,
+            255,
+            5,
+        )
+        cv2.line(yellow, (118, 14), (123, 40), 255, 5)
+        # A short reflection sits outside the false yellow candidate. The
+        # longer physical right boundary must remain the topology reference.
+        cv2.line(white, (222, 77), (222, 93), 255, 5)
+
+        result = tracker.update(white, yellow, timestamp_sec=0.0)
+
+        self.assertEqual(result.statuses["yellow"], "lost")
+        self.assertEqual(np.count_nonzero(result.yellow_mask), 0)
+        self.assertEqual(result.statuses["left_white"], "lost")
+        self.assertEqual(result.statuses["right_white"], "confirmed")
+        self.assertGreater(np.count_nonzero(result.white_mask), 0)
+
     def test_observation_only_replaces_distant_curve_in_one_frame(self):
         tracker = CanonicalLaneTracker(
             width=256,

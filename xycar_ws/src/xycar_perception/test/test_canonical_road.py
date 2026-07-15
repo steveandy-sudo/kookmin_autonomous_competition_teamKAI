@@ -224,6 +224,9 @@ class CanonicalRoadTest(unittest.TestCase):
         self.assertEqual(params["canonical_white_v_min"], 245)
         self.assertEqual(params["canonical_white_v_floor"], 95)
         self.assertEqual(params["canonical_white_relative_delta"], 20.0)
+        self.assertEqual(
+            params["canonical_white_min_component_median_v"], 140.0
+        )
         self.assertEqual(params["canonical_min_component_area_px"], 12)
         self.assertEqual(
             params["canonical_white_max_component_thickness_px"], 28.0
@@ -251,8 +254,12 @@ class CanonicalRoadTest(unittest.TestCase):
         )
         self.assertFalse(params["canonical_persistent_prediction_enabled"])
         self.assertAlmostEqual(
-            params["canonical_expected_half_lane_width_m"], 0.412
+            params["canonical_expected_half_lane_width_m"], 0.49
         )
+        self.assertAlmostEqual(
+            params["canonical_lane_width_tolerance_m"], 0.14
+        )
+        self.assertAlmostEqual(params["canonical_yellow_fit_gate_m"], 0.08)
 
     def test_sim_config_does_not_apply_real_fisheye_rectification(self):
         config_path = Path(__file__).resolve().parents[1] / "config" / "camera_perception.yaml"

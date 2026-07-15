@@ -36,8 +36,7 @@ def generate_launch_description():
                     "use_compressed_image": use_compressed_image,
                     "enable_rectify": enable_rectify,
                     "use_sim_time": use_sim_time,
-                    # This temporary modular track measures about 0.49m from
-                    # its yellow centerline to either white boundary in BEV.
+                    # Compatibility alias for the shared real-track profile.
                     "canonical_expected_half_lane_width_m": "0.49",
                     "canonical_lane_width_tolerance_m": "0.14",
                     # Floor seams are dim (median V 98-130); physical white
