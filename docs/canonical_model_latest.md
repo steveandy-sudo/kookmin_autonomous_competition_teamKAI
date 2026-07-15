@@ -1,22 +1,16 @@
 # Latest Canonical BEV Policy
 
-Validated on 2026-07-15 after collection, training and held-out evaluation.
+This file is generated only after collection, training, offline evaluation, and
+GitHub publication all pass.
 
 - model: `drive_canonical_policy_scripted.pt`
-- SHA-256: `dd8cb6c2ccfca5a438b08e90f930f50527a88b5169cae9e8239dd129f78dbb21`
-- collected rows: `30000`
-- general-drive rows: `21547`
-- recovery rows: `8453`
-- recovery ratio: `0.28177`
-- stopped rows: `0`
-- discarded stopped pre-roll rows: `433`
-- real-camera-like canonical artifact events: `1041`
-- best epoch: `50`
-- validation MAE (Xycar angle command): `3.83424`
-- held-out rows: `5000`
-- held-out test MAE: `3.37915`
-- held-out recovery MAE: `4.28435`
-- held-out RMSE: `5.51879`
+- SHA-256: `8da35fa8a56904f9970679da0af68d938f60848991af3abf9a37027d9195b58b`
+- collected rows: `100000`
+- recovery rows: `39652`
+- recovery ratio: `0.397`
+- best epoch: `33`
+- validation MAE (Xycar angle command): `1.9056313742146813`
+- held-out test MAE (Xycar angle command): `1.8924480961033685`
 
 ## Simulation
 
@@ -27,25 +21,22 @@ colcon build --packages-select kaiev26_msgs xycar_perception \
   xycar_gazebo_bridge il_data_tools --symlink-install
 source install/setup.bash
 
+MODEL="$(ros2 pkg prefix il_data_tools)/share/il_data_tools/models/drive_canonical_policy_scripted.pt"
 ros2 launch il_data_tools sim_policy_drive.launch.py \
+  model_path:="$MODEL" \
+  image_topic:=/perception/canonical_road_image \
   drive_enabled:=true device:=cuda
 ```
-
-The launch defaults to the packaged canonical model and
-`/perception/canonical_road_image`.
 
 ## Real Car Shadow
 
 ```bash
 MODEL="$(ros2 pkg prefix il_data_tools)/share/il_data_tools/models/drive_canonical_policy_scripted.pt"
-sha256sum "$MODEL"
-
 ros2 launch il_data_tools real_canonical_policy_drive.launch.py \
   model_path:="$MODEL" \
   source_image_topic:=/wide_camera/rect/image_raw \
-  enable_rectify:=false use_compressed_image:=false \
   scan_topic:=/scan drive_enabled:=false device:=cpu
 ```
 
-Do not enable the motor until the canonical image, steering sign, sensor
-synchronization and timeout stop have passed the root README checklist.
+Only after the shadow steering sign and sensor timeout stop have been checked,
+repeat the second command with `drive_enabled:=true speed_command:=3.0`.
