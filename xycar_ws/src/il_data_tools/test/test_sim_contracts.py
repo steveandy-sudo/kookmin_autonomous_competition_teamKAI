@@ -92,7 +92,10 @@ class SimulationContractTests(unittest.TestCase):
         self.assertIn('"image_format": image_format', source)
         self.assertIn('"lane_offset_from_yellow_m": ParameterValue', source)
         self.assertIn('["gz", "sim", "-s", "-r", str(generated_world)]', source)
-        self.assertIn('cmd=["gz", "sim", "-g"]', source)
+        self.assertIn('"QT_QPA_PLATFORM_PLUGIN_PATH"', source)
+        self.assertIn('"gz",', source)
+        self.assertIn('"sim",', source)
+        self.assertIn('"-g",', source)
 
     def test_randomized_batch_collector_can_store_canonical_recovery_data(self):
         source = (

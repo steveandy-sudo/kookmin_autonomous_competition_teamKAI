@@ -40,7 +40,9 @@ def generate_launch_description():
     rviz_clean_env = (
         "import os, sys; "
         "[os.environ.pop(k, None) for k, v in list(os.environ.items()) "
-        "if k.startswith('SNAP') or '/snap' in v]; "
+        "if k.startswith('SNAP') or '/snap' in v "
+        "or k in {'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH', "
+        "'QT_QPA_FONTDIR'}]; "
         "os.execv('/opt/ros/humble/bin/rviz2', "
         "['/opt/ros/humble/bin/rviz2', '-d', sys.argv[1], "
         "'--ros-args', '-r', '__node:=xycar_gazebo_rviz', "

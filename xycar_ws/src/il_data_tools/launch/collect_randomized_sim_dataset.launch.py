@@ -131,7 +131,18 @@ def _prepare_environment(context):
                 period=3.0,
                 actions=[
                     ExecuteProcess(
-                        cmd=["gz", "sim", "-g"],
+                        cmd=[
+                            "env",
+                            "-u",
+                            "QT_PLUGIN_PATH",
+                            "-u",
+                            "QT_QPA_PLATFORM_PLUGIN_PATH",
+                            "-u",
+                            "QT_QPA_FONTDIR",
+                            "gz",
+                            "sim",
+                            "-g",
+                        ],
                         name="kookmin_randomized_gazebo_gui",
                         output="screen",
                     )
