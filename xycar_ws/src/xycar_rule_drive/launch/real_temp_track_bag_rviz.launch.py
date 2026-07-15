@@ -17,6 +17,9 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description():
     bag_path = LaunchConfiguration("bag_path")
     image_topic = LaunchConfiguration("image_topic")
+    perception_launch_file = LaunchConfiguration(
+        "perception_launch_file"
+    )
     playback_rate = LaunchConfiguration("playback_rate")
     play_bag = LaunchConfiguration("play_bag")
     use_sim_time = LaunchConfiguration("use_sim_time")
@@ -26,7 +29,7 @@ def generate_launch_description():
         [
             FindPackageShare("xycar_perception"),
             "launch",
-            "real_temp_track_canonical_perception.launch.py",
+            perception_launch_file,
         ]
     )
     driver_config = PathJoinSubstitution(
@@ -49,6 +52,13 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "image_topic",
                 default_value="/wide_camera_mjpeg/image_raw/compressed",
+            ),
+            DeclareLaunchArgument(
+                "perception_launch_file",
+                default_value=(
+                    "real_temp_track_canonical_perception.launch.py"
+                ),
+                description="Canonical perception profile launch file.",
             ),
             DeclareLaunchArgument("playback_rate", default_value="1.0"),
             DeclareLaunchArgument("play_bag", default_value="true"),
@@ -137,7 +147,7 @@ def generate_launch_description():
             ),
             LogInfo(
                 msg=(
-                    "Temporary-track rosbag RViz inspection is SHADOW-only; "
+                    "Rosbag RViz inspection is SHADOW-only; "
                     "physical motor output is disabled."
                 )
             ),

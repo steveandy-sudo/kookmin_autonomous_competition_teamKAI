@@ -300,6 +300,14 @@ env -u GTK_PATH -u GTK_EXE_PREFIX -u GIO_MODULE_DIR \
 본선 트랙에서는 `perception_launch_file` 인자를 빼고 기본
 `real_canonical_perception.launch.py`를 사용합니다.
 
+본선 로스백을 본선 profile로 RViz에서 다시 처리할 때는 다음 통합 launch를
+사용합니다. 임시 트랙의 `0.49m`, 밝기 `V 140`, 노란선 `0.08m` 필터는 적용되지
+않고 본선의 `0.412m` 계약과 공통 추적기 개선만 적용됩니다.
+
+```bash
+ros2 launch xycar_rule_drive real_competition_track_bag_rviz.launch.py
+```
+
 ### 5. 실차 저속 주행
 
 다음을 모두 만족한 뒤에만 모터 출력을 켭니다.
