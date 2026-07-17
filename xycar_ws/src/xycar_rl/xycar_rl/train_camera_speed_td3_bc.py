@@ -92,7 +92,7 @@ def validation_metrics(agent, loader) -> dict[str, float]:
     agent.actor.eval()
     for batch in loader:
         image = batch["image"].to(agent.device)
-        action = batch["action"].to(agent.device)
+        action = batch.get("bc_action", batch["action"]).to(agent.device)
         prediction = agent.actor(image)
         squared_error += (
             torch.sum((prediction - action) ** 2, dim=0).detach().cpu().numpy()

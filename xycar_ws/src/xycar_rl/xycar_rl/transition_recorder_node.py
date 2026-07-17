@@ -71,6 +71,9 @@ class TransitionRecorderNode(Node):
         self.require_action_trace = bool(
             self.get_parameter("require_action_trace").value
         )
+        self.require_expert_action_trace = bool(
+            self.get_parameter("require_expert_action_trace").value
+        )
         self.require_lidar = bool(self.get_parameter("require_lidar").value)
         self.track = TrackReference.from_sdf(
             world_sdf,
@@ -110,7 +113,9 @@ class TransitionRecorderNode(Node):
                     if self.require_lidar
                     else "state_image_timestamp_join_exact_or_motor_fallback"
                 ),
+                "expert_action_alignment": "optional_state_timestamp_join",
                 "require_action_trace": self.require_action_trace,
+                "require_expert_action_trace": self.require_expert_action_trace,
                 "sensor_sync_tolerance_sec": float(
                     self.get_parameter("sensor_sync_tolerance_sec").value
                 ),
@@ -136,10 +141,14 @@ class TransitionRecorderNode(Node):
         self.cumulative_progress_m = 0.0
         self.finished = False
         self.actions_by_state_timestamp: dict[int, tuple[float, float]] = {}
+        self.expert_actions_by_state_timestamp: dict[
+            int, tuple[float, float]
+        ] = {}
         self.pending_transitions: deque[
             tuple[RecorderSnapshot, RecorderSnapshot]
         ] = deque()
         self.exact_action_count = 0
+        self.expert_action_count = 0
         self.fallback_action_count = 0
         self.skipped_untraced_count = 0
 
@@ -151,6 +160,9 @@ class TransitionRecorderNode(Node):
         motor_topic = str(self.get_parameter("motor_topic").value)
         reset_topic = str(self.get_parameter("episode_reset_topic").value)
         action_trace_topic = str(self.get_parameter("action_trace_topic").value)
+        expert_action_trace_topic = str(
+            self.get_parameter("expert_action_trace_topic").value
+        )
         self.create_subscription(
             Image, image_topic, self._on_image, qos_profile_sensor_data
         )
@@ -174,6 +186,12 @@ class TransitionRecorderNode(Node):
         self.create_subscription(Bool, reset_topic, self._on_reset, 10)
         self.create_subscription(
             TwistStamped, action_trace_topic, self._on_action_trace, 10
+        )
+        self.create_subscription(
+            TwistStamped,
+            expert_action_trace_topic,
+            self._on_expert_action_trace,
+            10,
         )
         self.stop_pub = self.create_publisher(Float32MultiArray, motor_topic, 10)
         self.get_logger().info(
@@ -201,6 +219,7 @@ class TransitionRecorderNode(Node):
         self.declare_parameter("motor_topic", "/xycar_motor")
         self.declare_parameter("episode_reset_topic", "/rl/episode_reset")
         self.declare_parameter("action_trace_topic", "/rl/action_applied")
+        self.declare_parameter("expert_action_trace_topic", "/rl/action_expert")
         self.declare_parameter("target_right_offset_m", 0.0)
         self.declare_parameter("off_track_threshold_m", 0.38)
         self.declare_parameter("stuck_timeout_sec", 2.0)
@@ -211,6 +230,7 @@ class TransitionRecorderNode(Node):
         self.declare_parameter("max_transitions", 0)
         self.declare_parameter("allow_overwrite", False)
         self.declare_parameter("require_action_trace", False)
+        self.declare_parameter("require_expert_action_trace", False)
         self.declare_parameter("require_lidar", True)
         self.declare_parameter("require_reset_after_terminal", True)
         self.declare_parameter("auto_stop_on_terminal", True)
@@ -254,18 +274,29 @@ class TransitionRecorderNode(Node):
         self.latest_speed_command = float(msg.data[1])
 
     def _on_action_trace(self, msg: TwistStamped) -> None:
+        self._store_action_trace(msg, self.actions_by_state_timestamp)
+        self._drain_pending_transitions()
+
+    def _on_expert_action_trace(self, msg: TwistStamped) -> None:
+        self._store_action_trace(msg, self.expert_actions_by_state_timestamp)
+        self._drain_pending_transitions()
+
+    def _store_action_trace(
+        self,
+        msg: TwistStamped,
+        destination: dict[int, tuple[float, float]],
+    ) -> None:
         timestamp_ns = stamp_ns(msg, 0)
         if timestamp_ns <= 0:
             return
-        self.actions_by_state_timestamp[timestamp_ns] = (
+        destination[timestamp_ns] = (
             float(msg.twist.angular.z),
             float(msg.twist.linear.x),
         )
-        self._drain_pending_transitions()
-        if len(self.actions_by_state_timestamp) > 64:
-            oldest = sorted(self.actions_by_state_timestamp)[:-32]
+        if len(destination) > 64:
+            oldest = sorted(destination)[:-32]
             for key in oldest:
-                self.actions_by_state_timestamp.pop(key, None)
+                destination.pop(key, None)
 
     def _on_reset(self, msg: Bool) -> None:
         if not msg.data:
@@ -284,6 +315,7 @@ class TransitionRecorderNode(Node):
         self.latest_odom = None
         self.latest_world_pose = None
         self.actions_by_state_timestamp.clear()
+        self.expert_actions_by_state_timestamp.clear()
         self.pending_transitions.clear()
         self.termination.reset()
 
@@ -409,17 +441,30 @@ class TransitionRecorderNode(Node):
             angle_command,
             speed_command,
             action_source,
+            self.expert_actions_by_state_timestamp.pop(
+                previous.timestamp_ns, None
+            ),
         )
 
     def _drain_pending_transitions(self) -> None:
         """Record exact timestamp joins and discard pre-policy warm-up scans."""
         while self.pending_transitions and not self.finished:
             previous, current = self.pending_transitions[0]
-            traced_action = self.actions_by_state_timestamp.pop(
-                previous.timestamp_ns, None
+            traced_action = self.actions_by_state_timestamp.get(
+                previous.timestamp_ns
             )
-            if traced_action is not None:
+            expert_action = self.expert_actions_by_state_timestamp.get(
+                previous.timestamp_ns
+            )
+            if traced_action is not None and (
+                expert_action is not None
+                or not self.require_expert_action_trace
+            ):
                 self.pending_transitions.popleft()
+                self.actions_by_state_timestamp.pop(previous.timestamp_ns, None)
+                self.expert_actions_by_state_timestamp.pop(
+                    previous.timestamp_ns, None
+                )
                 self.exact_action_count += 1
                 self._record_transition(
                     previous,
@@ -427,6 +472,7 @@ class TransitionRecorderNode(Node):
                     traced_action[0],
                     traced_action[1],
                     "state_timestamp_trace",
+                    expert_action,
                 )
                 continue
 
@@ -434,6 +480,11 @@ class TransitionRecorderNode(Node):
                 timestamp_ns > previous.timestamp_ns
                 for timestamp_ns in self.actions_by_state_timestamp
             )
+            if self.require_expert_action_trace:
+                newer_action_exists = newer_action_exists and any(
+                    timestamp_ns > previous.timestamp_ns
+                    for timestamp_ns in self.expert_actions_by_state_timestamp
+                )
             queue_overflow = len(self.pending_transitions) > 32
             if not newer_action_exists and not queue_overflow:
                 break
@@ -453,6 +504,7 @@ class TransitionRecorderNode(Node):
         angle_command: float,
         speed_command: float,
         action_source: str,
+        expert_action: tuple[float, float] | None = None,
     ) -> None:
         if self.finished or self.waiting_for_reset:
             return
@@ -477,6 +529,23 @@ class TransitionRecorderNode(Node):
                 1.0,
             )
         )
+        if expert_action is None:
+            expert_angle_command = ""
+            expert_speed_command = ""
+            expert_action_norm = ""
+            expert_action_source = ""
+        else:
+            self.expert_action_count += 1
+            expert_angle_command = float(expert_action[0])
+            expert_speed_command = float(expert_action[1])
+            expert_action_norm = float(
+                np.clip(
+                    expert_angle_command / self.max_steering_command,
+                    -1.0,
+                    1.0,
+                )
+            )
+            expert_action_source = "state_timestamp_expert_trace"
         terminal = self.termination.update(
             dt_sec=dt_sec,
             elapsed_sec=self.elapsed_sec,
@@ -534,6 +603,10 @@ class TransitionRecorderNode(Node):
                 "angle_command": angle_command,
                 "speed_command": speed_command,
                 "action_source": action_source,
+                "expert_action_norm": expert_action_norm,
+                "expert_angle_command": expert_angle_command,
+                "expert_speed_command": expert_speed_command,
+                "expert_action_source": expert_action_source,
                 "reward": reward.total,
                 "reward_progress": reward.progress,
                 "reward_cross_track": reward.cross_track,
@@ -590,6 +663,7 @@ class TransitionRecorderNode(Node):
     def destroy_node(self):
         self.writer.metadata["exact_action_count"] = self.exact_action_count
         self.writer.metadata["fallback_action_count"] = self.fallback_action_count
+        self.writer.metadata["expert_action_count"] = self.expert_action_count
         self.writer.metadata["skipped_untraced_count"] = (
             self.skipped_untraced_count
         )

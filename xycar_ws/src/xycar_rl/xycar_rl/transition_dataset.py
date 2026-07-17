@@ -40,6 +40,31 @@ def find_transition_csvs(paths: list[str | Path]) -> list[Path]:
     return unique
 
 
+def camera_speed_action_targets(
+    row: dict[str, str],
+    min_speed_command: float,
+    max_speed_command: float,
+) -> tuple[list[float], list[float]]:
+    speed_norm = normalize_speed_command(
+        float(row["speed_command"]),
+        min_speed_command,
+        max_speed_command,
+    )
+    applied_action = [float(row["action_norm"]), speed_norm]
+    expert_action_norm = row.get("expert_action_norm", "")
+    expert_speed_command = row.get("expert_speed_command", "")
+    if expert_action_norm == "" or expert_speed_command == "":
+        return applied_action, applied_action.copy()
+    return applied_action, [
+        float(expert_action_norm),
+        normalize_speed_command(
+            float(expert_speed_command),
+            min_speed_command,
+            max_speed_command,
+        ),
+    ]
+
+
 class RLTransitionDataset(Dataset):
     def __init__(
         self,
@@ -223,8 +248,8 @@ class CameraSpeedTransitionDataset(RLTransitionDataset):
         done = bool(int(row.get("terminated", "0"))) or bool(
             int(row.get("truncated", "0"))
         )
-        speed_norm = normalize_speed_command(
-            float(row["speed_command"]),
+        applied_action, bc_action = camera_speed_action_targets(
+            row,
             self.min_speed_command,
             self.max_speed_command,
         )
@@ -234,9 +259,8 @@ class CameraSpeedTransitionDataset(RLTransitionDataset):
                 self.previous_image_paths[index],
                 row["state_image_path"],
             ),
-            "action": torch.tensor(
-                [float(row["action_norm"]), speed_norm], dtype=torch.float32
-            ),
+            "action": torch.tensor(applied_action, dtype=torch.float32),
+            "bc_action": torch.tensor(bc_action, dtype=torch.float32),
             "reward": torch.tensor(
                 [
                     self.recomputed_rewards[index]

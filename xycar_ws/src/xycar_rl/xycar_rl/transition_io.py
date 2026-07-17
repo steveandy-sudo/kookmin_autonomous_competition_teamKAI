@@ -22,6 +22,10 @@ TRANSITION_COLUMNS = [
     "angle_command",
     "speed_command",
     "action_source",
+    "expert_action_norm",
+    "expert_angle_command",
+    "expert_speed_command",
+    "expert_action_source",
     "reward",
     "reward_progress",
     "reward_cross_track",
@@ -75,7 +79,7 @@ class TransitionWriter:
         self.count = 0
         self.observation_paths: dict[int, tuple[str, str]] = {}
         self.metadata = dict(metadata or {})
-        self.metadata.setdefault("schema_version", 4)
+        self.metadata.setdefault("schema_version", 5)
         self.metadata.setdefault("created_unix_sec", time.time())
 
     def save_observation(

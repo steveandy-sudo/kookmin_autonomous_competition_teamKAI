@@ -31,6 +31,14 @@ def parse_args(argv=None):
     parser.add_argument("--minimum-speed-curvature", type=float, default=0.9)
     parser.add_argument("--curvature-preview-m", type=float, default=2.0)
     parser.add_argument("--random-starts", action="store_true")
+    parser.add_argument(
+        "--start-progress-fraction",
+        action="append",
+        type=float,
+        default=[],
+        help="Repeatable targeted start fraction; values cycle across episodes.",
+    )
+    parser.add_argument("--start-progress-jitter", type=float, default=0.015)
     parser.add_argument("--recovery-probability", type=float, default=0.5)
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     return parser.parse_args(argv)
@@ -72,10 +80,26 @@ def main(argv=None) -> None:
     global_step = 0
     try:
         for episode in range(args.episodes):
+            if args.start_progress_fraction:
+                base_progress = args.start_progress_fraction[
+                    episode % len(args.start_progress_fraction)
+                ]
+                progress_fraction = float(
+                    (
+                        base_progress
+                        + rng.uniform(
+                            -abs(args.start_progress_jitter),
+                            abs(args.start_progress_jitter),
+                        )
+                    )
+                    % 1.0
+                )
+            elif args.random_starts:
+                progress_fraction = float(rng.uniform(0.0, 1.0))
+            else:
+                progress_fraction = 0.0
             options = {
-                "progress_fraction": (
-                    float(rng.uniform(0.0, 1.0)) if args.random_starts else 0.0
-                ),
+                "progress_fraction": progress_fraction,
                 "lateral_error_m": 0.0,
                 "yaw_error_rad": 0.0,
             }
@@ -92,6 +116,7 @@ def main(argv=None) -> None:
             steering_stabilizer.reset()
             total_reward = 0.0
             speeds = []
+            steering_disagreements = []
             for step in range(1, args.max_steps + 1):
                 learner_action = np.asarray(policy(observation), dtype=np.float32)
                 expert_action = expert.action(info)
@@ -103,6 +128,9 @@ def main(argv=None) -> None:
                 ).astype(np.float32)
                 applied_action[0] = steering_stabilizer.update(
                     float(applied_action[0])
+                )
+                steering_disagreements.append(
+                    abs(float(learner_action[0] - expert_action[0]))
                 )
                 observation, reward, terminated, truncated, info = env.step(
                     applied_action,
@@ -119,6 +147,8 @@ def main(argv=None) -> None:
                 f"episode={episode} steps={step} return={total_reward:.2f} "
                 f"progress={float(info.get('cumulative_progress_m', 0.0)):.2f} "
                 f"applied_speed_mean={float(np.mean(speeds)):.2f} "
+                f"steer_disagreement_mean="
+                f"{float(np.mean(steering_disagreements)):.3f} "
                 f"reason={info.get('reason', 'limit')}",
                 flush=True,
             )

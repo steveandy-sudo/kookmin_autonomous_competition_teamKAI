@@ -112,6 +112,7 @@ class _GazeboEnvNode(Node):
         motor_topic: str,
         episode_reset_topic: str,
         action_trace_topic: str,
+        expert_action_trace_topic: str,
         input_width: int,
         input_height: int,
         lidar_points: int,
@@ -145,6 +146,9 @@ class _GazeboEnvNode(Node):
         )
         self.action_trace_pub = self.create_publisher(
             TwistStamped, action_trace_topic, 10
+        )
+        self.expert_action_trace_pub = self.create_publisher(
+            TwistStamped, expert_action_trace_topic, 10
         )
         self.create_subscription(
             Image, image_topic, self._on_image, qos_profile_sensor_data
@@ -315,14 +319,17 @@ class _GazeboEnvNode(Node):
         state_timestamp_ns: int,
         angle_command: float,
         speed_command: float,
+        *,
+        expert: bool = False,
     ) -> None:
         message = TwistStamped()
         message.header.stamp.sec = int(state_timestamp_ns // 1_000_000_000)
         message.header.stamp.nanosec = int(state_timestamp_ns % 1_000_000_000)
-        message.header.frame_id = "rl_state_scan"
+        message.header.frame_id = "rl_state"
         message.twist.angular.z = float(angle_command)
         message.twist.linear.x = float(speed_command)
-        self.action_trace_pub.publish(message)
+        publisher = self.expert_action_trace_pub if expert else self.action_trace_pub
+        publisher.publish(message)
 
     def publish_episode_reset(self) -> None:
         message = Bool()
@@ -439,6 +446,7 @@ class GazeboXycarEnv(gym.Env):
         motor_topic: str = "/xycar_motor",
         episode_reset_topic: str = "/rl/episode_reset",
         action_trace_topic: str = "/rl/action_applied",
+        expert_action_trace_topic: str = "/rl/action_expert",
         input_width: int = 160,
         input_height: int = 90,
         lidar_points: int = 360,
@@ -536,6 +544,7 @@ class GazeboXycarEnv(gym.Env):
             motor_topic=motor_topic,
             episode_reset_topic=episode_reset_topic,
             action_trace_topic=action_trace_topic,
+            expert_action_trace_topic=expert_action_trace_topic,
             input_width=self.input_width,
             input_height=self.input_height,
             lidar_points=self.lidar_points,
@@ -665,25 +674,30 @@ class GazeboXycarEnv(gym.Env):
         angle_command = steering_norm * self.max_steering_command
         if self.last_snapshot is None:
             raise RuntimeError("environment has no state for action tracing")
-        trace_values = (
-            action_values
-            if trace_action is None
-            else np.asarray(trace_action, dtype=np.float32).reshape(-1)
-        )
-        trace_steering_norm = float(np.clip(trace_values[0], -1.0, 1.0))
-        if self.variable_speed and trace_values.size >= 2:
-            trace_speed_command = denormalize_speed_command(
-                float(np.clip(trace_values[1], -1.0, 1.0)),
-                self.min_speed_command,
-                self.max_speed_command,
-            )
-        else:
-            trace_speed_command = speed_command
         self.node.publish_action_trace(
             self.last_snapshot.timestamp_ns,
-            trace_steering_norm * self.max_steering_command,
-            trace_speed_command,
+            angle_command,
+            speed_command,
         )
+        if trace_action is not None:
+            expert_values = np.asarray(trace_action, dtype=np.float32).reshape(-1)
+            expert_steering_norm = float(
+                np.clip(expert_values[0], -1.0, 1.0)
+            )
+            if self.variable_speed and expert_values.size >= 2:
+                expert_speed_command = denormalize_speed_command(
+                    float(np.clip(expert_values[1], -1.0, 1.0)),
+                    self.min_speed_command,
+                    self.max_speed_command,
+                )
+            else:
+                expert_speed_command = speed_command
+            self.node.publish_action_trace(
+                self.last_snapshot.timestamp_ns,
+                expert_steering_norm * self.max_steering_command,
+                expert_speed_command,
+                expert=True,
+            )
         self.node.publish_motor(angle_command, speed_command)
         if self.command_delivery_wait_sec > 0.0:
             time.sleep(self.command_delivery_wait_sec)

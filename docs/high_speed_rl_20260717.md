@@ -214,11 +214,39 @@ large oscillation   1 event in 1/5, 0 in 4/5
 이전 승인 cap 6보다 평균 command 기준 약 15.8% 빨라졌다. cap 7.25는 두 번째
 seed에서 이탈해 즉시 탈락했고, cap 8은 1/5만 완주했다. 조향 손실을 더 크게 둔
 steer-v4도 cap 7.5에서 3/5, cap 8에서 반복 성공하지 못해 선택하지 않았다.
-따라서 **현재 최종 시뮬레이션 모델은 focus-v3 epoch 42, 승인 cap은 7.0**이다.
+따라서 이 단계의 시뮬레이션 모델은 focus-v3 epoch 42, 승인 cap은 7.0이었다.
 
 각 단계는 같은 seed에서 BC 기준보다 완주율이 낮아지거나 최대 횡오차, 큰 조향
 왕복 횟수가 증가하면 탈락시킨다. 선택한 focus-v3 epoch 42도 아직 5개 seed만
 통과했으므로 이후 20 seed, 최종 100 seed 순서로 확대해야 한다.
+
+### 6.2 dual-action DAgger 갱신 결과
+
+기존 DAgger 기록은 blend 행동으로 `next_state`가 만들어졌는데 expert 행동을
+Critic action으로 사용할 수 있는 위험이 있었다. schema 5부터 두 행동을 분리한다.
+
+```text
+action_norm / speed_command                 실제 적용 행동, Critic 입력
+expert_action_norm / expert_speed_command   전문가 교정 행동, Actor BC target
+```
+
+`/rl/action_applied`와 `/rl/action_expert`를 state timestamp에 정확히 맞춰 기록한
+두 차례의 보강 결과, v6 epoch 51이 cap 7.5에서 seed `20260724~20260728`을
+5/5 완주했다.
+
+```text
+checkpoint          dual-dagger-v6 epoch 51
+approved speed cap  7.5
+lap success         5/5
+mean speed command  7.21..7.31
+max CTE             0.198..0.280m
+large oscillation   0 event in 4/5, 1 event / 4 steps in 1/5
+```
+
+cap 8 실패 상태를 다시 수집한 v7 epoch 57은 `17..21m` 전문가 조향 MAE가
+`0.1941 -> 0.1743`으로 줄었지만, 폐루프 seed `20260724`에서 `18.90m`,
+CTE `0.429m`로 이탈했다. 따라서 현재 승인 모델은 **dual-dagger-v6 epoch 51,
+승인 cap 7.5**이며 v7은 다음 DAgger의 출발 후보일 뿐이다.
 
 ## 7. 실차 shadow
 

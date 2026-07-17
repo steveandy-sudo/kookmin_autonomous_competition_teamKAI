@@ -55,7 +55,9 @@ class TransitionWriterTest(unittest.TestCase):
             metadata = json.loads(
                 (Path(directory) / "metadata.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(metadata["schema_version"], 4)
+            self.assertEqual(metadata["schema_version"], 5)
+            self.assertIn("expert_action_norm", TRANSITION_COLUMNS)
+            self.assertIn("expert_speed_command", TRANSITION_COLUMNS)
             with self.assertRaises(FileExistsError):
                 TransitionWriter(directory)
 

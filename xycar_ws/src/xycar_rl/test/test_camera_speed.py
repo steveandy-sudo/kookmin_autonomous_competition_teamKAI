@@ -27,6 +27,7 @@ from xycar_rl.train_camera_speed_td3_bc import (
     save_checkpoint,
     transition_root,
 )
+from xycar_rl.transition_dataset import camera_speed_action_targets
 
 
 class CameraSpeedContractTest(unittest.TestCase):
@@ -105,6 +106,29 @@ class CameraSpeedContractTest(unittest.TestCase):
                 denormalize_speed_command(normalized, 4.0, 10.0),
                 command,
             )
+
+    def test_dagger_expert_action_is_separate_from_applied_action(self):
+        applied, bc_target = camera_speed_action_targets(
+            {
+                "action_norm": "0.2",
+                "speed_command": "8.0",
+                "expert_action_norm": "0.7",
+                "expert_speed_command": "7.0",
+            },
+            4.0,
+            12.0,
+        )
+        self.assertAlmostEqual(applied[0], 0.2)
+        self.assertAlmostEqual(bc_target[0], 0.7)
+        self.assertNotEqual(applied[1], bc_target[1])
+
+    def test_legacy_transition_uses_applied_action_as_bc_target(self):
+        applied, bc_target = camera_speed_action_targets(
+            {"action_norm": "-0.3", "speed_command": "7.0"},
+            4.0,
+            12.0,
+        )
+        self.assertEqual(applied, bc_target)
 
     def test_straight_target_uses_maximum_speed(self):
         self.assertAlmostEqual(

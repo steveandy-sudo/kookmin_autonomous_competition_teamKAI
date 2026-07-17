@@ -169,6 +169,7 @@ class CameraSpeedTD3BCAgent:
         batch = {key: value.to(self.device) for key, value in batch.items()}
         image = batch["image"]
         action = batch["action"]
+        bc_action = batch.get("bc_action", action)
         reward = batch["reward"]
         next_image = batch["next_image"]
         done = batch["done"]
@@ -202,7 +203,7 @@ class CameraSpeedTD3BCAgent:
             q_scale = cfg.bc_alpha / q_value.abs().mean().detach().clamp_min(1.0e-6)
             bc_loss = camera_speed_bc_loss(
                 predicted_action,
-                action,
+                bc_action,
                 steering_weight=cfg.steering_bc_weight,
                 speed_weight=cfg.speed_bc_weight,
             )

@@ -81,12 +81,14 @@ Critic 데이터만 episode 단위 transition에서 가져오며, 기존 20만 �
 패널티를 줍니다. 작은 좌우 보정, 한 번의 큰 복귀 조향, 곡선의 큰 조향은
 패널티 대상이 아닙니다.
 
-전방 1.5m 곡률 과속 보상과 cap 8 실패 구간 집중 샘플링을 추가하고, Actor뿐
-아니라 Critic/target/optimizer까지 이어서 TD3+BC를 추가 학습했습니다. 선택 모델은
-`high_speed_td3_bc_focus_v3_20260717/camera_speed_td3_bc_epoch_042.pth`입니다.
-Gazebo 고정 seed `20260724~20260728`에서 cap 7을 5/5 완주했고 평균 속도
-command는 `6.94~6.97`, 최대 횡오차는 `0.141~0.202m`였습니다. cap 7.25와
-cap 8은 반복 검증에서 이탈해 승인하지 않았습니다.
+전방 1.5m 곡률 과속 보상과 실패 구간 집중 샘플링에 이어, DAgger의 실제 적용
+행동과 전문가 교정 행동을 분리한 transition schema 5로 추가 학습했습니다.
+현재 승인 모델은
+`high_speed_td3_bc_dual_dagger_v6_20260717/camera_speed_td3_bc_epoch_051.pth`입니다.
+Gazebo 고정 seed `20260724~20260728`에서 cap 7.5를 5/5 완주했고 평균 속도
+command는 `7.21~7.31`, 최대 횡오차는 `0.198~0.280m`였습니다. v7 epoch 57은
+오프라인 전문가 조향 오차가 감소했지만 cap 8에서 `18.90m`에 이탈해 승인하지
+않았습니다.
 
 파일이 생성됐다는 사실과 시뮬 통과는 실차 주행 승인을 뜻하지 않습니다. 실차는
 모델 epoch와 무관하게 cap 4 shadow부터 시작하고
@@ -94,16 +96,19 @@ cap 8은 반복 검증에서 이탈해 승인하지 않았습니다.
 
 상세 보상식, 전체 학습 명령, 체크포인트별 실차 shadow 명령은
 [`docs/high_speed_rl_20260717.md`](docs/high_speed_rl_20260717.md)를 따릅니다.
+다른 컴퓨터에서 Codex가 학습을 이어받을 때는
+[`docs/codex_handoff_high_speed_rl_20260717.md`](docs/codex_handoff_high_speed_rl_20260717.md)를
+먼저 읽습니다.
 
 ### 지금 해야 하는 일
 
-1. focus-v3 epoch 42 후보를 20 seed와 recovery 시작 자세로 확대 검증
-2. epoch 42 모델을 cap 4로 실차 shadow 검증
+1. v6 epoch 51 / cap 7.5 후보를 20 seed와 recovery 시작 자세로 확대 검증
+2. v6 epoch 51 모델을 cap 4로 실차 shadow 검증
 3. 카메라, canonical 변환, inference, 조향 전달 지연을 분리 측정
 4. 물리 비상 정지와 단일 motor publisher를 확인하고 바퀴 공중 시험
 5. 직선 2~3m와 완만한 곡선에서 가장 낮은 cap부터 저속 시험
 6. BC 기준선과 TD3+BC의 횡오차, 완주율, 평균 속도, 큰 오실레이션을 비교
-7. 실차 실패 rosbag을 수집해 다음 DAgger/RL 데이터로 보강
+7. cap 8의 `18.90m` 실패 구간을 dual-action DAgger/RL 데이터로 추가 보강
 
 오프라인 MAE와 시뮬 주행 성공은 실차 완주를 보장하지 않습니다. 현재 단계의
 완료 기준은 `shadow -> 바퀴 공중 -> 직선 -> 단일 곡선 -> 전체 트랙` 시험을
