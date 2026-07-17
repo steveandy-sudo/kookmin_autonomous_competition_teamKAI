@@ -11,7 +11,7 @@ import time
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Subset, WeightedRandomSampler
 
 from xycar_rl.camera_speed_models import (
     DEFAULT_MAX_SPEED_COMMAND,
@@ -29,7 +29,19 @@ def parse_args(argv=None):
         description="Train a camera-only steering and speed TD3+BC policy."
     )
     parser.add_argument("--transitions", action="append", required=True)
+    parser.add_argument(
+        "--focus-transitions",
+        action="append",
+        default=[],
+        help="Transition directory or CSV sampled more often in the training split.",
+    )
+    parser.add_argument("--focus-repeat", type=float, default=1.0)
     parser.add_argument("--initial-checkpoint", type=Path, required=True)
+    parser.add_argument(
+        "--resume-checkpoint",
+        type=Path,
+        help="Resume actor, critics, targets, and optimizers from a full checkpoint.",
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--min-speed-command", type=float, default=DEFAULT_MIN_SPEED_COMMAND)
     parser.add_argument("--max-speed-command", type=float, default=DEFAULT_MAX_SPEED_COMMAND)
@@ -52,6 +64,8 @@ def parse_args(argv=None):
     parser.add_argument("--actor-lr", type=float, default=1.0e-5)
     parser.add_argument("--critic-lr", type=float, default=3.0e-4)
     parser.add_argument("--bc-alpha", type=float, default=2.5)
+    parser.add_argument("--steering-bc-weight", type=float, default=1.0)
+    parser.add_argument("--speed-bc-weight", type=float, default=1.0)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--tau", type=float, default=0.005)
     parser.add_argument("--policy-noise", type=float, default=0.15)
@@ -110,6 +124,7 @@ def save_checkpoint(
             "critic_target_state_dict": agent.critic_target.state_dict(),
             "actor_optimizer_state_dict": agent.actor_optimizer.state_dict(),
             "critic_optimizer_state_dict": agent.critic_optimizer.state_dict(),
+            "update_count": int(agent.update_count),
         },
         path,
     )
@@ -147,9 +162,60 @@ def save_deployment_checkpoint(
             "suggested_shadow_speed_cap": 4.0,
             "metrics": metrics,
             "actor_state_dict": agent.actor.state_dict(),
+            "update_count": int(agent.update_count),
         },
         path,
     )
+
+
+def restore_agent_checkpoint(
+    agent: CameraSpeedTD3BCAgent,
+    checkpoint_path: str | Path,
+) -> dict:
+    payload = torch.load(
+        Path(checkpoint_path).expanduser().resolve(),
+        map_location=agent.device,
+        weights_only=False,
+    )
+    required = {
+        "actor_state_dict",
+        "actor_target_state_dict",
+        "critic_state_dict",
+        "critic_target_state_dict",
+        "actor_optimizer_state_dict",
+        "critic_optimizer_state_dict",
+    }
+    missing = sorted(required - payload.keys())
+    if missing:
+        raise ValueError(
+            "resume checkpoint is not a full TD3+BC checkpoint; missing "
+            + ", ".join(missing)
+        )
+    agent.actor.load_state_dict(payload["actor_state_dict"], strict=True)
+    agent.actor_target.load_state_dict(
+        payload["actor_target_state_dict"], strict=True
+    )
+    agent.critic.load_state_dict(payload["critic_state_dict"], strict=True)
+    agent.critic_target.load_state_dict(
+        payload["critic_target_state_dict"], strict=True
+    )
+    agent.actor_optimizer.load_state_dict(payload["actor_optimizer_state_dict"])
+    agent.critic_optimizer.load_state_dict(payload["critic_optimizer_state_dict"])
+    for group in agent.actor_optimizer.param_groups:
+        group["lr"] = agent.config.actor_lr
+    for group in agent.critic_optimizer.param_groups:
+        group["lr"] = agent.config.critic_lr
+    agent.update_count = int(payload.get("update_count", 0))
+    return payload
+
+
+def transition_root(path: str | Path) -> Path:
+    resolved = Path(path).expanduser().resolve()
+    if resolved.is_file():
+        return resolved.parent
+    if (resolved / "transitions.csv").is_file():
+        return resolved
+    raise FileNotFoundError(f"focus transition path has no transitions.csv: {resolved}")
 
 
 def export_scripted_actor(
@@ -225,8 +291,13 @@ def main(argv=None) -> None:
     )
     if milestone_dir is not None:
         milestone_dir.mkdir(parents=True, exist_ok=True)
+    policy_checkpoint = (
+        args.initial_checkpoint
+        if args.resume_checkpoint is None
+        else args.resume_checkpoint
+    )
     actor, initial_payload = load_camera_speed_actor(
-        args.initial_checkpoint.expanduser().resolve(), device=device
+        policy_checkpoint.expanduser().resolve(), device=device
     )
     temporal_frames = int(getattr(actor, "temporal_frames", 1))
     model_type = str(initial_payload.get("model_type", "camera_speed_resnet18"))
@@ -247,12 +318,38 @@ def main(argv=None) -> None:
         "pin_memory": device.type == "cuda",
     }
     generator = torch.Generator().manual_seed(args.seed)
-    train_loader = DataLoader(
-        Subset(dataset, train_indices),
-        shuffle=True,
-        generator=generator,
-        **loader_args,
-    )
+    train_subset = Subset(dataset, train_indices)
+    focus_roots = {
+        transition_root(path) for path in args.focus_transitions
+    }
+    focus_repeat = max(1.0, float(args.focus_repeat))
+    if focus_roots:
+        sample_weights = [
+            (
+                focus_repeat
+                if dataset.rows[index][0].resolve() in focus_roots
+                else 1.0
+            )
+            for index in train_indices
+        ]
+        train_sampler = WeightedRandomSampler(
+            sample_weights,
+            num_samples=len(sample_weights),
+            replacement=True,
+            generator=generator,
+        )
+        train_loader = DataLoader(
+            train_subset,
+            sampler=train_sampler,
+            **loader_args,
+        )
+    else:
+        train_loader = DataLoader(
+            train_subset,
+            shuffle=True,
+            generator=generator,
+            **loader_args,
+        )
     validation_loader = DataLoader(
         Subset(dataset, validation_indices), shuffle=False, **loader_args
     )
@@ -274,11 +371,26 @@ def main(argv=None) -> None:
         bc_alpha=args.bc_alpha,
         actor_lr=args.actor_lr,
         critic_lr=args.critic_lr,
+        steering_bc_weight=args.steering_bc_weight,
+        speed_bc_weight=args.speed_bc_weight,
     )
     agent = CameraSpeedTD3BCAgent(actor, device=device, config=config)
+    resume_epoch = 0
+    if args.resume_checkpoint is not None:
+        resume_payload = restore_agent_checkpoint(
+            agent,
+            args.resume_checkpoint,
+        )
+        resume_epoch = int(resume_payload.get("epoch", 0))
     train_config = {
         **vars(args),
         "initial_checkpoint": str(args.initial_checkpoint.expanduser().resolve()),
+        "resume_checkpoint": (
+            None
+            if args.resume_checkpoint is None
+            else str(args.resume_checkpoint.expanduser().resolve())
+        ),
+        "resume_epoch": resume_epoch,
         "output_dir": str(output_dir),
         "device": str(device),
         "dataset_rows": len(dataset),
@@ -312,7 +424,8 @@ def main(argv=None) -> None:
     ) as history_file:
         writer = csv.DictWriter(history_file, fieldnames=fields)
         writer.writeheader()
-        for epoch in range(1, args.epochs + 1):
+        for additional_epoch in range(1, args.epochs + 1):
+            epoch = resume_epoch + additional_epoch
             sums = {key: 0.0 for key in ("critic_loss", "actor_loss", "bc_loss", "q_scale")}
             counts = {key: 0 for key in sums}
             agent.actor.train()
@@ -352,7 +465,10 @@ def main(argv=None) -> None:
                     model_type=model_type,
                 )
             checkpoint_period = max(1, int(args.checkpoint_every_epochs))
-            if epoch % checkpoint_period == 0 or epoch == args.epochs:
+            if (
+                additional_epoch % checkpoint_period == 0
+                or additional_epoch == args.epochs
+            ):
                 full_checkpoint = (
                     output_dir / f"camera_speed_td3_bc_epoch_{epoch:03d}.pth"
                 )
@@ -365,7 +481,10 @@ def main(argv=None) -> None:
                     model_type=model_type,
                 )
                 if milestone_dir is not None:
-                    simulation_cap = planned_simulation_cap(epoch, args.epochs)
+                    simulation_cap = planned_simulation_cap(
+                        additional_epoch,
+                        args.epochs,
+                    )
                     checkpoint_name = f"camera_speed_td3_bc_epoch_{epoch:03d}.pth"
                     save_deployment_checkpoint(
                         milestone_dir / checkpoint_name,
@@ -392,7 +511,8 @@ def main(argv=None) -> None:
                     )
                     write_milestone_manifest(milestone_dir, milestones)
             print(
-                f"epoch {epoch:03d}/{args.epochs}: critic={row['critic_loss']:.5f} "
+                f"epoch {epoch:03d} (+{additional_epoch:03d}/{args.epochs}): "
+                f"critic={row['critic_loss']:.5f} "
                 f"actor={row['actor_loss']:.5f} bc={row['bc_loss']:.5f} "
                 f"steer={row['validation_steering_mse']:.5f} "
                 f"speed={row['validation_speed_mse']:.5f}",

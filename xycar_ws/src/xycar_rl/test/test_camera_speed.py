@@ -1,4 +1,6 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import torch
 
@@ -9,13 +11,22 @@ from xycar_rl.camera_speed_models import (
     initialize_temporal_actor,
     normalize_speed_command,
 )
-from xycar_rl.td3_bc import CameraSpeedTD3BCAgent, TD3BCConfig
+from xycar_rl.td3_bc import (
+    CameraSpeedTD3BCAgent,
+    TD3BCConfig,
+    camera_speed_bc_loss,
+)
 from xycar_rl.train_camera_speed_bc import (
     speed_target_from_transition,
     steering_sample_weight,
     transition_rows_are_contiguous,
 )
-from xycar_rl.train_camera_speed_td3_bc import planned_simulation_cap
+from xycar_rl.train_camera_speed_td3_bc import (
+    planned_simulation_cap,
+    restore_agent_checkpoint,
+    save_checkpoint,
+    transition_root,
+)
 
 
 class CameraSpeedContractTest(unittest.TestCase):
@@ -24,6 +35,14 @@ class CameraSpeedContractTest(unittest.TestCase):
         self.assertEqual(planned_simulation_cap(10, 20), 5.0)
         self.assertEqual(planned_simulation_cap(15, 20), 6.0)
         self.assertEqual(planned_simulation_cap(20, 20), 8.0)
+
+    def test_focus_transition_root_accepts_directory_or_csv(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            csv_path = root / "transitions.csv"
+            csv_path.write_text("episode_id\n", encoding="utf-8")
+            self.assertEqual(transition_root(root), root.resolve())
+            self.assertEqual(transition_root(csv_path), root.resolve())
 
     def test_steering_sample_weight_emphasizes_curves(self):
         self.assertEqual(steering_sample_weight(0.0, 4.0), 1.0)
@@ -114,6 +133,18 @@ class CameraSpeedContractTest(unittest.TestCase):
         for value in metrics.values():
             self.assertTrue(torch.isfinite(torch.tensor(value)))
 
+    def test_camera_speed_bc_loss_can_emphasize_steering(self):
+        prediction = torch.tensor([[1.0, 1.0]])
+        target = torch.tensor([[0.0, 0.5]])
+        balanced = camera_speed_bc_loss(prediction, target)
+        steering_focused = camera_speed_bc_loss(
+            prediction,
+            target,
+            steering_weight=3.0,
+            speed_weight=1.0,
+        )
+        self.assertGreater(steering_focused, balanced)
+
     def test_temporal_compact_camera_speed_td3_update_is_finite(self):
         agent = CameraSpeedTD3BCAgent(
             CompactCameraSpeedActor(temporal_frames=2),
@@ -130,6 +161,40 @@ class CameraSpeedContractTest(unittest.TestCase):
         self.assertEqual(agent.temporal_frames, 2)
         for value in metrics.values():
             self.assertTrue(torch.isfinite(torch.tensor(value)))
+
+    def test_full_td3_checkpoint_resume_restores_critics_and_learning_rates(self):
+        source = CameraSpeedTD3BCAgent(
+            CompactCameraSpeedActor(temporal_frames=2),
+            config=TD3BCConfig(actor_lr=1.0e-5, critic_lr=3.0e-4),
+        )
+        source.update_count = 37
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "full.pth"
+            save_checkpoint(
+                path,
+                source,
+                epoch=15,
+                train_config={
+                    "min_speed_command": 4.0,
+                    "max_speed_command": 12.0,
+                },
+                metrics={},
+                model_type="camera_speed_temporal_compact",
+            )
+            resumed = CameraSpeedTD3BCAgent(
+                CompactCameraSpeedActor(temporal_frames=2),
+                config=TD3BCConfig(actor_lr=2.0e-6, critic_lr=1.0e-4),
+            )
+            payload = restore_agent_checkpoint(resumed, path)
+        self.assertEqual(payload["epoch"], 15)
+        self.assertEqual(resumed.update_count, 37)
+        self.assertEqual(resumed.actor_optimizer.param_groups[0]["lr"], 2.0e-6)
+        self.assertEqual(resumed.critic_optimizer.param_groups[0]["lr"], 1.0e-4)
+        for expected, actual in zip(
+            source.critic.parameters(),
+            resumed.critic.parameters(),
+        ):
+            self.assertTrue(torch.equal(expected, actual))
 
 
 if __name__ == "__main__":

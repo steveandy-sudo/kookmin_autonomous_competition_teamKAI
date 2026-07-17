@@ -20,6 +20,30 @@ class TD3BCConfig:
     bc_alpha: float = 2.5
     actor_lr: float = 1.0e-5
     critic_lr: float = 3.0e-4
+    steering_bc_weight: float = 1.0
+    speed_bc_weight: float = 1.0
+
+
+def camera_speed_bc_loss(
+    predicted_action: torch.Tensor,
+    action: torch.Tensor,
+    *,
+    steering_weight: float = 1.0,
+    speed_weight: float = 1.0,
+) -> torch.Tensor:
+    total_weight = float(steering_weight) + float(speed_weight)
+    if steering_weight < 0.0 or speed_weight < 0.0 or total_weight <= 0.0:
+        raise ValueError("camera-speed BC weights must be nonnegative and nonzero")
+    steering_loss = nn.functional.mse_loss(
+        predicted_action[:, 0], action[:, 0]
+    )
+    speed_loss = nn.functional.mse_loss(
+        predicted_action[:, 1], action[:, 1]
+    )
+    return (
+        float(steering_weight) * steering_loss
+        + float(speed_weight) * speed_loss
+    ) / total_weight
 
 
 def soft_update(target: nn.Module, source: nn.Module, tau: float) -> None:
@@ -176,7 +200,12 @@ class CameraSpeedTD3BCAgent:
             predicted_action = self.actor(image)
             q_value = self.critic.q1(image, predicted_action)
             q_scale = cfg.bc_alpha / q_value.abs().mean().detach().clamp_min(1.0e-6)
-            bc_loss = nn.functional.mse_loss(predicted_action, action)
+            bc_loss = camera_speed_bc_loss(
+                predicted_action,
+                action,
+                steering_weight=cfg.steering_bc_weight,
+                speed_weight=cfg.speed_bc_weight,
+            )
             actor_loss = -q_scale * q_value.mean() + bc_loss
             self.actor_optimizer.zero_grad(set_to_none=True)
             actor_loss.backward()

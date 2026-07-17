@@ -59,6 +59,13 @@ class TrackGeometryTest(unittest.TestCase):
         np.testing.assert_allclose(first, wrapped, atol=1.0e-9)
         self.assertAlmostEqual(wrap_angle(yaw_first - yaw_wrapped), 0.0)
         self.assertTrue(math.isfinite(self.track.curvature_at(0.37)))
+        self.assertTrue(
+            math.isfinite(
+                self.track.max_abs_curvature_ahead(
+                    self.track.length_m - 0.10,
+                )
+            )
+        )
 
     def test_curvature_to_command_uses_measured_sign(self):
         self.assertLess(command_for_curvature(1.0), 0.0)

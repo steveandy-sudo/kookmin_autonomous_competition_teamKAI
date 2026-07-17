@@ -192,6 +192,10 @@ class CameraSpeedTransitionDataset(RLTransitionDataset):
                 track_curvature=track.curvature_at(
                     progress_m, sample_distance_m=0.30
                 ),
+                preview_curvature=track.max_abs_curvature_ahead(
+                    progress_m,
+                    preview_distance_m=1.5,
+                ),
                 steering_history=tuple(history),
                 collision=bool(int(row.get("collision") or 0)),
                 off_track=reason == "off_track",

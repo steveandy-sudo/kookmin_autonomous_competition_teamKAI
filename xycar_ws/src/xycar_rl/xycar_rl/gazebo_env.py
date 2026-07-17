@@ -731,6 +731,10 @@ class GazeboXycarEnv(gym.Env):
             projection.progress_m,
             sample_distance_m=0.30,
         )
+        preview_curvature = self.track.max_abs_curvature_ahead(
+            projection.progress_m,
+            preview_distance_m=1.5,
+        )
         reward = calculate_reward(
             projection=projection,
             progress_delta_m=progress_delta,
@@ -738,6 +742,7 @@ class GazeboXycarEnv(gym.Env):
             previous_steering_norm=self.previous_steering_norm,
             linear_speed_mps=snapshot.odom.linear_speed_mps,
             track_curvature=track_curvature,
+            preview_curvature=preview_curvature,
             steering_history=tuple(self.steering_history),
             collision=terminal.collision,
             off_track=terminal.off_track,
@@ -752,6 +757,7 @@ class GazeboXycarEnv(gym.Env):
         info["reward_terms"] = reward.__dict__
         info["progress_delta_m"] = progress_delta
         info["track_curvature"] = track_curvature
+        info["preview_curvature"] = preview_curvature
         return (
             self._observation(snapshot, steering_norm),
             reward.total,

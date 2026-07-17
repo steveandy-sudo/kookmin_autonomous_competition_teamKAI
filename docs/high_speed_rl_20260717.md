@@ -48,6 +48,10 @@ step 누락 또는 timestamp 불연속이 있으면 이전 프레임 대신 현�
 - 위 안전 범위를 벗어나면서 빠르면 위험 속도 패널티
 - 매 step `-0.01` 시간 비용을 적용해 같은 진행 거리를 빨리 통과하도록 유도
 - CAD 곡률 `0.35 1/m` 이하 직선에서만 큰 조향 왕복 패널티 적용
+- 현재 위치뿐 아니라 전방 `1.5m`의 최대 곡률을 확인해 급곡선 진입 전에
+  과속 패널티 적용
+- 급곡선 목표 속도는 약 command 7, 직선 목표 속도는 학습 상한 command 12로
+  분리
 
 큰 조향 왕복 판정은 다음 조건을 모두 만족해야 한다.
 
@@ -72,7 +76,14 @@ TD3의 두 Critic은 `(state, steering, speed)`의 장기 return을 학습하고
 사용하지 않는다. 위치, 진행량, heading, 속도와 조향 기록으로 최신 보상을
 재계산한다.
 
+Critic에는 저장된 `action`이 실제로 저장된 `next_state`를 만든 transition만
+사용한다. 일부 과거 DAgger 데이터는 expert trace를 action으로 저장했지만 실제
+next state는 blend action으로 만들어졌으므로 현재 TD3+BC 재학습에서는 제외한다.
+
 ## 5. 학습 명령
+
+아래 명령은 최초 reward-v1 실험 기록이다. 최종 focus-v3은 이 결과를 전체
+TD3+BC 상태로 이어받아 추가 학습했다.
 
 ```bash
 cd ~/xycar_kookmin_gazebo_track
@@ -102,6 +113,38 @@ ros2 run xycar_rl train_camera_speed_td3_bc \
 
 전체 critic/optimizer 체크포인트는 로컬 `models/`에 저장한다. GitHub에는 실차
 평가에 필요한 actor-only 체크포인트와 명령만 저장한다.
+
+### 5.1 focus-v3 추가 학습
+
+실패한 cap 8 정책이 실행한 action과 expert action을 섞지 않고, 실제 적용 action과
+next state가 일치하는 expert/feedback transition 및 cap 8 transition만 사용했다.
+특히 `16~20m` 곡선 expert 데이터를 5배 확률로 샘플링했다.
+
+```bash
+BASE="$PWD/models/rl/camera_speed_temporal_td3_bc_high_speed_preview_v2_20260717/camera_speed_td3_bc_epoch_030.pth"
+
+ros2 run xycar_rl train_camera_speed_td3_bc \
+  --transitions "$PWD/datasets/rl/high_speed_expert_feedback_min7_max12_gui_20260716" \
+  --transitions "$PWD/datasets/rl/high_speed_expert_recovery_min7_max12_gui_20260716" \
+  --transitions "$PWD/datasets/rl/high_speed_expert_stable_10k_20260717" \
+  --transitions "$PWD/datasets/rl/high_speed_expert_min6_max12_gui_20260716" \
+  --transitions "$PWD/datasets/rl/high_speed_cap8_policy_actual_3k_20260717" \
+  --transitions "$PWD/datasets/rl/high_speed_expert_target_progress19_2k_20260717" \
+  --focus-transitions "$PWD/datasets/rl/high_speed_expert_target_progress19_2k_20260717" \
+  --focus-repeat 5 \
+  --initial-checkpoint "$BASE" --resume-checkpoint "$BASE" \
+  --output-dir "$PWD/models/rl/camera_speed_temporal_td3_bc_high_speed_focus_v3_20260717" \
+  --milestone-dir "$PWD/xycar_ws/src/xycar_rl/models/high_speed_td3_bc_focus_v3_20260717" \
+  --min-speed-command 4 --max-speed-command 12 \
+  --recompute-rewards --world-sdf "$PWD/worlds/kookmin_xycar_track_final.sdf" \
+  --epochs 12 --batch-size 128 --num-workers 8 \
+  --actor-lr 0.000003 --critic-lr 0.0001 --bc-alpha 1.5 \
+  --policy-noise 0.08 --noise-clip 0.20 --policy-delay 2 \
+  --checkpoint-every-epochs 3 --device cuda
+```
+
+`--resume-checkpoint`는 Actor만 불러오는 것이 아니라 두 Critic, target network,
+optimizer, update count까지 이어받는다.
 
 ## 6. Gazebo 단계 검증
 
@@ -139,8 +182,8 @@ ros2 run xycar_rl rollout_policy \
 
 epoch 15의 속도 경계를 추가로 확인한 결과 cap 7은 4/5만 완주했고 한 seed에서
 이탈했다. cap 8도 이탈했다. epoch 20은 cap 6 한 회를 완주했지만 같은 seed의
-epoch 15보다 최대 횡오차가 컸다. 따라서 현재 최종 후보는 epoch 15이며,
-**시뮬레이션에서 반복 검증된 cap은 6**이다.
+epoch 15보다 최대 횡오차가 컸다. 이 결과로 1차 baseline은 epoch 15와 cap 6으로
+정했다. 아래 6.1절의 추가 학습에서 이 baseline을 갱신했다.
 
 epoch 15/cap 6의 5개 seed 결과:
 
@@ -154,9 +197,28 @@ large oscillation 0 event / 0 penalized step
 출력의 `small_straight_flips`는 허용되는 작은 좌우 보정 횟수다. 모델 탈락 판단은
 `large_osc_events`, `large_osc_steps`, 최대 횡오차와 이탈 여부를 사용한다.
 
+### 6.1 추가 고속 학습 결과
+
+focus-v3 epoch 42를 같은 고정 시작점과 seed `20260724~20260728`로 다시
+검증했다.
+
+```text
+checkpoint          focus-v3 epoch 42
+approved speed cap  7.0
+lap success         5/5
+mean speed command  6.94..6.97
+max CTE             0.141..0.202m
+large oscillation   1 event in 1/5, 0 in 4/5
+```
+
+이전 승인 cap 6보다 평균 command 기준 약 15.8% 빨라졌다. cap 7.25는 두 번째
+seed에서 이탈해 즉시 탈락했고, cap 8은 1/5만 완주했다. 조향 손실을 더 크게 둔
+steer-v4도 cap 7.5에서 3/5, cap 8에서 반복 성공하지 못해 선택하지 않았다.
+따라서 **현재 최종 시뮬레이션 모델은 focus-v3 epoch 42, 승인 cap은 7.0**이다.
+
 각 단계는 같은 seed에서 BC 기준보다 완주율이 낮아지거나 최대 횡오차, 큰 조향
-왕복 횟수가 증가하면 탈락시킨다. epoch 15도 아직 5개 seed만 통과했으므로 이후
-20 seed, 최종 100 seed 순서로 확대해야 한다.
+왕복 횟수가 증가하면 탈락시킨다. 선택한 focus-v3 epoch 42도 아직 5개 seed만
+통과했으므로 이후 20 seed, 최종 100 seed 순서로 확대해야 한다.
 
 ## 7. 실차 shadow
 
@@ -166,11 +228,11 @@ source /opt/ros/humble/setup.bash
 colcon build --packages-up-to xycar_rl --symlink-install
 source install/setup.bash
 
-MODEL_DIR="$(ros2 pkg prefix xycar_rl)/share/xycar_rl/models/high_speed_td3_bc_reward_v1_20260717"
+MODEL_DIR="$(ros2 pkg prefix xycar_rl)/share/xycar_rl/models/high_speed_td3_bc_focus_v3_20260717"
 
 ros2 launch xycar_rl real_shadow.launch.py \
   policy_kind:=camera_speed_td3_bc \
-  checkpoint_path:="$MODEL_DIR/camera_speed_td3_bc_epoch_015.pth" \
+  checkpoint_path:="$MODEL_DIR/camera_speed_td3_bc_epoch_042.pth" \
   min_speed_command:=4.0 max_speed_command:=12.0 \
   deployment_speed_cap:=4.0 \
   drive_enabled:=false lidar_safety_enabled:=false device:=cpu
@@ -186,7 +248,7 @@ ros2 topic echo /rl/policy_status
 
 `drive_enabled=true`는 shadow 출력, 조향 부호, 추론 지연, 센서 stale 정지와
 물리 비상정지를 확인한 뒤에만 사용한다. epoch 숫자가 커졌다는 이유만으로 더 높은
-속도를 승인하지 않는다. 시뮬 cap 6 통과와 관계없이 실차 shadow는 cap 4부터
+속도를 승인하지 않는다. 시뮬 cap 7 통과와 관계없이 실차 shadow는 cap 4부터
 시작한다. cap 4 shadow와 바퀴 공중 시험, 직선, 단일 곡선을 모두 통과한 뒤에만
-cap 5, cap 6 순서로 한 단계씩 올린다. cap 7과 cap 8은 현재 시뮬 gate에서
-탈락했으므로 실차 시험 대상이 아니다.
+cap 5, cap 6, cap 7 순서로 한 단계씩 올린다. cap 7.25 이상은 현재 시뮬
+gate에서 탈락했으므로 실차 시험 대상이 아니다.

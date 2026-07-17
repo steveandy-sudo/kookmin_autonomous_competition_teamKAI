@@ -253,6 +253,27 @@ class TrackReference:
         _, yaw_after = self.sample_at_progress(progress_m + 0.5 * distance)
         return wrap_angle(yaw_after - yaw_before) / distance
 
+    def max_abs_curvature_ahead(
+        self,
+        progress_m: float,
+        *,
+        preview_distance_m: float = 1.5,
+        sample_count: int = 12,
+        curvature_sample_distance_m: float = 0.30,
+    ) -> float:
+        """Return the strongest upcoming curvature for anticipatory speed control."""
+        preview = max(0.12, float(preview_distance_m))
+        offsets = np.linspace(0.12, preview, max(2, int(sample_count)))
+        return max(
+            abs(
+                self.curvature_at(
+                    float(progress_m) + float(offset),
+                    sample_distance_m=curvature_sample_distance_m,
+                )
+            )
+            for offset in offsets
+        )
+
     def pose_at(
         self,
         progress_fraction: float,

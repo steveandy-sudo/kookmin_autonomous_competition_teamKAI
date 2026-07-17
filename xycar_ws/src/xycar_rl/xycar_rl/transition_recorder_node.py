@@ -492,6 +492,10 @@ class TransitionRecorderNode(Node):
             current.projection.progress_m,
             sample_distance_m=0.30,
         )
+        preview_curvature = self.track.max_abs_curvature_ahead(
+            current.projection.progress_m,
+            preview_distance_m=1.5,
+        )
         reward = calculate_reward(
             projection=current.projection,
             progress_delta_m=progress_delta,
@@ -499,6 +503,7 @@ class TransitionRecorderNode(Node):
             previous_steering_norm=self.previous_action_norm,
             linear_speed_mps=current.speed_mps,
             track_curvature=track_curvature,
+            preview_curvature=preview_curvature,
             steering_history=tuple(self.steering_history),
             collision=terminal.collision,
             off_track=terminal.off_track,

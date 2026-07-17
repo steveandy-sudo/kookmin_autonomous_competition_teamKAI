@@ -15,12 +15,17 @@ class RewardWeights:
     steering_magnitude: float = 0.01
     safe_speed: float = 0.30
     unsafe_speed: float = 0.80
+    curve_overspeed: float = 1.20
     time_efficiency: float = 0.01
     large_oscillation: float = 0.20
     safe_cross_track_m: float = 0.12
     safe_heading_rad: float = math.radians(12.0)
     large_steering_threshold: float = 0.18
     straight_curvature_threshold: float = 0.35
+    full_speed_curvature: float = 0.18
+    minimum_speed_curvature: float = 0.90
+    straight_target_speed_mps: float = 0.97
+    curve_target_speed_mps: float = 0.56
     reverse_progress: float = 4.0
     collision: float = 50.0
     off_track: float = 30.0
@@ -79,6 +84,7 @@ def calculate_reward(
     previous_steering_norm: float,
     linear_speed_mps: float = 0.0,
     track_curvature: float = 0.0,
+    preview_curvature: float | None = None,
     steering_history: tuple[float, ...] | list[float] = (),
     collision: bool = False,
     off_track: bool = False,
@@ -112,8 +118,40 @@ def calculate_reward(
         -0.5 * (cross_track_ratio * cross_track_ratio + heading_ratio * heading_ratio)
     )
     forward_speed = max(0.0, float(linear_speed_mps))
-    safe_speed_term = weights.safe_speed * forward_speed * safe_factor
-    unsafe_speed_term = -weights.unsafe_speed * forward_speed * (1.0 - safe_factor)
+    upcoming_curvature = abs(
+        float(track_curvature)
+        if preview_curvature is None
+        else float(preview_curvature)
+    )
+    curvature_denominator = max(
+        1.0e-6,
+        weights.minimum_speed_curvature - weights.full_speed_curvature,
+    )
+    curve_fraction = max(
+        0.0,
+        min(
+            1.0,
+            (upcoming_curvature - weights.full_speed_curvature)
+            / curvature_denominator,
+        ),
+    )
+    curve_fraction = curve_fraction * curve_fraction * (3.0 - 2.0 * curve_fraction)
+    target_speed_mps = (
+        weights.straight_target_speed_mps
+        - curve_fraction
+        * (weights.straight_target_speed_mps - weights.curve_target_speed_mps)
+    )
+    safe_speed_term = (
+        weights.safe_speed
+        * min(forward_speed, target_speed_mps)
+        * safe_factor
+    )
+    tracking_risk = forward_speed * (1.0 - safe_factor)
+    curve_speed_excess = max(0.0, forward_speed - target_speed_mps)
+    unsafe_speed_term = -(
+        weights.unsafe_speed * tracking_risk
+        + weights.curve_overspeed * curve_speed_excess
+    )
     time_efficiency_term = -weights.time_efficiency
     oscillation_measure = 0.0
     if abs(float(track_curvature)) <= weights.straight_curvature_threshold:

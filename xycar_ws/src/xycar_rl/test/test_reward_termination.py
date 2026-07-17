@@ -90,6 +90,27 @@ class RewardTerminationTest(unittest.TestCase):
         self.assertLess(risky.unsafe_speed, 0.0)
         self.assertGreater(centered.total, risky.total)
 
+    def test_preview_curve_penalizes_overspeed_before_tracking_error(self):
+        straight = calculate_reward(
+            projection=projection(),
+            progress_delta_m=0.0,
+            steering_norm=0.0,
+            previous_steering_norm=0.0,
+            linear_speed_mps=0.80,
+            preview_curvature=0.0,
+        )
+        upcoming_curve = calculate_reward(
+            projection=projection(),
+            progress_delta_m=0.0,
+            steering_norm=0.0,
+            previous_steering_norm=0.0,
+            linear_speed_mps=0.80,
+            preview_curvature=1.0,
+        )
+        self.assertAlmostEqual(straight.unsafe_speed, 0.0)
+        self.assertLess(upcoming_curve.unsafe_speed, 0.0)
+        self.assertGreater(straight.total, upcoming_curve.total)
+
     def test_off_track_terminates(self):
         checker = EpisodeTermination()
         result = checker.update(
