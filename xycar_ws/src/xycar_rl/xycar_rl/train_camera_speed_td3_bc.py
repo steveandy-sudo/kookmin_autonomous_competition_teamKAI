@@ -115,7 +115,7 @@ def save_checkpoint(
     )
 
 
-def suggested_shadow_cap(epoch: int, epochs: int) -> float:
+def planned_simulation_cap(epoch: int, epochs: int) -> float:
     caps = (4.0, 5.0, 6.0, 8.0)
     progress = max(0.0, min(1.0, float(epoch) / max(1, int(epochs))))
     index = min(
@@ -133,7 +133,7 @@ def save_deployment_checkpoint(
     train_config: dict,
     metrics: dict,
     model_type: str,
-    suggested_cap: float,
+    simulation_cap: float,
 ) -> None:
     torch.save(
         {
@@ -143,7 +143,8 @@ def save_deployment_checkpoint(
             "epoch": int(epoch),
             "min_speed_command": train_config["min_speed_command"],
             "max_speed_command": train_config["max_speed_command"],
-            "suggested_shadow_speed_cap": float(suggested_cap),
+            "planned_simulation_speed_cap": float(simulation_cap),
+            "suggested_shadow_speed_cap": 4.0,
             "metrics": metrics,
             "actor_state_dict": agent.actor.state_dict(),
         },
@@ -175,7 +176,8 @@ def write_milestone_manifest(
         "# High-speed TD3+BC milestones",
         "",
         "Every checkpoint is actor-only and intended for shadow evaluation first.",
-        "The suggested cap is a test order, not a real-car safety approval.",
+        "Every real-car test starts at cap 4 regardless of epoch.",
+        "The staged cap is for Gazebo testing and is not a real-car approval.",
         "",
         "```bash",
         'MODEL_DIR="$(ros2 pkg prefix xycar_rl)/share/xycar_rl/models/'
@@ -188,14 +190,16 @@ def write_milestone_manifest(
             [
                 f"## Epoch {item['epoch']:03d}",
                 "",
-                f"Suggested shadow cap: `{item['suggested_shadow_speed_cap']:.1f}`",
+                f"Planned Gazebo cap: `{item['planned_simulation_speed_cap']:.1f}`",
+                "",
+                "Initial real shadow cap: `4.0`",
                 "",
                 "```bash",
                 "ros2 launch xycar_rl real_shadow.launch.py \\",
                 "  policy_kind:=camera_speed_td3_bc \\",
                 f"  checkpoint_path:=$MODEL_DIR/{item['checkpoint']} \\",
                 "  min_speed_command:=4.0 max_speed_command:=12.0 \\",
-                f"  deployment_speed_cap:={item['suggested_shadow_speed_cap']:.1f} \\",
+                "  deployment_speed_cap:=4.0 \\",
                 "  drive_enabled:=false lidar_safety_enabled:=false device:=cpu",
                 "```",
                 "",
@@ -361,7 +365,7 @@ def main(argv=None) -> None:
                     model_type=model_type,
                 )
                 if milestone_dir is not None:
-                    suggested_cap = suggested_shadow_cap(epoch, args.epochs)
+                    simulation_cap = planned_simulation_cap(epoch, args.epochs)
                     checkpoint_name = f"camera_speed_td3_bc_epoch_{epoch:03d}.pth"
                     save_deployment_checkpoint(
                         milestone_dir / checkpoint_name,
@@ -370,13 +374,14 @@ def main(argv=None) -> None:
                         train_config=train_config,
                         metrics=row,
                         model_type=model_type,
-                        suggested_cap=suggested_cap,
+                        simulation_cap=simulation_cap,
                     )
                     milestones.append(
                         {
                             "epoch": epoch,
                             "checkpoint": checkpoint_name,
-                            "suggested_shadow_speed_cap": suggested_cap,
+                            "planned_simulation_speed_cap": simulation_cap,
+                            "suggested_shadow_speed_cap": 4.0,
                             "validation_steering_mse": row[
                                 "validation_steering_mse"
                             ],

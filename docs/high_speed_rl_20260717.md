@@ -121,7 +121,7 @@ MODEL="$PWD/xycar_ws/src/xycar_rl/models/high_speed_td3_bc_reward_v1_20260717/ca
 ros2 run xycar_rl rollout_policy \
   --project-root "$PWD" --policy-kind camera_speed_td3_bc \
   --checkpoint "$MODEL" \
-  --episodes 5 --max-steps 800 --seed 20260724 \
+  --episodes 5 --max-steps 3000 --seed 20260724 \
   --start-progress-fraction 0.0 --recovery-probability 0.0 \
   --s-curve-focus-probability 0.0 --action-noise 0.0 \
   --min-speed-command 4 --max-speed-command 12 \
@@ -130,28 +130,47 @@ ros2 run xycar_rl rollout_policy \
 
 단계 순서:
 
-| Epoch | 첫 shadow cap | 의미 |
+| Epoch | Gazebo 시험 cap | 1차 결과 |
 |---:|---:|---|
-| 005 | 4 | 초기 Critic 및 Actor 변화 확인 |
-| 010 | 5 | 저속 반복성 비교 |
-| 015 | 6 | 중속 직선 오실레이션 비교 |
-| 020 | 8 | 앞 단계 통과 후에만 고속 비교 |
+| 005 | 4 | 120초에 24.58m, 완주선 직전 time limit |
+| 010 | 5 | seed 20260724 완주, 최대 횡오차 0.124m |
+| 015 | 6 | seed 20260724~28 모두 완주, 큰 오실레이션 0회 |
+| 020 | 8 | 19.07m에서 이탈, 승인하지 않음 |
+
+epoch 15의 속도 경계를 추가로 확인한 결과 cap 7은 4/5만 완주했고 한 seed에서
+이탈했다. cap 8도 이탈했다. epoch 20은 cap 6 한 회를 완주했지만 같은 seed의
+epoch 15보다 최대 횡오차가 컸다. 따라서 현재 최종 후보는 epoch 15이며,
+**시뮬레이션에서 반복 검증된 cap은 6**이다.
+
+epoch 15/cap 6의 5개 seed 결과:
+
+```text
+lap success       5/5
+max CTE range     0.141..0.179m
+mean speed cmd    6.00
+large oscillation 0 event / 0 penalized step
+```
+
+출력의 `small_straight_flips`는 허용되는 작은 좌우 보정 횟수다. 모델 탈락 판단은
+`large_osc_events`, `large_osc_steps`, 최대 횡오차와 이탈 여부를 사용한다.
 
 각 단계는 같은 seed에서 BC 기준보다 완주율이 낮아지거나 최대 횡오차, 큰 조향
-왕복 횟수가 증가하면 탈락시킨다. 이후 20 seed, 최종 100 seed 순서로 확대한다.
+왕복 횟수가 증가하면 탈락시킨다. epoch 15도 아직 5개 seed만 통과했으므로 이후
+20 seed, 최종 100 seed 순서로 확대해야 한다.
 
 ## 7. 실차 shadow
 
 ```bash
-cd ~/kookmin_autonomous_competition_teamKAI
+cd ~/kookmin_sim_to_real
 source /opt/ros/humble/setup.bash
-source xycar_ws/install/setup.bash
+colcon build --packages-up-to xycar_rl --symlink-install
+source install/setup.bash
 
 MODEL_DIR="$(ros2 pkg prefix xycar_rl)/share/xycar_rl/models/high_speed_td3_bc_reward_v1_20260717"
 
 ros2 launch xycar_rl real_shadow.launch.py \
   policy_kind:=camera_speed_td3_bc \
-  checkpoint_path:="$MODEL_DIR/camera_speed_td3_bc_epoch_005.pth" \
+  checkpoint_path:="$MODEL_DIR/camera_speed_td3_bc_epoch_015.pth" \
   min_speed_command:=4.0 max_speed_command:=12.0 \
   deployment_speed_cap:=4.0 \
   drive_enabled:=false lidar_safety_enabled:=false device:=cpu
@@ -167,4 +186,7 @@ ros2 topic echo /rl/policy_status
 
 `drive_enabled=true`는 shadow 출력, 조향 부호, 추론 지연, 센서 stale 정지와
 물리 비상정지를 확인한 뒤에만 사용한다. epoch 숫자가 커졌다는 이유만으로 더 높은
-속도를 승인하지 않는다.
+속도를 승인하지 않는다. 시뮬 cap 6 통과와 관계없이 실차 shadow는 cap 4부터
+시작한다. cap 4 shadow와 바퀴 공중 시험, 직선, 단일 곡선을 모두 통과한 뒤에만
+cap 5, cap 6 순서로 한 단계씩 올린다. cap 7과 cap 8은 현재 시뮬 gate에서
+탈락했으므로 실차 시험 대상이 아니다.

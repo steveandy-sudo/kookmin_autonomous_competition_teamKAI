@@ -1,0 +1,40 @@
+[
+  {
+    "checkpoint": "camera_speed_td3_bc_epoch_005.pth",
+    "epoch": 5,
+    "planned_simulation_speed_cap": 4.0,
+    "suggested_shadow_speed_cap": 4.0,
+    "validation_speed_mse": 0.0484504987568649,
+    "validation_steering_mse": 0.022259039975911304
+  },
+  {
+    "checkpoint": "camera_speed_td3_bc_epoch_010.pth",
+    "epoch": 10,
+    "planned_simulation_speed_cap": 5.0,
+    "suggested_shadow_speed_cap": 4.0,
+    "validation_speed_mse": 0.035868626029133495,
+    "validation_steering_mse": 0.022143320022648526
+  },
+  {
+    "checkpoint": "camera_speed_td3_bc_epoch_015.pth",
+    "epoch": 15,
+    "gazebo_cap_6_successes": 5,
+    "gazebo_cap_6_trials": 5,
+    "gazebo_large_oscillation_events": 0,
+    "planned_simulation_speed_cap": 6.0,
+    "selected_candidate": true,
+    "suggested_shadow_speed_cap": 4.0,
+    "validation_speed_mse": 0.03441894412344042,
+    "validation_steering_mse": 0.022160691887367773
+  },
+  {
+    "checkpoint": "camera_speed_td3_bc_epoch_020.pth",
+    "epoch": 20,
+    "gazebo_cap_8_status": "off_track",
+    "planned_simulation_speed_cap": 8.0,
+    "selected_candidate": false,
+    "suggested_shadow_speed_cap": 4.0,
+    "validation_speed_mse": 0.03269692759477455,
+    "validation_steering_mse": 0.021605803842156292
+  }
+]

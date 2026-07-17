@@ -15,9 +15,16 @@ from xycar_rl.train_camera_speed_bc import (
     steering_sample_weight,
     transition_rows_are_contiguous,
 )
+from xycar_rl.train_camera_speed_td3_bc import planned_simulation_cap
 
 
 class CameraSpeedContractTest(unittest.TestCase):
+    def test_milestone_caps_are_gazebo_stages(self):
+        self.assertEqual(planned_simulation_cap(5, 20), 4.0)
+        self.assertEqual(planned_simulation_cap(10, 20), 5.0)
+        self.assertEqual(planned_simulation_cap(15, 20), 6.0)
+        self.assertEqual(planned_simulation_cap(20, 20), 8.0)
+
     def test_steering_sample_weight_emphasizes_curves(self):
         self.assertEqual(steering_sample_weight(0.0, 4.0), 1.0)
         self.assertAlmostEqual(steering_sample_weight(0.5, 4.0), 2.0)

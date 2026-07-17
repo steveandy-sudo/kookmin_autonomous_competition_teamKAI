@@ -23,8 +23,9 @@
 ## 1. 현재 진행 상황
 
 안정 기준선은 **canonical BEV 카메라 영상 + LiDAR를 사용하는 Behavioral
-Cloning(BC)** 정책입니다. 현재는 이 모델과 고속 DAgger 데이터를 출발점으로,
-LiDAR 없이 이전·현재 canonical 영상만 쓰는 TD3+BC 정책을 학습하고 있습니다.
+Cloning(BC)** 정책입니다. 이 모델과 고속 DAgger 데이터를 출발점으로,
+LiDAR 없이 이전·현재 canonical 영상만 쓰는 TD3+BC 학습과 1차 Gazebo gate를
+완료했습니다.
 
 ### 완료된 범위
 
@@ -80,18 +81,23 @@ Critic 데이터만 episode 단위 transition에서 가져오며, 기존 20만 �
 패널티를 줍니다. 작은 좌우 보정, 한 번의 큰 복귀 조향, 곡선의 큰 조향은
 패널티 대상이 아닙니다.
 
-20 epoch 학습 중 5/10/15/20 epoch마다 실차 배포용 actor-only 체크포인트를
-보존합니다. 파일이 생성됐다는 사실은 실차 주행 승인을 뜻하지 않습니다.
-각 모델은 Gazebo 동일-seed 비교 후 `shadow -> 바퀴 공중 -> 직선 -> 단일 곡선`
-순서로 검증하며, 시작 shadow cap은 각각 `4 / 5 / 6 / 8`입니다.
+20 epoch 학습에서 5/10/15/20 epoch마다 실차 배포용 actor-only 체크포인트를
+보존했습니다. 1차 Gazebo gate에서 epoch 15/cap 6은 seed
+`20260724~20260728`을 5/5 완주했고 큰 조향 왕복은 0회였습니다. cap 7은 4/5,
+cap 8은 이탈했으며 epoch 20/cap 8도 이탈해 승인하지 않았습니다. 현재 최종
+후보는 `camera_speed_td3_bc_epoch_015.pth`입니다.
+
+파일이 생성됐다는 사실과 시뮬 통과는 실차 주행 승인을 뜻하지 않습니다. 실차는
+모델 epoch와 무관하게 cap 4 shadow부터 시작하고
+`shadow -> 바퀴 공중 -> 직선 -> 단일 곡선` 순서로 검증합니다.
 
 상세 보상식, 전체 학습 명령, 체크포인트별 실차 shadow 명령은
 [`docs/high_speed_rl_20260717.md`](docs/high_speed_rl_20260717.md)를 따릅니다.
 
 ### 지금 해야 하는 일
 
-1. TD3+BC 5/10/15/20 epoch 체크포인트를 같은 Gazebo seed로 비교
-2. 통과 모델만 체크포인트별 권장 cap으로 실차 shadow 검증
+1. epoch 15 후보를 더 넓은 Gazebo seed와 recovery 시작 자세로 검증
+2. epoch 15 모델을 cap 4로 실차 shadow 검증
 3. 카메라, canonical 변환, inference, 조향 전달 지연을 분리 측정
 4. 물리 비상 정지와 단일 motor publisher를 확인하고 바퀴 공중 시험
 5. 직선 2~3m와 완만한 곡선에서 가장 낮은 cap부터 저속 시험
@@ -125,6 +131,7 @@ rosdep install --from-paths \
   xycar_ws/src/xycar_rule_drive \
   xycar_ws/src/xycar_gazebo_bridge \
   xycar_ws/src/il_data_tools \
+  xycar_ws/src/xycar_rl \
   --ignore-src -r -y
 
 colcon build --packages-select \
@@ -471,10 +478,10 @@ ros2 topic pub --once /xycar_motor std_msgs/msg/Float32MultiArray \
 - [ ] 실차 canonical fine-tuning 필요성 판단
 - [ ] BC와 룰베이스의 동일 구간 정량 비교
 - [x] Offline RL 관측·행동·보상 계약과 temporal TD3+BC 구현
-- [ ] 5/10/15/20 epoch 동일-seed Gazebo gate
+- [x] 5/10/15/20 epoch 1차 동일-seed Gazebo gate
+- [x] epoch 15/cap 6 고정 출발 seed 5/5 통과, 큰 오실레이션 0회
 - [ ] 통과 체크포인트 실차 shadow와 속도별 기록
 - [ ] safety supervisor 고정
 
 현재의 핵심은 기능을 더 많이 붙이는 것이 아니라, 최신 canonical BC 모델을
 실차에서 안전하고 반복 가능하게 검증하는 것입니다.
-

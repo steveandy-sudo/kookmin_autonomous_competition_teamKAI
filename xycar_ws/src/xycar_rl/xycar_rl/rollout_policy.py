@@ -214,6 +214,9 @@ def main(argv=None) -> None:
             cross_track_errors = []
             steering_deltas = []
             straight_steering_flips = 0
+            large_oscillation_events = 0
+            large_oscillation_steps = 0
+            large_oscillation_active = False
             info = {}
             previous_steering = 0.0
             metric_previous_steering = 0.0
@@ -292,6 +295,15 @@ def main(argv=None) -> None:
                 observation, reward, terminated, truncated, info = env.step(
                     action
                 )
+                oscillation_term = float(
+                    info.get("reward_terms", {}).get("large_oscillation", 0.0)
+                )
+                oscillation_active = oscillation_term < -1.0e-9
+                if oscillation_active:
+                    large_oscillation_steps += 1
+                    if not large_oscillation_active:
+                        large_oscillation_events += 1
+                large_oscillation_active = oscillation_active
                 total_reward += reward
                 speed_commands.append(float(info.get("speed_command", 0.0)))
                 cross_track_errors.append(
@@ -311,7 +323,9 @@ def main(argv=None) -> None:
                 f"speed_mean={float(np.mean(speed_commands)) if speed_commands else 0.0:.2f} "
                 f"speed_max={float(np.max(speed_commands)) if speed_commands else 0.0:.2f} "
                 f"steer_delta_mean={float(np.mean(steering_deltas)) if steering_deltas else 0.0:.4f} "
-                f"straight_flips={straight_steering_flips} "
+                f"small_straight_flips={straight_steering_flips} "
+                f"large_osc_events={large_oscillation_events} "
+                f"large_osc_steps={large_oscillation_steps} "
                 f"cte_max={float(np.max(cross_track_errors)) if cross_track_errors else 0.0:.3f} "
                 f"cte_final={float(info.get('cross_track_error_m', 0.0)):.3f} "
                 f"heading_final={math.degrees(float(info.get('heading_error_rad', 0.0))):.1f}deg "
