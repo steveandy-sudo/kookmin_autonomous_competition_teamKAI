@@ -248,6 +248,19 @@ cap 8 실패 상태를 다시 수집한 v7 epoch 57은 `17..21m` 전문가 조�
 CTE `0.429m`로 이탈했다. 따라서 현재 승인 모델은 **dual-dagger-v6 epoch 51,
 승인 cap 7.5**이며 v7은 다음 DAgger의 출발 후보일 뿐이다.
 
+### 6.3 runtime-matched DAgger와 추가 후보
+
+기존 DAgger는 learner와 expert를 blend한 뒤 stabilizer를 적용해, 이미 안정화된
+expert 조향에 필터가 한 번 더 걸리는 문제가 있었다. 수정 후에는 learner 조향만
+실제 runtime과 동일하게 안정화하고 expert와 blend한다. 순수 expert 5회 완주
+`1,389` transition과 runtime-matched DAgger `1,320` transition을 추가해 v11
+epoch 72/75까지 학습했다.
+
+v11 epoch 75는 cap 8 seed `20260724`를 완주했지만 seed `20260726`에서
+`19.49m` 이탈했고 epoch 72도 같은 gate에서 실패했다. 승인 모델 v6 epoch 51을
+cap 7.6과 7.55로 올린 시험도 각각 4/5였다. 따라서 추가 후보는 학습을 이어가기
+위한 actor로만 보존하며 승인 모델과 cap은 **v6 epoch 51 / 7.5**를 유지한다.
+
 ## 7. 실차 shadow
 
 ```bash

@@ -49,6 +49,19 @@ xycar_ws/src/xycar_rl/models/high_speed_td3_bc_cap8_v7_20260717/
 이탈했다. 따라서 오프라인 MAE 개선만으로 승격하지 않았고, 현재 승인 기준선은
 계속 v6 epoch 51 / cap 7.5다.
 
+그 뒤 v8, v9, v11까지 추가 학습했다. 가장 최신 actor-only 후보는 다음이다.
+
+```text
+xycar_ws/src/xycar_rl/models/high_speed_td3_bc_cap8_v11_20260717/
+  camera_speed_td3_bc_epoch_072.pth
+  camera_speed_td3_bc_epoch_075.pth
+```
+
+v11 epoch 75는 cap 8 seed `20260724`를 완주했지만 seed `20260726`에서
+`19.49m` 이탈했고, epoch 72도 같은 seed에서 `19.44m` 이탈했다. 승인 모델 v6
+epoch 51을 cap 7.6과 7.55로 올린 시험도 각각 4/5였다. 그러므로 **GitHub에 더
+높은 속도 후보가 존재해도 승인 cap은 7.5 그대로**다.
+
 ## 3. 중요한 데이터 계약
 
 모델 상태와 행동:
@@ -77,6 +90,13 @@ transition이 된다. `/rl/action_applied`와 `/rl/action_expert`는 state times
 정확히 맞춰 기록한다. `require_action_trace`와
 `require_expert_action_trace`를 모두 켠다.
 
+DAgger 조향 안정화 순서도 중요하다. learner raw 조향에 실제 runtime과 같은
+stabilizer를 한 번 적용한 뒤, 이미 자체 stabilizer가 적용된 expert 행동과 blend한다.
+blend 결과를 다시 안정화하면 expert 쪽에 이중 필터가 걸려 잘못된 궤적이 된다.
+순수 expert 수집은 `--learner-blend 0`을 사용하며 현재 코드는 이중 필터를 만들지
+않는다. 과거 잘못 수집한 `high_speed_expert_cap8_multiseed_v9_invalid_double_filter_20260717`
+세션은 절대 학습에 사용하지 않는다.
+
 ## 4. 새 PC 설치와 검증
 
 ```bash
@@ -91,7 +111,7 @@ rosdep install --from-paths xycar_ws/src --ignore-src -r -y
 colcon build --packages-up-to xycar_rl --symlink-install
 source install/setup.bash
 
-pytest -q xycar_ws/src/xycar_rl/test
+python3 -m pytest -q xycar_ws/src/xycar_rl/test
 ```
 
 Gazebo와 승인 모델 확인:
@@ -123,8 +143,13 @@ Critic, target, optimizer까지 정확히 이어서 학습하려면 원본 PC에
 datasets/rl/high_speed_dagger_dual_action_focus_v5_4500_20260717       8.9MB
 datasets/rl/high_speed_dagger_dual_action_iter2_v6_20260717            5.4MB
 datasets/rl/high_speed_dagger_cap8_focus_v7_20260717                   4.8MB
+datasets/rl/high_speed_dagger_cap8_expert75_v8_20260717
+datasets/rl/high_speed_expert_cap8_multiseed_v9_20260717
+datasets/rl/high_speed_dagger_runtime_matched_v11_20260717
 models/rl/camera_speed_temporal_td3_bc_high_speed_dual_dagger_v6_20260717
 models/rl/camera_speed_temporal_td3_bc_high_speed_cap8_v7_20260717
+models/rl/camera_speed_temporal_td3_bc_high_speed_cap8_v9_20260717
+models/rl/camera_speed_temporal_td3_bc_high_speed_cap8_v11_20260717
 ```
 
 예시:
@@ -144,7 +169,7 @@ rsync -av --info=progress2 \
   models/rl/
 ```
 
-복사할 수 없다면 actor-only v7 후보로 새 dual-action DAgger 데이터를 수집하고,
+복사할 수 없다면 actor-only v11 epoch 75 후보로 새 dual-action DAgger 데이터를 수집하고,
 그 actor를 `--initial-checkpoint`로 사용해 Critic을 새로 학습한다.
 
 ## 6. cap 8 DAgger 재수집
@@ -169,20 +194,20 @@ ros2 run xycar_rl rl_transition_recorder --ros-args \
 터미널 3에서 실패 구간 DAgger:
 
 ```bash
-MODEL="$PWD/xycar_ws/src/xycar_rl/models/high_speed_td3_bc_cap8_v7_20260717/camera_speed_td3_bc_epoch_057.pth"
+MODEL="$PWD/xycar_ws/src/xycar_rl/models/high_speed_td3_bc_cap8_v11_20260717/camera_speed_td3_bc_epoch_075.pth"
 ros2 run xycar_rl rollout_dagger \
   --project-root "$PWD" --checkpoint "$MODEL" \
   --episodes 30 --max-steps 700 --total-steps 2500 \
-  --seed 20260740 --learner-blend 0.45 \
+  --seed 20260780 --learner-blend 0.50 \
   --policy-min-speed-command 4 --expert-min-speed-command 8 \
   --max-speed-command 12 --minimum-speed-curvature 0.9 \
   --curvature-preview-m 2.0 \
-  --start-progress-fraction 0.66 \
-  --start-progress-fraction 0.69 \
-  --start-progress-fraction 0.71 \
-  --start-progress-fraction 0.73 \
-  --start-progress-fraction 0.75 \
-  --start-progress-fraction 0.77 \
+  --start-progress-fraction 0.55 \
+  --start-progress-fraction 0.60 \
+  --start-progress-fraction 0.65 \
+  --start-progress-fraction 0.70 \
+  --start-progress-fraction 0.74 \
+  --start-progress-fraction 0.78 \
   --start-progress-jitter 0.008 \
   --recovery-probability 0.25 --device cuda
 ```
@@ -197,8 +222,8 @@ exact_action_count == expert_action_count == transition_count
 
 ## 7. 다음 작업 순서와 통과 기준
 
-1. v7 epoch 57은 cap 8 첫 gate에서 실패했으므로 승인 모델로 사용하지 않는다.
-2. 실패 progress `18.90m` 전후(`17.5..20.5m`) dual-action DAgger를 추가한다.
+1. v11 epoch 72/75는 cap 8 다중 seed gate에서 실패했으므로 승인 모델로 사용하지 않는다.
+2. 실패 progress `19.4m` 전후(`17.5..20.5m`) runtime-matched DAgger를 추가한다.
 3. 새 후보는 cap 7.5, seed `20260724..20260728`에서 먼저 5/5 회귀 검증한다.
 4. 회귀 검증을 통과한 후보만 cap 8의 1 seed, 5 seed, 20 seed gate로 올린다.
 5. cap 8의 20 seed가 통과한 뒤에만 cap 8.5를 시도한다.
@@ -233,8 +258,10 @@ seed를 다시 시험한다. 더 높은 epoch 번호만으로 모델을 선택�
 simulation 브랜치의 docs/codex_handoff_high_speed_rl_20260717.md와
 docs/high_speed_rl_20260717.md를 먼저 끝까지 읽어라. 현재 승인 기준선은
 high_speed_td3_bc_dual_dagger_v6_20260717 epoch 051, Gazebo cap 7.5의 5/5
-완주다. v7 epoch 057은 cap 8에서 18.90m 이탈했으므로 승인하지 말고 문서 7절의
-실패 구간 DAgger부터 계속하라. transition schema 5에서 applied action은 Critic,
+완주다. v11 epoch 072/075는 cap 8 다중 seed gate에서 실패했으므로 승인하지 말고
+문서 7절의 runtime-matched DAgger부터 계속하라. DAgger에서는 learner 조향만
+runtime stabilizer를 거친 뒤 expert와 blend해야 하며 blend 결과를 다시 필터링하지
+마라. transition schema 5에서 applied action은 Critic,
 expert action은 Actor
 BC target이라는 계약을 절대 섞지 마라. 관련 없는 world/perception/bridge의 기존
 변경은 되돌리거나 commit하지 마라. 각 후보는 고정 seed 전체 트랙으로 검증하고,

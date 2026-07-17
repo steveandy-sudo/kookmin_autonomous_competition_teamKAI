@@ -37,6 +37,16 @@ class RolloutPolicyArgumentsTest(unittest.TestCase):
         )
         self.assertEqual(args.start_progress_fraction, [0.62, 0.74])
 
+    def test_dagger_can_disable_second_steering_stabilizer(self):
+        args = parse_dagger_args(
+            [
+                "--checkpoint",
+                "model.pth",
+                "--disable-applied-steering-stabilizer",
+            ]
+        )
+        self.assertTrue(args.disable_applied_steering_stabilizer)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -40,6 +40,14 @@ def parse_args(argv=None):
     )
     parser.add_argument("--start-progress-jitter", type=float, default=0.015)
     parser.add_argument("--recovery-probability", type=float, default=0.5)
+    parser.add_argument(
+        "--disable-applied-steering-stabilizer",
+        action="store_true",
+        help=(
+            "Do not apply the runtime steering stabilizer to the learner "
+            "before blending it with the already-stabilized expert action."
+        ),
+    )
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     return parser.parse_args(argv)
 
@@ -118,7 +126,13 @@ def main(argv=None) -> None:
             speeds = []
             steering_disagreements = []
             for step in range(1, args.max_steps + 1):
-                learner_action = np.asarray(policy(observation), dtype=np.float32)
+                learner_action = np.asarray(
+                    policy(observation), dtype=np.float32
+                ).copy()
+                if not args.disable_applied_steering_stabilizer:
+                    learner_action[0] = steering_stabilizer.update(
+                        float(learner_action[0])
+                    )
                 expert_action = expert.action(info)
                 applied_action = np.clip(
                     learner_blend * learner_action
@@ -126,9 +140,6 @@ def main(argv=None) -> None:
                     -1.0,
                     1.0,
                 ).astype(np.float32)
-                applied_action[0] = steering_stabilizer.update(
-                    float(applied_action[0])
-                )
                 steering_disagreements.append(
                     abs(float(learner_action[0] - expert_action[0]))
                 )
