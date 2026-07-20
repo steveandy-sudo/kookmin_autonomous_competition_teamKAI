@@ -1,4 +1,4 @@
-"""Team K.A.I. Mission Manager V0.1 public API."""
+"""Team K.A.I. Mission Manager V0.2 public API."""
 
 from track_drive.mission.mission_manager import MissionManager
 from track_drive.mission.mission_types import (
@@ -7,7 +7,11 @@ from track_drive.mission.mission_types import (
     MissionManagerConfig,
     MissionObservation,
 )
-from track_drive.mission.states import ControlMode, MissionState
+from track_drive.mission.states import (
+    ControlMode,
+    MissionState,
+    StartSignal,
+)
 
 __all__ = [
     "ControlMode",
@@ -17,4 +21,5 @@ __all__ = [
     "MissionManagerConfig",
     "MissionObservation",
     "MissionState",
+    "StartSignal",
 ]

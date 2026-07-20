@@ -3,10 +3,22 @@
 from enum import Enum, auto
 
 
+class StartSignal(Enum):
+    UNKNOWN = auto()
+    RED = auto()
+    YELLOW = auto()
+    GO = auto()
+
+
 class MissionState(Enum):
     WAIT_START_SIGNAL = auto()
-    RACING = auto()
-    EMERGENCY_STOP = auto()
+
+    LANE_DRIVING = auto()
+    CONE_SECTION = auto()
+    FIXED_OBSTACLE_SECTION = auto()
+    OVERTAKE_SECTION = auto()
+    ROUTE_SELECTION = auto()
+    SHORTCUT_SECTION = auto()
 
 
 class ControlMode(Enum):
@@ -19,5 +31,4 @@ class ControlMode(Enum):
     FIXED_OBSTACLE_RULE = auto()
     VEHICLE_FOLLOW = auto()
     VEHICLE_OVERTAKE = auto()
-    ROUTE_SELECT = auto()
-    SHORTCUT = auto()
+    SHORTCUT_RULE = auto()

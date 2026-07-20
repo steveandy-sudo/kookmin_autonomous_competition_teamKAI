@@ -1,8 +1,12 @@
-"""Mission Manager V0.1 input, memory, output, and configuration models."""
+"""Mission Manager V0.2 input, memory, output, and configuration models."""
 
 from dataclasses import dataclass
 
-from track_drive.mission.states import ControlMode, MissionState
+from track_drive.mission.states import (
+    ControlMode,
+    MissionState,
+    StartSignal,
+)
 
 
 @dataclass(frozen=True)
@@ -11,17 +15,19 @@ class MissionObservation:
 
     now_sec: float
 
-    emergency_stop: bool = False
+    safety_stop_required: bool = False
 
-    start_signal_go: bool = False
+    start_signal: StartSignal = StartSignal.UNKNOWN
+    start_signal_valid: bool = False
+    safety_ready: bool = True
 
     drive_policy_valid: bool = False
     lane_fallback_valid: bool = False
 
-    cone_detected: bool = False
-    cone_confidence: float = 0.0
-    cone_count: int = 0
-    cone_exit_ready: bool = False
+    camera_cone_valid: bool = False
+    camera_cone_count: int = 0
+    lidar_cone_valid: bool = False
+    lidar_cone_detected: bool = False
 
     fixed_obstacle_detected: bool = False
     vehicle_detected: bool = False
@@ -33,6 +39,8 @@ class MissionObservation:
 class MissionContext:
     """여러 update 주기 사이에서 유지되는 Mission Manager의 영속 메모리.
 
+    mission_state는 현재 코스 미션을, control_mode는 그 미션에서
+    현재 선택된 제어기를 기억한다.
     `cone_seen_since`는 유효한 콘 검출이 시작된 시각을 기억하고,
     `mode_enter_sec`는 최소 모드 유지 시간을 검사할 때 사용한다.
     `manual_override`는 AUTO 또는 강제 시험 모드가 활성인지 기억한다.
@@ -46,14 +54,16 @@ class MissionContext:
     state_enter_sec: float = 0.0
     mode_enter_sec: float = 0.0
 
+    red_signal_seen_since: float | None = None
     start_signal_seen_since: float | None = None
+    start_signal_armed: bool = False
 
     cone_seen_since: float | None = None
     cone_missing_since: float | None = None
     cone_last_seen_sec: float | None = None
 
     drive_valid_since: float | None = None
-    lane_fallback_valid_since: float | None = None
+    lane_fallback_ready_since: float | None = None
 
     manual_override: str = "AUTO"
 
@@ -105,7 +115,8 @@ class MissionDecision:
 
 @dataclass(frozen=True)
 class MissionManagerConfig:
-    start_signal_hold_sec: float = 0.3
+    start_signal_red_hold_sec: float = 0.3
+    start_signal_go_hold_sec: float = 0.3
 
     cone_enter_hold_sec: float = 0.25
     cone_exit_hold_sec: float = 0.7
@@ -113,29 +124,39 @@ class MissionManagerConfig:
     cone_reenter_cooldown_sec: float = 1.0
 
     drive_recover_hold_sec: float = 0.4
-    lane_fallback_enter_hold_sec: float = 0.2
+    lane_fallback_ready_hold_sec: float = 0.2
 
-    minimum_cone_count: int = 2
-    minimum_cone_confidence: float = 0.5
+    minimum_camera_cone_count: int = 4
+    maximum_camera_cone_count_for_exit: int = 1
 
     status_log_period_sec: float = 1.0
 
     def __post_init__(self) -> None:
         durations = (
-            self.start_signal_hold_sec,
+            self.start_signal_red_hold_sec,
+            self.start_signal_go_hold_sec,
             self.cone_enter_hold_sec,
             self.cone_exit_hold_sec,
             self.cone_min_dwell_sec,
             self.cone_reenter_cooldown_sec,
             self.drive_recover_hold_sec,
-            self.lane_fallback_enter_hold_sec,
+            self.lane_fallback_ready_hold_sec,
             self.status_log_period_sec,
         )
         if any(value < 0.0 for value in durations):
             raise ValueError("time configuration values must be non-negative")
-        if self.minimum_cone_count < 0:
-            raise ValueError("minimum_cone_count must be non-negative")
-        if not 0.0 <= self.minimum_cone_confidence <= 1.0:
+        if self.minimum_camera_cone_count < 0:
             raise ValueError(
-                "minimum_cone_confidence must be between 0.0 and 1.0"
+                "minimum_camera_cone_count must be non-negative"
+            )
+        if self.maximum_camera_cone_count_for_exit < 0:
+            raise ValueError(
+                "maximum_camera_cone_count_for_exit must be non-negative"
+            )
+        if (
+            self.maximum_camera_cone_count_for_exit
+            >= self.minimum_camera_cone_count
+        ):
+            raise ValueError(
+                "camera cone exit count must be lower than entry count"
             )

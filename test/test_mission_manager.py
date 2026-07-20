@@ -9,6 +9,7 @@ from track_drive.mission import (
     MissionManagerConfig,
     MissionObservation,
     MissionState,
+    StartSignal,
 )
 
 
@@ -27,24 +28,50 @@ def manual_start(manager, now_sec=0.0, drive=True, lane=False):
     )
 
 
+def cone_entry_inputs(
+    *,
+    camera_count=4,
+    camera_valid=True,
+    lidar_detected=True,
+    lidar_valid=True,
+):
+    return {
+        "camera_cone_valid": camera_valid,
+        "camera_cone_count": camera_count,
+        "lidar_cone_valid": lidar_valid,
+        "lidar_cone_detected": lidar_detected,
+    }
+
+
+def cone_exit_inputs(
+    *,
+    camera_count=1,
+    camera_valid=True,
+    lidar_detected=False,
+    lidar_valid=True,
+):
+    return {
+        "camera_cone_valid": camera_valid,
+        "camera_cone_count": camera_count,
+        "lidar_cone_valid": lidar_valid,
+        "lidar_cone_detected": lidar_detected,
+    }
+
+
 def enter_cone_mode(manager):
     manual_start(manager, 0.0, drive=True)
     manager.update(
         observation(
             1.0,
             drive_policy_valid=True,
-            cone_detected=True,
-            cone_count=2,
-            cone_confidence=0.5,
+            **cone_entry_inputs(),
         )
     )
     return manager.update(
         observation(
             1.25,
             drive_policy_valid=True,
-            cone_detected=True,
-            cone_count=2,
-            cone_confidence=0.5,
+            **cone_entry_inputs(),
         )
     )
 
@@ -53,7 +80,15 @@ class DataModelTest(unittest.TestCase):
     def test_enum_members_are_exact(self):
         self.assertEqual(
             list(MissionState.__members__),
-            ["WAIT_START_SIGNAL", "RACING", "EMERGENCY_STOP"],
+            [
+                "WAIT_START_SIGNAL",
+                "LANE_DRIVING",
+                "CONE_SECTION",
+                "FIXED_OBSTACLE_SECTION",
+                "OVERTAKE_SECTION",
+                "ROUTE_SELECTION",
+                "SHORTCUT_SECTION",
+            ],
         )
         self.assertEqual(
             list(ControlMode.__members__),
@@ -65,26 +100,37 @@ class DataModelTest(unittest.TestCase):
                 "FIXED_OBSTACLE_RULE",
                 "VEHICLE_FOLLOW",
                 "VEHICLE_OVERTAKE",
-                "ROUTE_SELECT",
-                "SHORTCUT",
+                "SHORTCUT_RULE",
             ],
         )
+        self.assertEqual(
+            list(StartSignal.__members__),
+            ["UNKNOWN", "RED", "YELLOW", "GO"],
+        )
         self.assertNotIn("BOOT", MissionState.__members__)
+        self.assertNotIn("RACING", MissionState.__members__)
         self.assertNotIn("FINISHED", MissionState.__members__)
+        self.assertNotIn("MANUAL_RECOVERY", MissionState.__members__)
+        self.assertNotIn("RACE_COMPLETE", MissionState.__members__)
+        self.assertNotIn("RACE_ABORTED", MissionState.__members__)
+        self.assertNotIn("EMERGENCY_STOP", MissionState.__members__)
+        self.assertNotIn("ROUTE_SELECT", ControlMode.__members__)
 
     def test_observation_fields_are_exact_and_frozen(self):
         self.assertEqual(
             [item.name for item in fields(MissionObservation)],
             [
                 "now_sec",
-                "emergency_stop",
-                "start_signal_go",
+                "safety_stop_required",
+                "start_signal",
+                "start_signal_valid",
+                "safety_ready",
                 "drive_policy_valid",
                 "lane_fallback_valid",
-                "cone_detected",
-                "cone_confidence",
-                "cone_count",
-                "cone_exit_ready",
+                "camera_cone_valid",
+                "camera_cone_count",
+                "lidar_cone_valid",
+                "lidar_cone_detected",
                 "fixed_obstacle_detected",
                 "vehicle_detected",
                 "shortcut_signal_detected",
@@ -103,12 +149,14 @@ class DataModelTest(unittest.TestCase):
                 "control_mode",
                 "state_enter_sec",
                 "mode_enter_sec",
+                "red_signal_seen_since",
                 "start_signal_seen_since",
+                "start_signal_armed",
                 "cone_seen_since",
                 "cone_missing_since",
                 "cone_last_seen_sec",
                 "drive_valid_since",
-                "lane_fallback_valid_since",
+                "lane_fallback_ready_since",
                 "manual_override",
                 "lap_count",
                 "shortcut_used",
@@ -141,23 +189,134 @@ class DataModelTest(unittest.TestCase):
         self.assertEqual(
             MissionManagerConfig(),
             MissionManagerConfig(
-                start_signal_hold_sec=0.3,
+                start_signal_red_hold_sec=0.3,
+                start_signal_go_hold_sec=0.3,
                 cone_enter_hold_sec=0.25,
                 cone_exit_hold_sec=0.7,
                 cone_min_dwell_sec=1.0,
                 cone_reenter_cooldown_sec=1.0,
                 drive_recover_hold_sec=0.4,
-                lane_fallback_enter_hold_sec=0.2,
-                minimum_cone_count=2,
-                minimum_cone_confidence=0.5,
+                lane_fallback_ready_hold_sec=0.2,
+                minimum_camera_cone_count=4,
+                maximum_camera_cone_count_for_exit=1,
                 status_log_period_sec=1.0,
             ),
         )
 
 
+class MissionControlContractTest(unittest.TestCase):
+    def test_each_mission_state_has_exact_allowed_control_modes(self):
+        manager = MissionManager(MissionManagerConfig())
+        expected = {
+            MissionState.WAIT_START_SIGNAL: {ControlMode.STOP},
+            MissionState.LANE_DRIVING: {
+                ControlMode.STOP,
+                ControlMode.NORMAL_IL,
+                ControlMode.LANE_FALLBACK,
+            },
+            MissionState.CONE_SECTION: {
+                ControlMode.STOP,
+                ControlMode.CONE_DRIVE_RULE,
+            },
+            MissionState.FIXED_OBSTACLE_SECTION: {
+                ControlMode.STOP,
+                ControlMode.FIXED_OBSTACLE_RULE,
+            },
+            MissionState.OVERTAKE_SECTION: {
+                ControlMode.STOP,
+                ControlMode.NORMAL_IL,
+                ControlMode.LANE_FALLBACK,
+                ControlMode.VEHICLE_FOLLOW,
+                ControlMode.VEHICLE_OVERTAKE,
+            },
+            MissionState.ROUTE_SELECTION: {
+                ControlMode.STOP,
+                ControlMode.NORMAL_IL,
+                ControlMode.LANE_FALLBACK,
+            },
+            MissionState.SHORTCUT_SECTION: {
+                ControlMode.STOP,
+                ControlMode.NORMAL_IL,
+                ControlMode.SHORTCUT_RULE,
+            },
+        }
+
+        for state, allowed in expected.items():
+            with self.subTest(state=state):
+                actual = {
+                    mode
+                    for mode in ControlMode
+                    if manager._mode_is_allowed(state, mode)
+                }
+                self.assertEqual(actual, allowed)
+
+    def test_unimplemented_mission_states_remain_stopped(self):
+        future_states = (
+            MissionState.FIXED_OBSTACLE_SECTION,
+            MissionState.OVERTAKE_SECTION,
+            MissionState.ROUTE_SELECTION,
+            MissionState.SHORTCUT_SECTION,
+        )
+        for state in future_states:
+            with self.subTest(state=state):
+                manager = MissionManager(MissionManagerConfig())
+                manager.context.mission_state = state
+                decision = manager.update(
+                    observation(
+                        1.0,
+                        drive_policy_valid=True,
+                        lane_fallback_valid=True,
+                        fixed_obstacle_detected=True,
+                        vehicle_detected=True,
+                        shortcut_signal_detected=True,
+                    )
+                )
+                self.assertIs(decision.mission_state, state)
+                self.assertIs(decision.control_mode, ControlMode.STOP)
+                self.assertTrue(decision.stop_required)
+
+
 class MissionManagerTransitionTest(unittest.TestCase):
     def setUp(self):
         self.manager = MissionManager(MissionManagerConfig())
+
+    @staticmethod
+    def _start_with_confirmed_signal(
+        manager,
+        *,
+        drive_policy_valid,
+        lane_fallback_valid,
+    ):
+        manager.update(
+            observation(
+                0.0,
+                start_signal=StartSignal.RED,
+                start_signal_valid=True,
+            )
+        )
+        manager.update(
+            observation(
+                0.3,
+                start_signal=StartSignal.RED,
+                start_signal_valid=True,
+            )
+        )
+        manager.update(
+            observation(
+                1.0,
+                start_signal=StartSignal.GO,
+                start_signal_valid=True,
+            )
+        )
+        return manager.update(
+            observation(
+                1.3,
+                start_signal=StartSignal.GO,
+                start_signal_valid=True,
+                drive_policy_valid=drive_policy_valid,
+                lane_fallback_valid=lane_fallback_valid,
+            )
+        )
 
     def test_initial_state_is_wait_and_stop(self):
         decision = self.manager.update(observation(0.0))
@@ -172,41 +331,252 @@ class MissionManagerTransitionTest(unittest.TestCase):
             ),
         )
 
-    def test_short_start_signal_does_not_start_and_resets_timer(self):
+    def test_go_without_confirmed_red_never_starts(self):
         self.manager.update(
-            observation(0.0, start_signal_go=True, drive_policy_valid=True)
+            observation(
+                0.0,
+                start_signal=StartSignal.GO,
+                start_signal_valid=True,
+                drive_policy_valid=True,
+            )
         )
-        short = self.manager.update(
-            observation(0.29, start_signal_go=True, drive_policy_valid=True)
-        )
-        self.manager.update(observation(0.30, start_signal_go=False))
-        restarted = self.manager.update(
-            observation(0.50, start_signal_go=True, drive_policy_valid=True)
+        decision = self.manager.update(
+            observation(
+                1.0,
+                start_signal=StartSignal.GO,
+                start_signal_valid=True,
+                drive_policy_valid=True,
+            )
         )
 
-        self.assertIs(short.mission_state, MissionState.WAIT_START_SIGNAL)
+        self.assertIs(
+            decision.mission_state, MissionState.WAIT_START_SIGNAL
+        )
+        self.assertFalse(self.manager.context.start_signal_armed)
+
+    def test_short_red_does_not_arm_and_resets_timer(self):
+        self.manager.update(
+            observation(
+                0.0,
+                start_signal=StartSignal.RED,
+                start_signal_valid=True,
+            )
+        )
+        before = self.manager.update(
+            observation(
+                0.29,
+                start_signal=StartSignal.RED,
+                start_signal_valid=True,
+            )
+        )
+        self.manager.update(
+            observation(
+                0.30,
+                start_signal=StartSignal.YELLOW,
+                start_signal_valid=True,
+            )
+        )
+        restarted = self.manager.update(
+            observation(
+                0.50,
+                start_signal=StartSignal.RED,
+                start_signal_valid=True,
+            )
+        )
+
+        self.assertIs(before.mission_state, MissionState.WAIT_START_SIGNAL)
+        self.assertFalse(self.manager.context.start_signal_armed)
         self.assertIs(
             restarted.mission_state, MissionState.WAIT_START_SIGNAL
         )
 
-    def test_held_start_signal_enters_racing_at_boundary(self):
+    def test_confirmed_red_arms_but_remains_stopped(self):
         self.manager.update(
-            observation(1.0, start_signal_go=True, drive_policy_valid=True)
+            observation(
+                0.0,
+                start_signal=StartSignal.RED,
+                start_signal_valid=True,
+            )
+        )
+        armed = self.manager.update(
+            observation(
+                0.3,
+                start_signal=StartSignal.RED,
+                start_signal_valid=True,
+                drive_policy_valid=True,
+            )
+        )
+
+        self.assertIs(armed.mission_state, MissionState.WAIT_START_SIGNAL)
+        self.assertIs(armed.control_mode, ControlMode.STOP)
+        self.assertTrue(self.manager.context.start_signal_armed)
+
+    def test_confirmed_red_then_confirmed_go_starts_lane_driving(self):
+        self.manager.update(
+            observation(
+                0.0,
+                start_signal=StartSignal.RED,
+                start_signal_valid=True,
+            )
+        )
+        self.manager.update(
+            observation(
+                0.3,
+                start_signal=StartSignal.RED,
+                start_signal_valid=True,
+            )
+        )
+        self.manager.update(
+            observation(
+                1.0,
+                start_signal=StartSignal.GO,
+                start_signal_valid=True,
+                drive_policy_valid=True,
+            )
         )
         before = self.manager.update(
-            observation(1.299, start_signal_go=True, drive_policy_valid=True)
+            observation(
+                1.299,
+                start_signal=StartSignal.GO,
+                start_signal_valid=True,
+                drive_policy_valid=True,
+            )
         )
         at_boundary = self.manager.update(
-            observation(1.30, start_signal_go=True, drive_policy_valid=True)
+            observation(
+                1.3,
+                start_signal=StartSignal.GO,
+                start_signal_valid=True,
+                drive_policy_valid=True,
+            )
         )
 
         self.assertIs(before.mission_state, MissionState.WAIT_START_SIGNAL)
-        self.assertIs(at_boundary.mission_state, MissionState.RACING)
+        self.assertIs(
+            at_boundary.mission_state,
+            MissionState.LANE_DRIVING,
+        )
         self.assertIs(at_boundary.control_mode, ControlMode.NORMAL_IL)
+
+    def test_confirmed_go_uses_immediate_lane_source_priority(self):
+        cases = (
+            (True, True, ControlMode.NORMAL_IL, "drive_il", False),
+            (False, True, ControlMode.LANE_FALLBACK, "lane_fallback", False),
+            (False, False, ControlMode.STOP, "none", True),
+        )
+
+        for drive_valid, lane_valid, mode, source, stopped in cases:
+            with self.subTest(
+                drive_policy_valid=drive_valid,
+                lane_fallback_valid=lane_valid,
+            ):
+                manager = MissionManager(MissionManagerConfig())
+                decision = self._start_with_confirmed_signal(
+                    manager,
+                    drive_policy_valid=drive_valid,
+                    lane_fallback_valid=lane_valid,
+                )
+
+                self.assertIs(
+                    decision.mission_state,
+                    MissionState.LANE_DRIVING,
+                )
+                self.assertIs(decision.control_mode, mode)
+                self.assertEqual(decision.selected_source, source)
+                self.assertEqual(decision.stop_required, stopped)
+
+    def test_yellow_resets_go_confirmation_but_preserves_red_arm(self):
+        self.manager.update(
+            observation(
+                0.0,
+                start_signal=StartSignal.RED,
+                start_signal_valid=True,
+            )
+        )
+        self.manager.update(
+            observation(
+                0.3,
+                start_signal=StartSignal.RED,
+                start_signal_valid=True,
+            )
+        )
+        self.manager.update(
+            observation(
+                1.0,
+                start_signal=StartSignal.GO,
+                start_signal_valid=True,
+            )
+        )
+        yellow = self.manager.update(
+            observation(
+                1.2,
+                start_signal=StartSignal.YELLOW,
+                start_signal_valid=True,
+            )
+        )
+        self.assertIsNone(self.manager.context.start_signal_seen_since)
+
+        restarted = self.manager.update(
+            observation(
+                1.3,
+                start_signal=StartSignal.GO,
+                start_signal_valid=True,
+            )
+        )
+
+        self.assertIs(yellow.mission_state, MissionState.WAIT_START_SIGNAL)
+        self.assertTrue(self.manager.context.start_signal_armed)
+        self.assertEqual(self.manager.context.start_signal_seen_since, 1.3)
+        self.assertIs(
+            restarted.mission_state, MissionState.WAIT_START_SIGNAL
+        )
+
+    def test_invalid_signal_resets_go_confirmation_but_preserves_arm(self):
+        self.manager.context.start_signal_armed = True
+        self.manager.update(
+            observation(
+                1.0,
+                start_signal=StartSignal.GO,
+                start_signal_valid=True,
+            )
+        )
+        decision = self.manager.update(
+            observation(
+                1.2,
+                start_signal=StartSignal.GO,
+                start_signal_valid=False,
+            )
+        )
+
+        self.assertIs(
+            decision.mission_state, MissionState.WAIT_START_SIGNAL
+        )
+        self.assertTrue(self.manager.context.start_signal_armed)
+        self.assertIsNone(self.manager.context.start_signal_seen_since)
+
+    def test_not_safety_ready_clears_start_confirmation(self):
+        self.manager.context.start_signal_armed = True
+        self.manager.context.start_signal_seen_since = 1.0
+
+        decision = self.manager.update(
+            observation(
+                1.1,
+                start_signal=StartSignal.GO,
+                start_signal_valid=True,
+                safety_ready=False,
+            )
+        )
+
+        self.assertIs(
+            decision.mission_state, MissionState.WAIT_START_SIGNAL
+        )
+        self.assertIs(decision.control_mode, ControlMode.STOP)
+        self.assertFalse(self.manager.context.start_signal_armed)
+        self.assertIsNone(self.manager.context.start_signal_seen_since)
 
     def test_manual_start_is_immediate_and_selects_available_source(self):
         drive = manual_start(self.manager, drive=True)
-        self.assertIs(drive.mission_state, MissionState.RACING)
+        self.assertIs(drive.mission_state, MissionState.LANE_DRIVING)
         self.assertIs(drive.control_mode, ControlMode.NORMAL_IL)
 
         second = MissionManager(MissionManagerConfig())
@@ -225,7 +595,10 @@ class MissionManagerTransitionTest(unittest.TestCase):
             observation(0.0, drive_policy_valid=True)
         )
 
-        self.assertIs(decision.mission_state, MissionState.RACING)
+        self.assertIs(
+            decision.mission_state,
+            MissionState.LANE_DRIVING,
+        )
         self.assertIs(decision.control_mode, ControlMode.NORMAL_IL)
         self.assertEqual(self.manager.context.manual_override, "NORMAL_IL")
 
@@ -235,9 +608,7 @@ class MissionManagerTransitionTest(unittest.TestCase):
             observation(
                 1.0,
                 drive_policy_valid=True,
-                cone_detected=True,
-                cone_count=2,
-                cone_confidence=0.5,
+                **cone_entry_inputs(),
             )
         )
         after_dropout = self.manager.update(
@@ -254,62 +625,109 @@ class MissionManagerTransitionTest(unittest.TestCase):
             observation(
                 2.0,
                 drive_policy_valid=True,
-                cone_detected=True,
-                cone_count=2,
-                cone_confidence=0.5,
+                **cone_entry_inputs(),
             )
         )
         before = self.manager.update(
             observation(
                 2.249,
                 drive_policy_valid=True,
-                cone_detected=True,
-                cone_count=2,
-                cone_confidence=0.5,
+                **cone_entry_inputs(),
             )
         )
         at_boundary = self.manager.update(
             observation(
                 2.25,
                 drive_policy_valid=True,
-                cone_detected=True,
-                cone_count=2,
-                cone_confidence=0.5,
+                **cone_entry_inputs(),
             )
         )
 
         self.assertIs(before.control_mode, ControlMode.NORMAL_IL)
         self.assertIs(
+            before.mission_state,
+            MissionState.LANE_DRIVING,
+        )
+        self.assertIs(
             at_boundary.control_mode, ControlMode.CONE_DRIVE_RULE
         )
+        self.assertIs(
+            at_boundary.mission_state,
+            MissionState.CONE_SECTION,
+        )
 
-    def test_low_cone_count_or_confidence_resets_entry_hold(self):
+    def test_lane_fallback_can_enter_cone_section(self):
+        started = manual_start(
+            self.manager,
+            drive=False,
+            lane=True,
+        )
+        self.assertIs(started.control_mode, ControlMode.LANE_FALLBACK)
+
+        self.manager.update(
+            observation(
+                1.0,
+                lane_fallback_valid=True,
+                **cone_entry_inputs(),
+            )
+        )
+        entered = self.manager.update(
+            observation(
+                1.25,
+                lane_fallback_valid=True,
+                **cone_entry_inputs(),
+            )
+        )
+
+        self.assertIs(entered.mission_state, MissionState.CONE_SECTION)
+        self.assertIs(entered.control_mode, ControlMode.CONE_DRIVE_RULE)
+
+    def test_entry_requires_count_lidar_and_both_validity_flags(self):
+        invalid_cases = (
+            cone_entry_inputs(camera_count=3),
+            cone_entry_inputs(camera_valid=False),
+            cone_entry_inputs(lidar_detected=False),
+            cone_entry_inputs(lidar_valid=False),
+        )
+
+        for inputs in invalid_cases:
+            with self.subTest(inputs=inputs):
+                manager = MissionManager(MissionManagerConfig())
+                manual_start(manager)
+                manager.update(
+                    observation(1.0, drive_policy_valid=True, **inputs)
+                )
+                decision = manager.update(
+                    observation(1.25, drive_policy_valid=True, **inputs)
+                )
+
+                self.assertIs(
+                    decision.mission_state,
+                    MissionState.LANE_DRIVING,
+                )
+                self.assertIs(decision.control_mode, ControlMode.NORMAL_IL)
+
+    def test_interrupted_cone_entry_condition_resets_hold(self):
         manual_start(self.manager)
         self.manager.update(
             observation(
                 1.0,
                 drive_policy_valid=True,
-                cone_detected=True,
-                cone_count=2,
-                cone_confidence=0.5,
+                **cone_entry_inputs(),
             )
         )
         self.manager.update(
             observation(
                 1.2,
                 drive_policy_valid=True,
-                cone_detected=True,
-                cone_count=1,
-                cone_confidence=0.4,
+                **cone_entry_inputs(camera_count=3),
             )
         )
         not_yet = self.manager.update(
             observation(
                 1.4,
                 drive_policy_valid=True,
-                cone_detected=True,
-                cone_count=2,
-                cone_confidence=0.5,
+                **cone_entry_inputs(),
             )
         )
 
@@ -322,17 +740,15 @@ class MissionManagerTransitionTest(unittest.TestCase):
         short = self.manager.update(
             observation(
                 1.6,
-                cone_detected=False,
-                cone_exit_ready=True,
                 drive_policy_valid=True,
+                **cone_exit_inputs(),
             )
         )
         recovered = self.manager.update(
             observation(
                 2.0,
-                cone_detected=True,
-                cone_exit_ready=True,
                 drive_policy_valid=True,
+                **cone_exit_inputs(camera_count=2),
             )
         )
 
@@ -340,119 +756,159 @@ class MissionManagerTransitionTest(unittest.TestCase):
         self.assertIs(recovered.control_mode, ControlMode.CONE_DRIVE_RULE)
         self.assertIsNone(self.manager.context.cone_missing_since)
 
+    def test_three_camera_cones_prevent_exit_when_lidar_misses(self):
+        enter_cone_mode(self.manager)
+        inputs = cone_exit_inputs(camera_count=3)
+
+        self.manager.update(observation(2.0, **inputs))
+        decision = self.manager.update(observation(3.0, **inputs))
+
+        self.assertIs(decision.mission_state, MissionState.CONE_SECTION)
+        self.assertIs(decision.control_mode, ControlMode.CONE_DRIVE_RULE)
+        self.assertIsNone(self.manager.context.cone_missing_since)
+
+    def test_invalid_sensor_input_never_counts_as_cone_absence(self):
+        invalid_cases = (
+            cone_exit_inputs(camera_valid=False),
+            cone_exit_inputs(lidar_valid=False),
+        )
+
+        for inputs in invalid_cases:
+            with self.subTest(inputs=inputs):
+                manager = MissionManager(MissionManagerConfig())
+                enter_cone_mode(manager)
+                manager.update(observation(2.0, **inputs))
+                decision = manager.update(observation(3.0, **inputs))
+
+                self.assertIs(
+                    decision.mission_state,
+                    MissionState.CONE_SECTION,
+                )
+                self.assertIsNone(manager.context.cone_missing_since)
+
     def test_cone_exit_requires_minimum_dwell_and_missing_hold(self):
         enter_cone_mode(self.manager)
         self.manager.update(
             observation(
                 1.3,
-                cone_detected=False,
-                cone_exit_ready=True,
                 drive_policy_valid=True,
+                **cone_exit_inputs(),
             )
         )
         dwell_not_done = self.manager.update(
             observation(
                 2.0,
-                cone_detected=False,
-                cone_exit_ready=True,
                 drive_policy_valid=True,
+                **cone_exit_inputs(),
             )
         )
         both_done = self.manager.update(
             observation(
                 2.25,
-                cone_detected=False,
-                cone_exit_ready=True,
                 drive_policy_valid=True,
+                **cone_exit_inputs(),
             )
         )
 
         self.assertIs(
             dwell_not_done.control_mode, ControlMode.CONE_DRIVE_RULE
         )
+        self.assertIs(
+            dwell_not_done.mission_state,
+            MissionState.CONE_SECTION,
+        )
         self.assertIs(both_done.control_mode, ControlMode.NORMAL_IL)
+        self.assertIs(
+            both_done.mission_state,
+            MissionState.LANE_DRIVING,
+        )
 
     def test_cone_exit_missing_hold_is_independently_required(self):
         enter_cone_mode(self.manager)
         self.manager.update(
             observation(
                 2.25,
-                cone_detected=False,
-                cone_exit_ready=True,
                 drive_policy_valid=True,
+                **cone_exit_inputs(),
             )
         )
         before = self.manager.update(
             observation(
                 2.949,
-                cone_detected=False,
-                cone_exit_ready=True,
                 drive_policy_valid=True,
+                **cone_exit_inputs(),
             )
         )
         at_boundary = self.manager.update(
             observation(
                 2.95,
-                cone_detected=False,
-                cone_exit_ready=True,
                 drive_policy_valid=True,
+                **cone_exit_inputs(),
             )
         )
 
         self.assertIs(before.control_mode, ControlMode.CONE_DRIVE_RULE)
+        self.assertIs(
+            before.mission_state,
+            MissionState.CONE_SECTION,
+        )
         self.assertIs(at_boundary.control_mode, ControlMode.NORMAL_IL)
+        self.assertIs(
+            at_boundary.mission_state,
+            MissionState.LANE_DRIVING,
+        )
 
     def test_cone_exit_selects_lane_or_stop_when_drive_is_invalid(self):
         enter_cone_mode(self.manager)
         self.manager.update(
-            observation(2.0, cone_detected=False, cone_exit_ready=True)
+            observation(2.0, **cone_exit_inputs())
         )
         lane = self.manager.update(
             observation(
                 2.7,
-                cone_detected=False,
-                cone_exit_ready=True,
                 lane_fallback_valid=True,
+                **cone_exit_inputs(),
             )
         )
         self.assertIs(lane.control_mode, ControlMode.LANE_FALLBACK)
+        self.assertIs(
+            lane.mission_state,
+            MissionState.LANE_DRIVING,
+        )
 
         other = MissionManager(MissionManagerConfig())
         enter_cone_mode(other)
         other.update(
-            observation(2.0, cone_detected=False, cone_exit_ready=True)
+            observation(2.0, **cone_exit_inputs())
         )
         stopped = other.update(
-            observation(2.7, cone_detected=False, cone_exit_ready=True)
+            observation(2.7, **cone_exit_inputs())
         )
         self.assertIs(stopped.control_mode, ControlMode.STOP)
+        self.assertIs(
+            stopped.mission_state,
+            MissionState.LANE_DRIVING,
+        )
 
     def test_cone_reentry_cooldown_and_new_hold_are_required(self):
         enter_cone_mode(self.manager)
         self.manager.update(
             observation(
                 2.0,
-                cone_detected=False,
-                cone_exit_ready=True,
                 drive_policy_valid=True,
+                **cone_exit_inputs(),
             )
         )
         exited = self.manager.update(
             observation(
                 2.7,
-                cone_detected=False,
-                cone_exit_ready=True,
                 drive_policy_valid=True,
+                **cone_exit_inputs(),
             )
         )
         self.assertIs(exited.control_mode, ControlMode.NORMAL_IL)
 
-        common = dict(
-            drive_policy_valid=True,
-            cone_detected=True,
-            cone_count=2,
-            cone_confidence=0.5,
-        )
+        common = {"drive_policy_valid": True, **cone_entry_inputs()}
         self.manager.update(observation(2.8, **common))
         blocked = self.manager.update(observation(3.69, **common))
         cooldown_boundary = self.manager.update(
@@ -468,7 +924,7 @@ class MissionManagerTransitionTest(unittest.TestCase):
             hold_boundary.control_mode, ControlMode.CONE_DRIVE_RULE
         )
 
-    def test_general_failure_enters_lane_after_confirmation(self):
+    def test_general_failure_stops_until_fallback_is_ready(self):
         manual_start(self.manager)
         first = self.manager.update(
             observation(
@@ -492,22 +948,15 @@ class MissionManagerTransitionTest(unittest.TestCase):
             )
         )
 
-        self.assertIs(first.control_mode, ControlMode.NORMAL_IL)
-        self.assertIs(before.control_mode, ControlMode.NORMAL_IL)
+        self.assertIs(first.control_mode, ControlMode.STOP)
+        self.assertIs(before.control_mode, ControlMode.STOP)
         self.assertIs(at_boundary.control_mode, ControlMode.LANE_FALLBACK)
 
-    def test_general_failure_confirmation_resets_when_interrupted(self):
+    def test_preconfirmed_fallback_is_selected_on_first_failure_tick(self):
         manual_start(self.manager)
         self.manager.update(
             observation(
                 1.0,
-                drive_policy_valid=False,
-                lane_fallback_valid=True,
-            )
-        )
-        self.manager.update(
-            observation(
-                1.1,
                 drive_policy_valid=True,
                 lane_fallback_valid=True,
             )
@@ -515,18 +964,61 @@ class MissionManagerTransitionTest(unittest.TestCase):
         self.manager.update(
             observation(
                 1.2,
-                drive_policy_valid=False,
+                drive_policy_valid=True,
                 lane_fallback_valid=True,
             )
         )
-        not_yet = self.manager.update(
+        switched = self.manager.update(
             observation(
-                1.3,
+                1.21,
                 drive_policy_valid=False,
                 lane_fallback_valid=True,
             )
         )
-        self.assertIs(not_yet.control_mode, ControlMode.NORMAL_IL)
+
+        self.assertIs(switched.control_mode, ControlMode.LANE_FALLBACK)
+
+    def test_fallback_readiness_resets_when_fallback_is_invalid(self):
+        manual_start(self.manager)
+        self.manager.update(
+            observation(
+                1.0,
+                drive_policy_valid=True,
+                lane_fallback_valid=True,
+            )
+        )
+        self.manager.update(
+            observation(
+                1.1,
+                drive_policy_valid=True,
+                lane_fallback_valid=False,
+            )
+        )
+        first = self.manager.update(
+            observation(
+                1.2,
+                drive_policy_valid=False,
+                lane_fallback_valid=True,
+            )
+        )
+        before = self.manager.update(
+            observation(
+                1.399,
+                drive_policy_valid=False,
+                lane_fallback_valid=True,
+            )
+        )
+        ready = self.manager.update(
+            observation(
+                1.4,
+                drive_policy_valid=False,
+                lane_fallback_valid=True,
+            )
+        )
+
+        self.assertIs(first.control_mode, ControlMode.STOP)
+        self.assertIs(before.control_mode, ControlMode.STOP)
+        self.assertIs(ready.control_mode, ControlMode.LANE_FALLBACK)
 
     def test_drive_recovery_returns_to_normal_after_hold(self):
         manual_start(self.manager, drive=False, lane=True)
@@ -592,26 +1084,49 @@ class MissionManagerTransitionTest(unittest.TestCase):
     def test_no_valid_controller_uses_stop(self):
         manual_start(self.manager, drive=False, lane=True)
         stopped = self.manager.update(observation(1.0))
-        self.assertIs(stopped.mission_state, MissionState.RACING)
+        self.assertIs(
+            stopped.mission_state,
+            MissionState.LANE_DRIVING,
+        )
         self.assertIs(stopped.control_mode, ControlMode.STOP)
         self.assertTrue(stopped.stop_required)
 
-    def test_racing_stop_recovery_priority(self):
+    def test_lane_stop_recovery_priority(self):
         manual_start(self.manager, drive=False, lane=False)
-        normal = self.manager.update(
+        waiting = self.manager.update(
             observation(
                 1.0,
                 drive_policy_valid=True,
                 lane_fallback_valid=True,
             )
         )
+        fallback = self.manager.update(
+            observation(
+                1.2,
+                drive_policy_valid=True,
+                lane_fallback_valid=True,
+            )
+        )
+        normal = self.manager.update(
+            observation(
+                1.4,
+                drive_policy_valid=True,
+                lane_fallback_valid=True,
+            )
+        )
+        self.assertIs(waiting.control_mode, ControlMode.STOP)
+        self.assertIs(fallback.control_mode, ControlMode.LANE_FALLBACK)
         self.assertIs(normal.control_mode, ControlMode.NORMAL_IL)
 
         lane_manager = MissionManager(MissionManagerConfig())
         manual_start(lane_manager, drive=False, lane=False)
-        lane = lane_manager.update(
+        lane_wait = lane_manager.update(
             observation(1.0, lane_fallback_valid=True)
         )
+        lane = lane_manager.update(
+            observation(1.2, lane_fallback_valid=True)
+        )
+        self.assertIs(lane_wait.control_mode, ControlMode.STOP)
         self.assertIs(lane.control_mode, ControlMode.LANE_FALLBACK)
 
         cone_manager = MissionManager(MissionManagerConfig())
@@ -619,9 +1134,7 @@ class MissionManagerTransitionTest(unittest.TestCase):
         cone_manager.update(
             observation(
                 1.0,
-                cone_detected=True,
-                cone_count=2,
-                cone_confidence=0.5,
+                **cone_entry_inputs(),
             )
         )
         cone = cone_manager.update(
@@ -629,9 +1142,7 @@ class MissionManagerTransitionTest(unittest.TestCase):
                 1.25,
                 drive_policy_valid=True,
                 lane_fallback_valid=True,
-                cone_detected=True,
-                cone_count=2,
-                cone_confidence=0.5,
+                **cone_entry_inputs(),
             )
         )
         self.assertIs(cone.control_mode, ControlMode.CONE_DRIVE_RULE)
@@ -642,8 +1153,7 @@ class MissionManagerTransitionTest(unittest.TestCase):
             ControlMode.FIXED_OBSTACLE_RULE,
             ControlMode.VEHICLE_FOLLOW,
             ControlMode.VEHICLE_OVERTAKE,
-            ControlMode.ROUTE_SELECT,
-            ControlMode.SHORTCUT,
+            ControlMode.SHORTCUT_RULE,
         }
         for timestamp in (1.0, 2.0, 3.0):
             decision = self.manager.update(
@@ -657,15 +1167,19 @@ class MissionManagerTransitionTest(unittest.TestCase):
                 )
             )
             self.assertNotIn(decision.control_mode, placeholder_modes)
+            self.assertIs(
+                decision.mission_state,
+                MissionState.LANE_DRIVING,
+            )
         self.assertEqual(self.manager.context.lap_count, 0)
         self.assertFalse(self.manager.context.shortcut_used)
 
 
-class ManualAndEmergencyTest(unittest.TestCase):
+class ManualAndSafetyStopTest(unittest.TestCase):
     def setUp(self):
         self.manager = MissionManager(MissionManagerConfig())
 
-    def test_forced_modes_in_wait_do_not_start_racing(self):
+    def test_forced_modes_in_wait_do_not_start_mission(self):
         for command in (
             "NORMAL_IL",
             "CONE_DRIVE_RULE",
@@ -701,6 +1215,10 @@ class ManualAndEmergencyTest(unittest.TestCase):
         self.manager.set_manual_override("CONE_DRIVE_RULE")
         decision = self.manager.update(observation(1.0))
         self.assertIs(decision.control_mode, ControlMode.CONE_DRIVE_RULE)
+        self.assertIs(
+            decision.mission_state,
+            MissionState.CONE_SECTION,
+        )
 
     def test_manual_lane_requires_validity(self):
         manual_start(self.manager)
@@ -719,18 +1237,29 @@ class ManualAndEmergencyTest(unittest.TestCase):
             observation(1.0, drive_policy_valid=True)
         )
         self.manager.set_manual_override("AUTO")
-        resumed = self.manager.update(
+        waiting = self.manager.update(
             observation(1.1, drive_policy_valid=True)
         )
-        self.assertIs(stopped.mission_state, MissionState.RACING)
+        before = self.manager.update(
+            observation(1.499, drive_policy_valid=True)
+        )
+        resumed = self.manager.update(
+            observation(1.5, drive_policy_valid=True)
+        )
+        self.assertIs(
+            stopped.mission_state,
+            MissionState.LANE_DRIVING,
+        )
         self.assertIs(stopped.control_mode, ControlMode.STOP)
+        self.assertIs(waiting.control_mode, ControlMode.STOP)
+        self.assertIs(before.control_mode, ControlMode.STOP)
         self.assertIs(resumed.control_mode, ControlMode.NORMAL_IL)
 
     def test_unknown_override_is_ignored(self):
         self.assertFalse(self.manager.set_manual_override("SHORTCUT"))
         self.assertEqual(self.manager.context.manual_override, "AUTO")
 
-    def test_emergency_stop_overrides_every_active_mode(self):
+    def test_safety_stop_preserves_every_active_mission_state(self):
         cases = (
             ("AUTO", dict(drive_policy_valid=True)),
             ("NORMAL_IL", dict(drive_policy_valid=True)),
@@ -743,77 +1272,122 @@ class ManualAndEmergencyTest(unittest.TestCase):
                 manager = MissionManager(MissionManagerConfig())
                 manual_start(manager, drive=True)
                 manager.set_manual_override(command)
-                manager.update(observation(1.0, **inputs))
-                emergency = manager.update(
-                    observation(1.1, emergency_stop=True, **inputs)
+                active = manager.update(observation(1.0, **inputs))
+                stopped = manager.update(
+                    observation(
+                        1.1,
+                        safety_stop_required=True,
+                        **inputs,
+                    )
                 )
                 self.assertIs(
-                    emergency.mission_state, MissionState.EMERGENCY_STOP
+                    stopped.mission_state, active.mission_state
                 )
-                self.assertIs(emergency.control_mode, ControlMode.STOP)
-                self.assertTrue(emergency.stop_required)
+                self.assertIs(stopped.control_mode, ControlMode.STOP)
+                self.assertTrue(stopped.stop_required)
 
-    def test_manual_start_and_normal_overrides_cannot_bypass_emergency(self):
-        self.manager.update(observation(0.0, emergency_stop=True))
-        self.assertFalse(self.manager.set_manual_override("START"))
-        self.assertFalse(self.manager.set_manual_override("NORMAL_IL"))
-        decision = self.manager.update(
-            observation(1.0, drive_policy_valid=True)
-        )
-        self.assertIs(decision.mission_state, MissionState.EMERGENCY_STOP)
-
-    def test_reset_returns_to_wait_and_does_not_auto_start(self):
+    def test_safety_stop_is_not_latched_and_recovers_in_same_state(self):
         manual_start(self.manager)
-        self.manager.update(observation(1.0, emergency_stop=True))
-        self.assertTrue(self.manager.set_manual_override("RESET_EMERGENCY"))
-        reset = self.manager.update(
+        stopped = self.manager.update(
+            observation(
+                1.0,
+                safety_stop_required=True,
+                drive_policy_valid=True,
+            )
+        )
+        waiting = self.manager.update(
             observation(1.1, drive_policy_valid=True)
         )
-        self.assertIs(reset.mission_state, MissionState.WAIT_START_SIGNAL)
-        self.assertIs(reset.control_mode, ControlMode.STOP)
-        self.assertEqual(self.manager.context.manual_override, "AUTO")
-
-    def test_reset_is_ineffective_while_physical_emergency_is_true(self):
-        self.manager.update(observation(0.0, emergency_stop=True))
-        self.manager.set_manual_override("RESET_EMERGENCY")
-        still_emergency = self.manager.update(
-            observation(1.0, emergency_stop=True)
+        before = self.manager.update(
+            observation(1.499, drive_policy_valid=True)
         )
-        cleared_without_new_reset = self.manager.update(observation(1.1))
+        resumed = self.manager.update(
+            observation(1.5, drive_policy_valid=True)
+        )
 
         self.assertIs(
-            still_emergency.mission_state, MissionState.EMERGENCY_STOP
+            stopped.mission_state, MissionState.LANE_DRIVING
         )
+        self.assertIs(stopped.control_mode, ControlMode.STOP)
+        self.assertIs(waiting.control_mode, ControlMode.STOP)
+        self.assertIs(before.control_mode, ControlMode.STOP)
+        self.assertIs(resumed.mission_state, MissionState.LANE_DRIVING)
+        self.assertIs(resumed.control_mode, ControlMode.NORMAL_IL)
+
+    def test_safety_stop_in_cone_is_not_recorded_as_cone_exit(self):
+        enter_cone_mode(self.manager)
+
+        stopped = self.manager.update(
+            observation(1.3, safety_stop_required=True)
+        )
+        resumed = self.manager.update(
+            observation(1.4, **cone_entry_inputs())
+        )
+
+        self.assertIs(stopped.mission_state, MissionState.CONE_SECTION)
+        self.assertIs(stopped.control_mode, ControlMode.STOP)
+        self.assertIsNone(self.manager._cone_exit_sec)
+        self.assertIs(resumed.mission_state, MissionState.CONE_SECTION)
+        self.assertIs(resumed.control_mode, ControlMode.CONE_DRIVE_RULE)
+
+    def test_wait_safety_stop_clears_start_arm(self):
+        self.manager.context.start_signal_armed = True
+        self.manager.context.start_signal_seen_since = 0.0
+
+        decision = self.manager.update(
+            observation(0.1, safety_stop_required=True)
+        )
+
         self.assertIs(
-            cleared_without_new_reset.mission_state,
-            MissionState.EMERGENCY_STOP,
-        )
-
-        self.manager.set_manual_override("RESET_EMERGENCY")
-        reset = self.manager.update(observation(1.2))
-        self.assertIs(reset.mission_state, MissionState.WAIT_START_SIGNAL)
-
-    def test_new_emergency_command_cancels_pending_reset(self):
-        self.manager.update(observation(0.0, emergency_stop=True))
-        self.assertTrue(
-            self.manager.set_manual_override("RESET_EMERGENCY")
-        )
-        self.assertTrue(
-            self.manager.set_manual_override("EMERGENCY_STOP")
-        )
-
-        decision = self.manager.update(observation(0.1))
-
-        self.assertIs(
-            decision.mission_state, MissionState.EMERGENCY_STOP
+            decision.mission_state, MissionState.WAIT_START_SIGNAL
         )
         self.assertIs(decision.control_mode, ControlMode.STOP)
+        self.assertFalse(self.manager.context.start_signal_armed)
+        self.assertIsNone(self.manager.context.start_signal_seen_since)
 
-    def test_manual_emergency_is_latched_before_update(self):
-        self.assertTrue(self.manager.set_manual_override("EMERGENCY_STOP"))
-        self.assertFalse(self.manager.set_manual_override("AUTO"))
-        emergency = self.manager.update(observation(0.0))
-        self.assertIs(emergency.mission_state, MissionState.EMERGENCY_STOP)
+    def test_removed_emergency_commands_are_rejected(self):
+        self.assertFalse(
+            self.manager.set_manual_override("EMERGENCY_STOP")
+        )
+        self.assertFalse(
+            self.manager.set_manual_override("RESET_EMERGENCY")
+        )
+
+    def test_manual_start_is_not_queued_during_safety_stop(self):
+        self.assertTrue(self.manager.set_manual_override("START"))
+        blocked = self.manager.update(
+            observation(
+                0.0,
+                safety_stop_required=True,
+                drive_policy_valid=True,
+            )
+        )
+        later = self.manager.update(
+            observation(0.1, drive_policy_valid=True)
+        )
+
+        self.assertIs(
+            blocked.mission_state, MissionState.WAIT_START_SIGNAL
+        )
+        self.assertIs(
+            later.mission_state, MissionState.WAIT_START_SIGNAL
+        )
+
+    def test_manual_start_is_not_queued_while_safety_is_not_ready(self):
+        self.assertTrue(self.manager.set_manual_override("START"))
+        blocked = self.manager.update(
+            observation(0.0, safety_ready=False, drive_policy_valid=True)
+        )
+        later = self.manager.update(
+            observation(0.1, safety_ready=True, drive_policy_valid=True)
+        )
+
+        self.assertIs(
+            blocked.mission_state, MissionState.WAIT_START_SIGNAL
+        )
+        self.assertIs(
+            later.mission_state, MissionState.WAIT_START_SIGNAL
+        )
 
 
 class LoggingTest(unittest.TestCase):
@@ -834,7 +1408,7 @@ class LoggingTest(unittest.TestCase):
             messages,
             [
                 "[MISSION] state=WAIT_START_SIGNAL mode=STOP",
-                "[MISSION] state=RACING mode=NORMAL_IL",
+                "[MISSION] state=LANE_DRIVING mode=NORMAL_IL",
             ],
         )
 

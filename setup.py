@@ -17,7 +17,7 @@ setup(
         (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
         (
             os.path.join('share', package_name, 'docs'),
-            ['docs/MISSION_MANAGER_V01.md'],
+            ['docs/MISSION_MANAGER_V02.md'],
         ),
         (os.path.join('share', package_name, 'rviz'), glob('rviz/*.rviz')),
         (os.path.join('share', package_name, 'assets', 'models'), glob('assets/models/*')),

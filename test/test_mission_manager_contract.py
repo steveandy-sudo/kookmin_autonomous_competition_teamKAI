@@ -36,6 +36,10 @@ class RuntimeBoundaryTest(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertNotIn(token, source)
 
+        runtime_source = mission_runtime_source()
+        self.assertNotIn("MissionState.EMERGENCY_STOP", runtime_source)
+        self.assertNotIn('"RESET_EMERGENCY"', runtime_source)
+
     def test_core_has_no_ros_wall_clock_sleep_or_print(self):
         core_source = (
             MISSION_ROOT / "mission_manager.py"
@@ -84,14 +88,16 @@ class RuntimeBoundaryTest(unittest.TestCase):
             subscriptions,
             {
                 "/mission/override": "String",
-                "/mission/input/emergency_stop": "Bool",
-                "/mission/input/start_signal_go": "Bool",
+                "/mission/input/safety_stop_required": "Bool",
+                "/mission/input/start_signal": "String",
+                "/mission/input/start_signal_valid": "Bool",
+                "/mission/input/safety_ready": "Bool",
                 "/mission/input/drive_policy_valid": "Bool",
                 "/mission/input/lane_fallback_valid": "Bool",
-                "/mission/input/cone_detected": "Bool",
-                "/mission/input/cone_exit_ready": "Bool",
-                "/mission/input/cone_confidence": "Float32",
-                "/mission/input/cone_count": "Int32",
+                "/mission/input/camera_cone_valid": "Bool",
+                "/mission/input/camera_cone_count": "Int32",
+                "/mission/input/lidar_cone_valid": "Bool",
+                "/mission/input/lidar_cone_detected": "Bool",
             },
         )
 
@@ -123,12 +129,12 @@ class RuntimeBoundaryTest(unittest.TestCase):
         self.assertEqual(publisher_calls, [])
         self.assertNotIn("xycar_motor", source)
 
-    def test_wrapper_retains_emergency_assertion_until_update(self):
+    def test_wrapper_retains_safety_stop_assertion_until_update(self):
         source = (
             MISSION_ROOT / "mission_manager_node.py"
         ).read_text(encoding="utf-8")
-        self.assertIn("_emergency_assertion_pending = True", source)
-        self.assertIn("or self._emergency_assertion_pending", source)
+        self.assertIn("_safety_stop_assertion_pending = True", source)
+        self.assertIn("or self._safety_stop_assertion_pending", source)
 
 
 class PackageContractTest(unittest.TestCase):
@@ -137,15 +143,16 @@ class PackageContractTest(unittest.TestCase):
             PACKAGE_ROOT / "config" / "mission_manager.yaml"
         ).read_text(encoding="utf-8")
         required_lines = (
-            "start_signal_hold_sec: 0.3",
+            "start_signal_red_hold_sec: 0.3",
+            "start_signal_go_hold_sec: 0.3",
             "cone_enter_hold_sec: 0.25",
             "cone_exit_hold_sec: 0.7",
             "cone_min_dwell_sec: 1.0",
             "cone_reenter_cooldown_sec: 1.0",
             "drive_recover_hold_sec: 0.4",
-            "lane_fallback_enter_hold_sec: 0.2",
-            "minimum_cone_count: 2",
-            "minimum_cone_confidence: 0.5",
+            "lane_fallback_ready_hold_sec: 0.2",
+            "minimum_camera_cone_count: 4",
+            "maximum_camera_cone_count_for_exit: 1",
             "status_log_period_sec: 1.0",
         )
         for line in required_lines:
@@ -176,7 +183,7 @@ class PackageContractTest(unittest.TestCase):
             ).is_file()
         )
         document = (
-            PACKAGE_ROOT / "docs" / "MISSION_MANAGER_V01.md"
+            PACKAGE_ROOT / "docs" / "MISSION_MANAGER_V02.md"
         )
         self.assertTrue(document.is_file())
         self.assertIn("MissionContext", document.read_text(encoding="utf-8"))
@@ -197,7 +204,7 @@ class PackageContractTest(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("glob('config/*.yaml')", setup_source)
-        self.assertIn("['docs/MISSION_MANAGER_V01.md']", setup_source)
+        self.assertIn("['docs/MISSION_MANAGER_V02.md']", setup_source)
         self.assertIn(
             "mission_manager = "
             "track_drive.mission.mission_manager_node:main",
