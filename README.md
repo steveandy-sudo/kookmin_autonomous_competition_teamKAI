@@ -4,6 +4,17 @@
 
 국민대학교 자율주행 경진대회 예선 과제 1번을 위한 ROS2 Humble 기반 주행 패키지이다. 시뮬레이터에서 제공하는 전방 카메라, LiDAR, odom, IMU 토픽을 사용해 라바콘 구간 주행, 어린이보호구역 감속, 보행자/방해차량 대응, 신호등 및 정지선 판단, 교차로 경로 선택을 수행한다.
 
+## Mission Manager V0.1 초안
+
+새 결정 계층은 `track_drive/mission/`에 있으며, 고수준 상태와 하위 제어 모드,
+조향 source, 속도 profile, 정지 필요 여부만 결정한다. 기존 perception·학습 모델·
+콘 조향 알고리즘을 수정하거나 실행하지 않으며, publisher와 `/xycar_motor`
+출력도 만들지 않는다. 기존 `track_drive/mission_state.py`와는 아직 연결하지
+않은 독립 초안이다.
+
+설계와 통합시험 입력은
+[`docs/MISSION_MANAGER_V01.md`](docs/MISSION_MANAGER_V01.md)를 참고한다.
+
 ## 실행법
 
 ### 1. 워크스페이스 빌드
@@ -63,9 +74,11 @@ kookmin_autonomous_competition_teamKAI/
 ├── assets/models/          # CNN 조향 모델(.pt), YOLO/ONNX 객체 인식 모델
 ├── cone_il/                # CNN End-to-End 조향 모델 관련 ROS2 패키지
 ├── launch/                 # 통합 주행 및 디버그 launch 파일
+├── config/                 # Mission Manager V0.1 파라미터
 ├── resource/               # ROS2 ament package marker
 ├── rviz/                   # 디버그 시각화 설정
 ├── track_drive/            # 과제 1 통합 주행 로직
+│   └── mission/            # 독립 Mission Manager V0.1 결정 계층
 ├── package.xml             # ROS2 패키지 의존성 정의
 ├── setup.py                # Python 노드, launch, 모델 파일 설치 설정
 ├── setup.cfg               # ROS2 Python 실행 파일 설치 경로 설정
@@ -89,6 +102,7 @@ kookmin_autonomous_competition_teamKAI/
 - `track_drive/lidar_utils.py`: LiDAR scan 데이터를 전방 장애물/라바콘 판단에 사용할 수 있도록 보조 처리한다.
 - `track_drive/control.py`: 조향/속도 명령 계산에 필요한 제어 보조 함수를 담는다.
 - `track_drive/mission_state.py`: 미션 진행 상태를 표현하는 보조 구조를 담는다.
+- `track_drive/mission/`: V0.1 상태·제어 모드와 source 선택만 담당하는 독립 초안이다.
 - `track_drive/package_paths.py`: 설치된 ROS2 패키지 내부의 모델/리소스 경로를 찾는다.
 - `track_drive/utils.py`: 공통 유틸리티 함수 모음이다.
 - `track_drive/*_debug_node.py`: 신호등, 정지선, 어린이보호구역, 교차로 판단을 개별 확인하기 위한 디버그 노드이다.

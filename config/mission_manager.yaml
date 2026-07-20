@@ -1,0 +1,16 @@
+mission_manager:
+  ros__parameters:
+    start_signal_hold_sec: 0.3
+
+    cone_enter_hold_sec: 0.25
+    cone_exit_hold_sec: 0.7
+    cone_min_dwell_sec: 1.0
+    cone_reenter_cooldown_sec: 1.0
+
+    drive_recover_hold_sec: 0.4
+    lane_fallback_enter_hold_sec: 0.2
+
+    minimum_cone_count: 2
+    minimum_cone_confidence: 0.5
+
+    status_log_period_sec: 1.0
