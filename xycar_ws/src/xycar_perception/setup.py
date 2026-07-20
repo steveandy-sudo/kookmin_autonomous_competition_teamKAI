@@ -24,6 +24,10 @@ setup(
             os.path.join("share", package_name, "launch"),
             glob("launch/*.launch.py"),
         ),
+        (
+            os.path.join("share", package_name, "models"),
+            glob("models/*"),
+        ),
     ],
     install_requires=["setuptools", "PyYAML"],
     zip_safe=True,
@@ -33,6 +37,7 @@ setup(
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
+            "benchmark_yolo_lane = xycar_perception.benchmark_yolo_lane:main",
             "camera_perception_node = xycar_perception.camera_perception_node:main",
         ],
     },

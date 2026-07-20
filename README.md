@@ -15,7 +15,7 @@
   -> 단계별 실차 shadow/저속 검증         <- 다음
 ```
 
-> 기준일: 2026-07-17  
+> 기준일: 2026-07-20
 > 기준 브랜치: `simulation`
 
 ---
@@ -38,6 +38,7 @@ LiDAR 없이 이전·현재 canonical 영상만 쓰는 TD3+BC 학습과 1차 Gaz
 - 실차 가시성과 recovery 상황을 반영한 약 20만 장 BC 모델 학습
 - CAD 중심선 보상, reset, transition recorder와 TD3+BC를 포함한 `xycar_rl`
 - 고속 Actor/Critic의 이전·현재 canonical 2프레임 입력과 조향·속도 동시 출력
+- Ryzen 5 실차용 YOLO11n-seg 512 차선 인지와 camera-only shadow 통합 launch
 
 ### 최신 모델
 
@@ -131,19 +132,9 @@ cd ~/kookmin_sim_to_real
 
 source /opt/ros/humble/setup.bash
 
-rosdep install --from-paths \
-  xycar_ws/src/kaiev26_msgs \
-  xycar_ws/src/xycar_perception \
-  xycar_ws/src/xycar_rule_drive \
-  xycar_ws/src/xycar_gazebo_bridge \
-  xycar_ws/src/il_data_tools \
-  xycar_ws/src/xycar_rl \
-  --ignore-src -r -y
+rosdep install --from-paths xycar_ws/src --ignore-src -r -y
 
-colcon build --packages-select \
-  kaiev26_msgs xycar_perception xycar_rule_drive \
-  xycar_gazebo_bridge il_data_tools xycar_rl \
-  --symlink-install
+colcon build --packages-up-to xycar_rl --symlink-install
 
 source install/setup.bash
 ```
@@ -166,6 +157,7 @@ git pull --ff-only origin simulation
 | 데이터 수집과 재학습 | [`domain_randomized_collection.md`](docs/domain_randomized_collection.md) |
 | 실차 룰베이스만 실행 | [`real_vehicle_deployment.md`](docs/real_vehicle_deployment.md) |
 | 고속 TD3+BC 학습·단계별 실차 shadow | [`high_speed_rl_20260717.md`](docs/high_speed_rl_20260717.md) |
+| ASUS에서 새 YOLO 차선 인지 검증 | [`real_vehicle_yolo_lane_20260720.md`](docs/real_vehicle_yolo_lane_20260720.md) |
 
 ---
 
@@ -220,6 +212,45 @@ ros2 run rqt_image_view rqt_image_view /perception/canonical_road_image
 
 현재 runtime은 observation-only입니다. 현재 프레임에서 관측된 선만 출력하며,
 사라진 경계를 합성하거나 이전 선을 무기한 유지하지 않습니다.
+
+### 3.2.1 경량 YOLO 차선 인지 실차 시험
+
+조명 반사와 바랜 중앙선 때문에 색상 임계값 방식이 불안정한 경우, 패키지에 포함된
+`YOLO11n-seg 512` 모델로 흰 경계선과 노란 중앙선을 분할한 뒤 같은 canonical
+계약으로 변환할 수 있습니다. 모델은 5.8MB이며 ASUS Ryzen 5에서는 CPU로
+실행합니다.
+
+```bash
+python3 -m pip install --user \
+  -r xycar_ws/src/xycar_perception/requirements-real-yolo-cpu.txt
+
+source /opt/ros/humble/setup.bash
+colcon build --packages-up-to xycar_rl --symlink-install
+source install/setup.bash
+```
+
+먼저 모터를 실행하지 않고 인지만 확인합니다.
+
+```bash
+ros2 launch xycar_perception real_yolo_canonical_asus.launch.py
+ros2 topic hz /perception/canonical_road_image
+```
+
+그다음 camera-only 정책을 반드시 shadow로 확인합니다. 아래 launch의 기본값은
+`drive_enabled:=false`이므로 `/xycar_motor`에 주행 명령을 발행하지 않습니다.
+
+```bash
+ros2 launch xycar_rl real_yolo_camera_speed_shadow.launch.py \
+  drive_enabled:=false deployment_speed_cap:=3.0
+
+ros2 topic echo /rl/policy_motor_shadow
+ros2 topic echo /rl/policy_status
+```
+
+실차 모터 출력은 물리 비상 정지, 바퀴 공중 시험, 조향 부호 확인을 마친 뒤에만
+`drive_enabled:=true`로 변경합니다. 설치, CPU 벤치마크, RViz 확인과 통과 기준은
+[`docs/real_vehicle_yolo_lane_20260720.md`](docs/real_vehicle_yolo_lane_20260720.md)를
+따릅니다.
 
 ### 3.3 최신 모델 확인과 shadow 실행
 

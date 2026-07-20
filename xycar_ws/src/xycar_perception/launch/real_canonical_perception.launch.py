@@ -18,6 +18,16 @@ def generate_launch_description():
     enable_rectify = LaunchConfiguration("enable_rectify")
     use_compressed_image = LaunchConfiguration("use_compressed_image")
     use_sim_time = LaunchConfiguration("use_sim_time")
+    lane_segmentation_backend = LaunchConfiguration(
+        "lane_segmentation_backend"
+    )
+    yolo_model_path = LaunchConfiguration("yolo_model_path")
+    yolo_device = LaunchConfiguration("yolo_device")
+    yolo_confidence = LaunchConfiguration("yolo_confidence")
+    yolo_iou = LaunchConfiguration("yolo_iou")
+    yolo_image_size = LaunchConfiguration("yolo_image_size")
+    yolo_cpu_threads = LaunchConfiguration("yolo_cpu_threads")
+    publish_rate_limit_hz = LaunchConfiguration("publish_rate_limit_hz")
     src_tl_x_ratio = LaunchConfiguration("src_tl_x_ratio")
     src_tr_x_ratio = LaunchConfiguration("src_tr_x_ratio")
     src_bl_x_ratio = LaunchConfiguration("src_bl_x_ratio")
@@ -75,6 +85,20 @@ def generate_launch_description():
                 "use_sim_time",
                 default_value="false",
                 description="Use /clock when the bag is played with --clock.",
+            ),
+            DeclareLaunchArgument(
+                "lane_segmentation_backend",
+                default_value="color",
+                description="Lane pixel backend: color or yolo.",
+            ),
+            DeclareLaunchArgument("yolo_model_path", default_value=""),
+            DeclareLaunchArgument("yolo_device", default_value="cpu"),
+            DeclareLaunchArgument("yolo_confidence", default_value="0.25"),
+            DeclareLaunchArgument("yolo_iou", default_value="0.50"),
+            DeclareLaunchArgument("yolo_image_size", default_value="640"),
+            DeclareLaunchArgument("yolo_cpu_threads", default_value="0"),
+            DeclareLaunchArgument(
+                "publish_rate_limit_hz", default_value="0.0"
             ),
             DeclareLaunchArgument(
                 "src_tl_x_ratio",
@@ -163,6 +187,28 @@ def generate_launch_description():
                         ),
                         "use_sim_time": ParameterValue(
                             use_sim_time, value_type=bool
+                        ),
+                        "lane_segmentation_backend": (
+                            lane_segmentation_backend
+                        ),
+                        "yolo_model_path": yolo_model_path,
+                        "yolo_device": ParameterValue(
+                            yolo_device, value_type=str
+                        ),
+                        "yolo_confidence": ParameterValue(
+                            yolo_confidence, value_type=float
+                        ),
+                        "yolo_iou": ParameterValue(
+                            yolo_iou, value_type=float
+                        ),
+                        "yolo_image_size": ParameterValue(
+                            yolo_image_size, value_type=int
+                        ),
+                        "yolo_cpu_threads": ParameterValue(
+                            yolo_cpu_threads, value_type=int
+                        ),
+                        "publish_rate_limit_hz": ParameterValue(
+                            publish_rate_limit_hz, value_type=float
                         ),
                         "src_tl_x_ratio": ParameterValue(
                             src_tl_x_ratio, value_type=float

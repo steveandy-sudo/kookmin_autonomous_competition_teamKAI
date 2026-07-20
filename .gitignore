@@ -36,6 +36,8 @@ models/
 !xycar_ws/src/il_data_tools/models/drive_policy_scripted.pt
 !xycar_ws/src/il_data_tools/models/drive_canonical_policy_scripted.pt
 !xycar_ws/src/il_data_tools/models/drive_canonical_policy_metrics.json
+!xycar_ws/src/xycar_perception/models/
+!xycar_ws/src/xycar_perception/models/**
 generated/
 
 # Generated debug images kept locally during map fitting

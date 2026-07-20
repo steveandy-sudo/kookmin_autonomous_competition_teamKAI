@@ -21,9 +21,17 @@ def generate_launch_description():
         "perception_launch_file"
     )
     playback_rate = LaunchConfiguration("playback_rate")
+    bag_start_delay = LaunchConfiguration("bag_start_delay")
     play_bag = LaunchConfiguration("play_bag")
     use_sim_time = LaunchConfiguration("use_sim_time")
     rviz_config = LaunchConfiguration("rviz_config")
+    lane_segmentation_backend = LaunchConfiguration(
+        "lane_segmentation_backend"
+    )
+    yolo_model_path = LaunchConfiguration("yolo_model_path")
+    yolo_device = LaunchConfiguration("yolo_device")
+    yolo_confidence = LaunchConfiguration("yolo_confidence")
+    yolo_image_size = LaunchConfiguration("yolo_image_size")
 
     perception_launch = PathJoinSubstitution(
         [
@@ -61,8 +69,16 @@ def generate_launch_description():
                 description="Canonical perception profile launch file.",
             ),
             DeclareLaunchArgument("playback_rate", default_value="1.0"),
+            DeclareLaunchArgument("bag_start_delay", default_value="2.0"),
             DeclareLaunchArgument("play_bag", default_value="true"),
             DeclareLaunchArgument("use_sim_time", default_value="true"),
+            DeclareLaunchArgument(
+                "lane_segmentation_backend", default_value="color"
+            ),
+            DeclareLaunchArgument("yolo_model_path", default_value=""),
+            DeclareLaunchArgument("yolo_device", default_value="cpu"),
+            DeclareLaunchArgument("yolo_confidence", default_value="0.25"),
+            DeclareLaunchArgument("yolo_image_size", default_value="640"),
             DeclareLaunchArgument(
                 "rviz_config",
                 default_value=PathJoinSubstitution(
@@ -80,6 +96,13 @@ def generate_launch_description():
                     "use_compressed_image": "true",
                     "enable_rectify": "true",
                     "use_sim_time": use_sim_time,
+                    "lane_segmentation_backend": (
+                        lane_segmentation_backend
+                    ),
+                    "yolo_model_path": yolo_model_path,
+                    "yolo_device": yolo_device,
+                    "yolo_confidence": yolo_confidence,
+                    "yolo_image_size": yolo_image_size,
                 }.items(),
             ),
             Node(
@@ -126,7 +149,7 @@ def generate_launch_description():
                 output="screen",
             ),
             TimerAction(
-                period=2.0,
+                period=bag_start_delay,
                 actions=[
                     ExecuteProcess(
                         condition=IfCondition(play_bag),

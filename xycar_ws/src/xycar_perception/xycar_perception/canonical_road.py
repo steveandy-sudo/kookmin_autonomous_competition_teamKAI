@@ -408,3 +408,89 @@ def make_canonical_road_image(
     canonical[white_mask > 0] = (255, 255, 255)
     canonical[yellow_mask > 0] = (0, 220, 255)
     return canonical, white_mask, yellow_mask
+
+
+def make_canonical_road_image_from_masks(
+    bev_white_mask: np.ndarray,
+    bev_yellow_mask: np.ndarray,
+    *,
+    valid_mask: np.ndarray | None = None,
+    lateral_m_per_px: float,
+    forward_m_per_px: float,
+    lateral_range_m: float = 1.4,
+    forward_range_m: float = 1.5,
+    output_width: int = 256,
+    output_height: int = 144,
+    background_gray: int = 36,
+    line_width_px: int = 5,
+    min_component_area_px: int = 8,
+    white_max_component_thickness_px: float = 0.0,
+    yellow_max_component_thickness_px: float = 0.0,
+    geometry_filter_enabled: bool = False,
+    white_min_line_span_px: int = 14,
+    yellow_min_line_span_px: int = 7,
+    min_line_elongation: float = 1.8,
+    min_line_verticality: float = 0.30,
+    white_max_components_per_side: int = 1,
+    yellow_max_components: int = 5,
+    white_clutter_component_limit: int = 5,
+    white_max_mask_fraction: float = 0.0,
+    yellow_max_mask_fraction: float = 0.0,
+    max_line_fit_rmse_px: float = 0.0,
+    top_ignore_m: float = 0.0,
+    bottom_ignore_m: float = 0.08,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Normalize class masks into the shared fixed-color canonical contract."""
+    if bev_white_mask.shape != bev_yellow_mask.shape:
+        raise ValueError(
+            "white and yellow BEV masks must have identical dimensions"
+        )
+    if bev_white_mask.ndim != 2:
+        raise ValueError("lane masks must be single-channel images")
+
+    gray = int(np.clip(background_gray, 0, 255))
+    classified_bev = np.full(
+        (*bev_white_mask.shape, 3), gray, dtype=np.uint8
+    )
+    classified_bev[bev_white_mask > 0] = (255, 255, 255)
+    classified_bev[bev_yellow_mask > 0] = (0, 220, 255)
+
+    # Exact synthetic class colors let the existing metric crop, geometry
+    # filtering, fixed-width normalization, and overlap rules stay shared.
+    return make_canonical_road_image(
+        classified_bev,
+        valid_mask=valid_mask,
+        lateral_m_per_px=lateral_m_per_px,
+        forward_m_per_px=forward_m_per_px,
+        lateral_range_m=lateral_range_m,
+        forward_range_m=forward_range_m,
+        output_width=output_width,
+        output_height=output_height,
+        background_gray=background_gray,
+        line_width_px=line_width_px,
+        white_s_max=10,
+        white_v_min=250,
+        white_v_floor=250,
+        white_relative_delta=255.0,
+        yellow_h_min=20,
+        yellow_h_max=35,
+        yellow_s_min=200,
+        yellow_v_min=180,
+        min_component_area_px=min_component_area_px,
+        white_max_component_thickness_px=white_max_component_thickness_px,
+        yellow_max_component_thickness_px=yellow_max_component_thickness_px,
+        geometry_filter_enabled=geometry_filter_enabled,
+        white_min_line_span_px=white_min_line_span_px,
+        yellow_min_line_span_px=yellow_min_line_span_px,
+        min_line_elongation=min_line_elongation,
+        min_line_verticality=min_line_verticality,
+        white_max_components_per_side=white_max_components_per_side,
+        yellow_max_components=yellow_max_components,
+        white_clutter_component_limit=white_clutter_component_limit,
+        white_max_mask_fraction=white_max_mask_fraction,
+        yellow_max_mask_fraction=yellow_max_mask_fraction,
+        max_line_fit_rmse_px=max_line_fit_rmse_px,
+        white_min_component_median_v=0.0,
+        top_ignore_m=top_ignore_m,
+        bottom_ignore_m=bottom_ignore_m,
+    )
