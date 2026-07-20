@@ -105,7 +105,7 @@ class DataModelTest(unittest.TestCase):
         )
         self.assertEqual(
             list(StartSignal.__members__),
-            ["UNKNOWN", "RED", "YELLOW", "GO"],
+            ["UNKNOWN", "RED", "YELLOW", "GREEN"],
         )
         self.assertNotIn("BOOT", MissionState.__members__)
         self.assertNotIn("RACING", MissionState.__members__)
@@ -190,7 +190,7 @@ class DataModelTest(unittest.TestCase):
             MissionManagerConfig(),
             MissionManagerConfig(
                 start_signal_red_hold_sec=0.3,
-                start_signal_go_hold_sec=0.3,
+                start_signal_green_hold_sec=0.3,
                 cone_enter_hold_sec=0.25,
                 cone_exit_hold_sec=0.7,
                 cone_min_dwell_sec=1.0,
@@ -304,14 +304,14 @@ class MissionManagerTransitionTest(unittest.TestCase):
         manager.update(
             observation(
                 1.0,
-                start_signal=StartSignal.GO,
+                start_signal=StartSignal.GREEN,
                 start_signal_valid=True,
             )
         )
         return manager.update(
             observation(
                 1.3,
-                start_signal=StartSignal.GO,
+                start_signal=StartSignal.GREEN,
                 start_signal_valid=True,
                 drive_policy_valid=drive_policy_valid,
                 lane_fallback_valid=lane_fallback_valid,
@@ -331,11 +331,11 @@ class MissionManagerTransitionTest(unittest.TestCase):
             ),
         )
 
-    def test_go_without_confirmed_red_never_starts(self):
+    def test_green_without_confirmed_red_never_starts(self):
         self.manager.update(
             observation(
                 0.0,
-                start_signal=StartSignal.GO,
+                start_signal=StartSignal.GREEN,
                 start_signal_valid=True,
                 drive_policy_valid=True,
             )
@@ -343,7 +343,7 @@ class MissionManagerTransitionTest(unittest.TestCase):
         decision = self.manager.update(
             observation(
                 1.0,
-                start_signal=StartSignal.GO,
+                start_signal=StartSignal.GREEN,
                 start_signal_valid=True,
                 drive_policy_valid=True,
             )
@@ -411,7 +411,7 @@ class MissionManagerTransitionTest(unittest.TestCase):
         self.assertIs(armed.control_mode, ControlMode.STOP)
         self.assertTrue(self.manager.context.start_signal_armed)
 
-    def test_confirmed_red_then_confirmed_go_starts_lane_driving(self):
+    def test_confirmed_red_then_confirmed_green_starts_lane_driving(self):
         self.manager.update(
             observation(
                 0.0,
@@ -429,7 +429,7 @@ class MissionManagerTransitionTest(unittest.TestCase):
         self.manager.update(
             observation(
                 1.0,
-                start_signal=StartSignal.GO,
+                start_signal=StartSignal.GREEN,
                 start_signal_valid=True,
                 drive_policy_valid=True,
             )
@@ -437,7 +437,7 @@ class MissionManagerTransitionTest(unittest.TestCase):
         before = self.manager.update(
             observation(
                 1.299,
-                start_signal=StartSignal.GO,
+                start_signal=StartSignal.GREEN,
                 start_signal_valid=True,
                 drive_policy_valid=True,
             )
@@ -445,7 +445,7 @@ class MissionManagerTransitionTest(unittest.TestCase):
         at_boundary = self.manager.update(
             observation(
                 1.3,
-                start_signal=StartSignal.GO,
+                start_signal=StartSignal.GREEN,
                 start_signal_valid=True,
                 drive_policy_valid=True,
             )
@@ -458,7 +458,7 @@ class MissionManagerTransitionTest(unittest.TestCase):
         )
         self.assertIs(at_boundary.control_mode, ControlMode.NORMAL_IL)
 
-    def test_confirmed_go_uses_immediate_lane_source_priority(self):
+    def test_confirmed_green_uses_immediate_lane_source_priority(self):
         cases = (
             (True, True, ControlMode.NORMAL_IL, "drive_il", False),
             (False, True, ControlMode.LANE_FALLBACK, "lane_fallback", False),
@@ -485,7 +485,7 @@ class MissionManagerTransitionTest(unittest.TestCase):
                 self.assertEqual(decision.selected_source, source)
                 self.assertEqual(decision.stop_required, stopped)
 
-    def test_yellow_resets_go_confirmation_but_preserves_red_arm(self):
+    def test_yellow_resets_green_confirmation_but_preserves_red_arm(self):
         self.manager.update(
             observation(
                 0.0,
@@ -503,7 +503,7 @@ class MissionManagerTransitionTest(unittest.TestCase):
         self.manager.update(
             observation(
                 1.0,
-                start_signal=StartSignal.GO,
+                start_signal=StartSignal.GREEN,
                 start_signal_valid=True,
             )
         )
@@ -519,7 +519,7 @@ class MissionManagerTransitionTest(unittest.TestCase):
         restarted = self.manager.update(
             observation(
                 1.3,
-                start_signal=StartSignal.GO,
+                start_signal=StartSignal.GREEN,
                 start_signal_valid=True,
             )
         )
@@ -531,19 +531,19 @@ class MissionManagerTransitionTest(unittest.TestCase):
             restarted.mission_state, MissionState.WAIT_START_SIGNAL
         )
 
-    def test_invalid_signal_resets_go_confirmation_but_preserves_arm(self):
+    def test_invalid_signal_resets_green_confirmation_but_preserves_arm(self):
         self.manager.context.start_signal_armed = True
         self.manager.update(
             observation(
                 1.0,
-                start_signal=StartSignal.GO,
+                start_signal=StartSignal.GREEN,
                 start_signal_valid=True,
             )
         )
         decision = self.manager.update(
             observation(
                 1.2,
-                start_signal=StartSignal.GO,
+                start_signal=StartSignal.GREEN,
                 start_signal_valid=False,
             )
         )
@@ -561,7 +561,7 @@ class MissionManagerTransitionTest(unittest.TestCase):
         decision = self.manager.update(
             observation(
                 1.1,
-                start_signal=StartSignal.GO,
+                start_signal=StartSignal.GREEN,
                 start_signal_valid=True,
                 safety_ready=False,
             )

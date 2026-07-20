@@ -16,23 +16,23 @@
 ### 출발 신호 조건
 
 신호등 인지 모델의 후처리 adapter는 Mission Manager에 원본 영상이나 모델
-출력을 직접 넘기지 않고 `UNKNOWN`, `RED`, `YELLOW`, `GO` 중 하나와 그
+출력을 직접 넘기지 않고 `UNKNOWN`, `RED`, `YELLOW`, `GREEN` 중 하나와 그
 판단의 유효 여부를 전달한다. Mission Manager는 다음 순서에서만 출발한다.
 
 1. 유효한 `RED`가 0.3초 연속 확인되면 출발 대기 조건을 arm한다.
-2. arm된 뒤 유효한 `GO`가 0.3초 연속 확인되면 `LANE_DRIVING`으로 전환한다.
+2. arm된 뒤 유효한 `GREEN`이 0.3초 연속 확인되면 `LANE_DRIVING`으로 전환한다.
 
-RED를 확인하기 전에 GO만 보이면 출발하지 않는다. RED 확인 전 YELLOW는
+RED를 확인하기 전에 GREEN만 보이면 출발하지 않는다. RED 확인 전 YELLOW는
 RED 확인 시간을 초기화한다. RED 확인 후 YELLOW, UNKNOWN 또는 무효 판단이
-들어오면 arm 상태는 유지하되 진행 중이던 GO 확인 시간을 초기화하고 계속
-정지한다. 모델 confidence 임계값과 `BLUE`/`GREEN`을 `GO`로 정규화하는 일은
-인지 adapter가 담당한다.
+들어오면 arm 상태는 유지하되 진행 중이던 GREEN 확인 시간을 초기화하고 계속
+정지한다. 모델 confidence 임계값 판정은 인지 adapter가 담당하며, ROS
+adapter는 `BLUE` 입력만 `GREEN`으로 정규화한다.
 
 `safety_ready=false`이거나 `safety_stop_required=true`이면
-`WAIT_START_SIGNAL + STOP`을 유지하고 RED/GO 확인 이력을 모두 지운다. 수동
+`WAIT_START_SIGNAL + STOP`을 유지하고 RED/GREEN 확인 이력을 모두 지운다. 수동
 `START`는 통합시험 전용이며 실제 대회 출발 조건으로 사용하지 않는다.
 
-GO가 확정되는 주기에는 별도의 준비 확인 시간을 기다리지 않고 현재 source
+GREEN이 확정되는 주기에는 별도의 준비 확인 시간을 기다리지 않고 현재 source
 유효성으로 제어기를 즉시 선택한다. `drive_policy_valid=true`이면
 `NORMAL_IL`을 가장 먼저 선택한다. 일반 모델 출력이 무효이고
 `lane_fallback_valid=true`이면 `LANE_FALLBACK`, 둘 다 무효이면

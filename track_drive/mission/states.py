@@ -7,7 +7,7 @@ class StartSignal(Enum):
     UNKNOWN = auto()
     RED = auto()
     YELLOW = auto()
-    GO = auto()
+    GREEN = auto()
 
 
 class MissionState(Enum):

@@ -219,7 +219,7 @@ class MissionManager:
             return
 
         self.context.red_signal_seen_since = None
-        if signal is StartSignal.GO:
+        if signal is StartSignal.GREEN:
             self.context.start_signal_seen_since = self._start_or_rebase(
                 self.context.start_signal_seen_since, now_sec
             )
@@ -229,7 +229,7 @@ class MissionManager:
         if self._held_for(
             self.context.start_signal_seen_since,
             now_sec,
-            self.config.start_signal_go_hold_sec,
+            self.config.start_signal_green_hold_sec,
         ):
             self._clear_start_signal_confirmation()
             self._enter_lane_driving(observation)

@@ -24,8 +24,8 @@ class MissionManagerNode(Node):
             defaults.start_signal_red_hold_sec,
         )
         self.declare_parameter(
-            "start_signal_go_hold_sec",
-            defaults.start_signal_go_hold_sec,
+            "start_signal_green_hold_sec",
+            defaults.start_signal_green_hold_sec,
         )
         self.declare_parameter(
             "cone_enter_hold_sec", defaults.cone_enter_hold_sec
@@ -63,8 +63,8 @@ class MissionManagerNode(Node):
             start_signal_red_hold_sec=self._float_parameter(
                 "start_signal_red_hold_sec"
             ),
-            start_signal_go_hold_sec=self._float_parameter(
-                "start_signal_go_hold_sec"
+            start_signal_green_hold_sec=self._float_parameter(
+                "start_signal_green_hold_sec"
             ),
             cone_enter_hold_sec=self._float_parameter(
                 "cone_enter_hold_sec"
@@ -194,8 +194,7 @@ class MissionManagerNode(Node):
     def _on_start_signal(self, message: String) -> None:
         normalized = message.data.strip().upper()
         normalized = {
-            "BLUE": "GO",
-            "GREEN": "GO",
+            "BLUE": "GREEN",
         }.get(normalized, normalized)
         self._start_signal = StartSignal.__members__.get(
             normalized,

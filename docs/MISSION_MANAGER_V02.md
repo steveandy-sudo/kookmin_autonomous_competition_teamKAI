@@ -95,7 +95,7 @@ latch 상태는 복구 불가능하므로 안전 정지는 현재 미션을 유�
 
 `MissionObservation`은 현재 주기의 의미 신호, bool/count/confidence와
 `now_sec`만 담는다. 원본 센서와 이전 상태는 포함하지 않는다. 신호등 입력은
-`StartSignal.UNKNOWN/RED/YELLOW/GO`와 `start_signal_valid`로 전달하며, 모델
+`StartSignal.UNKNOWN/RED/YELLOW/GREEN`과 `start_signal_valid`로 전달하며, 모델
 confidence 임계값 적용은 인지 adapter가 담당한다. `safety_stop_required`는
 현재 미션 상태를 바꾸지 않고 이번 주기에 정지가 필요한지를 전달한다.
 
@@ -120,23 +120,23 @@ confidence 임계값 적용은 인지 adapter가 담당한다. `safety_stop_requ
 같다.
 
 1. `start_signal_valid=true`인 `RED`가 0.3초 유지되면 출발 조건을 arm한다.
-2. arm된 뒤 유효한 `GO`가 0.3초 유지되면 출발한다.
+2. arm된 뒤 유효한 `GREEN`이 0.3초 유지되면 출발한다.
 
 ```text
 WAIT_START_SIGNAL + STOP
   -- RED 0.3초 --> armed, 계속 STOP
-  -- GO  0.3초 --> LANE_DRIVING
+  -- GREEN 0.3초 --> LANE_DRIVING
 ```
 
-RED를 먼저 확인하지 않은 GO는 출발 조건이 아니다. arm 전 YELLOW는 RED 확인
+RED를 먼저 확인하지 않은 GREEN은 출발 조건이 아니다. arm 전 YELLOW는 RED 확인
 시간을 초기화한다. arm 후 YELLOW, UNKNOWN 또는 무효 신호는 arm을 유지하되
-진행 중인 GO 확인 시간을 초기화한다. 따라서 노란불 한 프레임 뒤에 이전 GO
-확인 시간이 이어지지 않는다. ROS adapter는 `BLUE`와 `GREEN` 입력도 `GO`로
+진행 중인 GREEN 확인 시간을 초기화한다. 따라서 노란불 한 프레임 뒤에 이전
+GREEN 확인 시간이 이어지지 않는다. ROS adapter는 `BLUE` 입력만 `GREEN`으로
 정규화한다.
 
 `safety_ready=false`이거나 `safety_stop_required=true`이면
-`WAIT_START_SIGNAL + STOP`을 유지하고 RED/GO 확인과 arm을 모두 초기화한다.
-GO가 확정되는 바로 그 주기에 현재 source 유효성을 확인하고 다음 우선순위로
+`WAIT_START_SIGNAL + STOP`을 유지하고 RED/GREEN 확인과 arm을 모두 초기화한다.
+GREEN이 확정되는 바로 그 주기에 현재 source 유효성을 확인하고 다음 우선순위로
 제어기를 선택한다.
 
 1. `drive_policy_valid=true`: `NORMAL_IL`
@@ -146,7 +146,7 @@ GO가 확정되는 바로 그 주기에 현재 source 유효성을 확인하고 
 출발 선택에는 fallback 0.2초 준비 확인과 일반 모델 0.4초 복구 확인을 적용하지
 않는다. 두 source가 모두 유효하면 `NORMAL_IL`이 우선이다. 이 확인 시간은
 출발한 뒤 source를 전환하거나 복구할 때만 적용한다.
-통합시험용 `START`는 RED/GO 확인 시간만 건너뛰며 `safety_ready` 조건은
+통합시험용 `START`는 RED/GREEN 확인 시간만 건너뛰며 `safety_ready` 조건은
 건너뛰지 않는다. 실제 대회 출발에는 수동 명령을 사용하지 않는다.
 
 ### 차선에서 콘 구간 진입
@@ -254,7 +254,7 @@ Manager와 별개로 Safety Supervisor 또는 유일한 Final Driver 아래에 �
 
 - `/mission/override`
 - `/mission/input/safety_stop_required` (`Bool`)
-- `/mission/input/start_signal` (`String`: `UNKNOWN`, `RED`, `YELLOW`, `GO`)
+- `/mission/input/start_signal` (`String`: `UNKNOWN`, `RED`, `YELLOW`, `GREEN`)
 - `/mission/input/start_signal_valid` (`Bool`)
 - `/mission/input/safety_ready` (`Bool`)
 - `/mission/input/drive_policy_valid`

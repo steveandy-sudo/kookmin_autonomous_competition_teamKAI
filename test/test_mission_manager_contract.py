@@ -144,7 +144,7 @@ class PackageContractTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         required_lines = (
             "start_signal_red_hold_sec: 0.3",
-            "start_signal_go_hold_sec: 0.3",
+            "start_signal_green_hold_sec: 0.3",
             "cone_enter_hold_sec: 0.25",
             "cone_exit_hold_sec: 0.7",
             "cone_min_dwell_sec: 1.0",

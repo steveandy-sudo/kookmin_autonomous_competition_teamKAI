@@ -116,7 +116,7 @@ class MissionDecision:
 @dataclass(frozen=True)
 class MissionManagerConfig:
     start_signal_red_hold_sec: float = 0.3
-    start_signal_go_hold_sec: float = 0.3
+    start_signal_green_hold_sec: float = 0.3
 
     cone_enter_hold_sec: float = 0.25
     cone_exit_hold_sec: float = 0.7
@@ -134,7 +134,7 @@ class MissionManagerConfig:
     def __post_init__(self) -> None:
         durations = (
             self.start_signal_red_hold_sec,
-            self.start_signal_go_hold_sec,
+            self.start_signal_green_hold_sec,
             self.cone_enter_hold_sec,
             self.cone_exit_hold_sec,
             self.cone_min_dwell_sec,
