@@ -159,6 +159,7 @@ git pull --ff-only origin simulation
 | 고속 TD3+BC 학습·단계별 실차 shadow | [`high_speed_rl_20260717.md`](docs/high_speed_rl_20260717.md) |
 | ASUS에서 새 YOLO 차선 인지 검증 | [`real_vehicle_yolo_lane_20260720.md`](docs/real_vehicle_yolo_lane_20260720.md) |
 | YOLO11n 256 경량 모델의 정확도·속도 비교 | [`2026-07-21_yolo11n_256_ultralight.md`](docs/2026-07-21_yolo11n_256_ultralight.md) |
+| YOLO26n 256 재학습·실차 후보 비교 | [`2026-07-21_yolo26n_256_experiment.md`](docs/2026-07-21_yolo26n_256_experiment.md) |
 | 실차 카메라 보정값 복원/원본 영상 우회 | [`real_vehicle_yolo_lane_20260720.md`](docs/real_vehicle_yolo_lane_20260720.md#restore-a-changed-real-camera-calibration) |
 
 ---
