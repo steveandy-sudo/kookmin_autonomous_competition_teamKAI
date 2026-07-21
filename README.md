@@ -15,7 +15,7 @@
   -> 단계별 실차 shadow/저속 검증         <- 다음
 ```
 
-> 기준일: 2026-07-20
+> 기준일: 2026-07-21
 > 기준 브랜치: `simulation`
 
 ---
@@ -158,6 +158,7 @@ git pull --ff-only origin simulation
 | 실차 룰베이스만 실행 | [`real_vehicle_deployment.md`](docs/real_vehicle_deployment.md) |
 | 고속 TD3+BC 학습·단계별 실차 shadow | [`high_speed_rl_20260717.md`](docs/high_speed_rl_20260717.md) |
 | ASUS에서 새 YOLO 차선 인지 검증 | [`real_vehicle_yolo_lane_20260720.md`](docs/real_vehicle_yolo_lane_20260720.md) |
+| 실차 카메라 보정값 복원/원본 영상 우회 | [`real_vehicle_yolo_lane_20260720.md`](docs/real_vehicle_yolo_lane_20260720.md#restore-a-changed-real-camera-calibration) |
 
 ---
 
@@ -235,6 +236,35 @@ source install/setup.bash
 ros2 launch xycar_perception real_yolo_canonical_asus.launch.py
 ros2 topic hz /perception/canonical_road_image
 ```
+
+실차의 카메라 보정 YAML이 바뀌었다면 이 PC에서 검증한 2026-07-08
+`1280x1024 equidistant` 값을 백업 후 복원합니다.
+
+```bash
+./scripts/install_real_camera_calibration.sh ~/xycar_ws
+cd ~/xycar_ws
+source /opt/ros/humble/setup.bash
+colcon build --packages-select app_wide_camera_calib --symlink-install
+source install/setup.bash
+```
+
+기존 rectified 화면이 계속 이상하면 그 토픽을 우회하고 원본 MJPEG를 저장소의
+고정 보정값으로 한 번만 보정합니다.
+
+```bash
+ros2 launch xycar_perception real_yolo_canonical_from_raw_asus.launch.py
+```
+
+실차 live canonical과 이 PC의 rosbag 결과가 다르면 같은 순간의 모든 중간 결과와
+파라미터를 함께 저장합니다.
+
+```bash
+./scripts/record_real_camera_diagnostic.sh straight_center 15
+```
+
+생성된 `~/kookmin_camera_diagnostics/<시각>_straight_center/` 폴더 전체를 이 PC로
+가져와 비교합니다. 세부 판별 순서는 실차 YOLO 문서의
+`Diagnose a live-versus-rosbag canonical mismatch` 절에 있습니다.
 
 그다음 camera-only 정책을 반드시 shadow로 확인합니다. 아래 launch의 기본값은
 `drive_enabled:=false`이므로 `/xycar_motor`에 주행 명령을 발행하지 않습니다.

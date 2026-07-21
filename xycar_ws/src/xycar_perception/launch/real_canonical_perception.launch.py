@@ -12,7 +12,11 @@ def generate_launch_description():
         [package_share, "config", "camera_perception_real.yaml"]
     )
     calib_file = PathJoinSubstitution(
-        [package_share, "config", "wide_camera_fisheye_1280x1024.yaml"]
+        [
+            package_share,
+            "config",
+            "wide_camera_fisheye_1280x1024_20260708.yaml",
+        ]
     )
     image_topic = LaunchConfiguration("image_topic")
     enable_rectify = LaunchConfiguration("enable_rectify")
