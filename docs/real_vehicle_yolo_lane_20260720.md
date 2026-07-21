@@ -26,6 +26,7 @@ TD3+BC policies do not need a new input shape.
 ## Delivered Files
 
 - Default model: `xycar_perception/models/kookmin_lane_yolo11n_256.pt`
+- ONNX candidate: `xycar_perception/models/kookmin_lane_yolo11n_256.onnx`
 - Accuracy fallback: `xycar_perception/models/kookmin_lane_yolo11n_512.pt`
 - Immutable measured camera calibration:
   `xycar_perception/config/wide_camera_fisheye_1280x1024_20260708.yaml`

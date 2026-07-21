@@ -1,3 +1,4 @@
 # Keep NumPy 1.x for ROS 2 Humble cv_bridge ABI compatibility.
 numpy>=1.23.5,<2.0
 ultralytics==8.4.54
+onnxruntime==1.23.2
