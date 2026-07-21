@@ -24,8 +24,8 @@ print(f"ultralytics={ultralytics.__version__}")
 print(f"cv_bridge={CvBridge.__module__}")
 PY
 
-MODEL="$(ros2 pkg prefix xycar_perception)/share/xycar_perception/models/kookmin_lane_yolo11n_512.pt"
-EXPECTED_SHA256="7cd02f180ce5e5f3d7066e634ea17b16418e02dc0c2e93465b3bfb3bf2a5c9fd"
+MODEL="$(ros2 pkg prefix xycar_perception)/share/xycar_perception/models/kookmin_lane_yolo11n_256.pt"
+EXPECTED_SHA256="23b5bf2601655f1fce68b665005da2926b765483e1790fa05d9702664ef033a9"
 ACTUAL_SHA256="$(sha256sum "$MODEL" | awk '{print $1}')"
 
 printf 'model=%s\n' "$MODEL"
@@ -40,8 +40,9 @@ if [[ -n "$SAMPLE_IMAGE" ]]; then
     --model "$MODEL" \
     --source "$SAMPLE_IMAGE" \
     --device cpu \
-    --image-size 512 \
+    --image-size 256 \
     --cpu-threads 4 \
+    --no-retina-masks \
     --iterations 100
 fi
 

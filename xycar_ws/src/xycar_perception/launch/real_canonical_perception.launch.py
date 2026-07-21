@@ -30,7 +30,9 @@ def generate_launch_description():
     yolo_confidence = LaunchConfiguration("yolo_confidence")
     yolo_iou = LaunchConfiguration("yolo_iou")
     yolo_image_size = LaunchConfiguration("yolo_image_size")
+    yolo_max_detections = LaunchConfiguration("yolo_max_detections")
     yolo_cpu_threads = LaunchConfiguration("yolo_cpu_threads")
+    yolo_retina_masks = LaunchConfiguration("yolo_retina_masks")
     publish_rate_limit_hz = LaunchConfiguration("publish_rate_limit_hz")
     src_tl_x_ratio = LaunchConfiguration("src_tl_x_ratio")
     src_tr_x_ratio = LaunchConfiguration("src_tr_x_ratio")
@@ -100,7 +102,9 @@ def generate_launch_description():
             DeclareLaunchArgument("yolo_confidence", default_value="0.25"),
             DeclareLaunchArgument("yolo_iou", default_value="0.50"),
             DeclareLaunchArgument("yolo_image_size", default_value="640"),
+            DeclareLaunchArgument("yolo_max_detections", default_value="30"),
             DeclareLaunchArgument("yolo_cpu_threads", default_value="0"),
+            DeclareLaunchArgument("yolo_retina_masks", default_value="true"),
             DeclareLaunchArgument(
                 "publish_rate_limit_hz", default_value="0.0"
             ),
@@ -208,8 +212,14 @@ def generate_launch_description():
                         "yolo_image_size": ParameterValue(
                             yolo_image_size, value_type=int
                         ),
+                        "yolo_max_detections": ParameterValue(
+                            yolo_max_detections, value_type=int
+                        ),
                         "yolo_cpu_threads": ParameterValue(
                             yolo_cpu_threads, value_type=int
+                        ),
+                        "yolo_retina_masks": ParameterValue(
+                            yolo_retina_masks, value_type=bool
                         ),
                         "publish_rate_limit_hz": ParameterValue(
                             publish_rate_limit_hz, value_type=float

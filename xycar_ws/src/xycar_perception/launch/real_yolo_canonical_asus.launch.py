@@ -24,7 +24,11 @@ def generate_launch_description():
         "yolo_device": "cpu",
         "yolo_confidence": LaunchConfiguration("yolo_confidence"),
         "yolo_image_size": LaunchConfiguration("yolo_image_size"),
+        "yolo_max_detections": LaunchConfiguration(
+            "yolo_max_detections"
+        ),
         "yolo_cpu_threads": LaunchConfiguration("yolo_cpu_threads"),
+        "yolo_retina_masks": LaunchConfiguration("yolo_retina_masks"),
         "publish_rate_limit_hz": LaunchConfiguration(
             "publish_rate_limit_hz"
         ),
@@ -49,13 +53,26 @@ def generate_launch_description():
                     [
                         FindPackageShare("xycar_perception"),
                         "models",
-                        "kookmin_lane_yolo11n_512.pt",
+                        "kookmin_lane_yolo11n_256.pt",
                     ]
                 ),
             ),
             DeclareLaunchArgument("yolo_confidence", default_value="0.25"),
-            DeclareLaunchArgument("yolo_image_size", default_value="512"),
+            DeclareLaunchArgument("yolo_image_size", default_value="256"),
+            DeclareLaunchArgument(
+                "yolo_max_detections",
+                default_value="8",
+                description="Maximum lane instances kept before mask merging.",
+            ),
             DeclareLaunchArgument("yolo_cpu_threads", default_value="4"),
+            DeclareLaunchArgument(
+                "yolo_retina_masks",
+                default_value="false",
+                description=(
+                    "Use model-resolution masks and resize once in the lane "
+                    "wrapper to reduce CPU post-processing."
+                ),
+            ),
             DeclareLaunchArgument(
                 "publish_rate_limit_hz",
                 default_value="15.0",

@@ -6,10 +6,37 @@ import numpy as np
 from xycar_perception.canonical_road import (
     make_canonical_road_image_from_masks,
 )
-from xycar_perception.yolo_lane_segmenter import merge_lane_instance_masks
+from xycar_perception.yolo_lane_segmenter import (
+    YoloLaneSegmenter,
+    merge_lane_instance_masks,
+)
 
 
 class YoloCanonicalTest(unittest.TestCase):
+    def test_segmenter_forwards_lightweight_mask_mode(self):
+        class FakeModel:
+            def __init__(self):
+                self.kwargs = None
+
+            def predict(self, **kwargs):
+                self.kwargs = kwargs
+                return [object()]
+
+        segmenter = YoloLaneSegmenter.__new__(YoloLaneSegmenter)
+        segmenter.model = FakeModel()
+        segmenter.image_size = 256
+        segmenter.confidence = 0.25
+        segmenter.iou = 0.5
+        segmenter.max_detections = 30
+        segmenter.device = "cpu"
+        segmenter.retina_masks = False
+
+        result = segmenter._predict(np.zeros((20, 30, 3), dtype=np.uint8))
+
+        self.assertIsNotNone(result)
+        self.assertFalse(segmenter.model.kwargs["retina_masks"])
+        self.assertEqual(segmenter.model.kwargs["imgsz"], 256)
+
     def test_instance_masks_merge_by_lane_class(self):
         masks = np.zeros((3, 20, 30), dtype=np.float32)
         masks[0, 2:18, 3:6] = 1.0

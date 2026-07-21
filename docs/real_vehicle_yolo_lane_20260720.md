@@ -1,7 +1,7 @@
 # ASUS Real-Vehicle YOLO Lane Perception
 
 Date: 2026-07-20
-Updated: 2026-07-21 (real-camera calibration recovery)
+Updated: 2026-07-21 (256 CPU-light model and calibration recovery)
 Branch: `simulation`
 
 ## Purpose
@@ -13,7 +13,7 @@ rectification, BEV homography, and canonical normalization.
 
 ```text
 /wide_camera/rect/image_raw
-  -> YOLO11n-seg 512 on CPU
+  -> YOLO11n-seg 256 on CPU
   -> white_boundary / yellow_centerline masks
   -> measured BEV homography
   -> 256x144 canonical road image
@@ -25,7 +25,8 @@ TD3+BC policies do not need a new input shape.
 
 ## Delivered Files
 
-- Model: `xycar_perception/models/kookmin_lane_yolo11n_512.pt`
+- Default model: `xycar_perception/models/kookmin_lane_yolo11n_256.pt`
+- Accuracy fallback: `xycar_perception/models/kookmin_lane_yolo11n_512.pt`
 - Immutable measured camera calibration:
   `xycar_perception/config/wide_camera_fisheye_1280x1024_20260708.yaml`
 - Perception launch: `real_yolo_canonical_asus.launch.py`
@@ -39,7 +40,7 @@ TD3+BC policies do not need a new input shape.
 Model SHA-256:
 
 ```text
-7cd02f180ce5e5f3d7066e634ea17b16418e02dc0c2e93465b3bfb3bf2a5c9fd
+23b5bf2601655f1fce68b665005da2926b765483e1790fa05d9702664ef033a9
 ```
 
 Camera calibration measured on 2026-07-08:
@@ -100,10 +101,10 @@ Initial acceptance targets:
 - `/perception/canonical_road_image`: at least 15Hz
 - high-speed candidate testing: at least 20Hz and end-to-end latency below 80ms
 
-If the combined lane and obstacle networks cannot maintain 15Hz, keep lane
-inference at 512 and reduce obstacle inference to 416 at 5Hz. Running the lane
-model at 416 reduced yellow-centerline recall from 0.718 to 0.613 and is only an
-emergency fallback.
+The default launch uses 256 input, at most eight lane instances, and disables
+high-resolution retina-mask post-processing. On the development CPU this cut
+mean wrapper latency from 24.5ms to 13.3ms. If distant yellow dashes are missed,
+use the packaged 512 checkpoint as the accuracy fallback.
 
 ## 3. Perception-Only Test
 

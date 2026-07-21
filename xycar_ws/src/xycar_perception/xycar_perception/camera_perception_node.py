@@ -102,6 +102,7 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("yolo_white_class_id", 0)
         self.declare_parameter("yolo_yellow_class_id", 1)
         self.declare_parameter("yolo_cpu_threads", 0)
+        self.declare_parameter("yolo_retina_masks", True)
         self.declare_parameter(
             "yolo_debug_image_topic", "/perception/yolo_debug_image"
         )
@@ -660,6 +661,9 @@ class CameraPerceptionNode(Node):
                 ),
                 cpu_threads=int(
                     self.get_parameter("yolo_cpu_threads").value
+                ),
+                retina_masks=bool(
+                    self.get_parameter("yolo_retina_masks").value
                 ),
             )
             self.get_logger().info(

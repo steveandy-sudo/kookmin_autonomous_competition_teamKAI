@@ -38,7 +38,7 @@ LiDAR 없이 이전·현재 canonical 영상만 쓰는 TD3+BC 학습과 1차 Gaz
 - 실차 가시성과 recovery 상황을 반영한 약 20만 장 BC 모델 학습
 - CAD 중심선 보상, reset, transition recorder와 TD3+BC를 포함한 `xycar_rl`
 - 고속 Actor/Critic의 이전·현재 canonical 2프레임 입력과 조향·속도 동시 출력
-- Ryzen 5 실차용 YOLO11n-seg 512 차선 인지와 camera-only shadow 통합 launch
+- Ryzen 5 실차용 YOLO11n-seg 256 경량 차선 인지와 camera-only shadow 통합 launch
 
 ### 최신 모델
 
@@ -158,6 +158,7 @@ git pull --ff-only origin simulation
 | 실차 룰베이스만 실행 | [`real_vehicle_deployment.md`](docs/real_vehicle_deployment.md) |
 | 고속 TD3+BC 학습·단계별 실차 shadow | [`high_speed_rl_20260717.md`](docs/high_speed_rl_20260717.md) |
 | ASUS에서 새 YOLO 차선 인지 검증 | [`real_vehicle_yolo_lane_20260720.md`](docs/real_vehicle_yolo_lane_20260720.md) |
+| YOLO11n 256 경량 모델의 정확도·속도 비교 | [`2026-07-21_yolo11n_256_ultralight.md`](docs/2026-07-21_yolo11n_256_ultralight.md) |
 | 실차 카메라 보정값 복원/원본 영상 우회 | [`real_vehicle_yolo_lane_20260720.md`](docs/real_vehicle_yolo_lane_20260720.md#restore-a-changed-real-camera-calibration) |
 
 ---
@@ -217,7 +218,7 @@ ros2 run rqt_image_view rqt_image_view /perception/canonical_road_image
 ### 3.2.1 경량 YOLO 차선 인지 실차 시험
 
 조명 반사와 바랜 중앙선 때문에 색상 임계값 방식이 불안정한 경우, 패키지에 포함된
-`YOLO11n-seg 512` 모델로 흰 경계선과 노란 중앙선을 분할한 뒤 같은 canonical
+`YOLO11n-seg 256` 모델로 흰 경계선과 노란 중앙선을 분할한 뒤 같은 canonical
 계약으로 변환할 수 있습니다. 모델은 5.8MB이며 ASUS Ryzen 5에서는 CPU로
 실행합니다.
 

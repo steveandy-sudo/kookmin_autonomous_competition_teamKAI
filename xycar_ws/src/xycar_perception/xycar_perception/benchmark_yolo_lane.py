@@ -21,6 +21,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image-size", type=int, default=512)
     parser.add_argument("--confidence", type=float, default=0.25)
     parser.add_argument("--cpu-threads", type=int, default=0)
+    parser.add_argument(
+        "--retina-masks",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--iterations", type=int, default=50)
     return parser.parse_args()
@@ -50,6 +55,7 @@ def main() -> None:
         confidence=args.confidence,
         image_size=args.image_size,
         cpu_threads=args.cpu_threads,
+        retina_masks=args.retina_masks,
     )
 
     for _ in range(max(0, args.warmup)):
@@ -65,7 +71,7 @@ def main() -> None:
     print(f"model={segmenter.model_path}")
     print(
         f"device={args.device} image_size={args.image_size} "
-        f"cpu_threads={args.cpu_threads}"
+        f"cpu_threads={args.cpu_threads} retina_masks={args.retina_masks}"
     )
     print(f"input_shape={image.shape[1]}x{image.shape[0]}")
     print(

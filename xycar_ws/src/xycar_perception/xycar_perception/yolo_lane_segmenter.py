@@ -61,6 +61,7 @@ class YoloLaneSegmenter:
         white_class_id: int = 0,
         yellow_class_id: int = 1,
         cpu_threads: int = 0,
+        retina_masks: bool = True,
     ) -> None:
         path = Path(model_path).expanduser().resolve()
         if not path.is_file():
@@ -87,6 +88,7 @@ class YoloLaneSegmenter:
         self.white_class_id = int(white_class_id)
         self.yellow_class_id = int(yellow_class_id)
         self.cpu_threads = int(cpu_threads)
+        self.retina_masks = bool(retina_masks)
         warmup_image = np.zeros(
             (self.image_size, self.image_size, 3), dtype=np.uint8
         )
@@ -134,6 +136,6 @@ class YoloLaneSegmenter:
             iou=self.iou,
             max_det=self.max_detections,
             device=self.device,
-            retina_masks=True,
+            retina_masks=self.retina_masks,
             verbose=False,
         )[0]
