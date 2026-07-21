@@ -62,6 +62,36 @@ class YoloCanonicalTest(unittest.TestCase):
             int(np.count_nonzero(canonical_white & canonical_yellow)), 0
         )
 
+    def test_yolo_yellow_can_bypass_color_geometry_filter(self):
+        white = np.zeros((220, 640), dtype=np.uint8)
+        yellow = np.zeros_like(white)
+        cv2.line(yellow, (250, 90), (390, 90), 255, 6)
+
+        _, _, filtered = make_canonical_road_image_from_masks(
+            white,
+            yellow,
+            lateral_m_per_px=1.4 / 640.0,
+            forward_m_per_px=1.5 / 220.0,
+            geometry_filter_enabled=True,
+            min_line_verticality=0.30,
+            min_component_area_px=4,
+            bottom_ignore_m=0.0,
+        )
+        _, _, preserved = make_canonical_road_image_from_masks(
+            white,
+            yellow,
+            lateral_m_per_px=1.4 / 640.0,
+            forward_m_per_px=1.5 / 220.0,
+            geometry_filter_enabled=True,
+            yellow_geometry_filter_enabled=False,
+            min_line_verticality=0.30,
+            min_component_area_px=4,
+            bottom_ignore_m=0.0,
+        )
+
+        self.assertEqual(int(np.count_nonzero(filtered)), 0)
+        self.assertGreater(int(np.count_nonzero(preserved)), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,8 +6,10 @@ import numpy as np
 import yaml
 
 from xycar_perception.canonical_road import (
+    CanonicalRoadStages,
     _filter_lane_geometry,
     make_canonical_road_image,
+    make_canonical_road_image_from_masks,
 )
 
 
@@ -188,6 +190,59 @@ class CanonicalRoadTest(unittest.TestCase):
         self.assertEqual(int(np.count_nonzero(filtered[:, 55:66])), 0)
         self.assertGreater(int(np.count_nonzero(filtered[:, 190:201])), 0)
 
+    def test_geometry_validation_can_preserve_observed_component_shape(self):
+        mask = np.zeros((144, 256), dtype=np.uint8)
+        rows = np.arange(8, 137, dtype=np.int32)
+        xs = np.rint(75.0 + 8.0 * np.sin(rows / 16.0)).astype(np.int32)
+        cv2.polylines(
+            mask,
+            [np.column_stack((xs, rows))],
+            False,
+            255,
+            5,
+        )
+
+        filtered = _filter_lane_geometry(
+            mask,
+            min_span_px=12,
+            min_elongation=1.5,
+            min_verticality=0.3,
+            max_components=1,
+            max_fit_rmse_px=20.0,
+            redraw_fitted_lines=False,
+        )
+
+        self.assertTrue(np.array_equal(filtered > 0, mask > 0))
+
+    def test_half_meter_blind_region_keeps_one_point_five_meter_coordinates(self):
+        white = np.zeros((220, 640), dtype=np.uint8)
+        yellow = np.zeros_like(white)
+        valid = np.zeros_like(white)
+        cv2.line(white, (320, 0), (320, 147), 255, 3)
+        valid[:148, :] = 255
+
+        stages = make_canonical_road_image_from_masks(
+            white,
+            yellow,
+            valid_mask=valid,
+            lateral_m_per_px=1.4 / 640.0,
+            forward_m_per_px=1.5 / 220.0,
+            lateral_range_m=1.4,
+            forward_range_m=1.5,
+            output_width=256,
+            output_height=144,
+            min_component_area_px=1,
+            bottom_ignore_m=0.0,
+            return_stages=True,
+        )
+
+        self.assertIsInstance(stages, CanonicalRoadStages)
+        valid_rows = np.flatnonzero(np.any(stages.valid_mask > 0, axis=1))
+        white_rows = np.flatnonzero(np.any(stages.white_mask > 0, axis=1))
+        self.assertEqual(int(valid_rows.min()), 0)
+        self.assertLessEqual(abs(int(valid_rows.max()) - 96), 1)
+        self.assertLessEqual(abs(int(white_rows.max()) - 96), 1)
+
     def test_real_config_matches_measured_lane_pipeline(self):
         config_path = (
             Path(__file__).resolve().parents[1]
@@ -260,6 +315,11 @@ class CanonicalRoadTest(unittest.TestCase):
             params["canonical_lane_width_tolerance_m"], 0.14
         )
         self.assertAlmostEqual(params["canonical_yellow_fit_gate_m"], 0.08)
+        self.assertTrue(params["canonical_geometry_redraw_fitted_lines"])
+        self.assertFalse(
+            params["canonical_yolo_yellow_geometry_filter_enabled"]
+        )
+        self.assertTrue(params["canonical_yolo_allow_unpaired_yellow"])
 
     def test_sim_config_does_not_apply_real_fisheye_rectification(self):
         config_path = Path(__file__).resolve().parents[1] / "config" / "camera_perception.yaml"
@@ -279,11 +339,19 @@ class CanonicalRoadTest(unittest.TestCase):
         self.assertTrue(params["canonical_tracking_enabled"])
         self.assertFalse(params["canonical_width_prediction_enabled"])
         self.assertFalse(params["canonical_persistent_prediction_enabled"])
-        self.assertAlmostEqual(params["canonical_tracking_coast_sec"], 0.0)
-        self.assertAlmostEqual(params["canonical_tracking_search_sec"], 0.0)
+        self.assertAlmostEqual(params["canonical_tracking_coast_sec"], 0.25)
+        self.assertAlmostEqual(params["canonical_tracking_search_sec"], 0.60)
         self.assertAlmostEqual(
             params["canonical_tracking_smoothing_alpha"], 1.0
         )
+        self.assertAlmostEqual(
+            params["canonical_transverse_clutter_row_fraction"], 0.0
+        )
+        self.assertTrue(params["canonical_geometry_redraw_fitted_lines"])
+        self.assertFalse(
+            params["canonical_yolo_yellow_geometry_filter_enabled"]
+        )
+        self.assertTrue(params["canonical_yolo_allow_unpaired_yellow"])
 
 
 if __name__ == "__main__":

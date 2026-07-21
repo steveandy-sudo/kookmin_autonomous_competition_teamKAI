@@ -23,6 +23,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 from xycar_perception.canonical_lane_tracker import CanonicalLaneTracker
 from xycar_perception.canonical_road import (
+    CanonicalRoadStages,
     make_canonical_road_image,
     make_canonical_road_image_from_masks,
 )
@@ -126,6 +127,30 @@ class CameraPerceptionNode(Node):
             "canonical_tracking_debug_topic",
             "/perception/canonical_tracking_debug",
         )
+        self.declare_parameter(
+            "canonical_pregeometry_white_mask_topic",
+            "/perception/canonical_pregeometry_white_mask",
+        )
+        self.declare_parameter(
+            "canonical_pregeometry_yellow_mask_topic",
+            "/perception/canonical_pregeometry_yellow_mask",
+        )
+        self.declare_parameter(
+            "canonical_pretrack_white_mask_topic",
+            "/perception/canonical_pretrack_white_mask",
+        )
+        self.declare_parameter(
+            "canonical_pretrack_yellow_mask_topic",
+            "/perception/canonical_pretrack_yellow_mask",
+        )
+        self.declare_parameter(
+            "canonical_valid_mask_topic",
+            "/perception/canonical_valid_mask",
+        )
+        self.declare_parameter(
+            "canonical_metric_debug_topic",
+            "/perception/canonical_metric_debug",
+        )
         self.declare_parameter("base_frame_id", "base_footprint")
         self.declare_parameter("source_name", "xycar_camera_perception")
         self.declare_parameter("publish_rate_limit_hz", 15.0)
@@ -211,6 +236,12 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("canonical_white_max_mask_fraction", 0.0)
         self.declare_parameter("canonical_yellow_max_mask_fraction", 0.0)
         self.declare_parameter("canonical_max_line_fit_rmse_px", 0.0)
+        self.declare_parameter(
+            "canonical_geometry_redraw_fitted_lines", True
+        )
+        self.declare_parameter(
+            "canonical_yolo_yellow_geometry_filter_enabled", True
+        )
         self.declare_parameter("canonical_top_ignore_m", 0.0)
         self.declare_parameter("canonical_bottom_ignore_m", 0.08)
         self.declare_parameter("canonical_tracking_enabled", False)
@@ -243,6 +274,9 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("canonical_transverse_clutter_min_rows", 6)
         self.declare_parameter(
             "canonical_persistent_prediction_enabled", False
+        )
+        self.declare_parameter(
+            "canonical_yolo_allow_unpaired_yellow", False
         )
 
         self.bridge = CvBridge()
@@ -412,6 +446,16 @@ class CameraPerceptionNode(Node):
         self.canonical_max_line_fit_rmse_px = float(
             self.get_parameter("canonical_max_line_fit_rmse_px").value
         )
+        self.canonical_geometry_redraw_fitted_lines = bool(
+            self.get_parameter(
+                "canonical_geometry_redraw_fitted_lines"
+            ).value
+        )
+        self.canonical_yolo_yellow_geometry_filter_enabled = bool(
+            self.get_parameter(
+                "canonical_yolo_yellow_geometry_filter_enabled"
+            ).value
+        )
         self.canonical_top_ignore_m = float(
             self.get_parameter("canonical_top_ignore_m").value
         )
@@ -495,6 +539,11 @@ class CameraPerceptionNode(Node):
                 "canonical_persistent_prediction_enabled"
             ).value
         )
+        self.canonical_yolo_allow_unpaired_yellow = bool(
+            self.get_parameter(
+                "canonical_yolo_allow_unpaired_yellow"
+            ).value
+        )
 
         rate_limit_hz = float(self.get_parameter("publish_rate_limit_hz").value)
         self.min_publish_period = 0.0 if rate_limit_hz <= 0.0 else 1.0 / rate_limit_hz
@@ -511,6 +560,7 @@ class CameraPerceptionNode(Node):
         self.rect_size: tuple[int, int] | None = None
         self.M: np.ndarray | None = None
         self.M_inv: np.ndarray | None = None
+        self.homography_source_polygon: np.ndarray | None = None
         self.homography_input_shape: tuple[int, int] | None = None
         self.homography_output_shape: tuple[int, int] | None = None
         self.current_projection_height = self.bev_height
@@ -520,6 +570,12 @@ class CameraPerceptionNode(Node):
         self.current_yolo_bev_yellow_mask: np.ndarray | None = None
         self.current_yolo_debug_image: np.ndarray | None = None
         self.current_canonical_tracking_debug: np.ndarray | None = None
+        self.current_canonical_pregeometry_white: np.ndarray | None = None
+        self.current_canonical_pregeometry_yellow: np.ndarray | None = None
+        self.current_canonical_pretrack_white: np.ndarray | None = None
+        self.current_canonical_pretrack_yellow: np.ndarray | None = None
+        self.current_canonical_valid_mask: np.ndarray | None = None
+        self.current_canonical_metric_debug: np.ndarray | None = None
         self.previous_centerline_points: list[Point] = []
         self.previous_centerline_wall_time = 0.0
         self.canonical_lane_tracker = (
@@ -569,6 +625,10 @@ class CameraPerceptionNode(Node):
                 ),
                 persistent_prediction_enabled=(
                     self.canonical_persistent_prediction_enabled
+                ),
+                allow_unpaired_yellow=(
+                    self.lane_segmentation_backend == "yolo"
+                    and self.canonical_yolo_allow_unpaired_yellow
                 ),
                 line_width_px=self.canonical_line_width_px,
                 background_gray=self.canonical_background_gray,
@@ -675,6 +735,52 @@ class CameraPerceptionNode(Node):
             ),
             10,
         )
+        self.canonical_pregeometry_white_pub = self.create_publisher(
+            Image,
+            str(
+                self.get_parameter(
+                    "canonical_pregeometry_white_mask_topic"
+                ).value
+            ),
+            10,
+        )
+        self.canonical_pregeometry_yellow_pub = self.create_publisher(
+            Image,
+            str(
+                self.get_parameter(
+                    "canonical_pregeometry_yellow_mask_topic"
+                ).value
+            ),
+            10,
+        )
+        self.canonical_pretrack_white_pub = self.create_publisher(
+            Image,
+            str(
+                self.get_parameter(
+                    "canonical_pretrack_white_mask_topic"
+                ).value
+            ),
+            10,
+        )
+        self.canonical_pretrack_yellow_pub = self.create_publisher(
+            Image,
+            str(
+                self.get_parameter(
+                    "canonical_pretrack_yellow_mask_topic"
+                ).value
+            ),
+            10,
+        )
+        self.canonical_valid_mask_pub = self.create_publisher(
+            Image,
+            str(self.get_parameter("canonical_valid_mask_topic").value),
+            10,
+        )
+        self.canonical_metric_debug_pub = self.create_publisher(
+            Image,
+            str(self.get_parameter("canonical_metric_debug_topic").value),
+            10,
+        )
         image_topic = str(self.get_parameter("image_topic").value)
         camera_qos = QoSProfile(
             history=qos_profile_sensor_data.history,
@@ -770,6 +876,46 @@ class CameraPerceptionNode(Node):
         yellow_msg = self.bridge.cv2_to_imgmsg(canonical_yellow, encoding="mono8")
         yellow_msg.header = header
         self.canonical_yellow_mask_pub.publish(yellow_msg)
+
+        stage_masks = (
+            (
+                self.canonical_pregeometry_white_pub,
+                self.current_canonical_pregeometry_white,
+            ),
+            (
+                self.canonical_pregeometry_yellow_pub,
+                self.current_canonical_pregeometry_yellow,
+            ),
+            (
+                self.canonical_pretrack_white_pub,
+                self.current_canonical_pretrack_white,
+            ),
+            (
+                self.canonical_pretrack_yellow_pub,
+                self.current_canonical_pretrack_yellow,
+            ),
+            (
+                self.canonical_valid_mask_pub,
+                self.current_canonical_valid_mask,
+            ),
+        )
+        for publisher, stage_mask in stage_masks:
+            if publisher.get_subscription_count() <= 0 or stage_mask is None:
+                continue
+            stage_msg = self.bridge.cv2_to_imgmsg(stage_mask, encoding="mono8")
+            stage_msg.header = header
+            publisher.publish(stage_msg)
+
+        if (
+            self.canonical_metric_debug_pub.get_subscription_count() > 0
+            and self.current_canonical_metric_debug is not None
+        ):
+            metric_debug_msg = self.bridge.cv2_to_imgmsg(
+                self.current_canonical_metric_debug,
+                encoding="bgr8",
+            )
+            metric_debug_msg.header = header
+            self.canonical_metric_debug_pub.publish(metric_debug_msg)
 
         if (
             self.canonical_tracking_debug_pub.get_subscription_count() > 0
@@ -965,37 +1111,60 @@ class CameraPerceptionNode(Node):
             white_max_mask_fraction=self.canonical_white_max_mask_fraction,
             yellow_max_mask_fraction=self.canonical_yellow_max_mask_fraction,
             max_line_fit_rmse_px=self.canonical_max_line_fit_rmse_px,
+            geometry_redraw_fitted_lines=(
+                self.canonical_geometry_redraw_fitted_lines
+            ),
+            yellow_geometry_filter_enabled=(
+                self.lane_segmentation_backend != "yolo"
+                or self.canonical_yolo_yellow_geometry_filter_enabled
+            ),
             top_ignore_m=self.canonical_top_ignore_m,
             bottom_ignore_m=self.canonical_bottom_ignore_m,
+            return_stages=True,
         )
         if self.lane_segmentation_backend == "yolo":
-            canonical, canonical_white, canonical_yellow = (
-                make_canonical_road_image_from_masks(
-                    white_mask,
-                    yellow_mask,
-                    **canonical_common,
-                )
+            canonical_stages = make_canonical_road_image_from_masks(
+                white_mask,
+                yellow_mask,
+                **canonical_common,
             )
         else:
-            canonical, canonical_white, canonical_yellow = (
-                make_canonical_road_image(
-                    image,
-                    white_s_max=self.canonical_white_s_max,
-                    white_v_min=self.canonical_white_v_min,
-                    white_v_floor=self.canonical_white_v_floor,
-                    white_relative_delta=(
-                        self.canonical_white_relative_delta
-                    ),
-                    yellow_h_min=self.yellow_h_min,
-                    yellow_h_max=self.yellow_h_max,
-                    yellow_s_min=self.yellow_s_min,
-                    yellow_v_min=self.yellow_v_min,
-                    white_min_component_median_v=(
-                        self.canonical_white_min_component_median_v
-                    ),
-                    **canonical_common,
-                )
+            canonical_stages = make_canonical_road_image(
+                image,
+                white_s_max=self.canonical_white_s_max,
+                white_v_min=self.canonical_white_v_min,
+                white_v_floor=self.canonical_white_v_floor,
+                white_relative_delta=(
+                    self.canonical_white_relative_delta
+                ),
+                yellow_h_min=self.yellow_h_min,
+                yellow_h_max=self.yellow_h_max,
+                yellow_s_min=self.yellow_s_min,
+                yellow_v_min=self.yellow_v_min,
+                white_min_component_median_v=(
+                    self.canonical_white_min_component_median_v
+                ),
+                **canonical_common,
             )
+        if not isinstance(canonical_stages, CanonicalRoadStages):
+            raise RuntimeError("canonical stage output was not requested")
+        canonical = canonical_stages.road_image
+        canonical_white = canonical_stages.white_mask
+        canonical_yellow = canonical_stages.yellow_mask
+        self.current_canonical_pregeometry_white = (
+            canonical_stages.pre_geometry_white_mask
+        )
+        self.current_canonical_pregeometry_yellow = (
+            canonical_stages.pre_geometry_yellow_mask
+        )
+        self.current_canonical_pretrack_white = canonical_white.copy()
+        self.current_canonical_pretrack_yellow = canonical_yellow.copy()
+        self.current_canonical_valid_mask = canonical_stages.valid_mask
+        self.current_canonical_metric_debug = self.make_canonical_metric_debug(
+            canonical_white,
+            canonical_yellow,
+            canonical_stages.valid_mask,
+        )
         if self.canonical_lane_tracker is not None:
             timestamp_sec = (
                 float(header.stamp.sec)
@@ -1022,6 +1191,53 @@ class CameraPerceptionNode(Node):
             canonical_white,
             canonical_yellow,
         )
+
+    def make_canonical_metric_debug(
+        self,
+        white_mask: np.ndarray,
+        yellow_mask: np.ndarray,
+        valid_mask: np.ndarray,
+    ) -> np.ndarray:
+        debug = np.full(
+            (self.canonical_height, self.canonical_width, 3),
+            self.canonical_background_gray,
+            dtype=np.uint8,
+        )
+        debug[valid_mask == 0] = (30, 18, 18)
+        debug[white_mask > 0] = (255, 255, 255)
+        debug[yellow_mask > 0] = (0, 220, 255)
+
+        meters_per_row = (
+            self.canonical_forward_range_m / max(1, self.canonical_height)
+        )
+        for distance_m in (0.5, 1.0, 1.5):
+            row = int(
+                round(
+                    self.canonical_height
+                    - distance_m / meters_per_row
+                )
+            )
+            row = int(np.clip(row, 0, self.canonical_height - 1))
+            cv2.line(
+                debug,
+                (0, row),
+                (self.canonical_width - 1, row),
+                (80, 150, 80),
+                1,
+                cv2.LINE_8,
+            )
+            text_row = min(self.canonical_height - 3, max(11, row + 11))
+            cv2.putText(
+                debug,
+                f"{distance_m:.1f}m",
+                (3, text_row),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.32,
+                (100, 230, 100),
+                1,
+                cv2.LINE_AA,
+            )
+        return debug
 
     def row_clusters(self, row_mask: np.ndarray) -> list[float]:
         xs = np.flatnonzero(row_mask)
@@ -1184,6 +1400,7 @@ class CameraPerceptionNode(Node):
         )
         self.M = cv2.getPerspectiveTransform(src, dst)
         self.M_inv = cv2.getPerspectiveTransform(dst, src)
+        self.homography_source_polygon = np.rint(src).astype(np.int32)
         self.homography_input_shape = (width, height)
         self.homography_output_shape = (self.bev_width, self.bev_height)
 
@@ -1225,6 +1442,15 @@ class CameraPerceptionNode(Node):
                 borderMode=cv2.BORDER_CONSTANT,
                 borderValue=0,
             )
+        source_roi = np.zeros_like(source_valid)
+        if self.homography_source_polygon is not None:
+            cv2.fillConvexPoly(
+                source_roi,
+                self.homography_source_polygon,
+                255,
+                lineType=cv2.LINE_8,
+            )
+            source_valid = cv2.bitwise_and(source_valid, source_roi)
         valid_mask = cv2.warpPerspective(
             source_valid,
             self.M,

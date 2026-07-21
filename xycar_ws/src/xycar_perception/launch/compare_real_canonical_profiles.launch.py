@@ -44,6 +44,20 @@ def perception_node(name: str, prefix: str, temporary: bool) -> Node:
         "canonical_tracking_debug_topic": (
             f"/{prefix}/canonical_tracking_debug"
         ),
+        "canonical_pregeometry_white_mask_topic": (
+            f"/{prefix}/canonical_pregeometry_white_mask"
+        ),
+        "canonical_pregeometry_yellow_mask_topic": (
+            f"/{prefix}/canonical_pregeometry_yellow_mask"
+        ),
+        "canonical_pretrack_white_mask_topic": (
+            f"/{prefix}/canonical_pretrack_white_mask"
+        ),
+        "canonical_pretrack_yellow_mask_topic": (
+            f"/{prefix}/canonical_pretrack_yellow_mask"
+        ),
+        "canonical_valid_mask_topic": f"/{prefix}/canonical_valid_mask",
+        "canonical_metric_debug_topic": f"/{prefix}/canonical_metric_debug",
     }
     if temporary:
         overrides.update(

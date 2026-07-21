@@ -84,6 +84,12 @@ for topic in \
   /perception/canonical_road_image \
   /perception/canonical_white_mask \
   /perception/canonical_yellow_mask \
+  /perception/canonical_pregeometry_white_mask \
+  /perception/canonical_pregeometry_yellow_mask \
+  /perception/canonical_pretrack_white_mask \
+  /perception/canonical_pretrack_yellow_mask \
+  /perception/canonical_valid_mask \
+  /perception/canonical_metric_debug \
   /perception/canonical_tracking_debug; do
   {
     echo "===== $topic ====="
@@ -104,6 +110,12 @@ timeout --signal=INT --kill-after=5s "${duration_sec}s" \
     /perception/canonical_road_image \
     /perception/canonical_white_mask \
     /perception/canonical_yellow_mask \
+    /perception/canonical_pregeometry_white_mask \
+    /perception/canonical_pregeometry_yellow_mask \
+    /perception/canonical_pretrack_white_mask \
+    /perception/canonical_pretrack_yellow_mask \
+    /perception/canonical_valid_mask \
+    /perception/canonical_metric_debug \
     /perception/canonical_tracking_debug
 record_status=$?
 set -e

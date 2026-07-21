@@ -96,19 +96,21 @@ ros2 run xycar_perception benchmark_yolo_lane \
   --iterations 100
 ```
 
-Run live perception from the already-rectified camera topic:
+Run live perception through the same raw-MJPEG and internal-rectification path
+used for rosbag replay:
 
 ```bash
 ros2 launch xycar_perception real_yolo_canonical_asus.launch.py
 ```
 
-For an unrectified compressed MJPEG topic:
+To diagnose an externally rectified topic explicitly, override all three
+transport settings together:
 
 ```bash
 ros2 launch xycar_perception real_yolo_canonical_asus.launch.py \
-  image_topic:=/wide_camera_mjpeg/image_raw/compressed \
-  use_compressed_image:=true \
-  enable_rectify:=true
+  image_topic:=/wide_camera/rect/image_raw \
+  use_compressed_image:=false \
+  enable_rectify:=false
 ```
 
 Measure the complete output rather than relying only on the model benchmark:

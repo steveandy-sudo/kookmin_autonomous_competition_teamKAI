@@ -12,6 +12,12 @@ xycar_camera_perception:
     canonical_road_topic: /perception/canonical_road_image
     canonical_white_mask_topic: /perception/canonical_white_mask
     canonical_yellow_mask_topic: /perception/canonical_yellow_mask
+    canonical_pregeometry_white_mask_topic: /perception/canonical_pregeometry_white_mask
+    canonical_pregeometry_yellow_mask_topic: /perception/canonical_pregeometry_yellow_mask
+    canonical_pretrack_white_mask_topic: /perception/canonical_pretrack_white_mask
+    canonical_pretrack_yellow_mask_topic: /perception/canonical_pretrack_yellow_mask
+    canonical_valid_mask_topic: /perception/canonical_valid_mask
+    canonical_metric_debug_topic: /perception/canonical_metric_debug
     base_frame_id: base_footprint
     source_name: xycar_camera_perception
     # Process every freshest frame; the depth-1 sensor queue prevents stale backlog.
@@ -103,6 +109,8 @@ xycar_camera_perception:
     canonical_white_v_floor: 70
     canonical_white_relative_delta: 9.0
     canonical_min_component_area_px: 8
+    canonical_geometry_redraw_fitted_lines: true
+    canonical_yolo_yellow_geometry_filter_enabled: false
     canonical_bottom_ignore_m: 0.0
     # Use the same stateful lane representation in simulation and on-car.
     canonical_tracking_enabled: true
@@ -115,13 +123,18 @@ xycar_camera_perception:
     canonical_tracking_curvature_gate_gain: 1.0
     canonical_tracking_curvature_max_extra_m: 0.10
     canonical_tracking_confirmation_frames: 1
-    # Match the real observation-only contract. Never invent or retain a line
-    # that is absent from the current simulation frame.
-    canonical_tracking_coast_sec: 0.0
-    canonical_tracking_search_sec: 0.0
+    # S-curve entry can briefly fail the pixel/topology gates. Keep the last
+    # accepted curve through a short search window so the model does not see
+    # a one-frame all-background input at the bend entrance.
+    canonical_tracking_coast_sec: 0.25
+    canonical_tracking_search_sec: 0.60
     canonical_tracking_smoothing_alpha: 1.0
     canonical_width_prediction_enabled: false
     canonical_width_prediction_replacement_frames: 1
-    canonical_transverse_clutter_row_fraction: 0.12
+    # The simulation track has no checkerboard / stop-line clutter to reject.
+    # Keeping this enabled makes the near-horizontal part of the S curve look
+    # like a transverse bar and blanks every canonical lane for several frames.
+    canonical_transverse_clutter_row_fraction: 0.0
     canonical_transverse_clutter_min_rows: 6
     canonical_persistent_prediction_enabled: false
+    canonical_yolo_allow_unpaired_yellow: true

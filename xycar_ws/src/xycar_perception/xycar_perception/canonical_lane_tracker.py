@@ -328,6 +328,7 @@ class CanonicalLaneTracker:
         transverse_clutter_row_fraction: float = 0.0,
         transverse_clutter_min_rows: int = 6,
         persistent_prediction_enabled: bool = False,
+        allow_unpaired_yellow: bool = False,
         line_width_px: int = 5,
         background_gray: int = 36,
     ) -> None:
@@ -369,6 +370,7 @@ class CanonicalLaneTracker:
         self.persistent_prediction_enabled = bool(
             persistent_prediction_enabled
         )
+        self.allow_unpaired_yellow = bool(allow_unpaired_yellow)
         self.line_width_px = max(1, int(line_width_px))
         self.background_gray = int(np.clip(background_gray, 0, 255))
         self.tracks = {
@@ -637,7 +639,7 @@ class CanonicalLaneTracker:
         if yellow is None:
             return False
 
-        tracked_sides = 0
+        supported_sides = 0
         for side in ("left_white", "right_white"):
             track = self.tracks[side]
             if (
@@ -645,21 +647,32 @@ class CanonicalLaneTracker:
                 or track.elapsed(timestamp_sec) > self.search_sec
             ):
                 continue
-            tracked_sides += 1
             offset = self._yellow_white_offset(
                 yellow,
                 track.coefficients,
                 track.row_min,
                 track.row_max,
             )
+            # A short yellow dash often has no longitudinal overlap with one
+            # of the visible white components. That side provides no evidence
+            # either way and must not erase a valid observation supported by
+            # the other boundary.
+            if offset is None:
+                continue
+            supported_sides += 1
             if not self._yellow_matches_side(offset, side):
                 return False
-        if tracked_sides > 0:
+        if supported_sides > 0:
             return True
 
         raw_whites = _component_candidates(white_mask, min_span_px=10)
         if not raw_whites:
-            return False
+            if not self.allow_unpaired_yellow:
+                return False
+            midpoint_x = float(
+                yellow.x_at((yellow.row_min + yellow.row_max) * 0.5)
+            )
+            return self.width * 0.20 <= midpoint_x <= self.width * 0.80
         has_left_support = False
         has_right_support = False
         for white in raw_whites:
@@ -722,6 +735,8 @@ class CanonicalLaneTracker:
                 white.row_min,
                 white.row_max,
             )
+            if offset is None:
+                continue
             if not self._yellow_matches_side(offset, side):
                 return False
         return True
@@ -1005,6 +1020,10 @@ class CanonicalLaneTracker:
         status = track.status(timestamp_sec, self.coast_sec, self.search_sec)
         empty = np.zeros((self.height, self.width), dtype=np.uint8)
         if status == "confirmed" and track.last_mask is not None:
+            # YOLO boundary masks can be sparse along a physical white tape.
+            # Render the robustly fitted white curve so the model receives the
+            # same continuous line representation in rosbag and live-camera
+            # processing. Yellow dashes retain their observed segmentation.
             if track.name != "yellow" and track.coefficients is not None:
                 return (
                     self._draw_curve(
@@ -1015,7 +1034,19 @@ class CanonicalLaneTracker:
                     status,
                 )
             return track.last_mask.copy(), status
-        if status == "coasting" and track.coefficients is not None:
+        # A short association miss is still a usable observation for the
+        # controller. Keep the last accepted curve through the expanding
+        # search window instead of publishing an all-background frame.
+        if (
+            track.coefficients is not None
+            and (
+                status == "coasting"
+                or (
+                    status == "searching"
+                    and not self.persistent_prediction_enabled
+                )
+            )
+        ):
             return (
                 self._draw_curve(
                     track.coefficients,
@@ -1295,8 +1326,11 @@ class CanonicalLaneTracker:
             )
             self._remove_interior_track_when_corridor_is_known()
         elif not self.persistent_prediction_enabled:
+            # Transverse clutter is a rejected observation, not proof that
+            # the road disappeared. Keep the last accepted curves so the
+            # normal coast/search timeout can handle this short dropout.
             for track in self.tracks.values():
-                track.reset()
+                track.observed_this_frame = False
 
         if transverse_clutter:
             if self.persistent_prediction_enabled:
@@ -1307,8 +1341,9 @@ class CanonicalLaneTracker:
                     "startline_hold" if np.any(tracked_yellow) else "lost"
                 )
             else:
-                tracked_yellow = np.zeros_like(yellow_mask)
-                yellow_status = "lost"
+                tracked_yellow, yellow_status = self._track_output(
+                    self.tracks["yellow"], timestamp_sec
+                )
         else:
             tracked_yellow, yellow_status = self._track_output(
                 self.tracks["yellow"], timestamp_sec
@@ -1325,8 +1360,9 @@ class CanonicalLaneTracker:
                         "startline_hold" if np.any(side_mask) else "lost"
                     )
                 else:
-                    side_mask = np.zeros_like(white_mask)
-                    status = "lost"
+                    side_mask, status = self._track_output(
+                        self.tracks[side], timestamp_sec
+                    )
             else:
                 side_mask, status = self._track_output(
                     self.tracks[side], timestamp_sec
@@ -1345,10 +1381,11 @@ class CanonicalLaneTracker:
             ("left_white", "right_white"),
             ("right_white", "left_white"),
         ):
-            if (
-                np.any(side_masks[side])
-                and statuses[side] != "persistent_predicted"
-            ):
+            if np.any(side_masks[side]) and statuses[side] in {
+                "confirmed",
+                "coasting",
+                "startline_hold",
+            }:
                 continue
             other_status = statuses[other_side]
             reference_is_fresher = other_status in {

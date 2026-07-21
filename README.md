@@ -232,6 +232,10 @@ source install/setup.bash
 
 먼저 모터를 실행하지 않고 인지만 확인합니다.
 
+이 launch의 기본 입력은 rosbag 재처리와 동일한
+`/wide_camera_mjpeg/image_raw/compressed`이며, 저장소의 보정값을 인지 노드에서
+정확히 한 번 적용합니다. 실차와 rosbag에서 서로 다른 rectifier를 사용하지 않습니다.
+
 ```bash
 ros2 launch xycar_perception real_yolo_canonical_asus.launch.py
 ros2 topic hz /perception/canonical_road_image
@@ -248,8 +252,7 @@ colcon build --packages-select app_wide_camera_calib --symlink-install
 source install/setup.bash
 ```
 
-기존 rectified 화면이 계속 이상하면 그 토픽을 우회하고 원본 MJPEG를 저장소의
-고정 보정값으로 한 번만 보정합니다.
+아래 호환 launch도 같은 원본 MJPEG와 같은 내부 보정 경로를 사용합니다.
 
 ```bash
 ros2 launch xycar_perception real_yolo_canonical_from_raw_asus.launch.py

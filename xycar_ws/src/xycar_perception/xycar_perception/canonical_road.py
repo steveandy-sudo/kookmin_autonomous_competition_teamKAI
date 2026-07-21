@@ -1,7 +1,21 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import cv2
 import numpy as np
+
+
+@dataclass(frozen=True)
+class CanonicalRoadStages:
+    road_image: np.ndarray
+    white_mask: np.ndarray
+    yellow_mask: np.ndarray
+    pre_geometry_white_mask: np.ndarray
+    pre_geometry_yellow_mask: np.ndarray
+    post_geometry_white_mask: np.ndarray
+    post_geometry_yellow_mask: np.ndarray
+    valid_mask: np.ndarray
 
 
 def _filter_components(
@@ -114,6 +128,7 @@ def _filter_lane_geometry(
     clutter_component_limit: int = 0,
     max_mask_fraction: float = 0.0,
     max_fit_rmse_px: float = 0.0,
+    redraw_fitted_lines: bool = True,
 ) -> np.ndarray:
     """Keep sparse, longitudinal lane-like components in canonical space."""
     binary = (mask > 0).astype(np.uint8)
@@ -226,6 +241,9 @@ def _filter_lane_geometry(
         rmse = float(np.sqrt(np.mean((centers[keep] - fitted) ** 2)))
         if rmse > float(max_fit_rmse_px):
             continue
+        if not redraw_fitted_lines:
+            cleaned[component] = 1
+            continue
         fitted_x = np.clip(
             np.rint(fitted), 0, mask.shape[1] - 1
         ).astype(np.int32)
@@ -277,10 +295,13 @@ def make_canonical_road_image(
     white_max_mask_fraction: float = 0.0,
     yellow_max_mask_fraction: float = 0.0,
     max_line_fit_rmse_px: float = 0.0,
+    geometry_redraw_fitted_lines: bool = True,
+    yellow_geometry_filter_enabled: bool = True,
     white_min_component_median_v: float = 0.0,
     top_ignore_m: float = 0.0,
     bottom_ignore_m: float = 0.08,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    return_stages: bool = False,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray] | CanonicalRoadStages:
     """Build a fixed metric, fixed-color road representation from a BEV."""
     if bev_bgr is None or bev_bgr.size == 0:
         raise ValueError("BEV image is empty")
@@ -374,6 +395,8 @@ def make_canonical_road_image(
             output_size,
             interpolation=cv2.INTER_NEAREST,
         )
+    pre_geometry_white = white_mask.copy()
+    pre_geometry_yellow = yellow_mask.copy()
     if geometry_filter_enabled:
         white_mask = _filter_lane_geometry(
             white_mask,
@@ -386,16 +409,21 @@ def make_canonical_road_image(
             clutter_component_limit=white_clutter_component_limit,
             max_mask_fraction=white_max_mask_fraction,
             max_fit_rmse_px=max_line_fit_rmse_px,
+            redraw_fitted_lines=geometry_redraw_fitted_lines,
         )
-        yellow_mask = _filter_lane_geometry(
-            yellow_mask,
-            min_span_px=yellow_min_line_span_px,
-            min_elongation=min_line_elongation,
-            min_verticality=min_line_verticality,
-            max_components=yellow_max_components,
-            max_mask_fraction=yellow_max_mask_fraction,
-            max_fit_rmse_px=max_line_fit_rmse_px,
-        )
+        if yellow_geometry_filter_enabled:
+            yellow_mask = _filter_lane_geometry(
+                yellow_mask,
+                min_span_px=yellow_min_line_span_px,
+                min_elongation=min_line_elongation,
+                min_verticality=min_line_verticality,
+                max_components=yellow_max_components,
+                max_mask_fraction=yellow_max_mask_fraction,
+                max_fit_rmse_px=max_line_fit_rmse_px,
+                redraw_fitted_lines=geometry_redraw_fitted_lines,
+            )
+    post_geometry_white = white_mask.copy()
+    post_geometry_yellow = yellow_mask.copy()
     white_mask = _fixed_width_mask(white_mask, line_width_px)
     yellow_mask = _fixed_width_mask(yellow_mask, line_width_px)
     if output_valid is not None:
@@ -407,6 +435,21 @@ def make_canonical_road_image(
     canonical = np.full((output_height, output_width, 3), gray, dtype=np.uint8)
     canonical[white_mask > 0] = (255, 255, 255)
     canonical[yellow_mask > 0] = (0, 220, 255)
+    if return_stages:
+        if output_valid is None:
+            output_valid = np.full(
+                (output_height, output_width), 255, dtype=np.uint8
+            )
+        return CanonicalRoadStages(
+            road_image=canonical,
+            white_mask=white_mask,
+            yellow_mask=yellow_mask,
+            pre_geometry_white_mask=pre_geometry_white,
+            pre_geometry_yellow_mask=pre_geometry_yellow,
+            post_geometry_white_mask=post_geometry_white,
+            post_geometry_yellow_mask=post_geometry_yellow,
+            valid_mask=output_valid,
+        )
     return canonical, white_mask, yellow_mask
 
 
@@ -437,9 +480,12 @@ def make_canonical_road_image_from_masks(
     white_max_mask_fraction: float = 0.0,
     yellow_max_mask_fraction: float = 0.0,
     max_line_fit_rmse_px: float = 0.0,
+    geometry_redraw_fitted_lines: bool = True,
+    yellow_geometry_filter_enabled: bool = True,
     top_ignore_m: float = 0.0,
     bottom_ignore_m: float = 0.08,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    return_stages: bool = False,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray] | CanonicalRoadStages:
     """Normalize class masks into the shared fixed-color canonical contract."""
     if bev_white_mask.shape != bev_yellow_mask.shape:
         raise ValueError(
@@ -490,7 +536,10 @@ def make_canonical_road_image_from_masks(
         white_max_mask_fraction=white_max_mask_fraction,
         yellow_max_mask_fraction=yellow_max_mask_fraction,
         max_line_fit_rmse_px=max_line_fit_rmse_px,
+        geometry_redraw_fitted_lines=geometry_redraw_fitted_lines,
+        yellow_geometry_filter_enabled=yellow_geometry_filter_enabled,
         white_min_component_median_v=0.0,
         top_ignore_m=top_ignore_m,
         bottom_ignore_m=bottom_ignore_m,
+        return_stages=return_stages,
     )

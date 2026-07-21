@@ -57,7 +57,7 @@ class ImageTransportTest(unittest.TestCase):
         node.dst_left_ratio = 0.20
         node.dst_right_ratio = 0.80
         node.dst_top_y_ratio = 0.0
-        node.dst_bottom_y_ratio = 1.0
+        node.dst_bottom_y_ratio = 0.75
         node.bev_border_gray = 70
         node.bev_valid_erode_px = 2
         node.M = None
@@ -77,6 +77,10 @@ class ImageTransportTest(unittest.TestCase):
         self.assertGreater(int(np.count_nonzero(neutral_border)), 0)
         self.assertTrue(
             np.all(node.current_bev_valid_mask[neutral_border] == 0)
+        )
+        self.assertEqual(
+            int(np.count_nonzero(node.current_bev_valid_mask[32:, :])),
+            0,
         )
 
 

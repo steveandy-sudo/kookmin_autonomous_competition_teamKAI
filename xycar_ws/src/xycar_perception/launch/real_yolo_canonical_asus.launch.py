@@ -33,10 +33,15 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument(
-                "image_topic", default_value="/wide_camera/rect/image_raw"
+                "image_topic",
+                default_value="/wide_camera_mjpeg/image_raw/compressed",
+                description=(
+                    "Raw MJPEG used by both live-camera and rosbag canonical "
+                    "processing. Override only for an explicitly rectified input."
+                ),
             ),
-            DeclareLaunchArgument("use_compressed_image", default_value="false"),
-            DeclareLaunchArgument("enable_rectify", default_value="false"),
+            DeclareLaunchArgument("use_compressed_image", default_value="true"),
+            DeclareLaunchArgument("enable_rectify", default_value="true"),
             DeclareLaunchArgument("use_sim_time", default_value="false"),
             DeclareLaunchArgument(
                 "yolo_model_path",

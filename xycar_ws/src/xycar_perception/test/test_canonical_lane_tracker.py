@@ -456,6 +456,102 @@ class CanonicalLaneTrackerTest(unittest.TestCase):
         self.assertGreater(np.count_nonzero(result.white_mask), 0)
         self.assertGreater(np.count_nonzero(result.yellow_mask), 0)
 
+    def test_short_yellow_is_not_rejected_by_nonoverlapping_other_boundary(self):
+        tracker = CanonicalLaneTracker(
+            width=256,
+            height=144,
+            lateral_range_m=1.4,
+            forward_range_m=1.5,
+            expected_half_lane_width_m=0.49,
+            lane_width_tolerance_m=0.14,
+            confirmation_frames=1,
+            coast_sec=0.0,
+            search_sec=0.0,
+            smoothing_alpha=1.0,
+            width_prediction_enabled=False,
+            persistent_prediction_enabled=False,
+        )
+        white = np.zeros((144, 256), dtype=np.uint8)
+        yellow = np.zeros_like(white)
+        cv2.line(white, (38, 12), (38, 58), 255, 5)
+        cv2.line(white, (218, 82), (218, 136), 255, 5)
+        cv2.line(yellow, (128, 22), (128, 46), 255, 5)
+
+        result = tracker.update(white, yellow, timestamp_sec=0.0)
+
+        self.assertEqual(result.statuses["yellow"], "confirmed")
+        self.assertGreater(np.count_nonzero(result.yellow_mask), 0)
+
+    def test_yolo_center_yellow_can_survive_when_white_is_temporarily_missing(self):
+        tracker = CanonicalLaneTracker(
+            width=256,
+            height=144,
+            lateral_range_m=1.4,
+            forward_range_m=1.5,
+            confirmation_frames=1,
+            coast_sec=0.0,
+            search_sec=0.0,
+            width_prediction_enabled=False,
+            persistent_prediction_enabled=False,
+            allow_unpaired_yellow=True,
+        )
+        white = np.zeros((144, 256), dtype=np.uint8)
+        yellow = np.zeros_like(white)
+        cv2.line(yellow, (128, 32), (142, 58), 255, 5)
+
+        result = tracker.update(white, yellow, timestamp_sec=0.0)
+
+        self.assertEqual(result.statuses["yellow"], "confirmed")
+        self.assertGreater(np.count_nonzero(result.yellow_mask), 0)
+
+        outside = np.zeros_like(yellow)
+        cv2.line(outside, (245, 32), (245, 70), 255, 5)
+        rejected = CanonicalLaneTracker(
+            width=256,
+            height=144,
+            lateral_range_m=1.4,
+            forward_range_m=1.5,
+            confirmation_frames=1,
+            coast_sec=0.0,
+            search_sec=0.0,
+            width_prediction_enabled=False,
+            persistent_prediction_enabled=False,
+            allow_unpaired_yellow=True,
+        ).update(white, outside, timestamp_sec=0.0)
+        self.assertEqual(rejected.statuses["yellow"], "lost")
+
+    def test_confirmed_white_is_rendered_as_one_continuous_curve(self):
+        tracker = CanonicalLaneTracker(
+            width=256,
+            height=144,
+            lateral_range_m=1.4,
+            forward_range_m=1.5,
+            confirmation_frames=1,
+            coast_sec=0.0,
+            search_sec=0.0,
+            smoothing_alpha=1.0,
+            width_prediction_enabled=False,
+            persistent_prediction_enabled=False,
+        )
+        white = np.zeros((144, 256), dtype=np.uint8)
+        yellow = np.zeros_like(white)
+        rows = np.arange(8, 137, dtype=np.int32)
+        xs = np.rint(50.0 + 5.0 * np.sin(rows / 12.0)).astype(np.int32)
+        cv2.polylines(
+            white,
+            [np.column_stack((xs, rows))],
+            False,
+            255,
+            5,
+        )
+
+        result = tracker.update(white, yellow, timestamp_sec=0.0)
+
+        self.assertEqual(result.statuses["left_white"], "confirmed")
+        self.assertFalse(np.array_equal(result.white_mask, white))
+        occupied_rows = np.any(result.white_mask > 0, axis=1)
+        self.assertTrue(np.all(occupied_rows[8:137]))
+
     def test_rejects_yellow_outside_near_field_right_boundary(self):
         tracker = CanonicalLaneTracker(
             width=256,

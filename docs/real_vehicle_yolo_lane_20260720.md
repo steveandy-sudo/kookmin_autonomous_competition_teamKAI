@@ -118,18 +118,20 @@ ros2 topic info /wide_camera/rect/image_raw -v
 ros2 topic hz /wide_camera/rect/image_raw
 ```
 
-For the normal already-rectified `sensor_msgs/Image` topic:
+For normal operation, use the same raw-MJPEG and repository rectification path
+as offline rosbag replay:
 
 ```bash
 ros2 launch xycar_perception real_yolo_canonical_asus.launch.py
 ```
 
-For an unrectified compressed MJPEG source:
+Use an externally rectified `sensor_msgs/Image` only as an explicit diagnostic
+override:
 
 ```bash
 ros2 launch xycar_perception real_yolo_canonical_asus.launch.py \
-  image_topic:=/wide_camera_mjpeg/image_raw/compressed \
-  use_compressed_image:=true enable_rectify:=true
+  image_topic:=/wide_camera/rect/image_raw \
+  use_compressed_image:=false enable_rectify:=false
 ```
 
 Observe rates and images in another terminal:
