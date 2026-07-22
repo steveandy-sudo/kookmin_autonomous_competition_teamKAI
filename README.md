@@ -160,6 +160,7 @@ git pull --ff-only origin simulation
 | ASUS에서 새 YOLO 차선 인지 검증 | [`real_vehicle_yolo_lane_20260720.md`](docs/real_vehicle_yolo_lane_20260720.md) |
 | YOLO11n 256 경량 모델의 정확도·속도 비교 | [`2026-07-21_yolo11n_256_ultralight.md`](docs/2026-07-21_yolo11n_256_ultralight.md) |
 | YOLO26n 256 재학습·실차 후보 비교 | [`2026-07-21_yolo26n_256_experiment.md`](docs/2026-07-21_yolo26n_256_experiment.md) |
+| ONNX/LR-ASPP 마스크부터 BEV·canonical 흰선 피팅까지 확인 | [`2026-07-22_lane_seg_control_canonical.md`](docs/2026-07-22_lane_seg_control_canonical.md) |
 | 실차 카메라 보정값 복원/원본 영상 우회 | [`real_vehicle_yolo_lane_20260720.md`](docs/real_vehicle_yolo_lane_20260720.md#restore-a-changed-real-camera-calibration) |
 
 ---
@@ -475,6 +476,7 @@ publisher, 조향 scale, recovery와 반복 주행을 모두 기록해 재현 �
 | 데이터 수집·재학습 | [`domain_randomized_collection.md`](docs/domain_randomized_collection.md) | dataset/pipeline 작업 |
 | 1.5m canonical 근거 | [`2026-07-15_1p5m_canonical_validation.md`](docs/2026-07-15_1p5m_canonical_validation.md) | geometry 변경 전 |
 | 실차 perception 튜닝 과정 | [`2026-07-14_real_camera_canonical_tuning.md`](docs/2026-07-14_real_camera_canonical_tuning.md) | 역사와 원인 분석 |
+| ONNX/LR-ASPP BEV·canonical 및 흰선 피팅 | [`2026-07-22_lane_seg_control_canonical.md`](docs/2026-07-22_lane_seg_control_canonical.md) | 실차 인지 프런트엔드 비교·재현 |
 | 룰베이스 실차 배포 | [`real_vehicle_deployment.md`](docs/real_vehicle_deployment.md) | rule baseline 시험 |
 | 고속 RL 보상·학습·체크포인트 | [`high_speed_rl_20260717.md`](docs/high_speed_rl_20260717.md) | TD3+BC 학습과 실차 단계 시험 |
 | 강화학습 전체 로드맵 | [`reinforcement_learning_roadmap.md`](docs/reinforcement_learning_roadmap.md) | RL 데이터 계약과 gate 확인 |

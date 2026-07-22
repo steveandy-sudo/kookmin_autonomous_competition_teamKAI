@@ -177,6 +177,10 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("src_bl_x_ratio", -0.10)
         self.declare_parameter("src_top_y_ratio", 0.48)
         self.declare_parameter("src_bottom_y_ratio", 0.72)
+        self.declare_parameter("src_tl_y_ratio", -1.0)
+        self.declare_parameter("src_tr_y_ratio", -1.0)
+        self.declare_parameter("src_br_y_ratio", -1.0)
+        self.declare_parameter("src_bl_y_ratio", -1.0)
         self.declare_parameter("bev_width", 640)
         self.declare_parameter("bev_height", 220)
         self.declare_parameter("dst_left_ratio", 0.10)
@@ -189,6 +193,7 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("bev_bottom_ignore_px", 28)
         self.declare_parameter("bev_border_gray", 70)
         self.declare_parameter("bev_valid_erode_px", 8)
+        self.declare_parameter("bev_valid_lateral_margin_px", 0)
         self.declare_parameter("near_x_m", 0.20)
         self.declare_parameter("far_x_m", 2.20)
         self.declare_parameter("near_m_per_px", 0.0022)
@@ -243,6 +248,7 @@ class CameraPerceptionNode(Node):
         self.declare_parameter(
             "canonical_yolo_yellow_geometry_filter_enabled", True
         )
+        self.declare_parameter("canonical_yolo_preserve_white_mask", False)
         self.declare_parameter("canonical_top_ignore_m", 0.0)
         self.declare_parameter("canonical_bottom_ignore_m", 0.08)
         self.declare_parameter("canonical_tracking_enabled", False)
@@ -317,6 +323,10 @@ class CameraPerceptionNode(Node):
         self.src_bl_x_ratio = float(self.get_parameter("src_bl_x_ratio").value)
         self.src_top_y_ratio = float(self.get_parameter("src_top_y_ratio").value)
         self.src_bottom_y_ratio = float(self.get_parameter("src_bottom_y_ratio").value)
+        self.src_tl_y_ratio = float(self.get_parameter("src_tl_y_ratio").value)
+        self.src_tr_y_ratio = float(self.get_parameter("src_tr_y_ratio").value)
+        self.src_br_y_ratio = float(self.get_parameter("src_br_y_ratio").value)
+        self.src_bl_y_ratio = float(self.get_parameter("src_bl_y_ratio").value)
         self.bev_width = int(self.get_parameter("bev_width").value)
         self.bev_height = int(self.get_parameter("bev_height").value)
         self.dst_left_ratio = float(self.get_parameter("dst_left_ratio").value)
@@ -338,6 +348,9 @@ class CameraPerceptionNode(Node):
         )
         self.bev_valid_erode_px = max(
             0, int(self.get_parameter("bev_valid_erode_px").value)
+        )
+        self.bev_valid_lateral_margin_px = max(
+            0, int(self.get_parameter("bev_valid_lateral_margin_px").value)
         )
         self.near_x_m = float(self.get_parameter("near_x_m").value)
         self.far_x_m = float(self.get_parameter("far_x_m").value)
@@ -456,6 +469,9 @@ class CameraPerceptionNode(Node):
             self.get_parameter(
                 "canonical_yolo_yellow_geometry_filter_enabled"
             ).value
+        )
+        self.canonical_yolo_preserve_white_mask = bool(
+            self.get_parameter("canonical_yolo_preserve_white_mask").value
         )
         self.canonical_top_ignore_m = float(
             self.get_parameter("canonical_top_ignore_m").value
@@ -1029,10 +1045,15 @@ class CameraPerceptionNode(Node):
         yellow_mask[:roi_top, :] = 0
         yellow_mask[roi_bottom + 1:, :] = 0
 
+        preserve_yolo_white = (
+            self.lane_segmentation_backend == "yolo"
+            and self.canonical_yolo_preserve_white_mask
+        )
         if self.morphology_kernel_px > 1:
             kernel = np.ones((self.morphology_kernel_px, self.morphology_kernel_px), np.uint8)
-            white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_OPEN, kernel)
-            white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_CLOSE, kernel)
+            if not preserve_yolo_white:
+                white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_OPEN, kernel)
+                white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_CLOSE, kernel)
             yellow_mask = cv2.morphologyEx(yellow_mask, cv2.MORPH_OPEN, kernel)
             yellow_mask = cv2.morphologyEx(yellow_mask, cv2.MORPH_CLOSE, kernel)
 
@@ -1130,6 +1151,7 @@ class CameraPerceptionNode(Node):
             canonical_stages = make_canonical_road_image_from_masks(
                 white_mask,
                 yellow_mask,
+                preserve_white_mask=preserve_yolo_white,
                 **canonical_common,
             )
         else:
@@ -1181,10 +1203,11 @@ class CameraPerceptionNode(Node):
                 canonical_yellow,
                 timestamp_sec,
             )
-            canonical = tracked.road_image
-            canonical_white = tracked.white_mask
-            canonical_yellow = tracked.yellow_mask
             self.current_canonical_tracking_debug = tracked.debug_image
+            if not preserve_yolo_white:
+                canonical = tracked.road_image
+                canonical_white = tracked.white_mask
+                canonical_yellow = tracked.yellow_mask
         else:
             self.current_canonical_tracking_debug = None
         return (
@@ -1388,12 +1411,22 @@ class CameraPerceptionNode(Node):
         bl_x = self.src_bl_x_ratio * width
         top_y = self.src_top_y_ratio * height
         bottom_y = self.src_bottom_y_ratio * height
+        tl_y_ratio = getattr(self, "src_tl_y_ratio", -1.0)
+        tr_y_ratio = getattr(self, "src_tr_y_ratio", -1.0)
+        br_y_ratio = getattr(self, "src_br_y_ratio", -1.0)
+        bl_y_ratio = getattr(self, "src_bl_y_ratio", -1.0)
+        tl_y = (tl_y_ratio * height) if tl_y_ratio >= 0.0 else top_y
+        tr_y = (tr_y_ratio * height) if tr_y_ratio >= 0.0 else top_y
+        br_y = (br_y_ratio * height) if br_y_ratio >= 0.0 else bottom_y
+        bl_y = (bl_y_ratio * height) if bl_y_ratio >= 0.0 else bottom_y
         dst_l = self.dst_left_ratio * self.bev_width
         dst_r = self.dst_right_ratio * self.bev_width
         dst_top = self.dst_top_y_ratio * self.bev_height
         dst_bottom = self.dst_bottom_y_ratio * self.bev_height
 
-        src = np.float32([[tl_x, top_y], [tr_x, top_y], [br_x, bottom_y], [bl_x, bottom_y]])
+        src = np.float32(
+            [[tl_x, tl_y], [tr_x, tr_y], [br_x, br_y], [bl_x, bl_y]]
+        )
         dst = np.float32(
             [
                 [dst_l, dst_top],
@@ -1463,6 +1496,14 @@ class CameraPerceptionNode(Node):
             borderMode=cv2.BORDER_CONSTANT,
             borderValue=0,
         )
+        lateral_margin = max(
+            0, int(getattr(self, "bev_valid_lateral_margin_px", 0))
+        )
+        if lateral_margin > 0:
+            valid_mask = cv2.dilate(
+                valid_mask,
+                np.ones((1, lateral_margin * 2 + 1), dtype=np.uint8),
+            )
         if self.bev_valid_erode_px > 0:
             size = self.bev_valid_erode_px * 2 + 1
             valid_mask = cv2.erode(valid_mask, np.ones((size, size), dtype=np.uint8))

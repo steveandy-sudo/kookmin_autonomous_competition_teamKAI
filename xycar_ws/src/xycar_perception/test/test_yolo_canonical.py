@@ -119,6 +119,36 @@ class YoloCanonicalTest(unittest.TestCase):
         self.assertEqual(int(np.count_nonzero(filtered)), 0)
         self.assertGreater(int(np.count_nonzero(preserved)), 0)
 
+    def test_yolo_white_can_bypass_thickness_and_geometry_filters(self):
+        white = np.zeros((220, 640), dtype=np.uint8)
+        yellow = np.zeros_like(white)
+        cv2.line(white, (500, 0), (520, 219), 255, 34)
+
+        _, filtered, _ = make_canonical_road_image_from_masks(
+            white,
+            yellow,
+            lateral_m_per_px=1.4 / 640.0,
+            forward_m_per_px=1.5 / 220.0,
+            white_max_component_thickness_px=28.0,
+            geometry_filter_enabled=True,
+            min_component_area_px=12,
+            bottom_ignore_m=0.0,
+        )
+        _, preserved, _ = make_canonical_road_image_from_masks(
+            white,
+            yellow,
+            lateral_m_per_px=1.4 / 640.0,
+            forward_m_per_px=1.5 / 220.0,
+            white_max_component_thickness_px=28.0,
+            geometry_filter_enabled=True,
+            min_component_area_px=12,
+            preserve_white_mask=True,
+            bottom_ignore_m=0.0,
+        )
+
+        self.assertEqual(int(np.count_nonzero(filtered)), 0)
+        self.assertGreater(int(np.count_nonzero(preserved)), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

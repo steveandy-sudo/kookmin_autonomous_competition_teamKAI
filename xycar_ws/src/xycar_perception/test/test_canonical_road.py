@@ -258,12 +258,19 @@ class CanonicalRoadTest(unittest.TestCase):
         self.assertEqual(params["publish_rate_limit_hz"], 0.0)
         self.assertEqual(params["bev_width"], 640)
         self.assertEqual(params["bev_height"], 220)
-        self.assertAlmostEqual(params["src_tl_x_ratio"], 0.442578)
-        self.assertAlmostEqual(params["src_tr_x_ratio"], 0.688281)
-        self.assertAlmostEqual(params["src_bl_x_ratio"], 0.190625)
-        self.assertAlmostEqual(params["src_br_x_ratio"], 0.919141)
+        self.assertAlmostEqual(params["src_tl_x_ratio"], 0.437418509)
+        self.assertAlmostEqual(params["src_tr_x_ratio"], 0.662089539)
+        self.assertAlmostEqual(params["src_bl_x_ratio"], 0.214667964)
+        self.assertAlmostEqual(params["src_br_x_ratio"], 0.916280746)
         self.assertAlmostEqual(params["src_top_y_ratio"], 0.480781)
         self.assertAlmostEqual(params["src_bottom_y_ratio"], 0.614189)
+        self.assertAlmostEqual(params["src_tl_y_ratio"], 0.476969898)
+        self.assertAlmostEqual(params["src_tr_y_ratio"], 0.478676707)
+        self.assertAlmostEqual(params["src_bl_y_ratio"], 0.597002029)
+        self.assertAlmostEqual(params["src_br_y_ratio"], 0.614458919)
+        self.assertAlmostEqual(params["dst_left_ratio"], 0.15)
+        self.assertAlmostEqual(params["dst_right_ratio"], 0.85)
+        self.assertEqual(params["bev_valid_lateral_margin_px"], 6)
         self.assertAlmostEqual(params["dst_top_y_ratio"], 0.0)
         self.assertAlmostEqual(params["dst_bottom_y_ratio"], 2.0 / 3.0)
         self.assertAlmostEqual(params["lateral_m_per_px"], 0.0021875)
@@ -319,6 +326,7 @@ class CanonicalRoadTest(unittest.TestCase):
         self.assertFalse(
             params["canonical_yolo_yellow_geometry_filter_enabled"]
         )
+        self.assertTrue(params["canonical_yolo_preserve_white_mask"])
         self.assertTrue(params["canonical_yolo_allow_unpaired_yellow"])
 
     def test_sim_config_does_not_apply_real_fisheye_rectification(self):

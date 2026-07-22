@@ -1,0 +1,101 @@
+# Lane segmentation BEV path generation parameters.
+# 이 파일은 pixel-space BEV에서 곡선 복원과 yellow-primary 경로 시각화에만 사용한다.
+
+input:
+  color_topic: /lane_seg_bev/color          # BEV 컬러 이미지 입력 토픽
+  white_mask_topic: /lane_seg_bev/white_mask # white-boundary mono8 mask
+  yellow_mask_topic: /lane_seg_bev/yellow_mask # yellow_centerline mono8 mask
+  sync_queue_size: 10                        # 동기화 큐 크기
+  sync_slop_sec: 0.10                        # timestamp 허용 오차
+
+morphology:
+  white_min_component_area: 40               # white noise component 최소 면적
+  yellow_min_component_area: 20              # yellow noise component 최소 면적
+  white_open_kernel: 3                       # white opening kernel size
+  white_close_kernel: 5                      # white closing kernel size
+  yellow_open_kernel: 3                      # yellow opening kernel size
+  yellow_close_kernel: 3                     # yellow closing kernel size, 점선 전체 연결용 아님
+
+observations:
+  row_step_px: 5                             # y row sampling 간격
+  min_run_width_px: 2                        # row에서 인정할 최소 연속 픽셀 폭
+
+white_tracks:
+  white_track_max_dx_px: 50.0                # bottom-up association x gate
+  white_track_max_missing_rows: 5            # track 유지 허용 missing row 수
+  white_track_min_points: 8                  # valid white track 최소 관측점 수
+  white_track_min_span_px: 80.0              # valid white track 최소 y span
+
+yellow_tracks:
+  yellow_track_max_dx_px: 70.0               # yellow dash component 연결 x gate
+  yellow_track_max_gap_y_px: 120.0           # yellow dash component 연결 y gap
+  yellow_track_min_components: 2             # dashed line 기본 최소 component 수
+  yellow_track_min_points: 5                 # valid yellow curve 최소 관측점 수
+  yellow_track_min_span_px: 60.0             # 단일 component 허용 최소 y span
+
+curve_fit:
+  linear_if_span_below_px: 70.0              # 짧은 track은 1차식 사용
+  polynomial_degree_long: 2                  # 긴 track은 x=a*y^2+b*y+c
+  fit_residual_threshold_px: 12.0            # RANSAC inlier threshold
+  fit_min_inlier_ratio: 0.55                 # 최소 inlier 비율
+  fit_iterations: 50                         # NumPy RANSAC 반복 수
+  max_curve_abs_a: 0.02                      # 비정상 곡률 제한
+
+lane:
+  lane_side: auto                            # deprecated: CLI 호환용, path 선택에는 사용하지 않음
+
+yellow_primary:
+  yellow_primary_enabled: true               # yellow_centerline fit을 최종 경로 1순위로 사용
+  yellow_missing_sec_for_white_fallback: 0.12 # yellow 미검출이 이 시간 이상 지속되면 white gap fallback 허용
+  yellow_hold_sec: 0.22                      # 1프레임 수준 yellow 누락에서 최근 yellow path 유지 시간
+  yellow_recovery_sec: 0.12                  # yellow 복귀 안정성 판단용 시간 창
+  yellow_recovery_blend_sec: 0.15            # white fallback에서 yellow로 복귀할 때 blending 시간
+  yellow_min_points: 5                       # yellow primary fit 최소 관측점 수
+  yellow_min_span_px: 60.0                   # yellow primary fit 최소 y span
+  yellow_max_residual_px: 12.0               # yellow primary fit 최대 평균 residual
+  yellow_min_inlier_ratio: 0.55              # yellow primary fit 최소 inlier 비율
+  yellow_max_temporal_jump_px: 90.0          # 이전 yellow path 대비 허용 temporal jump
+  yellow_partial_min_points: 3               # partial yellow tracking 최소 관측점 수
+  yellow_partial_min_span_px: 20.0           # partial yellow tracking 최소 span
+  yellow_partial_match_max_distance_px: 55.0 # 이전 경로 주변으로 인정할 평균 거리
+  yellow_partial_heading_max_deg: 45.0       # 이전 경로 heading과 허용 차이
+  yellow_partial_transition_px: 45.0         # partial-current/history 연결부 blending 폭
+  yellow_direct_confidence_min: 0.45         # direct yellow high-confidence 기준
+
+white_gap_fallback:
+  white_gap_ema_previous_weight: 0.80        # gap EMA previous weight
+  white_gap_ema_current_weight: 0.20         # gap EMA current observation weight
+  white_gap_min_px: 40.0                     # yellow-white gap 최소값
+  white_gap_max_px: 420.0                    # yellow-white gap 최대값
+  white_gap_max_age_sec: 1.50                # 이 시간보다 오래된 gap history는 fallback에 사용하지 않음
+  white_gap_min_common_span_px: 60.0         # yellow-white 공통 y span 최소값
+  white_gap_min_anchor_count: 5              # gap EMA 업데이트 최소 anchor 수
+  white_gap_max_change_px: 70.0              # 이전 gap model 대비 허용 최대 변화량
+  white_fallback_confidence_max: 0.70        # white fallback confidence 상한
+  white_normal_candidate_max_start_distance_px: 180.0 # normal-offset candidate continuity gate
+  white_normal_candidate_max_heading_deg: 75.0        # normal-offset heading gate
+  white_normal_candidate_min_bounds_ratio: 0.75       # BEV 내부에 남아야 하는 후보 비율
+  white_normal_fallback_confidence_max: 0.62          # normal fallback confidence 상한
+  allow_fixed_white_offset_fallback: false   # gap history 없을 때 고정 offset fallback 허용 여부, 기본 비활성
+  fixed_white_offset_px: 180.0               # allow_fixed_white_offset_fallback=true일 때만 사용
+
+path:
+  path_point_count: 30                       # publish할 path anchor 수
+  path_y_near_ratio: 0.95                    # BEV 하단 near y ratio
+  path_y_far_ratio: 0.20                     # BEV 상단 far y ratio
+  curve_ema_previous_weight: 0.70            # path coefficient EMA previous
+  curve_ema_current_weight: 0.30             # path coefficient EMA current
+  path_hold_sec: 0.25                        # 호환 파라미터, temporal_prediction_sec와 같은 제한
+  temporal_prediction_sec: 0.25              # 모든 선 소실 시 예측 경로 최대 유지 시간
+  optical_flow_prediction_enabled: true      # 모든 선 소실 시 BEV optical-flow 예측 사용
+  optical_flow_max_features: 120             # 경로 주변 추적 feature 최대 개수
+  optical_flow_min_features: 8               # optical-flow 최소 feature 수
+  optical_flow_min_inliers: 6                # affine RANSAC 최소 inlier 수
+  optical_flow_max_reprojection_error_px: 8.0 # affine reprojection error 제한
+
+visualization:
+  detection_window_width: 1280               # detection viewer 기본 폭
+  detection_window_height: 560               # detection viewer 기본 높이
+  path_window_width: 1280                    # path viewer 기본 폭
+  path_window_height: 720                    # path viewer 기본 높이
+  show_raw_observations: true                # raw observation point 표시

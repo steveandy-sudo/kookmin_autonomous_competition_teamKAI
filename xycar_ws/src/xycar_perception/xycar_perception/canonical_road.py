@@ -300,6 +300,7 @@ def make_canonical_road_image(
     white_min_component_median_v: float = 0.0,
     top_ignore_m: float = 0.0,
     bottom_ignore_m: float = 0.08,
+    preserve_white_mask: bool = False,
     return_stages: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray] | CanonicalRoadStages:
     """Build a fixed metric, fixed-color road representation from a BEV."""
@@ -369,8 +370,8 @@ def make_canonical_road_image(
     yellow_mask = cv2.morphologyEx(yellow_mask, cv2.MORPH_CLOSE, close_kernel)
     white_mask = _filter_components(
         white_mask,
-        min_component_area_px,
-        white_max_component_thickness_px,
+        1 if preserve_white_mask else min_component_area_px,
+        0.0 if preserve_white_mask else white_max_component_thickness_px,
     )
     yellow_mask = _filter_components(
         yellow_mask,
@@ -398,19 +399,20 @@ def make_canonical_road_image(
     pre_geometry_white = white_mask.copy()
     pre_geometry_yellow = yellow_mask.copy()
     if geometry_filter_enabled:
-        white_mask = _filter_lane_geometry(
-            white_mask,
-            brightness=output_value,
-            min_component_median_brightness=white_min_component_median_v,
-            min_span_px=white_min_line_span_px,
-            min_elongation=min_line_elongation,
-            min_verticality=min_line_verticality,
-            max_components_per_side=white_max_components_per_side,
-            clutter_component_limit=white_clutter_component_limit,
-            max_mask_fraction=white_max_mask_fraction,
-            max_fit_rmse_px=max_line_fit_rmse_px,
-            redraw_fitted_lines=geometry_redraw_fitted_lines,
-        )
+        if not preserve_white_mask:
+            white_mask = _filter_lane_geometry(
+                white_mask,
+                brightness=output_value,
+                min_component_median_brightness=white_min_component_median_v,
+                min_span_px=white_min_line_span_px,
+                min_elongation=min_line_elongation,
+                min_verticality=min_line_verticality,
+                max_components_per_side=white_max_components_per_side,
+                clutter_component_limit=white_clutter_component_limit,
+                max_mask_fraction=white_max_mask_fraction,
+                max_fit_rmse_px=max_line_fit_rmse_px,
+                redraw_fitted_lines=geometry_redraw_fitted_lines,
+            )
         if yellow_geometry_filter_enabled:
             yellow_mask = _filter_lane_geometry(
                 yellow_mask,
@@ -470,6 +472,7 @@ def make_canonical_road_image_from_masks(
     white_max_component_thickness_px: float = 0.0,
     yellow_max_component_thickness_px: float = 0.0,
     geometry_filter_enabled: bool = False,
+    preserve_white_mask: bool = False,
     white_min_line_span_px: int = 14,
     yellow_min_line_span_px: int = 7,
     min_line_elongation: float = 1.8,
@@ -541,5 +544,6 @@ def make_canonical_road_image_from_masks(
         white_min_component_median_v=0.0,
         top_ignore_m=top_ignore_m,
         bottom_ignore_m=bottom_ignore_m,
+        preserve_white_mask=preserve_white_mask,
         return_stages=return_stages,
     )

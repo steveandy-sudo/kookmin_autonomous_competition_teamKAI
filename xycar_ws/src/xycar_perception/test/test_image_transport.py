@@ -83,6 +83,38 @@ class ImageTransportTest(unittest.TestCase):
             0,
         )
 
+    def test_homography_supports_independent_corner_rows(self):
+        from xycar_perception.camera_perception_node import CameraPerceptionNode
+
+        node = CameraPerceptionNode.__new__(CameraPerceptionNode)
+        node.src_tl_x_ratio = 0.30
+        node.src_tr_x_ratio = 0.70
+        node.src_br_x_ratio = 0.90
+        node.src_bl_x_ratio = 0.10
+        node.src_top_y_ratio = 0.40
+        node.src_bottom_y_ratio = 0.80
+        node.src_tl_y_ratio = 0.39
+        node.src_tr_y_ratio = 0.41
+        node.src_br_y_ratio = 0.82
+        node.src_bl_y_ratio = 0.78
+        node.bev_width = 80
+        node.bev_height = 40
+        node.dst_left_ratio = 0.20
+        node.dst_right_ratio = 0.80
+        node.dst_top_y_ratio = 0.0
+        node.dst_bottom_y_ratio = 0.75
+
+        node.build_homography(100, 60)
+
+        source = np.float32(
+            [[[30.0, 23.4], [70.0, 24.6], [90.0, 49.2], [10.0, 46.8]]]
+        )
+        transformed = cv2.perspectiveTransform(source, node.M)
+        expected = np.float32(
+            [[[16.0, 0.0], [64.0, 0.0], [64.0, 30.0], [16.0, 30.0]]]
+        )
+        np.testing.assert_allclose(transformed, expected, atol=1e-4)
+
 
 if __name__ == "__main__":
     unittest.main()

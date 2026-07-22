@@ -40,6 +40,10 @@ def generate_launch_description():
     src_br_x_ratio = LaunchConfiguration("src_br_x_ratio")
     src_top_y_ratio = LaunchConfiguration("src_top_y_ratio")
     src_bottom_y_ratio = LaunchConfiguration("src_bottom_y_ratio")
+    src_tl_y_ratio = LaunchConfiguration("src_tl_y_ratio")
+    src_tr_y_ratio = LaunchConfiguration("src_tr_y_ratio")
+    src_bl_y_ratio = LaunchConfiguration("src_bl_y_ratio")
+    src_br_y_ratio = LaunchConfiguration("src_br_y_ratio")
     dst_left_ratio = LaunchConfiguration("dst_left_ratio")
     dst_right_ratio = LaunchConfiguration("dst_right_ratio")
     dst_top_y_ratio = LaunchConfiguration("dst_top_y_ratio")
@@ -110,22 +114,22 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "src_tl_x_ratio",
-                default_value="0.442578",
+                default_value="0.437418509",
                 description="Top-left source x ratio used by the BEV warp.",
             ),
             DeclareLaunchArgument(
                 "src_tr_x_ratio",
-                default_value="0.688281",
+                default_value="0.662089539",
                 description="Top-right source x ratio used by the BEV warp.",
             ),
             DeclareLaunchArgument(
                 "src_bl_x_ratio",
-                default_value="0.190625",
+                default_value="0.214667964",
                 description="Bottom-left source x ratio used by the BEV warp.",
             ),
             DeclareLaunchArgument(
                 "src_br_x_ratio",
-                default_value="0.919141",
+                default_value="0.916280746",
                 description="Bottom-right source x ratio used by the BEV warp.",
             ),
             DeclareLaunchArgument(
@@ -138,8 +142,12 @@ def generate_launch_description():
                 default_value="0.614189",
                 description="0.5m source-row ratio from the lens calibration.",
             ),
-            DeclareLaunchArgument("dst_left_ratio", default_value="0.205714"),
-            DeclareLaunchArgument("dst_right_ratio", default_value="0.794286"),
+            DeclareLaunchArgument("src_tl_y_ratio", default_value="0.476969898"),
+            DeclareLaunchArgument("src_tr_y_ratio", default_value="0.478676707"),
+            DeclareLaunchArgument("src_bl_y_ratio", default_value="0.597002029"),
+            DeclareLaunchArgument("src_br_y_ratio", default_value="0.614458919"),
+            DeclareLaunchArgument("dst_left_ratio", default_value="0.15"),
+            DeclareLaunchArgument("dst_right_ratio", default_value="0.85"),
             DeclareLaunchArgument("dst_top_y_ratio", default_value="0.0"),
             DeclareLaunchArgument(
                 "dst_bottom_y_ratio", default_value="0.666666667"
@@ -241,6 +249,18 @@ def generate_launch_description():
                         ),
                         "src_bottom_y_ratio": ParameterValue(
                             src_bottom_y_ratio, value_type=float
+                        ),
+                        "src_tl_y_ratio": ParameterValue(
+                            src_tl_y_ratio, value_type=float
+                        ),
+                        "src_tr_y_ratio": ParameterValue(
+                            src_tr_y_ratio, value_type=float
+                        ),
+                        "src_bl_y_ratio": ParameterValue(
+                            src_bl_y_ratio, value_type=float
+                        ),
+                        "src_br_y_ratio": ParameterValue(
+                            src_br_y_ratio, value_type=float
                         ),
                         "dst_left_ratio": ParameterValue(
                             dst_left_ratio, value_type=float
