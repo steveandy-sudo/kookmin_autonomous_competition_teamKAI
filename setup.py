@@ -5,6 +5,7 @@ from glob import glob
 package_name = 'track_drive'
 runtime_launch_files = [
     'launch/mission_manager_draft.launch.py',
+    'launch/mission_manager_drive.launch.py',
     'launch/traffic_light_debug.launch.py',
 ]
 runtime_model_files = [
@@ -49,6 +50,7 @@ setup(
     entry_points={
         'console_scripts': [
             'traffic_light_debug = track_drive.traffic_light_debug_node:main',
+            'final_driver = track_drive.final_driver_node:main',
             'mission_manager = track_drive.mission.mission_manager_node:main',
             'mission_start_signal_adapter = track_drive.mission.start_signal_adapter_node:main',
             'mission_drive_policy_adapter = track_drive.integration.drive_policy_adapter_node:main',

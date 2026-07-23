@@ -65,6 +65,33 @@ lane_fallback_controller:
     minimum_path_distance_m: 0.70
     publish_rate_hz: 20.0
 
+final_driver:
+  ros__parameters:
+    decision_topic: /mission/decision
+    il_debug_topic: /il/policy_debug
+    lane_command_topic: /lane_fallback/command
+    cone_command_topic: /my_rule/cone_cmd
+    motor_topic: /xycar_motor
+
+    publish_rate_hz: 50.0
+    decision_timeout_sec: 0.2
+    il_source_timeout_sec: 0.5
+    lane_command_timeout_sec: 0.2
+    lane_max_steering_angle_deg: 26.0
+
+    cone_source_timeout_sec: 0.2
+    cone_minimum_confidence: 0.2
+    cone_max_steering_angle_deg: 26.0
+    cone_minimum_requested_speed: 9.5
+    cone_maximum_requested_speed: 21.0
+
+    physical_angle_deg: [0.0, 4.0, 10.0, 16.0, 26.0]
+    xycar_steering_command: [0.0, 10.0, 20.0, 30.0, 42.0]
+    physical_steering_sign: 1.0
+
+    # Intentionally omitted: fallback_speed.
+    # Pass fallback_speed:=<vehicle-tested value> to the drive launch.
+
 mission_camera_cone_adapter:
   ros__parameters:
     source_count_topic: /perception/camera_cone_count

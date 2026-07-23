@@ -385,6 +385,7 @@ class PackageContractTest(unittest.TestCase):
             {
                 "rclpy",
                 "std_msgs",
+                "xycar_msgs",
                 "kaiev26_msgs",
                 "teamkai_interfaces",
                 "ament_index_python",
@@ -396,7 +397,6 @@ class PackageContractTest(unittest.TestCase):
             {
                 "nav_msgs",
                 "visualization_msgs",
-                "xycar_msgs",
                 "cone_il",
             }.isdisjoint(dependencies)
         )
@@ -528,6 +528,7 @@ class PackageContractTest(unittest.TestCase):
         self.assertIn("glob('config/*.yaml')", setup_source)
         self.assertIn("['docs/MISSION_MANAGER_V02.md']", setup_source)
         self.assertIn("'launch/mission_manager_draft.launch.py'", setup_source)
+        self.assertIn("'launch/mission_manager_drive.launch.py'", setup_source)
         self.assertIn("'launch/traffic_light_debug.launch.py'", setup_source)
         self.assertIn("'assets/models/final.onnx'", setup_source)
         self.assertIn("'rviz/traffic_light_debug.rviz'", setup_source)
@@ -537,6 +538,10 @@ class PackageContractTest(unittest.TestCase):
         self.assertIn(
             "mission_manager = "
             "track_drive.mission.mission_manager_node:main",
+            setup_source,
+        )
+        self.assertIn(
+            "final_driver = track_drive.final_driver_node:main",
             setup_source,
         )
         self.assertIn(

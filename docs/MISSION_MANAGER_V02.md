@@ -15,8 +15,6 @@ Mission Manager는 다음 작업을 하지 않는다.
 - 모터 제어
 - `/xycar_motor` 발행
 
-기존 `track_drive/mission_state.py`와 이 초안은 연결하지 않는다.
-
 ### 외부 source-of-truth
 
 V0.2는 외부 알고리즘을 이 패키지로 복사하지 않고 다음 구현의 출력 토픽만
@@ -161,7 +159,7 @@ bool valid
 
 Lane Fallback controller는 `/perception/centerline`을 받아 이 메시지를 만든다.
 `valid=false`인 angle은 사용하지 않는다. Controller는 구현되어 있으며
-Final Driver의 ROS node와 motor 출력은 포함되지 않는다.
+자체적으로 motor를 발행하지 않는다.
 
 `track_drive/final_driver/normal_il_input.py`에는 motor를 발행하지 않는
 NORMAL_IL 입력 코어가 있다. `NORMAL_IL + drive_il + normal` 결정에서 fresh
@@ -173,7 +171,7 @@ NORMAL_IL 입력 코어가 있다. `NORMAL_IL + drive_il + normal` 결정에서 
 Lane Fallback 입력 코어가 있다. `LANE_FALLBACK + lane_fallback + fallback`
 결정에서 fresh `/lane_fallback/command.steering_angle_deg`를 물리 조향 후보로
 반환하며 속도는 `fallback_speed`를 사용한다. `LaneFallbackInputConfig`도
-임의 기본 속도를 갖지 않는다. 후속 단일 Final Driver는 ROS parameter 하나로
+임의 기본 속도를 갖지 않는다. 단일 Final Driver는 ROS parameter 하나로
 두 입력 코어에 같은 `fallback_speed`를 전달해야 한다.
 
 `track_drive/final_driver/cone_input.py`에는 motor를 발행하지 않는 콘 입력
@@ -195,9 +193,9 @@ Lane Fallback 입력 코어가 있다. `LANE_FALLBACK + lane_fallback + fallback
 | `valid` | 후단에서 사용할 수 있는 후보인지 |
 
 STOP 또는 선택 source 후보 부재 시 조향·속도는 0, 단위는 `NONE`,
-`valid=false`다. 이 중립값은 motor 정지 명령 자체가 아니며 후단 Final Driver가
-MissionDecision과 함께 해석한다. selector는 단위 변환과 motor 발행을 하지
-않는다.
+`valid=false`다. Final Driver node는 이 중립 결과를 XycarMotor의
+`angle=0`, `speed=0`으로 발행한다. selector 자체는 단위 변환과 motor 발행을
+하지 않는다.
 
 `track_drive/final_driver/steering_converter.py`는 선택 결과의 조향 단위를
 Xycar command로 정규화한다. IL의 `XYCAR_COMMAND`는 그대로 통과시키고
@@ -216,6 +214,13 @@ Lane Fallback과 Cone의 `PHYSICAL_DEG`만 다음 표로 구간별 선형 보간
 requested speed, selected source와 held 표시를 그대로 보존한다. smoothing과
 조향 변화율 제한은 없고 결과 `FinalDriveCommandCandidate`도 motor를 발행하지
 않는다.
+
+`track_drive/final_driver_node.py`는 세 숫자 source 토픽과
+`/mission/decision`을 직접 구독한다. 최신값 하나만 저장한 뒤 50Hz 타이머에서
+선택된 source를 `XycarMotor`로 발행한다. 입력 숫자는 Adapter나 Mission
+Manager를 거쳐 재발행되지 않는다. 이 노드는 저장소의 유일한
+`/xycar_motor` publisher다. MissionDecision heartbeat가 0.2초 이상 끊기거나
+선택 후보가 없으면 0/0 정지 명령을 발행한다.
 
 Mission Manager는 숫자 속도 대신 상징적 profile만 전달한다. Final Driver는
 `SPEED_PROFILE_NORMAL`에서 `/il/policy_debug.data[3]`을 사용한다. 이 값은
@@ -387,7 +392,7 @@ speed를 Mission Manager에 전달하거나 계산에 사용하지 않고, 배�
 confidence만 검사한다. `/my_rule/cone_clusters`는 `laser_frame`의 cluster
 중심이며 빈 배열도 유효한 미검출이다.
 
-후속 단일 Final Driver는 `/my_rule/cone_cmd`를 직접 구독한다. 콘 입력 코어는
+단일 Final Driver는 `/my_rule/cone_cmd`를 직접 구독한다. 콘 입력 코어는
 MissionDecision이 콘 source와 콘 speed profile을 함께 선택했을 때 `data[0]`을
 물리 조향 후보로, `data[1]`을 숫자 속도 요청으로 묶어 반환한다. 별도의 콘
 속도 토픽이나 두 번째 motor publisher는 만들지 않는다.
@@ -614,6 +619,15 @@ python3 -m unittest discover -s test -v
 ros2 launch track_drive mission_manager_draft.launch.py
 ```
 
+단일 Final Driver를 포함한 주행 실행:
+
+```bash
+ros2 launch track_drive mission_manager_drive.launch.py \
+  fallback_speed:=<vehicle-tested-value>
+```
+
+`fallback_speed`에는 기본값이 없으며 실차에서 정한 값을 반드시 전달한다.
+
 ## 11. 남은 TODO
 
 - Lane Fallback perception override를 적용한 Centerline의 실차 검증
@@ -625,7 +639,6 @@ ros2 launch track_drive mission_manager_draft.launch.py
 - 신호등 기반 경로 선택과 3바퀴 중 한 번의 지름길
 - 실제 lap crossing debounce
 - Safety Supervisor의 recoverable stop 입력과 물리 차단 경로 분리
-- 유일한 Final Driver ROS node와 `/xycar_motor` publisher 연결
+- 자이카에서 source 수신부터 motor 발행까지 end-to-end latency 측정
 
-후속 구현에서도 Mission Manager 자체에는 `/xycar_motor` publisher를
-추가하지 않는다.
+Mission Manager 자체에는 `/xycar_motor` publisher를 추가하지 않는다.

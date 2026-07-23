@@ -1,7 +1,7 @@
-"""Select Lane Fallback steering for the future single Final Driver.
+"""Select Lane Fallback steering for the single Final Driver.
 
 The module is ROS-independent and never publishes a motor command.  Steering
-stays in physical degrees; unit conversion belongs to the future Final Driver.
+stays in physical degrees; unit conversion belongs to the Final Driver node.
 """
 
 from dataclasses import dataclass

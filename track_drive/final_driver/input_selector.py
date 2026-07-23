@@ -43,7 +43,7 @@ _INPUT_SOURCES = frozenset(
 
 @dataclass(frozen=True)
 class DriveInputSelection:
-    """One source candidate selected for the future Final Driver."""
+    """One source candidate selected for the Final Driver."""
 
     steering_value: float
     steering_unit: SteeringUnit

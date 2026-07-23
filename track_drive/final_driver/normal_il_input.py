@@ -1,4 +1,4 @@
-"""Select NORMAL_IL steering and speed for the future Final Driver.
+"""Select NORMAL_IL steering and speed for the single Final Driver.
 
 The module is ROS-independent and never publishes a motor command.  It reads
 the vehicle-tested ``/il/policy_debug`` array contract:
@@ -45,7 +45,7 @@ class NormalIlInputConfig:
 
 @dataclass(frozen=True)
 class NormalIlDriveCandidate:
-    """Numeric NORMAL_IL candidate for the single future Final Driver."""
+    """Numeric NORMAL_IL candidate for the single Final Driver."""
 
     steering_command: float
     requested_speed: float

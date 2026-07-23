@@ -1,4 +1,4 @@
-"""Select a safe cone-driving candidate for the future Final Driver.
+"""Select a safe cone-driving candidate for the single Final Driver.
 
 This module does not publish a motor command.  It converts the existing
 ``/my_rule/cone_cmd`` contract into a numeric steering and speed candidate

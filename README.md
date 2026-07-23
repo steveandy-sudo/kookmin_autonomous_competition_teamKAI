@@ -12,31 +12,24 @@ Mission Manager는 주행 명령을 직접 만들지 않는다. 인지·제어 �
 - 요청할 속도 profile
 - 정지 필요 여부
 
-Mission Manager와 이 저장소의 입력 선택 코어는 카메라 영상을 처리하지 않고,
-YOLO·IL 모델을 실행하지 않으며, 최종 조향·속도를 계산하거나
-`/xycar_motor`를 발행하지 않는다.
+Mission Manager와 입력 선택 코어는 카메라 영상을 처리하지 않고 YOLO·IL
+모델을 실행하지 않으며 `/xycar_motor`를 발행하지 않는다. 모터 출력은
+`final_driver` 노드 하나만 담당한다.
 
 ## 현재 구조
 
 ```text
-외부 인지·주행 source
-  ├─ 신호등 인지
-  ├─ 일반 IL 주행
-  ├─ YOLO canonical lane perception
-  └─ LiDAR rule-based cone
-              │
-              ▼
-입력 Adapter ── freshness와 값 형식 검증
-              │
-              ▼
-Mission Manager ── MissionDecision 발행
-              │
-              ▼
-Final Driver 입력 코어 ── 선택된 source의 조향·속도 후보만 전달
-              │
-              ▼
-향후 단일 Final Driver ── 미구현, 유일한 /xycar_motor publisher
+일반 IL·Lane Fallback·Cone 숫자값 ───────────────┐
+                                                  ▼
+입력 Adapter ── 유효성 ──► Mission Manager ──► Final Driver (50Hz)
+                                                │
+                                                ▼
+                                    /xycar_motor 단일 publisher
 ```
+
+Adapter와 Mission Manager 경로에는 유효성과 제어기 선택만 흐른다. 실제
+조향·속도값은 source 토픽에서 Final Driver로 직접 들어가므로 매 제어 주기마다
+Adapter와 Mission Manager를 순차 통과하지 않는다.
 
 저장소 구성은 다음과 같다.
 
@@ -46,6 +39,7 @@ Final Driver 입력 코어 ── 선택된 source의 조향·속도 후보만 �
 ├── docs/MISSION_MANAGER_V02.md    # 상세 상태 전이 명세
 ├── launch/
 │   ├── mission_manager_draft.launch.py
+│   ├── mission_manager_drive.launch.py
 │   └── traffic_light_debug.launch.py
 ├── rviz/traffic_light_debug.rviz
 ├── teamkai_interfaces/            # ROS2 전용 메시지 패키지
@@ -54,6 +48,7 @@ Final Driver 입력 코어 ── 선택된 source의 조향·속도 후보만 �
     ├── mission/                   # Mission Manager
     ├── integration/               # source별 Adapter
     ├── final_driver/              # ROS 비의존 입력 선택·단위 변환 코어
+    ├── final_driver_node.py       # 유일한 /xycar_motor publisher
     ├── lane_fallback_controller.py
     ├── lane_fallback_controller_node.py
     └── traffic_light_*.py         # 임시 출발 신호 source
@@ -211,8 +206,10 @@ bool stop_required
 
 ## Final Driver 입력 계약
 
-`track_drive/final_driver`에는 ROS와 독립적인 입력 선택 코어까지만 구현되어
-있다. ROS Final Driver 노드와 `/xycar_motor` publisher는 아직 없다.
+`track_drive/final_driver`는 ROS와 독립적인 입력 선택 코어이고,
+`track_drive/final_driver_node.py`가 이 코어를 사용해 50Hz로
+`/xycar_motor`를 발행한다. 저장소에서 `XycarMotor` publisher를 만드는
+코드는 이 노드 하나뿐이다.
 
 | 선택 source | 조향 입력 | 속도 입력 | 조향 단위 |
 |---|---|---|---|
@@ -233,6 +230,17 @@ bool stop_required
 보정표 밖의 값은 ±42로 제한한다. 조향 변화율 제한이나 smoothing은 적용하지
 않는다. 좌우 부호는 `physical_steering_sign`으로 실차에서 확인해야 한다.
 
+Final Driver는 다음 토픽을 직접 구독해 최신값 하나만 보관한다.
+
+- `/mission/decision`
+- `/il/policy_debug`
+- `/lane_fallback/command`
+- `/my_rule/cone_cmd`
+
+숫자 source는 `Best Effort + Keep Last 1`, MissionDecision과 motor 출력은
+`Reliable + Keep Last 1`을 사용한다. MissionDecision이 0.2초 이상 끊기거나
+선택된 후보가 없으면 `angle=0`, `speed=0`을 발행한다.
+
 ## ROS2 토픽
 
 ### 외부 source 입력
@@ -246,6 +254,7 @@ bool stop_required
 | `/perception/camera_cone_count` | `std_msgs/Int32` | 카메라 콘 개수 |
 | `/my_rule/cone_cmd` | `std_msgs/Float32MultiArray` | 콘 조향·속도·신뢰도 |
 | `/my_rule/cone_clusters` | `geometry_msgs/PoseArray` | LiDAR 콘 존재 확인 |
+| `/xycar_motor` | `xycar_msgs/XycarMotor` | Final Driver의 유일한 모터 출력 |
 
 ### Mission Manager 내부 입력
 
@@ -282,11 +291,23 @@ source install/setup.bash
 ros2 launch track_drive traffic_light_debug.launch.py
 ```
 
-Mission Manager와 Adapter를 실행한다.
+Mission Manager와 Adapter만 실행하는 결정 계층 시험에서는 다음 launch를
+사용한다. 이 launch는 `/xycar_motor`를 발행하지 않는다.
 
 ```bash
 ros2 launch track_drive mission_manager_draft.launch.py
 ```
+
+실제 단일 Final Driver까지 실행하려면 실차에서 정한 `fallback_speed`를 반드시
+전달한다.
+
+```bash
+ros2 launch track_drive mission_manager_drive.launch.py \
+  fallback_speed:=<vehicle-tested-value>
+```
+
+이 launch를 실행하면 `/xycar_motor`가 50Hz로 발행된다. 숫자를 확정하기
+전까지 예시값을 임의로 넣어 실차를 주행하지 않는다.
 
 외부 source는 별도로 실행해야 한다.
 
@@ -321,7 +342,7 @@ python -m unittest discover -s test -p "test_*.py"
 - 실제 canonical perception rosbag으로 Lane Fallback 검증
 - 실제 LiDAR rosbag으로 콘 진입·이탈 threshold 조정
 - 고정 장애물, 추월, 경로 선택, 지름길 상태 전이
-- 단일 Final Driver ROS 노드와 유일한 `/xycar_motor` publisher
+- 자이카에서 source 수신부터 `/xycar_motor` 발행까지 end-to-end latency 측정
 
 더 상세한 상태 전이와 입력 기억 규칙은
 [`docs/MISSION_MANAGER_V02.md`](docs/MISSION_MANAGER_V02.md)를 참고한다.

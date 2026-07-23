@@ -1,1 +1,1 @@
-"""ROS-independent input selection primitives for the future Final Driver."""
+"""ROS-independent input selection primitives used by the Final Driver."""
