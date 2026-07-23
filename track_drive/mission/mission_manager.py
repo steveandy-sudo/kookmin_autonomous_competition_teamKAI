@@ -174,7 +174,7 @@ class MissionManager:
             self._set_control_mode(ControlMode.STOP, now_sec)
 
         decision = self._make_decision()
-        self._emit_status(now_sec)
+        self._emit_status(observation, decision)
         return decision
 
     def _update_wait_start(self, observation: MissionObservation) -> None:
@@ -387,11 +387,11 @@ class MissionManager:
 
         exit_candidate = (
             observation.camera_cone_valid
-            and observation.lidar_cone_valid
+            and observation.lidar_cone_source_valid
             and observation.camera_cone_count >= 0
             and observation.camera_cone_count
             <= self.config.maximum_camera_cone_count_for_exit
-            and not observation.lidar_cone_detected
+            and not observation.lidar_cone_present
         )
         if exit_candidate:
             self.context.cone_missing_since = self._start_or_rebase(
@@ -500,10 +500,10 @@ class MissionManager:
 
         valid_cone_zone_entry = (
             observation.camera_cone_valid
-            and observation.lidar_cone_valid
+            and observation.lidar_cone_source_valid
             and observation.camera_cone_count
             >= self.config.minimum_camera_cone_count
-            and observation.lidar_cone_detected
+            and observation.lidar_cone_path_ready
         )
         if not valid_cone_zone_entry:
             self.context.cone_seen_since = None
@@ -527,8 +527,11 @@ class MissionManager:
             and observation.camera_cone_count > 0
         )
         lidar_evidence = (
-            observation.lidar_cone_valid
-            and observation.lidar_cone_detected
+            observation.lidar_cone_source_valid
+            and (
+                observation.lidar_cone_path_ready
+                or observation.lidar_cone_present
+            )
         )
         return camera_evidence or lidar_evidence
 
@@ -600,20 +603,22 @@ class MissionManager:
     ) -> bool:
         return mode in _ALLOWED_MODES_BY_STATE[state]
 
-    def _emit_status(self, now_sec: float) -> None:
+    def _emit_status(
+        self,
+        observation: MissionObservation,
+        decision: MissionDecision,
+    ) -> None:
         if self._logger is None:
             return
+
+        now_sec = observation.now_sec
 
         current = (
             self.context.mission_state,
             self.context.control_mode,
         )
         if current != self._last_logged_state_mode:
-            self._logger(
-                "[MISSION] state={} mode={}".format(
-                    current[0].name, current[1].name
-                )
-            )
+            self._logger(self._format_status("change", observation, decision))
             self._last_logged_state_mode = current
             self._last_status_log_sec = now_sec
             return
@@ -627,16 +632,60 @@ class MissionManager:
         if now_sec - self._last_status_log_sec < period:
             return
 
-        self._logger(
-            "[MISSION] state={} mode={} lap={} shortcut_used={} override={}".format(
-                self.context.mission_state.name,
-                self.context.control_mode.name,
-                self.context.lap_count,
-                str(self.context.shortcut_used).lower(),
+        self._logger(self._format_status("status", observation, decision))
+        self._last_status_log_sec = now_sec
+
+    def _format_status(
+        self,
+        event: str,
+        observation: MissionObservation,
+        decision: MissionDecision,
+    ) -> str:
+        now_sec = observation.now_sec
+        zone_age_sec = max(now_sec - self.context.state_enter_sec, 0.0)
+        mode_age_sec = max(now_sec - self.context.mode_enter_sec, 0.0)
+        motion_request = "STOP" if decision.stop_required else "DRIVE"
+
+        return (
+            "[MISSION] event={} zone={} control_mode={} selected_source={} "
+            "speed_profile={} motion_request={} stop_required={} "
+            "zone_age_sec={:.2f} mode_age_sec={:.2f} "
+            "drive_policy_valid={} lane_fallback_valid={} "
+            "camera_cones={} camera_valid={} "
+            "lidar_path_ready={} lidar_present={} lidar_valid={} "
+            "start_signal={} start_valid={} start_armed={} "
+            "safety_ready={} safety_stop={} override={} "
+            "lap={} shortcut_used={}".format(
+                event,
+                decision.mission_state.name,
+                decision.control_mode.name,
+                decision.selected_source,
+                decision.speed_profile,
+                motion_request,
+                self._bool_text(decision.stop_required),
+                zone_age_sec,
+                mode_age_sec,
+                self._bool_text(observation.drive_policy_valid),
+                self._bool_text(observation.lane_fallback_valid),
+                observation.camera_cone_count,
+                self._bool_text(observation.camera_cone_valid),
+                self._bool_text(observation.lidar_cone_path_ready),
+                self._bool_text(observation.lidar_cone_present),
+                self._bool_text(observation.lidar_cone_source_valid),
+                observation.start_signal.name,
+                self._bool_text(observation.start_signal_valid),
+                self._bool_text(self.context.start_signal_armed),
+                self._bool_text(observation.safety_ready),
+                self._bool_text(observation.safety_stop_required),
                 self.context.manual_override,
+                self.context.lap_count,
+                self._bool_text(self.context.shortcut_used),
             )
         )
-        self._last_status_log_sec = now_sec
+
+    @staticmethod
+    def _bool_text(value: bool) -> str:
+        return "true" if value else "false"
 
     def _reset_automatic_mode_timers(self) -> None:
         self.context.cone_seen_since = None

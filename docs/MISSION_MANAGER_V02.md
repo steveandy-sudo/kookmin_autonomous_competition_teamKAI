@@ -17,6 +17,20 @@ Mission Manager는 다음 작업을 하지 않는다.
 
 기존 `track_drive/mission_state.py`와 이 초안은 연결하지 않는다.
 
+### 외부 source-of-truth
+
+V0.2는 외부 알고리즘을 이 패키지로 복사하지 않고 다음 구현의 출력 토픽만
+사용한다.
+
+| 기능 | 기준 구현 | 입력 계약 |
+|---|---|---|
+| 일반 IL | [`simulation`의 `policy_inference_node.py`](https://github.com/steveandy-sudo/kookmin_autonomous_competition_teamKAI/blob/simulation/xycar_ws/src/il_data_tools/il_data_tools/policy_inference_node.py) | `/il/policy_debug`, `drive_enabled:=false` |
+| LiDAR 콘 주행 | [`hwj`의 `cone_node.py`](https://github.com/steveandy-sudo/kookmin_autonomous_competition_teamKAI/blob/hwj/xycar_ws/src/study/my_rule/my_rule/cone_node.py) | `/my_rule/cone_cmd`, `/my_rule/cone_clusters` |
+| YOLO 차선 인지 | [`simulation`의 `yolo_lane_segmenter.py`](https://github.com/steveandy-sudo/kookmin_autonomous_competition_teamKAI/blob/simulation/xycar_ws/src/xycar_perception/xycar_perception/yolo_lane_segmenter.py) | `/perception/centerline` |
+
+IL의 motor shadow, 콘 numeric command와 perception 원본은 Mission Manager에
+전달하지 않는다.
+
 ## 2. MissionState와 ControlMode의 관계
 
 `MissionState`는 현재 어느 코스 미션을 수행 중인지 나타낸다.
@@ -111,6 +125,23 @@ confidence 임계값 적용은 인지 adapter가 담당한다. `safety_stop_requ
 4. `speed_profile`
 5. `stop_required`
 
+ROS wrapper는 각 20 Hz 판단 결과를 `/mission/decision`
+(`teamkai_interfaces/msg/MissionDecision`)에 한 메시지로 발행한다. 메시지의
+전송 계약은 다음과 같다.
+
+| 필드 | 타입 | 의미 |
+|---|---|---|
+| `stamp` | `builtin_interfaces/Time` | 결정 생성 ROS 시각 |
+| `mission_state` | `uint8` | 현재 코스 미션 |
+| `control_mode` | `uint8` | 선택된 제어기 |
+| `selected_source` | `uint8` | Final Driver가 선택할 조향 source |
+| `speed_profile` | `uint8` | 요청한 상징적 속도 profile |
+| `stop_required` | `bool` | 정지 적용 요청 |
+
+네 개의 `uint8` 필드는 `MissionDecision.msg`에 정의한 상수를 사용한다.
+`sequence`, 숫자 조향각과 숫자 속도는 포함하지 않는다. QoS는 `Reliable`,
+`Volatile`, `Keep Last 1`이다.
+
 ## 7. 현재 자동 전이
 
 ### 출발
@@ -118,6 +149,21 @@ confidence 임계값 적용은 인지 adapter가 담당한다. `safety_stop_requ
 출발 신호는 신호등 인지 모델의 후처리 adapter가 제공한다. Mission Manager는
 원본 영상이나 모델 confidence를 직접 처리하지 않는다. 출발 순서는 다음과
 같다.
+
+`traffic_light_debug` 후처리의 class 계약은 다음과 같다.
+
+| class ID | 의미 |
+|---|---|
+| 1 | `GREEN` |
+| 2 | `LEFT` |
+| 4 | `RED` |
+| 5 | `YELLOW` |
+
+RED와 YELLOW는 `yolo_red_light_class_ids: [4]`와
+`yolo_yellow_light_class_ids: [5]`로 서로 분리한다. HSV 빨간색 검사는 class 4
+후보의 보조 확인에만 사용한다. RED·YELLOW·GREEN 중 두 종류 이상이 같은
+프레임에서 검출되면 단일 상태는 `UNKNOWN`이며 RED 또는 GREEN 확인 시간을
+누적하지 않는다.
 
 1. `start_signal_valid=true`인 `RED`가 0.3초 유지되면 출발 조건을 arm한다.
 2. arm된 뒤 유효한 `GREEN`이 0.3초 유지되면 출발한다.
@@ -133,6 +179,15 @@ RED를 먼저 확인하지 않은 GREEN은 출발 조건이 아니다. arm 전 Y
 진행 중인 GREEN 확인 시간을 초기화한다. 따라서 노란불 한 프레임 뒤에 이전
 GREEN 확인 시간이 이어지지 않는다. ROS adapter는 `BLUE` 입력만 `GREEN`으로
 정규화한다.
+
+`mission_start_signal_adapter`는 기존
+`/track_drive/traffic_light_debug/state` (`String`)를 구독하고
+`/mission/input/start_signal` (`String`)과
+`/mission/input/start_signal_valid` (`Bool`)를 발행한다. `red`, `yellow`,
+`green`은 표준 열거형 이름으로 바꾸고 `blue`는 `GREEN`으로 바꾼다.
+`none`, `left`, `unknown`은 유효한 `UNKNOWN` 판단이다. 알 수 없는 문자열이나
+0.5초 이상 갱신되지 않은 source는 무효 처리한다. 이 adapter는 추론을 실행하지
+않고 기존 신호등 노드의 의미 상태와 freshness만 변환한다.
 
 `safety_ready=false`이거나 `safety_stop_required=true`이면
 `WAIT_START_SIGNAL + STOP`을 유지하고 RED/GREEN 확인과 arm을 모두 초기화한다.
@@ -155,8 +210,8 @@ GREEN이 확정되는 바로 그 주기에 현재 source 유효성을 확인하�
 
 - `camera_cone_valid=true`
 - `camera_cone_count >= 4`
-- `lidar_cone_valid=true`
-- `lidar_cone_detected=true`
+- `lidar_cone_source_valid=true`
+- `lidar_cone_path_ready=true`
 
 ```text
 LANE_DRIVING + NORMAL_IL/LANE_FALLBACK/STOP
@@ -174,8 +229,8 @@ LANE_DRIVING + NORMAL_IL/LANE_FALLBACK/STOP
 - 콘 mode가 1.0초 이상 유지됨
 - `camera_cone_valid=true`
 - `camera_cone_count <= 1`
-- `lidar_cone_valid=true`
-- `lidar_cone_detected=false`
+- `lidar_cone_source_valid=true`
+- `lidar_cone_present=false`
 - 위 센서 조건이 0.7초 이상 연속 유지됨
 
 ```text
@@ -189,6 +244,78 @@ CONE_SECTION
 1개를 분리해 히스테리시스를 만들며, 카메라 또는 LiDAR 입력 무효/stale은
 콘 미검출로 해석하지 않는다. 이탈 개수 기준은
 `maximum_camera_cone_count_for_exit` 설정값으로 조정한다.
+
+### 카메라 콘 개수 publisher
+
+기존 `traffic_light_debug` 노드는 신호등 인지에 사용하는 `final.onnx`의 같은
+추론 결과에서 class 0(cone)을 센다. confidence 0.35 이상인 검출을 화면 전체에서
+세어 `/perception/camera_cone_count` (`Int32`)로 발행하므로 추론을 한 번 더
+실행하지 않는다.
+
+원본 count 계약은 다음과 같다.
+
+- `0` 이상: 해당 카메라 프레임과 YOLO 출력이 유효하며 검출된 콘 개수
+- `-1`: 이미지 변환 실패, 모델 실행 실패 또는 malformed 출력
+
+`mission_camera_cone_adapter`가 이 토픽의 의미와 freshness를 Mission 입력으로
+변환한다. 0 이상의 count를 받은 뒤 0.2초 이내이면 실제 count와
+`camera_cone_valid=true`를 발행한다. `-1`을 받거나 source가 0.2초 이상
+stale이면 `camera_cone_count=0`, `camera_cone_valid=false`를 발행한다. 따라서
+유효한 0개 검출과 인지 실패를 구분한다. 0.2초 timeout은 0.25초 콘 진입
+확인시간보다 짧으므로 한 번 수신한 4개 이상 결과만으로는 진입할 수 없다.
+
+`simulation`의 `/perception/objects` (`PerceptionObjectArray`)에는
+`CLASS_TRAFFIC_CONE=4`가 정의되어 있지만 현재 perception 노드는 실제 검출
+대신 빈 배열만 발행한다. 빈 배열을 유효한 0개 검출로 오판하지 않기 위해 이번
+adapter source로 사용하지 않는다.
+
+### 실차 LiDAR 콘 source adapter
+
+별도 `/scan` detector를 만들지 않는다. 실차에서 검증된
+`my_rule/cone_node`가 `/scan`을 처리해 다음 결과를 발행한다.
+기준 source는 `hwj` 브랜치의
+`xycar_ws/src/study/my_rule/my_rule/cone_node.py`다.
+
+```text
+/scan (LaserScan)
+→ my_rule/cone_node
+├─ /my_rule/cone_cmd (Float32MultiArray)
+├─ /my_rule/cone_clusters (PoseArray)
+└─ /my_rule/cone_path (Path)
+
+/my_rule/cone_cmd + /my_rule/cone_clusters
+→ mission_lidar_cone_adapter
+├─ /mission/input/lidar_cone_source_valid (Bool)
+├─ /mission/input/lidar_cone_path_ready (Bool)
+└─ /mission/input/lidar_cone_present (Bool)
+```
+
+`/my_rule/cone_cmd`의 배열 계약은
+`[physical_angle_deg, requested_speed, confidence]`다. adapter는 숫자 angle과
+speed를 Mission Manager에 전달하거나 계산에 사용하지 않고, 배열 길이·유한값과
+confidence만 검사한다. `/my_rule/cone_clusters`는 `laser_frame`의 cluster
+중심이며 빈 배열도 유효한 미검출이다.
+
+`physical_angle_deg`는 IL의 Xycar 조향 명령과 단위가 다르다. 후속 Final
+Driver가 source별 단위를 공통 단위로 변환한 뒤 최종 motor angle을 한 번만
+계산해야 한다.
+
+두 source가 모두 0.2초 이내이고 정상일 때만 `source_valid=true`다. 이
+freshness는 0.25초 진입 확인보다 짧으므로 한 번 받은 source 값만으로는
+콘 구간 진입을 완성할 수 없다.
+
+- `path_ready=true`: command confidence `>= 0.35`
+- `present=true`: command confidence `> 0.2` 또는 cluster 개수 `>= 2`
+- source 하나라도 stale/malformed: 세 출력 모두 `false`
+
+진입에는 더 엄격한 `path_ready`를 사용한다. 이미 콘 구간에 들어간 뒤에는
+약한 recovery command나 cluster만 남아 있어도 `present=true`로 유지한다.
+이렇게 해야 콘 중앙 경로가 잠깐 끊긴 순간을 구간 이탈로 오인하지 않는다.
+
+`mission_manager_draft.launch.py`는 `my_rule/cone_node`를 자동 실행하지 않는다.
+실차 source 노드처럼 별도로 실행한다. motor publisher가 포함된
+`my_rule/rule_driver`와 이를 포함하는 `my_rule.launch.py`는 현재 구조에서
+실행하지 않는다.
 
 ### 콘 조향 출력 무효
 
@@ -219,6 +346,22 @@ CONE_SECTION
 freshness, inference 성공, 유한한 조향 후보 판정은 각 source adapter가 수행하고
 Mission Manager에는 최종 valid만 전달한다.
 
+일반 모델의 `mission_drive_policy_adapter`는 성공 추론 때만 갱신되는
+`/il/policy_debug` (`Float32MultiArray`)를 구독한다. 배열에 최소 4개 값이 있고
+최종 조향 후보인 `data[2]`가 유한한 `-42~42` 범위이며 마지막 수신 후
+0.5초 이내일 때만 `/mission/input/drive_policy_valid=true`를 발행한다.
+시작 전, 잘못된 배열, 최종 조향 후보의 NaN/Inf·범위 이탈 또는 stale이면
+`false`다. 정규화 조향, raw 조향, 모델 계산 속도와 뒤의 진단값은 validity
+판단에 사용하지 않는다. `/il/policy_motor_shadow`는 센서 timeout 뒤에도
+watchdog의 `[0.0, 0.0]` 정지 명령이 발행되므로 validity source로 사용하지
+않는다. adapter는 추론 또는 numeric command 계산을 수행하지 않는다.
+
+기준 publisher는 `simulation` 브랜치의
+`xycar_ws/src/il_data_tools/il_data_tools/policy_inference_node.py`다. 동기화된
+카메라·LiDAR 입력으로 추론에 성공한 경우에만 debug가 갱신된다. 이 구조에서는
+source 노드가 `/xycar_motor`를 발행하지 않도록 `drive_enabled:=false`로
+실행해야 한다.
+
 ### YOLO Lane Fallback source 계약
 
 `simulation` 브랜치의 YOLO lane model은 `YOLO11n-seg 512`이며 흰색 차선과
@@ -235,6 +378,27 @@ confidence, 최소 경로 점 수, 차선 폭과 좌우 관계, 유한한 contro
 selector에 제공하지만 `/xycar_motor`를 발행하지 않는다. Mission Manager는
 YOLO 추론, mask/BEV 처리, 경로 생성, Pure Pursuit와 숫자 조향 계산을 하지 않는다.
 
+`mission_lane_fallback_adapter`는 `/perception/centerline`
+(`kaiev26_msgs/Centerline`)을 구독하고 다음 조건을 검사한다.
+
+- `points` 3개 이상
+- 유한한 `confidence`가 0.25 이상 1.0 이하
+- 모든 point의 `x`, `y`, `z`가 유한함
+- adapter의 마지막 수신 시각으로부터 0.4초 이내
+
+모두 만족하면 `/mission/input/lane_fallback_valid=true`, 하나라도 실패하거나
+stale이면 `false`를 발행한다. adapter는 Centerline을 생성하거나 조향값을
+계산하지 않는다.
+
+현재 `simulation` 브랜치의 perception 설정 `use_yellow_as_centerline: false`는
+노란선을 중앙선으로 사용한다는 위 계약과 충돌한다. 실제 연결 전 이 값을
+`true`로 바꾸고 Centerline 생성 결과를 검증해야 한다. 이 V0.2 단계에서는
+perception 알고리즘과 설정을 수정하지 않는다.
+
+메시지 정의를 제공하는 `simulation/xycar_ws/src/kaiev26_msgs` 패키지는 실제
+ROS2 workspace에 함께 설치·빌드되어 있어야 한다. `track_drive/package.xml`은
+이를 runtime dependency로 선언한다.
+
 ## 8. 복구 가능한 안전 정지
 
 `safety_stop_required=true`이면 MissionState는 바꾸지 않고 다음을 선택한다.
@@ -250,7 +414,17 @@ Manager와 별개로 Safety Supervisor 또는 유일한 Final Driver 아래에 �
 
 ## 9. ROS2 통합시험 adapter
 
-노드 이름은 `mission_manager`, 주기는 20 Hz다. 임시 입력은 다음과 같다.
+Mission Manager 노드 이름은 `mission_manager`, 주기는 20 Hz다. 출발 신호
+adapter `mission_start_signal_adapter`, 일반 모델 adapter
+`mission_drive_policy_adapter`, Centerline 유효성 adapter
+`mission_lane_fallback_adapter`, 카메라 콘 adapter
+`mission_camera_cone_adapter`, LiDAR adapter
+`mission_lidar_cone_adapter`가 같은 launch 파일에서 함께 시작한다. 실제
+`traffic_light_debug`·IL·YOLO lane perception·`my_rule/cone_node` source 노드는
+별도로 실행해야 한다. Mission Manager 입력은 다음과 같다.
+
+`my_rule/rule_driver`, `my_rule.launch.py`, 기존 `track_drive` 주행 노드와
+`cone_il` driver는 motor publisher를 포함하므로 함께 실행하지 않는다.
 
 - `/mission/override`
 - `/mission/input/safety_stop_required` (`Bool`)
@@ -261,21 +435,30 @@ Manager와 별개로 Safety Supervisor 또는 유일한 Final Driver 아래에 �
 - `/mission/input/lane_fallback_valid`
 - `/mission/input/camera_cone_valid` (`Bool`)
 - `/mission/input/camera_cone_count` (`Int32`)
-- `/mission/input/lidar_cone_valid` (`Bool`)
-- `/mission/input/lidar_cone_detected` (`Bool`)
+- `/mission/input/lidar_cone_source_valid` (`Bool`)
+- `/mission/input/lidar_cone_path_ready` (`Bool`)
+- `/mission/input/lidar_cone_present` (`Bool`)
 
-wrapper에는 publisher가 없다. 상태 또는 mode가 바뀌면 현재 값만 기록한다.
+wrapper는 `/mission/decision` publisher 하나만 가진다. zone 또는 mode가 바뀌면
+`event=change`를 즉시 기록하고, 변화가 없어도 기본 1초마다 `event=status`를
+기록한다. 로그에는 현재 MissionDecision과 입력 source 상태가 함께 들어간다.
+Mission Manager는 `/xycar_motor`를 발행하지 않는다.
 
 ```text
-[MISSION] state=LANE_DRIVING mode=NORMAL_IL
-[MISSION] state=CONE_SECTION mode=CONE_DRIVE_RULE
+[MISSION] event=change zone=LANE_DRIVING control_mode=NORMAL_IL selected_source=drive_il speed_profile=normal motion_request=DRIVE stop_required=false zone_age_sec=0.00 mode_age_sec=0.00 drive_policy_valid=true lane_fallback_valid=true camera_cones=0 camera_valid=true lidar_path_ready=false lidar_present=false lidar_valid=true start_signal=GREEN start_valid=true start_armed=false safety_ready=true safety_stop=false override=AUTO lap=0 shortcut_used=false
+[MISSION] event=change zone=CONE_SECTION control_mode=CONE_DRIVE_RULE selected_source=cone_rule speed_profile=cone motion_request=DRIVE stop_required=false zone_age_sec=0.00 mode_age_sec=0.00 drive_policy_valid=true lane_fallback_valid=true camera_cones=5 camera_valid=true lidar_path_ready=true lidar_present=true lidar_valid=true start_signal=GREEN start_valid=true start_armed=false safety_ready=true safety_stop=false override=AUTO lap=0 shortcut_used=false
 ```
+
+`zone`은 MissionState, `control_mode`는 선택된 제어기다. `motion_request`와
+`stop_required`는 후단에 대한 요청이며 실제 차량 속도 측정값은 아니다. 실제
+이동 여부를 표시하려면 후속 버전에서 odometry 또는 encoder feedback 계약이
+별도로 필요하다.
 
 ## 10. 빌드와 테스트
 
 ```bash
 cd ~/xycar_ws
-colcon build --symlink-install --packages-select track_drive cone_il
+colcon build --symlink-install --packages-up-to track_drive
 source install/setup.bash
 colcon test --packages-select track_drive
 colcon test-result --verbose
@@ -296,13 +479,14 @@ ros2 launch track_drive mission_manager_draft.launch.py
 
 ## 11. 남은 TODO
 
-- source freshness와 hard-invalid validator
-- 콘 source validity/freshness 전달과 Final Driver의 last-valid 조향 유지
+- `simulation` perception을 `use_yellow_as_centerline: true`로 맞춘 뒤 실차 검증
+- 실차 LiDAR rosbag으로 cone cluster 파라미터 검증·조정
+- Final Driver의 last-valid 콘 조향 유지
 - 고정 장애물 미션 진입·이탈과 전용 controller 연결
 - 추월 구간 진입, follow/overtake 전환, 차선 복귀
 - 신호등 기반 경로 선택과 3바퀴 중 한 번의 지름길
 - 실제 lap crossing debounce
-- YOLO lane controller의 candidate/freshness/valid adapter 연결
+- YOLO lane controller의 조향 candidate를 Final Driver에 연결
 - Safety Supervisor의 recoverable stop 입력과 물리 차단 경로 분리
 - 후단 policy selector와 유일한 final driver 연결
 

@@ -83,9 +83,11 @@ class IntersectionDebugNode(Node):
         self.declare_parameter('yolo_dnn_target', 'auto')
         self.declare_parameter('yolo_light_conf_threshold', 0.35)
         self.declare_parameter('yolo_stop_light_conf_threshold', 0.55)
+        self.declare_parameter('yolo_yellow_light_conf_threshold', 0.35)
         self.declare_parameter('yolo_left_light_conf_threshold', 0.28)
         self.declare_parameter('yolo_light_class_ids', [0, 1, 2, 3, 4, 5])
-        self.declare_parameter('yolo_red_light_class_ids', [4, 5])
+        self.declare_parameter('yolo_red_light_class_ids', [4])
+        self.declare_parameter('yolo_yellow_light_class_ids', [5])
         self.declare_parameter('yolo_go_light_class_ids', [1])
         self.declare_parameter('yolo_left_light_class_ids', [2])
         self.declare_parameter('yolo_nms_threshold', 0.45)
@@ -215,7 +217,9 @@ class IntersectionDebugNode(Node):
                 and float(light_result.class_scores[int(class_id)]) >= left_threshold
                 for class_id in left_ids
             )
-        yellow = any(item.valid and int(item.class_id) == 5 for item in light_result.detections)
+        yellow = any(
+            item.yellow_present for item in light_result.detections
+        )
         return red, green, left, yellow
 
     # 설명: 검출 결과와 상태를 디버그 이미지 위에 그린다.

@@ -8,8 +8,12 @@ from cv_bridge import CvBridge
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
-from std_msgs.msg import String
+from std_msgs.msg import Int32, String
 
+from track_drive.integration.camera_cone_adapter import (
+    count_camera_cones,
+    detector_output_is_valid,
+)
 from track_drive.traffic_light_detector import (
     YoloTrafficLightDetector,
     declare_traffic_light_parameters,
@@ -32,13 +36,18 @@ class TrafficLightDebugNode(Node):
         camera_topic = str(self.get_parameter('camera_topic').value)
         image_topic = str(self.get_parameter('traffic_light_debug_topic').value)
         state_topic = str(self.get_parameter('traffic_light_state_topic').value)
+        camera_cone_count_topic = str(
+            self.get_parameter('camera_cone_count_topic').value)
 
         self.debug_pub = self.create_publisher(Image, image_topic, 10)
         self.state_pub = self.create_publisher(String, state_topic, 10)
+        self.camera_cone_count_pub = self.create_publisher(
+            Int32, camera_cone_count_topic, 10)
         self.create_subscription(Image, camera_topic, self.image_callback, qos_profile_sensor_data)
 
         self.get_logger().info(
-            f'Traffic-light debug ready | image={camera_topic}, debug={image_topic}, state={state_topic}'
+            f'Traffic-light debug ready | image={camera_topic}, debug={image_topic}, '
+            f'state={state_topic}, camera_cones={camera_cone_count_topic}'
         )
 
     # 설명: 수신한 ROS 메시지를 내부 최신 상태로 반영한다.
@@ -48,10 +57,12 @@ class TrafficLightDebugNode(Node):
             frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         except Exception as exc:
             self.get_logger().warn(f'image conversion failed: {exc}')
+            self._publish_camera_cone_count(-1)
             return
 
         result = self.detector.detect(frame)
         self._publish_state(result.state)
+        self._publish_camera_cones(result)
         self._publish_debug_image(result.debug_image, msg)
         self._log_result(result)
 
@@ -74,6 +85,32 @@ class TrafficLightDebugNode(Node):
         msg = String()
         msg.data = str(state)
         self.state_pub.publish(msg)
+
+    def _publish_camera_cones(self, result):
+        expected_class_count = int(
+            self.get_parameter('yolo_light_class_count').value)
+        if not detector_output_is_valid(
+            class_scores=result.class_scores,
+            raw_shape=result.raw_shape,
+            expected_class_count=expected_class_count,
+        ):
+            self._publish_camera_cone_count(-1)
+            return
+
+        count = count_camera_cones(
+            detections=result.detections,
+            cone_class_ids=self.get_parameter(
+                'camera_cone_class_ids').value,
+            minimum_confidence=float(
+                self.get_parameter('camera_cone_min_confidence').value),
+        )
+        self._publish_camera_cone_count(
+            -1 if count is None else count)
+
+    def _publish_camera_cone_count(self, count: int):
+        message = Int32()
+        message.data = int(count)
+        self.camera_cone_count_pub.publish(message)
 
     # 설명: 검출 결과 요약을 로그로 출력한다.
     def _log_result(self, result):

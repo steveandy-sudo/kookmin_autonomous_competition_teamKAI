@@ -1,5 +1,5 @@
 # 설치된 ROS2 패키지 share 경로에서 모델 파일 위치를 찾는 유틸리티이다.
-# 제출 폴더가 빌드된 뒤에도 CNN 조향 모델과 ONNX 객체 인식 모델을 안정적으로 참조하기 위해 사용한다.
+# V0.2 runtime은 final.onnx를 사용하며 cone model 함수는 레거시 source 호환용이다.
 from pathlib import Path
 
 
@@ -26,13 +26,12 @@ def package_model_path(filename: str) -> str:
     return str(package_share_path() / 'assets' / 'models' / filename)
 
 
-# 기본 CNN 조향 모델 경로를 반환한다.
+# source tree에 보관된 레거시 CNN 조향 모델의 기본 경로를 반환한다.
+# 이 모델은 V0.2 설치 대상이 아니다.
 def default_cone_model_path() -> str:
-    # 기본 CNN 조향 TorchScript 모델 경로를 반환한다.
-    return package_model_path('cnn_steering_model.pt')
+    return package_model_path('cone_bc_scripted_5.pt')
 
 
 # 기본 객체 인식 ONNX 모델 경로를 반환한다.
 def default_yolo_model_path() -> str:
-    # 기본 미션 객체 인식 ONNX 모델 경로를 반환한다.
-    return package_model_path('object_detector_model.onnx')
+    return package_model_path('final.onnx')

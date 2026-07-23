@@ -2,18 +2,100 @@
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
 from std_msgs.msg import Bool, Int32, String
+from teamkai_interfaces.msg import MissionDecision as MissionDecisionMsg
 
 from track_drive.mission.mission_manager import MissionManager
-from track_drive.mission.mission_types import MissionManagerConfig, MissionObservation
-from track_drive.mission.states import StartSignal
+from track_drive.mission.mission_types import (
+    MissionDecision,
+    MissionManagerConfig,
+    MissionObservation,
+)
+from track_drive.mission.states import ControlMode, MissionState, StartSignal
 
 
 UPDATE_PERIOD_SEC = 0.05
+DECISION_TOPIC = "/mission/decision"
+DECISION_QOS = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.VOLATILE,
+)
+
+_MISSION_STATE_CODES = {
+    MissionState.WAIT_START_SIGNAL: (
+        MissionDecisionMsg.MISSION_STATE_WAIT_START_SIGNAL
+    ),
+    MissionState.LANE_DRIVING: MissionDecisionMsg.MISSION_STATE_LANE_DRIVING,
+    MissionState.CONE_SECTION: MissionDecisionMsg.MISSION_STATE_CONE_SECTION,
+    MissionState.FIXED_OBSTACLE_SECTION: (
+        MissionDecisionMsg.MISSION_STATE_FIXED_OBSTACLE_SECTION
+    ),
+    MissionState.OVERTAKE_SECTION: (
+        MissionDecisionMsg.MISSION_STATE_OVERTAKE_SECTION
+    ),
+    MissionState.ROUTE_SELECTION: (
+        MissionDecisionMsg.MISSION_STATE_ROUTE_SELECTION
+    ),
+    MissionState.SHORTCUT_SECTION: (
+        MissionDecisionMsg.MISSION_STATE_SHORTCUT_SECTION
+    ),
+}
+
+_CONTROL_MODE_CODES = {
+    ControlMode.STOP: MissionDecisionMsg.CONTROL_MODE_STOP,
+    ControlMode.NORMAL_IL: MissionDecisionMsg.CONTROL_MODE_NORMAL_IL,
+    ControlMode.CONE_DRIVE_RULE: (
+        MissionDecisionMsg.CONTROL_MODE_CONE_DRIVE_RULE
+    ),
+    ControlMode.LANE_FALLBACK: (
+        MissionDecisionMsg.CONTROL_MODE_LANE_FALLBACK
+    ),
+    ControlMode.FIXED_OBSTACLE_RULE: (
+        MissionDecisionMsg.CONTROL_MODE_FIXED_OBSTACLE_RULE
+    ),
+    ControlMode.VEHICLE_FOLLOW: (
+        MissionDecisionMsg.CONTROL_MODE_VEHICLE_FOLLOW
+    ),
+    ControlMode.VEHICLE_OVERTAKE: (
+        MissionDecisionMsg.CONTROL_MODE_VEHICLE_OVERTAKE
+    ),
+    ControlMode.SHORTCUT_RULE: (
+        MissionDecisionMsg.CONTROL_MODE_SHORTCUT_RULE
+    ),
+}
+
+_SELECTED_SOURCE_CODES = {
+    "none": MissionDecisionMsg.SOURCE_NONE,
+    "drive_il": MissionDecisionMsg.SOURCE_DRIVE_IL,
+    "cone_rule": MissionDecisionMsg.SOURCE_CONE_RULE,
+    "lane_fallback": MissionDecisionMsg.SOURCE_LANE_FALLBACK,
+    "fixed_obstacle_rule": MissionDecisionMsg.SOURCE_FIXED_OBSTACLE_RULE,
+    "vehicle_rule": MissionDecisionMsg.SOURCE_VEHICLE_RULE,
+    "shortcut": MissionDecisionMsg.SOURCE_SHORTCUT,
+}
+
+_SPEED_PROFILE_CODES = {
+    "stop": MissionDecisionMsg.SPEED_PROFILE_STOP,
+    "normal": MissionDecisionMsg.SPEED_PROFILE_NORMAL,
+    "cone": MissionDecisionMsg.SPEED_PROFILE_CONE,
+    "fallback": MissionDecisionMsg.SPEED_PROFILE_FALLBACK,
+    "obstacle": MissionDecisionMsg.SPEED_PROFILE_OBSTACLE,
+    "vehicle_follow": MissionDecisionMsg.SPEED_PROFILE_VEHICLE_FOLLOW,
+    "vehicle_overtake": MissionDecisionMsg.SPEED_PROFILE_VEHICLE_OVERTAKE,
+    "shortcut": MissionDecisionMsg.SPEED_PROFILE_SHORTCUT,
+}
 
 
 class MissionManagerNode(Node):
-    """임시 의미 기반 토픽을 MissionObservation으로 변환한다."""
+    """의미 기반 입력을 판단하고 완성된 MissionDecision을 발행한다."""
 
     def __init__(self) -> None:
         super().__init__("mission_manager")
@@ -109,8 +191,15 @@ class MissionManagerNode(Node):
         self._lane_fallback_valid = False
         self._camera_cone_valid = False
         self._camera_cone_count = 0
-        self._lidar_cone_valid = False
-        self._lidar_cone_detected = False
+        self._lidar_cone_source_valid = False
+        self._lidar_cone_path_ready = False
+        self._lidar_cone_present = False
+
+        self._decision_publisher = self.create_publisher(
+            MissionDecisionMsg,
+            DECISION_TOPIC,
+            DECISION_QOS,
+        )
 
         # 아래 토픽은 V0.2 통합시험용 adapter 입력이다.
         self.create_subscription(
@@ -166,14 +255,20 @@ class MissionManagerNode(Node):
         )
         self.create_subscription(
             Bool,
-            "/mission/input/lidar_cone_valid",
-            self._on_lidar_cone_valid,
+            "/mission/input/lidar_cone_source_valid",
+            self._on_lidar_cone_source_valid,
             10,
         )
         self.create_subscription(
             Bool,
-            "/mission/input/lidar_cone_detected",
-            self._on_lidar_cone_detected,
+            "/mission/input/lidar_cone_path_ready",
+            self._on_lidar_cone_path_ready,
+            10,
+        )
+        self.create_subscription(
+            Bool,
+            "/mission/input/lidar_cone_present",
+            self._on_lidar_cone_present,
             10,
         )
 
@@ -219,14 +314,36 @@ class MissionManagerNode(Node):
     def _on_camera_cone_count(self, message: Int32) -> None:
         self._camera_cone_count = int(message.data)
 
-    def _on_lidar_cone_valid(self, message: Bool) -> None:
-        self._lidar_cone_valid = bool(message.data)
+    def _on_lidar_cone_source_valid(self, message: Bool) -> None:
+        self._lidar_cone_source_valid = bool(message.data)
 
-    def _on_lidar_cone_detected(self, message: Bool) -> None:
-        self._lidar_cone_detected = bool(message.data)
+    def _on_lidar_cone_path_ready(self, message: Bool) -> None:
+        self._lidar_cone_path_ready = bool(message.data)
+
+    def _on_lidar_cone_present(self, message: Bool) -> None:
+        self._lidar_cone_present = bool(message.data)
+
+    def _publish_decision(self, decision: MissionDecision, stamp) -> None:
+        message = MissionDecisionMsg()
+        message.stamp = stamp
+        message.mission_state = _MISSION_STATE_CODES[
+            decision.mission_state
+        ]
+        message.control_mode = _CONTROL_MODE_CODES[
+            decision.control_mode
+        ]
+        message.selected_source = _SELECTED_SOURCE_CODES[
+            decision.selected_source
+        ]
+        message.speed_profile = _SPEED_PROFILE_CODES[
+            decision.speed_profile
+        ]
+        message.stop_required = decision.stop_required
+        self._decision_publisher.publish(message)
 
     def _on_update_timer(self) -> None:
-        now_sec = self.get_clock().now().nanoseconds * 1.0e-9
+        now = self.get_clock().now()
+        now_sec = now.nanoseconds * 1.0e-9
         observation = MissionObservation(
             now_sec=now_sec,
             safety_stop_required=(
@@ -240,10 +357,12 @@ class MissionManagerNode(Node):
             lane_fallback_valid=self._lane_fallback_valid,
             camera_cone_valid=self._camera_cone_valid,
             camera_cone_count=self._camera_cone_count,
-            lidar_cone_valid=self._lidar_cone_valid,
-            lidar_cone_detected=self._lidar_cone_detected,
+            lidar_cone_source_valid=self._lidar_cone_source_valid,
+            lidar_cone_path_ready=self._lidar_cone_path_ready,
+            lidar_cone_present=self._lidar_cone_present,
         )
-        self._manager.update(observation)
+        decision = self._manager.update(observation)
+        self._publish_decision(decision, now.to_msg())
         self._safety_stop_assertion_pending = False
 
 

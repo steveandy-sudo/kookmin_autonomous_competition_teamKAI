@@ -16,6 +16,8 @@ def generate_launch_description():
     dnn_target = LaunchConfiguration('yolo_dnn_target')
     conf_threshold = LaunchConfiguration('yolo_light_conf_threshold')
     stop_threshold = LaunchConfiguration('yolo_stop_light_conf_threshold')
+    yellow_threshold = LaunchConfiguration(
+        'yolo_yellow_light_conf_threshold')
     left_threshold = LaunchConfiguration('yolo_left_light_conf_threshold')
     min_height = LaunchConfiguration('yolo_light_min_box_height_ratio')
     min_width = LaunchConfiguration('yolo_light_min_box_width_ratio')
@@ -41,6 +43,10 @@ def generate_launch_description():
         DeclareLaunchArgument('yolo_dnn_target', default_value='auto'),
         DeclareLaunchArgument('yolo_light_conf_threshold', default_value='0.35'),
         DeclareLaunchArgument('yolo_stop_light_conf_threshold', default_value='0.55'),
+        DeclareLaunchArgument(
+            'yolo_yellow_light_conf_threshold',
+            default_value='0.35',
+        ),
         DeclareLaunchArgument('yolo_left_light_conf_threshold', default_value='0.28'),
         DeclareLaunchArgument('yolo_light_min_box_height_ratio', default_value='0.025'),
         DeclareLaunchArgument('yolo_light_min_box_width_ratio', default_value='0.015'),
@@ -69,7 +75,13 @@ def generate_launch_description():
                 'yolo_dnn_target': dnn_target,
                 'yolo_light_conf_threshold': ParameterValue(conf_threshold, value_type=float),
                 'yolo_stop_light_conf_threshold': ParameterValue(stop_threshold, value_type=float),
+                'yolo_yellow_light_conf_threshold': ParameterValue(
+                    yellow_threshold,
+                    value_type=float,
+                ),
                 'yolo_left_light_conf_threshold': ParameterValue(left_threshold, value_type=float),
+                'yolo_red_light_class_ids': [4],
+                'yolo_yellow_light_class_ids': [5],
                 'yolo_light_min_box_height_ratio': ParameterValue(min_height, value_type=float),
                 'yolo_light_min_box_width_ratio': ParameterValue(min_width, value_type=float),
                 'yolo_light_min_box_area_ratio': ParameterValue(min_area, value_type=float),

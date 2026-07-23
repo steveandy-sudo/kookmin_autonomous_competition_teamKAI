@@ -12,6 +12,10 @@ import cv2
 import numpy as np
 
 from .model_paths import default_yolo_model_path
+from .traffic_light_signal import (
+    detection_signal_flags,
+    resolve_signal_state,
+)
 
 
 Box = Tuple[int, int, int, int]
@@ -25,6 +29,7 @@ class TrafficLightDetection:
     class_id: int
     valid: bool
     red_present: bool
+    yellow_present: bool
     red_ratio: float
     green_ratio: float
     yellow_ratio: float
@@ -54,6 +59,9 @@ def declare_traffic_light_parameters(node):
     node.declare_parameter('traffic_light_debug_topic', '/track_drive/traffic_light_debug/image')
     node.declare_parameter('traffic_light_state_topic', '/track_drive/traffic_light_debug/state')
     node.declare_parameter('traffic_light_log_period_sec', 0.5)
+    node.declare_parameter('camera_cone_count_topic', '/perception/camera_cone_count')
+    node.declare_parameter('camera_cone_class_ids', [0])
+    node.declare_parameter('camera_cone_min_confidence', 0.35)
     node.declare_parameter('yolo_light_model_path', default_yolo_model_path())
     node.declare_parameter('yolo_light_input_size', 640)
     node.declare_parameter('yolo_light_class_count', 6)
@@ -61,9 +69,11 @@ def declare_traffic_light_parameters(node):
     node.declare_parameter('yolo_dnn_target', 'auto')
     node.declare_parameter('yolo_light_conf_threshold', 0.35)
     node.declare_parameter('yolo_stop_light_conf_threshold', 0.55)
+    node.declare_parameter('yolo_yellow_light_conf_threshold', 0.35)
     node.declare_parameter('yolo_left_light_conf_threshold', 0.28)
     node.declare_parameter('yolo_light_class_ids', [0, 1, 2, 3, 4, 5])
-    node.declare_parameter('yolo_red_light_class_ids', [4, 5])
+    node.declare_parameter('yolo_red_light_class_ids', [4])
+    node.declare_parameter('yolo_yellow_light_class_ids', [5])
     node.declare_parameter('yolo_go_light_class_ids', [1])
     node.declare_parameter('yolo_left_light_class_ids', [2])
     node.declare_parameter('yolo_nms_threshold', 0.45)
@@ -104,9 +114,13 @@ class YoloTrafficLightDetector:
         # launch에서 지정한 클래스 id만 신호등 후보로 인정해 다른 객체 검출 결과를 배제한다.
         allowed_ids = self._int_set_parameter('yolo_light_class_ids')
         red_ids = self._int_set_parameter('yolo_red_light_class_ids')
+        yellow_ids = self._int_set_parameter(
+            'yolo_yellow_light_class_ids')
         go_ids = self._int_set_parameter('yolo_go_light_class_ids')
         left_ids = self._int_set_parameter('yolo_left_light_class_ids')
         stop_threshold = max(float(self._param('yolo_stop_light_conf_threshold', 0.55)), 0.0)
+        yellow_threshold = max(float(
+            self._param('yolo_yellow_light_conf_threshold', 0.35)), 0.0)
         left_threshold = max(float(self._param('yolo_left_light_conf_threshold', 0.28)), 0.0)
 
         light_debug: List[TrafficLightDetection] = []
@@ -125,11 +139,24 @@ class YoloTrafficLightDetector:
             valid = self._valid_light_detection(image, box)
             # class id가 애매할 때를 대비해 box 내부 색상 비율로 빨강/초록/노랑을 보조 판단한다.
             red_color, red_ratio, green_ratio, yellow_ratio = self._red_light_box_metrics(image, box)
-            class_red = valid and score >= stop_threshold and self._class_id_allowed(class_id, red_ids)
-            class_go = valid and self._class_id_allowed(class_id, go_ids)
-            class_left = valid and score >= left_threshold and self._class_id_allowed(class_id, left_ids)
-            red_present = bool(class_red or (valid and red_color and self._class_id_allowed(class_id, red_ids)))
-            yellow_present = valid and int(class_id) == 5
+            (
+                red_present,
+                class_go,
+                class_left,
+                yellow_present,
+            ) = detection_signal_flags(
+                class_id=class_id,
+                score=score,
+                valid=valid,
+                red_color=red_color,
+                red_ids=red_ids,
+                yellow_ids=yellow_ids,
+                green_ids=go_ids,
+                left_ids=left_ids,
+                red_threshold=stop_threshold,
+                yellow_threshold=yellow_threshold,
+                left_threshold=left_threshold,
+            )
 
             red_seen = red_seen or red_present
             go_seen = go_seen or class_go
@@ -145,6 +172,7 @@ class YoloTrafficLightDetector:
                 class_id=int(class_id),
                 valid=bool(valid),
                 red_present=bool(red_present),
+                yellow_present=bool(yellow_present),
                 red_ratio=float(red_ratio),
                 green_ratio=float(green_ratio),
                 yellow_ratio=float(yellow_ratio),
@@ -168,6 +196,8 @@ class YoloTrafficLightDetector:
         # 사용 가능한 추론 backend를 선택해 ONNX 모델을 실행한다.
         # 신호등 검출 처리 파이프라인을 실행하고 결과를 반환한다.
         # 제출 폴더에 포함된 ONNX 모델 경로를 ROS 파라미터에서 받아온다.
+        self.class_scores = []
+        self.raw_shape = ''
         model_path = Path(str(self._param('yolo_light_model_path', default_yolo_model_path()))).expanduser()
         if not model_path.exists():
             self._warn_once(f'YOLO light model not found: {model_path}')
@@ -536,18 +566,13 @@ class YoloTrafficLightDetector:
     # 개별 색상 flag를 사람이 읽기 쉬운 신호 상태 문자열로 합친다.
     def _state_from_flags(self, red: bool, go: bool, left: bool, yellow: bool, best_label: str) -> str:
         # 신호등 검출의 상태 from flags 로직을 수행한다.
-        if go and not red:
-            return 'green'
-        if left:
-            return 'left'
-        if red:
-            return 'red'
-        # 노란불은 곧 정지/좌회전 신호로 바뀔 수 있어 감속 판단에 활용할 수 있다.
-        if yellow:
-            return 'yellow'
-        if best_label != 'unknown':
-            return best_label
-        return 'none'
+        return resolve_signal_state(
+            red=red,
+            green=go,
+            left=left,
+            yellow=yellow,
+            best_label=best_label,
+        )
 
     def _draw_debug(self, image: np.ndarray, state: str, detections: Sequence[TrafficLightDetection]) -> np.ndarray:
         # draw 디버그 정보를 디버그 이미지 위에 그린다.

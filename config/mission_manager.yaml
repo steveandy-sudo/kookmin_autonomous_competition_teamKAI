@@ -15,3 +15,51 @@ mission_manager:
     maximum_camera_cone_count_for_exit: 1
 
     status_log_period_sec: 1.0
+
+mission_start_signal_adapter:
+  ros__parameters:
+    source_state_topic: /track_drive/traffic_light_debug/state
+    output_signal_topic: /mission/input/start_signal
+    output_valid_topic: /mission/input/start_signal_valid
+    source_timeout_sec: 0.5
+    publish_rate_hz: 20.0
+
+mission_drive_policy_adapter:
+  ros__parameters:
+    # simulation/il_data_tools policy_inference_node output.
+    # The source node must run with drive_enabled:=false.
+    source_debug_topic: /il/policy_debug
+    output_valid_topic: /mission/input/drive_policy_valid
+    source_timeout_sec: 0.5
+    publish_rate_hz: 20.0
+
+mission_lane_fallback_adapter:
+  ros__parameters:
+    source_centerline_topic: /perception/centerline
+    output_valid_topic: /mission/input/lane_fallback_valid
+    source_timeout_sec: 0.4
+    minimum_point_count: 3
+    minimum_confidence: 0.25
+    publish_rate_hz: 20.0
+
+mission_camera_cone_adapter:
+  ros__parameters:
+    source_count_topic: /perception/camera_cone_count
+    output_count_topic: /mission/input/camera_cone_count
+    output_valid_topic: /mission/input/camera_cone_valid
+    source_timeout_sec: 0.2
+    publish_rate_hz: 20.0
+
+mission_lidar_cone_adapter:
+  ros__parameters:
+    # hwj/my_rule cone_node outputs. Do not run rule_driver with the Final Driver.
+    source_command_topic: /my_rule/cone_cmd
+    source_cluster_topic: /my_rule/cone_clusters
+    output_source_valid_topic: /mission/input/lidar_cone_source_valid
+    output_path_ready_topic: /mission/input/lidar_cone_path_ready
+    output_present_topic: /mission/input/lidar_cone_present
+    source_timeout_sec: 0.2
+    path_ready_confidence: 0.35
+    presence_confidence: 0.2
+    presence_min_clusters: 2
+    publish_rate_hz: 20.0

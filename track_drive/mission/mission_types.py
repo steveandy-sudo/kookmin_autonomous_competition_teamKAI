@@ -26,8 +26,9 @@ class MissionObservation:
 
     camera_cone_valid: bool = False
     camera_cone_count: int = 0
-    lidar_cone_valid: bool = False
-    lidar_cone_detected: bool = False
+    lidar_cone_source_valid: bool = False
+    lidar_cone_path_ready: bool = False
+    lidar_cone_present: bool = False
 
     fixed_obstacle_detected: bool = False
     vehicle_detected: bool = False

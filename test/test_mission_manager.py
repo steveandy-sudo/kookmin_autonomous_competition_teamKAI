@@ -32,14 +32,16 @@ def cone_entry_inputs(
     *,
     camera_count=4,
     camera_valid=True,
-    lidar_detected=True,
-    lidar_valid=True,
+    lidar_source_valid=True,
+    lidar_path_ready=True,
+    lidar_present=True,
 ):
     return {
         "camera_cone_valid": camera_valid,
         "camera_cone_count": camera_count,
-        "lidar_cone_valid": lidar_valid,
-        "lidar_cone_detected": lidar_detected,
+        "lidar_cone_source_valid": lidar_source_valid,
+        "lidar_cone_path_ready": lidar_path_ready,
+        "lidar_cone_present": lidar_present,
     }
 
 
@@ -47,14 +49,16 @@ def cone_exit_inputs(
     *,
     camera_count=1,
     camera_valid=True,
-    lidar_detected=False,
-    lidar_valid=True,
+    lidar_source_valid=True,
+    lidar_path_ready=False,
+    lidar_present=False,
 ):
     return {
         "camera_cone_valid": camera_valid,
         "camera_cone_count": camera_count,
-        "lidar_cone_valid": lidar_valid,
-        "lidar_cone_detected": lidar_detected,
+        "lidar_cone_source_valid": lidar_source_valid,
+        "lidar_cone_path_ready": lidar_path_ready,
+        "lidar_cone_present": lidar_present,
     }
 
 
@@ -129,8 +133,9 @@ class DataModelTest(unittest.TestCase):
                 "lane_fallback_valid",
                 "camera_cone_valid",
                 "camera_cone_count",
-                "lidar_cone_valid",
-                "lidar_cone_detected",
+                "lidar_cone_source_valid",
+                "lidar_cone_path_ready",
+                "lidar_cone_present",
                 "fixed_obstacle_detected",
                 "vehicle_detected",
                 "shortcut_signal_detected",
@@ -682,12 +687,12 @@ class MissionManagerTransitionTest(unittest.TestCase):
         self.assertIs(entered.mission_state, MissionState.CONE_SECTION)
         self.assertIs(entered.control_mode, ControlMode.CONE_DRIVE_RULE)
 
-    def test_entry_requires_count_lidar_and_both_validity_flags(self):
+    def test_entry_requires_camera_count_and_ready_lidar_path(self):
         invalid_cases = (
             cone_entry_inputs(camera_count=3),
             cone_entry_inputs(camera_valid=False),
-            cone_entry_inputs(lidar_detected=False),
-            cone_entry_inputs(lidar_valid=False),
+            cone_entry_inputs(lidar_path_ready=False),
+            cone_entry_inputs(lidar_source_valid=False),
         )
 
         for inputs in invalid_cases:
@@ -767,10 +772,21 @@ class MissionManagerTransitionTest(unittest.TestCase):
         self.assertIs(decision.control_mode, ControlMode.CONE_DRIVE_RULE)
         self.assertIsNone(self.manager.context.cone_missing_since)
 
+    def test_lidar_presence_prevents_exit_when_path_is_not_ready(self):
+        enter_cone_mode(self.manager)
+        inputs = cone_exit_inputs(lidar_present=True)
+
+        self.manager.update(observation(2.0, **inputs))
+        decision = self.manager.update(observation(3.0, **inputs))
+
+        self.assertIs(decision.mission_state, MissionState.CONE_SECTION)
+        self.assertIs(decision.control_mode, ControlMode.CONE_DRIVE_RULE)
+        self.assertIsNone(self.manager.context.cone_missing_since)
+
     def test_invalid_sensor_input_never_counts_as_cone_absence(self):
         invalid_cases = (
             cone_exit_inputs(camera_valid=False),
-            cone_exit_inputs(lidar_valid=False),
+            cone_exit_inputs(lidar_source_valid=False),
         )
 
         for inputs in invalid_cases:
@@ -1405,12 +1421,19 @@ class LoggingTest(unittest.TestCase):
         manager.update(observation(0.4, drive_policy_valid=True))
 
         self.assertEqual(
-            messages,
-            [
-                "[MISSION] state=WAIT_START_SIGNAL mode=STOP",
-                "[MISSION] state=LANE_DRIVING mode=NORMAL_IL",
-            ],
+            len(messages),
+            2,
         )
+        self.assertIn("event=change", messages[0])
+        self.assertIn("zone=WAIT_START_SIGNAL", messages[0])
+        self.assertIn("control_mode=STOP", messages[0])
+        self.assertIn("motion_request=STOP", messages[0])
+        self.assertIn("stop_required=true", messages[0])
+        self.assertIn("zone=LANE_DRIVING", messages[1])
+        self.assertIn("control_mode=NORMAL_IL", messages[1])
+        self.assertIn("selected_source=drive_il", messages[1])
+        self.assertIn("motion_request=DRIVE", messages[1])
+        self.assertIn("stop_required=false", messages[1])
 
     def test_periodic_status_is_throttled_and_contains_current_values(self):
         manager = MissionManager(
@@ -1421,14 +1444,48 @@ class LoggingTest(unittest.TestCase):
 
         manager.update(observation(0.0))
         manager.update(observation(0.99))
-        manager.update(observation(1.0))
+        manager.update(observation(
+            1.0,
+            drive_policy_valid=True,
+            lane_fallback_valid=True,
+            camera_cone_valid=True,
+            camera_cone_count=3,
+            lidar_cone_source_valid=True,
+            lidar_cone_path_ready=True,
+            lidar_cone_present=True,
+        ))
 
         self.assertEqual(len(messages), 2)
-        self.assertEqual(
-            messages[1],
-            "[MISSION] state=WAIT_START_SIGNAL mode=STOP "
-            "lap=0 shortcut_used=false override=AUTO",
+        status = messages[1]
+        required_fields = (
+            "event=status",
+            "zone=WAIT_START_SIGNAL",
+            "control_mode=STOP",
+            "selected_source=none",
+            "speed_profile=stop",
+            "motion_request=STOP",
+            "stop_required=true",
+            "zone_age_sec=1.00",
+            "mode_age_sec=1.00",
+            "drive_policy_valid=true",
+            "lane_fallback_valid=true",
+            "camera_cones=3",
+            "camera_valid=true",
+            "lidar_path_ready=true",
+            "lidar_present=true",
+            "lidar_valid=true",
+            "start_signal=UNKNOWN",
+            "start_valid=false",
+            "start_armed=false",
+            "safety_ready=true",
+            "safety_stop=false",
+            "override=AUTO",
+            "lap=0",
+            "shortcut_used=false",
         )
+        for field in required_fields:
+            with self.subTest(field=field):
+                self.assertIn(field, status)
 
 
 if __name__ == "__main__":
