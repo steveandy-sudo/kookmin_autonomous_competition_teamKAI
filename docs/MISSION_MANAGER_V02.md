@@ -142,6 +142,97 @@ ROS wrapper는 각 20 Hz 판단 결과를 `/mission/decision`
 `sequence`, 숫자 조향각과 숫자 속도는 포함하지 않는다. QoS는 `Reliable`,
 `Volatile`, `Keep Last 1`이다.
 
+### Final Driver 조향·속도 입력 계약
+
+| 선택 모드 | 조향 입력 | 조향 단위 |
+|---|---|---|
+| `NORMAL_IL` | `/il/policy_debug`의 `data[2]` | Xycar 조향 명령값 |
+| `LANE_FALLBACK` | `/lane_fallback/command`의 `steering_angle_deg` | 물리 조향각 |
+| `CONE_DRIVE_RULE` | `/my_rule/cone_cmd`의 `data[0]` | 물리 조향각 |
+
+`/lane_fallback/command`의 타입은
+`teamkai_interfaces/msg/LaneFallbackCommand`이며 계약은 다음과 같다.
+
+```text
+builtin_interfaces/Time stamp
+float32 steering_angle_deg
+bool valid
+```
+
+Lane Fallback controller는 `/perception/centerline`을 받아 이 메시지를 만든다.
+`valid=false`인 angle은 사용하지 않는다. Controller는 구현되어 있으며
+Final Driver의 ROS node와 motor 출력은 포함되지 않는다.
+
+`track_drive/final_driver/normal_il_input.py`에는 motor를 발행하지 않는
+NORMAL_IL 입력 코어가 있다. `NORMAL_IL + drive_il + normal` 결정에서 fresh
+`/il/policy_debug.data[2]`를 Xycar 조향 후보로, `data[3]`을 속도 후보로
+반환한다. `NormalIlInputConfig`의 `fallback_speed`에는 임의 기본값이 없으며
+실차 튜닝으로 정한 값을 외부에서 반드시 전달해야 한다.
+
+`track_drive/final_driver/lane_fallback_input.py`에는 motor를 발행하지 않는
+Lane Fallback 입력 코어가 있다. `LANE_FALLBACK + lane_fallback + fallback`
+결정에서 fresh `/lane_fallback/command.steering_angle_deg`를 물리 조향 후보로
+반환하며 속도는 `fallback_speed`를 사용한다. `LaneFallbackInputConfig`도
+임의 기본 속도를 갖지 않는다. 후속 단일 Final Driver는 ROS parameter 하나로
+두 입력 코어에 같은 `fallback_speed`를 전달해야 한다.
+
+`track_drive/final_driver/cone_input.py`에는 motor를 발행하지 않는 콘 입력
+선택·검증 코어가 있다. `CONE_DRIVE_RULE + cone_rule + cone` 결정이며
+`stop_required=false`일 때만 콘 주행 후보를 반환한다. `ConeInputSelector`는
+같은 콘 모드에서 마지막으로 유효했던 조향각을 기억한다.
+
+`track_drive/final_driver/input_selector.py`의 `DriveInputSelector`는 세 입력
+코어를 하나로 묶고 MissionDecision이 지정한 source 하나만 반환한다. 공통
+`DriveInputSelection` 계약은 다음과 같다.
+
+| 필드 | 의미 |
+|---|---|
+| `steering_value` | 선택 source의 조향값 |
+| `steering_unit` | `XYCAR_COMMAND`, `PHYSICAL_DEG`, 또는 `NONE` |
+| `requested_speed` | 선택 source의 숫자 속도 후보 |
+| `selected_source` | 실제 선택되었거나 시도된 source |
+| `steering_held` | 마지막 유효 조향을 재사용 중인지 |
+| `valid` | 후단에서 사용할 수 있는 후보인지 |
+
+STOP 또는 선택 source 후보 부재 시 조향·속도는 0, 단위는 `NONE`,
+`valid=false`다. 이 중립값은 motor 정지 명령 자체가 아니며 후단 Final Driver가
+MissionDecision과 함께 해석한다. selector는 단위 변환과 motor 발행을 하지
+않는다.
+
+`track_drive/final_driver/steering_converter.py`는 선택 결과의 조향 단위를
+Xycar command로 정규화한다. IL의 `XYCAR_COMMAND`는 그대로 통과시키고
+Lane Fallback과 Cone의 `PHYSICAL_DEG`만 다음 표로 구간별 선형 보간한다.
+
+| 물리 조향각 | Xycar 조향 명령 |
+|---:|---:|
+| 0° | 0 |
+| 4° | 10 |
+| 10° | 20 |
+| 16° | 30 |
+| 26° | 42 |
+
+±26° 밖의 물리 입력은 표의 끝값 ±42로 clamp한다. 좌우 부호는
+`physical_steering_sign`으로 설정하며 기본값은 `1.0`이다. 변환 과정은
+requested speed, selected source와 held 표시를 그대로 보존한다. smoothing과
+조향 변화율 제한은 없고 결과 `FinalDriveCommandCandidate`도 motor를 발행하지
+않는다.
+
+Mission Manager는 숫자 속도 대신 상징적 profile만 전달한다. Final Driver는
+`SPEED_PROFILE_NORMAL`에서 `/il/policy_debug.data[3]`을 사용한다. 이 값은
+신경망이 직접 출력한 속도가 아니라 IL 주행 노드가 `data[2]` 조향 크기와
+`speed_command`, `min_speed_command` 파라미터로 계산한 요청 속도다. 두
+파라미터의 숫자값은 실차 튜닝 후 정한다.
+
+`SPEED_PROFILE_FALLBACK`에서는 `fallback_speed` 설정값을 사용하며 이 숫자값도
+실차 튜닝 후 정한다.
+`SPEED_PROFILE_CONE`에서는 cone command의 `data[1]` `requested_speed`를
+재계산 없이 사용한다. 현재 입력 코어는 command freshness 0.2초, confidence
+0.2 초과, 물리 조향각 ±26도 이내를 요구한다. 속도는 실차 `cone_node`의
+유효 범위에 맞춰 9.5 미만을 거부하고 21.0 초과를 21.0으로 제한한다.
+`stop_required=true`가 언제나 우선한다.
+유효한 command를 한 번 이상 받은 뒤 입력이 무효·stale이면 마지막 조향을
+유지하고 요청 속도는 최저 콘 속도 9.5를 사용한다.
+
 ## 7. 현재 자동 전이
 
 ### 출발
@@ -296,6 +387,11 @@ speed를 Mission Manager에 전달하거나 계산에 사용하지 않고, 배�
 confidence만 검사한다. `/my_rule/cone_clusters`는 `laser_frame`의 cluster
 중심이며 빈 배열도 유효한 미검출이다.
 
+후속 단일 Final Driver는 `/my_rule/cone_cmd`를 직접 구독한다. 콘 입력 코어는
+MissionDecision이 콘 source와 콘 speed profile을 함께 선택했을 때 `data[0]`을
+물리 조향 후보로, `data[1]`을 숫자 속도 요청으로 묶어 반환한다. 별도의 콘
+속도 토픽이나 두 번째 motor publisher는 만들지 않는다.
+
 `physical_angle_deg`는 IL의 Xycar 조향 명령과 단위가 다르다. 후속 Final
 Driver가 source별 단위를 공통 단위로 변환한 뒤 최종 motor angle을 한 번만
 계산해야 한다.
@@ -323,36 +419,53 @@ freshness는 0.25초 진입 확인보다 짧으므로 한 번 받은 source 값�
 `CONE_SECTION`이면 콘 조향 source가 일시적으로 무효·stale이 되어도
 `CONE_SECTION + CONE_DRIVE_RULE`을 유지한다.
 
-숫자 조향값 유지 정책은 Mission Manager가 아니라 후단의 유일한 Final Driver가
-담당한다. Final Driver는 선택된 콘 source의 새 조향값이 유효하고 유한할 때만
-`last_valid_steering_angle`을 갱신하고, 무효이면 마지막 유효 조향각을 그대로
-재사용한다. 무효 지속시간에 따른 자동 `STOP`과 조향 변화율 제한은 적용하지
-않는다. 이 sample-and-hold 정책은 조향각에만 적용하며 Mission Manager의
-`MissionDecision` 다섯 필드는 변경하지 않는다.
+숫자 조향값 유지 정책은 Mission Manager가 아니라
+`track_drive.final_driver.cone_input.ConeInputSelector`가 담당한다. 선택된 콘
+source의 새 조향값이 유효하고 유한할 때만 `last_valid_steering_angle`을
+갱신한다. 무효이면 마지막 유효 조향각과 최저 콘 속도 9.5를 반환하고
+`steering_held=true`로 표시한다.
+
+무효 지속시간에 따른 자동 `STOP`은 적용하지 않는다. 새 유효 조향은 조향 변화율
+제한 없이 즉시 반영한다. 유효한 콘 명령을 한 번도 받지 않았다면 유지할 값이
+없으므로 후보를 반환하지 않는다. 콘 모드 이탈 또는 정지 결정에서는 저장된
+조향각을 초기화하여 다음 콘 구간에서 이전 값을 재사용하지 않는다. 이 정책은
+Mission Manager의 `MissionDecision` 다섯 필드를 변경하지 않는다.
 
 ### 차선 source 전환
 
-- 일반 model의 입력 단절·추론 실패 같은 hard-invalid는 첫 주기에
-  `NORMAL_IL` 선택을 해제한다.
 - YOLO lane source가 이미 0.2초 이상 준비되어 있으면 첫 실패 주기에
   `LANE_FALLBACK`으로 전환한다.
-- fallback이 아직 준비되지 않았으면 `LANE_DRIVING + STOP`으로 기다린다.
+- 대체 source가 준비되지 않았으면 마지막 `NORMAL_IL` 또는 `LANE_FALLBACK`
+  mode와 selected source를 최대 1.0초 유지한다.
+- 이 유예 중에는 `speed_profile=fallback`을 요청한다. `NORMAL_IL` 경로에서는
+  `NormalIlInputSelector`가 마지막 유효 `data[2]`와 `fallback_speed`를
+  반환한다. `LANE_FALLBACK` 경로에서는 `LaneFallbackInputSelector`가 마지막
+  유효 물리 조향각과 같은 `fallback_speed`를 반환한다.
+- 첫 무효 시점부터 정확히 1.0초 이상 두 source가 모두 무효이면
+  `LANE_DRIVING + STOP`으로 전환한다.
+- 1.0초 안에 마지막 source가 복구되거나 다른 source가 준비되면 loss timer를
+  초기화하고 정상 profile 또는 새 source로 복귀한다.
+- 출발 시점부터 유효한 source가 없어 마지막 유효 조향이 없으면 즉시
+  `LANE_DRIVING + STOP`을 선택한다.
 - 정지 중 YOLO lane source가 0.2초 유효하면 `LANE_FALLBACK`으로 복구한다.
 - 일반 model이 0.4초 연속 회복되면 `NORMAL_IL`로 복귀한다.
-- 선택된 fallback 자체가 hard-invalid이면 즉시 `STOP`한다.
 
 일반 model이 정상인 동안에도 fallback 준비 시간을 백그라운드에서 누적한다.
-따라서 확인 시간 동안 무효인 일반 모델 출력을 계속 사용하지 않는다. 실제
-freshness, inference 성공, 유한한 조향 후보 판정은 각 source adapter가 수행하고
-Mission Manager에는 최종 valid만 전달한다.
+실제 freshness, inference 성공, 유한한 조향 후보 판정은 각 source adapter가
+수행하고 Mission Manager에는 최종 valid만 전달한다. Mission Manager는 숫자
+조향각을 저장하지 않고 mode, selected source, speed profile과 STOP 여부만
+결정한다.
 
 일반 모델의 `mission_drive_policy_adapter`는 성공 추론 때만 갱신되는
 `/il/policy_debug` (`Float32MultiArray`)를 구독한다. 배열에 최소 4개 값이 있고
 최종 조향 후보인 `data[2]`가 유한한 `-42~42` 범위이며 마지막 수신 후
 0.5초 이내일 때만 `/mission/input/drive_policy_valid=true`를 발행한다.
 시작 전, 잘못된 배열, 최종 조향 후보의 NaN/Inf·범위 이탈 또는 stale이면
-`false`다. 정규화 조향, raw 조향, 모델 계산 속도와 뒤의 진단값은 validity
-판단에 사용하지 않는다. `/il/policy_motor_shadow`는 센서 timeout 뒤에도
+`false`다. 정규화 조향, raw 조향, IL 주행 노드가 계산한 `data[3]` 속도와
+뒤의 진단값은 Mission Manager validity 판단에 사용하지 않는다. `data[3]`은
+`NormalIlInputSelector`의 정상 IL 속도 후보로 사용한다. 속도 범위나 clamp는
+적용하지 않고 numeric command 경계에서 NaN/Inf만 거부한다.
+`/il/policy_motor_shadow`는 센서 timeout 뒤에도
 watchdog의 `[0.0, 0.0]` 정지 명령이 발행되므로 validity source로 사용하지
 않는다. adapter는 추론 또는 numeric command 계산을 수행하지 않는다.
 
@@ -370,30 +483,54 @@ source 노드가 `/xycar_motor`를 발행하지 않도록 `drive_enabled:=false`
 
 1. 유효한 노란 중앙선 자체
 2. 노란선이 없을 때 양쪽 흰선의 중간
-3. 흰선 하나와 검증된 예상 반폭으로 추정한 중앙
+3. 둘 중 어느 조건도 충족하지 못하면 무효
 
-흰선은 노란 중앙선의 geometry 검증과 소실 시 복구에 사용한다. mask freshness,
+흰선은 노란 중앙선의 geometry 검증과 노란선 소실 시 두 경계의 중앙 경로 생성에
+사용한다. 흰선 하나만으로 추정한 경로는 사용하지 않는다. mask freshness,
 confidence, 최소 경로 점 수, 차선 폭과 좌우 관계, 유한한 controller 출력이 모두
 유효할 때만 `lane_fallback_valid=true`가 된다. 이 controller는 조향 후보를
 selector에 제공하지만 `/xycar_motor`를 발행하지 않는다. Mission Manager는
 YOLO 추론, mask/BEV 처리, 경로 생성, Pure Pursuit와 숫자 조향 계산을 하지 않는다.
 
 `mission_lane_fallback_adapter`는 `/perception/centerline`
-(`kaiev26_msgs/Centerline`)을 구독하고 다음 조건을 검사한다.
+(`kaiev26_msgs/Centerline`)과 `/perception/road_segments`
+(`kaiev26_msgs/RoadSegmentArray`), `/lane_fallback/command`
+(`teamkai_interfaces/LaneFallbackCommand`)를 구독하고 다음 조건을 검사한다.
 
 - `points` 3개 이상
 - 유한한 `confidence`가 0.25 이상 1.0 이하
 - 모든 point의 `x`, `y`, `z`가 유한함
-- adapter의 마지막 수신 시각으로부터 0.4초 이내
+- 유효한 노란 선분 1개 이상 또는 유효한 흰 선분 2개 이상
+- 두 입력 모두 adapter의 마지막 수신 시각으로부터 0.4초 이내
+- `LaneFallbackCommand.valid=true`
+- 조향각이 유한한 `±26°` 범위이며 command 수신 후 0.2초 이내
 
 모두 만족하면 `/mission/input/lane_fallback_valid=true`, 하나라도 실패하거나
 stale이면 `false`를 발행한다. adapter는 Centerline을 생성하거나 조향값을
 계산하지 않는다.
 
-현재 `simulation` 브랜치의 perception 설정 `use_yellow_as_centerline: false`는
-노란선을 중앙선으로 사용한다는 위 계약과 충돌한다. 실제 연결 전 이 값을
-`true`로 바꾸고 Centerline 생성 결과를 검증해야 한다. 이 V0.2 단계에서는
-perception 알고리즘과 설정을 수정하지 않는다.
+`lane_fallback_controller`는 유효한 Centerline에서 가까운 `0.70 m`와 먼
+`1.45 m` 목표점의 Pure Pursuit 조향각을 계산해
+`/lane_fallback/command`를 발행한다. 두 조향각은 가까운 값 35%, 먼 값 65%로
+합성한다. 초기값은 `wheelbase_m=0.33`, `steering_gain=1.0`,
+`max_steering_angle_deg=26.0`이다. 최소 `0.70 m` 전방 경로가 없거나
+`base_footprint` frame, confidence, 좌표 또는 freshness가 무효이면
+`valid=false`다. Controller는 속도, `/xycar_motor`, 조향 변화율 제한을
+사용하지 않는다.
+
+`lane_fallback_valid`는 perception 경로, 색상별 선분 증거와 Controller 조향
+출력이 모두 사용 가능할 때만 참이다.
+
+`LaneFallbackInputSelector`는 command가 유효하고 0.2초 이내일 때
+`steering_angle_deg`를 갱신한다. 같은 `LANE_FALLBACK` mode에서 command가
+무효·stale이면 마지막 유효 각도와 `fallback_speed`를 반환한다. 별도 유예
+타이머는 만들지 않으며 Mission Manager가 mode를 바꾸거나 STOP을 결정하면
+저장 각도를 초기화한다.
+
+`config/lane_fallback_perception_override.yaml`은 기본 perception 설정 뒤에
+적용하며 `centerline_mode: yellow_centerline`,
+`use_yellow_as_centerline: true`를 지정한다. perception 알고리즘 자체는
+수정하지 않는다.
 
 메시지 정의를 제공하는 `simulation/xycar_ws/src/kaiev26_msgs` 패키지는 실제
 ROS2 workspace에 함께 설치·빌드되어 있어야 한다. `track_drive/package.xml`은
@@ -423,8 +560,8 @@ adapter `mission_start_signal_adapter`, 일반 모델 adapter
 `traffic_light_debug`·IL·YOLO lane perception·`my_rule/cone_node` source 노드는
 별도로 실행해야 한다. Mission Manager 입력은 다음과 같다.
 
-`my_rule/rule_driver`, `my_rule.launch.py`, 기존 `track_drive` 주행 노드와
-`cone_il` driver는 motor publisher를 포함하므로 함께 실행하지 않는다.
+`my_rule/rule_driver`처럼 `/xycar_motor`를 직접 발행하는 외부 주행 노드는
+향후 단일 Final Driver와 함께 실행하지 않는다.
 
 - `/mission/override`
 - `/mission/input/safety_stop_required` (`Bool`)
@@ -479,16 +616,16 @@ ros2 launch track_drive mission_manager_draft.launch.py
 
 ## 11. 남은 TODO
 
-- `simulation` perception을 `use_yellow_as_centerline: true`로 맞춘 뒤 실차 검증
+- Lane Fallback perception override를 적용한 Centerline의 실차 검증
 - 실차 LiDAR rosbag으로 cone cluster 파라미터 검증·조정
-- Final Driver의 last-valid 콘 조향 유지
+- 실차 튜닝으로 공용 `fallback_speed` 확정
+- 바퀴 공중 시험으로 `physical_steering_sign`과 조향 보정표 검증
 - 고정 장애물 미션 진입·이탈과 전용 controller 연결
 - 추월 구간 진입, follow/overtake 전환, 차선 복귀
 - 신호등 기반 경로 선택과 3바퀴 중 한 번의 지름길
 - 실제 lap crossing debounce
-- YOLO lane controller의 조향 candidate를 Final Driver에 연결
 - Safety Supervisor의 recoverable stop 입력과 물리 차단 경로 분리
-- 후단 policy selector와 유일한 final driver 연결
+- 유일한 Final Driver ROS node와 `/xycar_motor` publisher 연결
 
 후속 구현에서도 Mission Manager 자체에는 `/xycar_motor` publisher를
 추가하지 않는다.

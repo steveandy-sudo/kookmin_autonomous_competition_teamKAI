@@ -10,6 +10,7 @@ mission_manager:
 
     drive_recover_hold_sec: 0.4
     lane_fallback_ready_hold_sec: 0.2
+    lane_source_loss_grace_sec: 1.0
 
     minimum_camera_cone_count: 4
     maximum_camera_cone_count_for_exit: 1
@@ -36,10 +37,32 @@ mission_drive_policy_adapter:
 mission_lane_fallback_adapter:
   ros__parameters:
     source_centerline_topic: /perception/centerline
+    source_road_segments_topic: /perception/road_segments
+    source_command_topic: /lane_fallback/command
     output_valid_topic: /mission/input/lane_fallback_valid
     source_timeout_sec: 0.4
+    command_timeout_sec: 0.2
     minimum_point_count: 3
     minimum_confidence: 0.25
+    max_steering_angle_deg: 26.0
+    publish_rate_hz: 20.0
+
+lane_fallback_controller:
+  ros__parameters:
+    source_centerline_topic: /perception/centerline
+    output_command_topic: /lane_fallback/command
+    expected_frame_id: base_footprint
+    source_timeout_sec: 0.4
+    minimum_confidence: 0.25
+    minimum_point_count: 3
+    wheelbase_m: 0.33
+    near_lookahead_m: 0.70
+    far_preview_distance_m: 0.75
+    max_lookahead_m: 1.45
+    far_preview_weight: 0.65
+    steering_gain: 1.0
+    max_steering_angle_deg: 26.0
+    minimum_path_distance_m: 0.70
     publish_rate_hz: 20.0
 
 mission_camera_cone_adapter:

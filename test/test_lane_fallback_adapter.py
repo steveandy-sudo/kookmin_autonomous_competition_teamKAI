@@ -4,12 +4,22 @@ import unittest
 
 from track_drive.integration.lane_fallback_adapter import (
     centerline_values_are_valid,
+    lane_fallback_command_values_are_valid,
+    lane_path_evidence_is_valid,
     lane_fallback_source_is_fresh,
 )
 
 
 def point(x=0.0, y=0.0, z=0.0):
     return SimpleNamespace(x=x, y=y, z=z)
+
+
+def segment(segment_type, confidence=0.8, point_count=3):
+    return SimpleNamespace(
+        type=segment_type,
+        confidence=confidence,
+        points=[point(float(index)) for index in range(point_count)],
+    )
 
 
 class CenterlineValuesTest(unittest.TestCase):
@@ -71,6 +81,90 @@ class CenterlineValuesTest(unittest.TestCase):
                 confidence=0.9,
                 minimum_point_count=3,
                 minimum_confidence=0.25,
+            )
+        )
+
+
+class LanePathEvidenceTest(unittest.TestCase):
+    def test_accepts_one_valid_yellow_segment(self):
+        self.assertTrue(
+            lane_path_evidence_is_valid(
+                segments=[segment(3)],
+                minimum_point_count=3,
+                minimum_confidence=0.25,
+            )
+        )
+
+    def test_accepts_two_valid_white_segments(self):
+        self.assertTrue(
+            lane_path_evidence_is_valid(
+                segments=[segment(1), segment(2)],
+                minimum_point_count=3,
+                minimum_confidence=0.25,
+            )
+        )
+
+    def test_rejects_one_white_segment(self):
+        self.assertFalse(
+            lane_path_evidence_is_valid(
+                segments=[segment(1)],
+                minimum_point_count=3,
+                minimum_confidence=0.25,
+            )
+        )
+
+    def test_rejects_invalid_yellow_and_incomplete_white_pair(self):
+        self.assertFalse(
+            lane_path_evidence_is_valid(
+                segments=[
+                    segment(3, confidence=0.1),
+                    segment(1),
+                ],
+                minimum_point_count=3,
+                minimum_confidence=0.25,
+            )
+        )
+
+
+class LaneFallbackCommandValuesTest(unittest.TestCase):
+    def test_accepts_valid_angle_at_physical_limit(self):
+        for angle in (-26.0, 0.0, 26.0):
+            with self.subTest(angle=angle):
+                self.assertTrue(
+                    lane_fallback_command_values_are_valid(
+                        steering_angle_deg=angle,
+                        command_valid=True,
+                        max_steering_angle_deg=26.0,
+                    )
+                )
+
+    def test_rejects_invalid_nonfinite_or_out_of_range_angle(self):
+        cases = (
+            (0.0, False),
+            (math.nan, True),
+            (math.inf, True),
+            (-26.01, True),
+            (26.01, True),
+        )
+        for angle, command_valid in cases:
+            with self.subTest(
+                angle=angle,
+                command_valid=command_valid,
+            ):
+                self.assertFalse(
+                    lane_fallback_command_values_are_valid(
+                        steering_angle_deg=angle,
+                        command_valid=command_valid,
+                        max_steering_angle_deg=26.0,
+                    )
+                )
+
+    def test_rejects_invalid_physical_limit(self):
+        self.assertFalse(
+            lane_fallback_command_values_are_valid(
+                steering_angle_deg=0.0,
+                command_valid=True,
+                max_steering_angle_deg=0.0,
             )
         )
 

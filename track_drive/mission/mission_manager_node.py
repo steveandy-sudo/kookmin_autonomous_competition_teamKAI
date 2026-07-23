@@ -130,6 +130,10 @@ class MissionManagerNode(Node):
             defaults.lane_fallback_ready_hold_sec,
         )
         self.declare_parameter(
+            "lane_source_loss_grace_sec",
+            defaults.lane_source_loss_grace_sec,
+        )
+        self.declare_parameter(
             "minimum_camera_cone_count",
             defaults.minimum_camera_cone_count,
         )
@@ -165,6 +169,9 @@ class MissionManagerNode(Node):
             ),
             lane_fallback_ready_hold_sec=self._float_parameter(
                 "lane_fallback_ready_hold_sec"
+            ),
+            lane_source_loss_grace_sec=self._float_parameter(
+                "lane_source_loss_grace_sec"
             ),
             minimum_camera_cone_count=int(
                 self.get_parameter("minimum_camera_cone_count").value

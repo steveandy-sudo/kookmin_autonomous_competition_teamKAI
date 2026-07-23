@@ -233,27 +233,13 @@ log/
 *.key
 simulator/
 
-# Imitation-learning datasets and model artifacts
+# Model artifacts are ignored unless explicitly required by this package.
 *.pt
 *.pth
 *.onnx
 *.engine
 !assets/
 !assets/models/
-!assets/models/cone_bc_scripted_2.pt
-!assets/models/cone_bc_scripted_3.pt
-!assets/models/cone_bc_scripted_4.pt
-!assets/models/cone_bc_scripted_5.pt
 !assets/models/final.onnx
-cone_il_dataset*/
-cone_il_model*/
 *.npy
 *:Zone.Identifier
-!assets/models/cone_bc_scripted_0.pt
-!assets/models/cone_bc_scripted_00.pt
-!assets/models/cone_bc_scripted_1.pt
-!assets/models/cone_bc_scripted_6.pt
-!assets/models/cone_bc_scripted_7.pt
-!assets/models/cone_bc_scripted_8.pt
-!assets/models/cone_bc_scripted_9.pt
-!assets/models/cone_bc_scripted_10.pt

@@ -65,6 +65,7 @@ class MissionContext:
 
     drive_valid_since: float | None = None
     lane_fallback_ready_since: float | None = None
+    lane_source_loss_since: float | None = None
 
     manual_override: str = "AUTO"
 
@@ -126,6 +127,7 @@ class MissionManagerConfig:
 
     drive_recover_hold_sec: float = 0.4
     lane_fallback_ready_hold_sec: float = 0.2
+    lane_source_loss_grace_sec: float = 1.0
 
     minimum_camera_cone_count: int = 4
     maximum_camera_cone_count_for_exit: int = 1
@@ -142,6 +144,7 @@ class MissionManagerConfig:
             self.cone_reenter_cooldown_sec,
             self.drive_recover_hold_sec,
             self.lane_fallback_ready_hold_sec,
+            self.lane_source_loss_grace_sec,
             self.status_log_period_sec,
         )
         if any(value < 0.0 for value in durations):

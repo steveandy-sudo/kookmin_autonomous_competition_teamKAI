@@ -3,6 +3,10 @@ from collections.abc import Sequence
 from typing import Any
 
 
+WHITE_ROAD_SEGMENT_TYPES = frozenset({1, 2})
+YELLOW_ROAD_SEGMENT_TYPES = frozenset({3, 4})
+
+
 def centerline_values_are_valid(
     *,
     points: Sequence[Any],
@@ -45,6 +49,64 @@ def centerline_values_are_valid(
             return False
 
     return True
+
+
+def lane_path_evidence_is_valid(
+    *,
+    segments: Sequence[Any],
+    minimum_point_count: int,
+    minimum_confidence: float,
+) -> bool:
+    """Accept a yellow centerline or a pair of white lane boundaries."""
+
+    valid_white_count = 0
+    for segment in segments:
+        try:
+            segment_type = int(segment.type)
+            points = segment.points
+            confidence = float(segment.confidence)
+        except (AttributeError, TypeError, ValueError):
+            continue
+
+        if segment_type not in (
+            WHITE_ROAD_SEGMENT_TYPES | YELLOW_ROAD_SEGMENT_TYPES
+        ):
+            continue
+        if not centerline_values_are_valid(
+            points=points,
+            confidence=confidence,
+            minimum_point_count=minimum_point_count,
+            minimum_confidence=minimum_confidence,
+        ):
+            continue
+
+        if segment_type in YELLOW_ROAD_SEGMENT_TYPES:
+            return True
+        valid_white_count += 1
+
+    return valid_white_count >= 2
+
+
+def lane_fallback_command_values_are_valid(
+    *,
+    steering_angle_deg: float,
+    command_valid: bool,
+    max_steering_angle_deg: float,
+) -> bool:
+    """Validate the physical steering candidate produced by the controller."""
+
+    try:
+        steering = float(steering_angle_deg)
+        angle_limit = float(max_steering_angle_deg)
+    except (TypeError, ValueError):
+        return False
+    if not command_valid:
+        return False
+    if not all(math.isfinite(value) for value in (steering, angle_limit)):
+        return False
+    if angle_limit <= 0.0:
+        return False
+    return abs(steering) <= angle_limit
 
 
 def lane_fallback_source_is_fresh(

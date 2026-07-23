@@ -1,0 +1,6 @@
+xycar_camera_perception:
+  ros__parameters:
+    # On this track, yellow is the desired center path, not a lane boundary.
+    # Load this file after camera_perception_real.yaml.
+    centerline_mode: yellow_centerline
+    use_yellow_as_centerline: true

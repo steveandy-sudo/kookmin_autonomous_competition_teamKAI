@@ -53,6 +53,7 @@ setup(
             'mission_start_signal_adapter = track_drive.mission.start_signal_adapter_node:main',
             'mission_drive_policy_adapter = track_drive.integration.drive_policy_adapter_node:main',
             'mission_lane_fallback_adapter = track_drive.integration.lane_fallback_adapter_node:main',
+            'lane_fallback_controller = track_drive.lane_fallback_controller_node:main',
             'mission_camera_cone_adapter = track_drive.integration.camera_cone_adapter_node:main',
             'mission_lidar_cone_adapter = track_drive.integration.lidar_cone_adapter_node:main',
         ],

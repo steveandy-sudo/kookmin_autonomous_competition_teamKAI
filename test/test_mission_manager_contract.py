@@ -188,14 +188,30 @@ class RuntimeBoundaryTest(unittest.TestCase):
             INTEGRATION_ROOT / "lane_fallback_adapter_node.py"
         ).read_text(encoding="utf-8")
         self.assertIn('"/perception/centerline"', source)
+        self.assertIn('"/perception/road_segments"', source)
+        self.assertIn('"/lane_fallback/command"', source)
         self.assertIn(
             '"/mission/input/lane_fallback_valid"',
             source,
         )
         self.assertIn("Centerline", source)
+        self.assertIn("RoadSegmentArray", source)
+        self.assertIn("LaneFallbackCommand", source)
+        self.assertEqual(source.count("create_subscription("), 3)
+        self.assertEqual(source.count("create_publisher("), 1)
+        self.assertNotIn("xycar_motor", source.lower())
+
+    def test_lane_fallback_controller_has_exact_topic_contract(self):
+        source = (
+            PACKAGE_ROOT / "track_drive" / "lane_fallback_controller_node.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"/perception/centerline"', source)
+        self.assertIn('"/lane_fallback/command"', source)
+        self.assertIn("LaneFallbackCommand", source)
         self.assertEqual(source.count("create_subscription("), 1)
         self.assertEqual(source.count("create_publisher("), 1)
         self.assertNotIn("xycar_motor", source.lower())
+        self.assertNotIn("steering_max_delta", source)
 
     def test_camera_cone_adapter_has_exact_topic_contract(self):
         source = (
@@ -297,6 +313,7 @@ class PackageContractTest(unittest.TestCase):
             "cone_reenter_cooldown_sec: 1.0",
             "drive_recover_hold_sec: 0.4",
             "lane_fallback_ready_hold_sec: 0.2",
+            "lane_source_loss_grace_sec: 1.0",
             "minimum_camera_cone_count: 4",
             "maximum_camera_cone_count_for_exit: 1",
             "status_log_period_sec: 1.0",
@@ -308,10 +325,23 @@ class PackageContractTest(unittest.TestCase):
             "source_debug_topic: /il/policy_debug",
             "output_valid_topic: /mission/input/drive_policy_valid",
             "source_centerline_topic: /perception/centerline",
+            "source_road_segments_topic: /perception/road_segments",
+            "source_command_topic: /lane_fallback/command",
             "output_valid_topic: /mission/input/lane_fallback_valid",
             "source_timeout_sec: 0.4",
+            "command_timeout_sec: 0.2",
             "minimum_point_count: 3",
             "minimum_confidence: 0.25",
+            "output_command_topic: /lane_fallback/command",
+            "expected_frame_id: base_footprint",
+            "wheelbase_m: 0.33",
+            "near_lookahead_m: 0.70",
+            "far_preview_distance_m: 0.75",
+            "max_lookahead_m: 1.45",
+            "far_preview_weight: 0.65",
+            "steering_gain: 1.0",
+            "max_steering_angle_deg: 26.0",
+            "minimum_path_distance_m: 0.70",
             "source_count_topic: /perception/camera_cone_count",
             "output_count_topic: /mission/input/camera_cone_count",
             "output_valid_topic: /mission/input/camera_cone_valid",
@@ -460,6 +490,37 @@ class PackageContractTest(unittest.TestCase):
             "rosidl_interface_packages",
         )
 
+    def test_lane_fallback_command_has_exact_output_contract(self):
+        interface_root = PACKAGE_ROOT / "teamkai_interfaces"
+        message_path = (
+            interface_root / "msg" / "LaneFallbackCommand.msg"
+        )
+        self.assertTrue(message_path.is_file())
+
+        message_lines = [
+            line.strip()
+            for line in message_path.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        self.assertEqual(
+            message_lines,
+            [
+                "builtin_interfaces/Time stamp",
+                "float32 steering_angle_deg",
+                "bool valid",
+            ],
+        )
+        message_source = message_path.read_text(encoding="utf-8")
+        self.assertNotIn("speed", message_source)
+        self.assertNotIn("sequence", message_source)
+        self.assertNotIn("source", message_source)
+
+        cmake_source = (
+            interface_root / "CMakeLists.txt"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"msg/LaneFallbackCommand.msg"', cmake_source)
+        self.assertIn('"msg/MissionDecision.msg"', cmake_source)
+
     def test_package_installs_only_v02_runtime_assets_and_entry_points(self):
         setup_source = (PACKAGE_ROOT / "setup.py").read_text(
             encoding="utf-8"
@@ -494,6 +555,11 @@ class PackageContractTest(unittest.TestCase):
             setup_source,
         )
         self.assertIn(
+            "lane_fallback_controller = "
+            "track_drive.lane_fallback_controller_node:main",
+            setup_source,
+        )
+        self.assertIn(
             "mission_camera_cone_adapter = "
             "track_drive.integration.camera_cone_adapter_node:main",
             setup_source,
@@ -516,7 +582,7 @@ class PackageContractTest(unittest.TestCase):
             with self.subTest(entry_point=entry_point):
                 self.assertNotIn(entry_point, setup_source)
 
-    def test_legacy_runtime_dependencies_and_broken_launch_are_excluded(self):
+    def test_removed_runtime_dependencies_and_launch_are_excluded(self):
         requirements = (PACKAGE_ROOT / "requirements.txt").read_text(
             encoding="utf-8"
         ).lower()
@@ -533,8 +599,8 @@ class PackageContractTest(unittest.TestCase):
         model_paths = (
             PACKAGE_ROOT / "track_drive" / "model_paths.py"
         ).read_text(encoding="utf-8")
-        self.assertIn("cone_bc_scripted_5.pt", model_paths)
         self.assertIn("final.onnx", model_paths)
+        self.assertNotIn("cone_bc_scripted", model_paths)
         self.assertNotIn("cnn_steering_model.pt", model_paths)
         self.assertNotIn("object_detector_model.onnx", model_paths)
 
@@ -542,7 +608,7 @@ class PackageContractTest(unittest.TestCase):
         launch_source = (
             PACKAGE_ROOT / "launch" / "mission_manager_draft.launch.py"
         ).read_text(encoding="utf-8")
-        self.assertEqual(launch_source.count('"track_drive"'), 7)
+        self.assertEqual(launch_source.count('"track_drive"'), 8)
         self.assertIn('executable="mission_manager"', launch_source)
         self.assertIn(
             'executable="mission_start_signal_adapter"',
@@ -554,6 +620,10 @@ class PackageContractTest(unittest.TestCase):
         )
         self.assertIn(
             'executable="mission_lane_fallback_adapter"',
+            launch_source,
+        )
+        self.assertIn(
+            'executable="lane_fallback_controller"',
             launch_source,
         )
         self.assertIn(

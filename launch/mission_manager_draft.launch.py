@@ -36,6 +36,13 @@ def generate_launch_description():
             ),
             Node(
                 package="track_drive",
+                executable="lane_fallback_controller",
+                name="lane_fallback_controller",
+                output="screen",
+                parameters=[config_path],
+            ),
+            Node(
+                package="track_drive",
                 executable="mission_camera_cone_adapter",
                 name="mission_camera_cone_adapter",
                 output="screen",

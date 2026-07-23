@@ -162,6 +162,7 @@ class DataModelTest(unittest.TestCase):
                 "cone_last_seen_sec",
                 "drive_valid_since",
                 "lane_fallback_ready_since",
+                "lane_source_loss_since",
                 "manual_override",
                 "lap_count",
                 "shortcut_used",
@@ -173,6 +174,7 @@ class DataModelTest(unittest.TestCase):
         )
         self.assertIs(context.control_mode, ControlMode.STOP)
         self.assertEqual(context.manual_override, "AUTO")
+        self.assertIsNone(context.lane_source_loss_since)
         self.assertEqual(context.lap_count, 0)
         self.assertFalse(context.shortcut_used)
 
@@ -202,6 +204,7 @@ class DataModelTest(unittest.TestCase):
                 cone_reenter_cooldown_sec=1.0,
                 drive_recover_hold_sec=0.4,
                 lane_fallback_ready_hold_sec=0.2,
+                lane_source_loss_grace_sec=1.0,
                 minimum_camera_cone_count=4,
                 maximum_camera_cone_count_for_exit=1,
                 status_log_period_sec=1.0,
@@ -940,7 +943,7 @@ class MissionManagerTransitionTest(unittest.TestCase):
             hold_boundary.control_mode, ControlMode.CONE_DRIVE_RULE
         )
 
-    def test_general_failure_stops_until_fallback_is_ready(self):
+    def test_general_failure_holds_last_source_until_fallback_is_ready(self):
         manual_start(self.manager)
         first = self.manager.update(
             observation(
@@ -964,8 +967,12 @@ class MissionManagerTransitionTest(unittest.TestCase):
             )
         )
 
-        self.assertIs(first.control_mode, ControlMode.STOP)
-        self.assertIs(before.control_mode, ControlMode.STOP)
+        self.assertIs(first.control_mode, ControlMode.NORMAL_IL)
+        self.assertEqual(first.selected_source, "drive_il")
+        self.assertEqual(first.speed_profile, "fallback")
+        self.assertFalse(first.stop_required)
+        self.assertIs(before.control_mode, ControlMode.NORMAL_IL)
+        self.assertEqual(before.speed_profile, "fallback")
         self.assertIs(at_boundary.control_mode, ControlMode.LANE_FALLBACK)
 
     def test_preconfirmed_fallback_is_selected_on_first_failure_tick(self):
@@ -1032,8 +1039,10 @@ class MissionManagerTransitionTest(unittest.TestCase):
             )
         )
 
-        self.assertIs(first.control_mode, ControlMode.STOP)
-        self.assertIs(before.control_mode, ControlMode.STOP)
+        self.assertIs(first.control_mode, ControlMode.NORMAL_IL)
+        self.assertEqual(first.speed_profile, "fallback")
+        self.assertIs(before.control_mode, ControlMode.NORMAL_IL)
+        self.assertEqual(before.speed_profile, "fallback")
         self.assertIs(ready.control_mode, ControlMode.LANE_FALLBACK)
 
     def test_drive_recovery_returns_to_normal_after_hold(self):
@@ -1097,15 +1106,53 @@ class MissionManagerTransitionTest(unittest.TestCase):
 
         self.assertIs(not_yet.control_mode, ControlMode.LANE_FALLBACK)
 
-    def test_no_valid_controller_uses_stop(self):
+    def test_fallback_loss_holds_for_one_second_then_stops(self):
         manual_start(self.manager, drive=False, lane=True)
-        stopped = self.manager.update(observation(1.0))
+        first = self.manager.update(observation(1.0))
+        before = self.manager.update(observation(1.999))
+        stopped = self.manager.update(observation(2.0))
+
+        self.assertIs(first.control_mode, ControlMode.LANE_FALLBACK)
+        self.assertEqual(first.selected_source, "lane_fallback")
+        self.assertEqual(first.speed_profile, "fallback")
+        self.assertFalse(first.stop_required)
+        self.assertIs(before.control_mode, ControlMode.LANE_FALLBACK)
         self.assertIs(
             stopped.mission_state,
             MissionState.LANE_DRIVING,
         )
         self.assertIs(stopped.control_mode, ControlMode.STOP)
         self.assertTrue(stopped.stop_required)
+
+    def test_normal_loss_holds_for_one_second_then_stops(self):
+        manual_start(self.manager, drive=True, lane=False)
+        first = self.manager.update(observation(1.0))
+        before = self.manager.update(observation(1.999))
+        stopped = self.manager.update(observation(2.0))
+
+        self.assertIs(first.control_mode, ControlMode.NORMAL_IL)
+        self.assertEqual(first.selected_source, "drive_il")
+        self.assertEqual(first.speed_profile, "fallback")
+        self.assertFalse(first.stop_required)
+        self.assertIs(before.control_mode, ControlMode.NORMAL_IL)
+        self.assertEqual(before.speed_profile, "fallback")
+        self.assertIs(stopped.control_mode, ControlMode.STOP)
+        self.assertTrue(stopped.stop_required)
+
+    def test_lane_source_recovery_cancels_loss_grace(self):
+        manual_start(self.manager, drive=True, lane=False)
+        held = self.manager.update(observation(1.0))
+        recovered = self.manager.update(
+            observation(1.5, drive_policy_valid=True)
+        )
+
+        self.assertEqual(held.speed_profile, "fallback")
+        self.assertIs(recovered.control_mode, ControlMode.NORMAL_IL)
+        self.assertEqual(recovered.speed_profile, "normal")
+        self.assertFalse(recovered.stop_required)
+        self.assertIsNone(
+            self.manager.context.lane_source_loss_since
+        )
 
     def test_lane_stop_recovery_priority(self):
         manual_start(self.manager, drive=False, lane=False)

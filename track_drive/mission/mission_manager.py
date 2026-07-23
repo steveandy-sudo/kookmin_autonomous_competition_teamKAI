@@ -324,6 +324,7 @@ class MissionManager:
 
         if self._cone_entry_confirmed(observation):
             self.context.lane_fallback_ready_since = None
+            self.context.lane_source_loss_since = None
             self._set_mission_state(
                 MissionState.CONE_SECTION,
                 observation.now_sec,
@@ -346,15 +347,15 @@ class MissionManager:
         self.context.drive_valid_since = None
 
         if observation.drive_policy_valid:
+            self.context.lane_source_loss_since = None
             return
 
-        # 입력이 사라진 NORMAL_IL을 확인 시간 동안 계속 선택하지 않는다.
-        # 미리 준비된 fallback이 없으면 즉시 recoverable STOP으로 간다.
         self.context.cone_seen_since = None
         if self._lane_fallback_is_ready(now_sec):
+            self.context.lane_source_loss_since = None
             self._set_control_mode(ControlMode.LANE_FALLBACK, now_sec)
         else:
-            self._set_control_mode(ControlMode.STOP, now_sec)
+            self._hold_lane_source_or_stop(now_sec)
 
     def _update_lane_fallback(
         self,
@@ -366,11 +367,28 @@ class MissionManager:
 
         if self._drive_is_recovered(now_sec):
             self.context.drive_valid_since = None
+            self.context.lane_source_loss_since = None
             self._set_control_mode(ControlMode.NORMAL_IL, now_sec)
             return
 
-        if not observation.lane_fallback_valid:
-            # 선택된 fallback source가 hard-invalid이면 한 tick도 계속 쓰지 않는다.
+        if observation.lane_fallback_valid:
+            self.context.lane_source_loss_since = None
+            return
+
+        self._hold_lane_source_or_stop(now_sec)
+
+    def _hold_lane_source_or_stop(self, now_sec: float) -> None:
+        """Keep the last lane source briefly, then request recoverable STOP."""
+
+        self.context.lane_source_loss_since = self._start_or_rebase(
+            self.context.lane_source_loss_since,
+            now_sec,
+        )
+        if self._held_for(
+            self.context.lane_source_loss_since,
+            now_sec,
+            self.config.lane_source_loss_grace_sec,
+        ):
             self._set_control_mode(ControlMode.STOP, now_sec)
 
     def _update_cone_drive(
@@ -381,6 +399,7 @@ class MissionManager:
         self.context.cone_seen_since = None
         self.context.drive_valid_since = None
         self.context.lane_fallback_ready_since = None
+        self.context.lane_source_loss_since = None
 
         if self._any_valid_cone_evidence(observation):
             self.context.cone_last_seen_sec = now_sec
@@ -422,6 +441,7 @@ class MissionManager:
             next_mode = ControlMode.LANE_FALLBACK
         else:
             next_mode = ControlMode.STOP
+        self.context.lane_source_loss_since = None
         self._set_mission_state(MissionState.LANE_DRIVING, now_sec)
         self._set_control_mode(next_mode, now_sec)
 
@@ -435,9 +455,11 @@ class MissionManager:
         if self._drive_is_recovered(now_sec):
             self.context.drive_valid_since = None
             self.context.cone_seen_since = None
+            self.context.lane_source_loss_since = None
             self._set_control_mode(ControlMode.NORMAL_IL, now_sec)
         elif self._lane_fallback_is_ready(now_sec):
             self.context.cone_seen_since = None
+            self.context.lane_source_loss_since = None
             self._set_control_mode(ControlMode.LANE_FALLBACK, now_sec)
 
     def _track_lane_fallback_readiness(
@@ -588,6 +610,15 @@ class MissionManager:
             mode = ControlMode.STOP
 
         source, profile, stop_required = _DECISION_BY_MODE[mode]
+        if (
+            state is MissionState.LANE_DRIVING
+            and mode in {
+                ControlMode.NORMAL_IL,
+                ControlMode.LANE_FALLBACK,
+            }
+            and self.context.lane_source_loss_since is not None
+        ):
+            profile = "fallback"
         return MissionDecision(
             mission_state=state,
             control_mode=mode,
@@ -616,6 +647,9 @@ class MissionManager:
         current = (
             self.context.mission_state,
             self.context.control_mode,
+            decision.selected_source,
+            decision.speed_profile,
+            decision.stop_required,
         )
         if current != self._last_logged_state_mode:
             self._logger(self._format_status("change", observation, decision))
@@ -692,6 +726,7 @@ class MissionManager:
         self.context.cone_missing_since = None
         self.context.drive_valid_since = None
         self.context.lane_fallback_ready_since = None
+        self.context.lane_source_loss_since = None
 
     def _clear_confirmation_timers(self) -> None:
         self._clear_start_signal_confirmation()
