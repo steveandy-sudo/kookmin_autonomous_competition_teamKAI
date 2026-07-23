@@ -1,0 +1,689 @@
+my_rule_driver:
+  ros__parameters:
+    image_topic: /wide_camera/rect/image_raw
+    camera_info_topic: /wide_camera/rect/camera_info
+    scan_topic: /scan
+    ultra_topic: /xycar_ultrasonic
+    motor_topic: /xycar_motor
+    motor_message_type: float32_multi_array
+    state_topic: my_rule/state
+    lane_cmd_topic: my_rule/lane_cmd
+    lane_override_topic: my_rule/lane_override
+    cone_cmd_topic: my_rule/cone_cmd
+    cone_cluster_topic: my_rule/cone_clusters
+    traffic_light_topic: my_rule/traffic_light
+    center_curve_topic: /center_curve
+    center_curve_timeout_sec: 0.5
+    use_external_lane_cmd: true
+    # Leave false in the full competition profile. Lane-only test profiles may
+    # skip this node's duplicate image perception and consume lane_node output.
+    external_lane_only_fast_path: false
+    use_external_cone_cmd: true
+    use_internal_cone_fallback: false
+    use_external_traffic_light: true
+    external_cmd_timeout_sec: 0.5
+
+    enable_yolo: true
+    detection_topic: /yolo/detections
+    use_detection_alt_topic: true
+    detection_alt_topic: /yolo_detections
+    detection_min_score: 0.35
+    detection_timeout_sec: 0.7
+
+    wait_for_green: true
+    green_required_frames: 4
+    # Start is gated only by the light. Lap counting does not use a checkerboard.
+    start_require_checkerboard: false
+    start_checkerboard_required_frames: 2
+    start_checkerboard_hold_sec: 1.0
+    start_checkerboard_min_area_ratio: 0.018
+    start_checkerboard_use_image_checker: false
+    enable_intersection_signal_stop: true
+    intersection_signal_required_frames: 2
+    intersection_signal_release_frames: 2
+    intersection_signal_min_start_elapsed_sec: 1.0
+    intersection_signal_min_area_ratio: 0.0003
+    intersection_signal_max_y_ratio: 0.65
+    intersection_signal_use_image_color: false
+    intersection_stop_on_unknown_when_waiting: true
+    intersection_left_signal_assume_green: true
+    traffic_roi_top_ratio: 0.0
+    traffic_roi_bottom_ratio: 0.45
+    traffic_green_min_pixels: 45
+
+    control_rate_hz: 30.0
+    # Vehicle-validated 2026-07-22 profile. Speed is reduced continuously as
+    # steering demand or perception uncertainty rises.
+    base_speed: 8.0
+    slow_speed: 4.0
+    cone_speed: 17.0
+    # Keep cone-only launch/slew separate so lane launch remains conservative.
+    cone_launch_speed: 8.0
+    cone_speed_accel_per_sec: 10.0
+    cone_speed_decel_per_sec: 32.0
+    overtake_speed: 2.5
+    stop_speed: 0.0
+    minimum_drive_speed: 4.0
+    launch_speed: 3.0
+    launch_hold_sec: 0.20
+
+    lane_moderate_speed: 6.5
+    lane_tight_speed: 5.0
+    lane_moderate_threshold_deg: 5.0
+    lane_tight_threshold_deg: 12.0
+    lane_full_turn_threshold_deg: 22.0
+    lane_confidence_stop: 0.12
+    lane_confidence_low: 0.35
+    lane_confidence_medium: 0.60
+    lane_confidence_high: 0.75
+    lane_low_confidence_speed: 4.0
+    lane_medium_confidence_speed: 6.5
+    lane_high_confidence_speed: 8.0
+
+    max_steer_cmd: 26.0
+    steer_rate_cmd_per_sec: 260.0
+    speed_accel_per_sec: 16.0
+    speed_decel_per_sec: 40.0
+    pedestrian_resume_accel_per_sec: 16.0
+
+    # Candidate map from the same vehicle's IMU test. Keep disabled until the
+    # sign and left/right wheel angles are checked with the wheels lifted.
+    use_asymmetric_steering_map: false
+    steering_negative_actual_deg: [0.0, 4.0, 10.0, 16.0, 26.0]
+    steering_negative_command: [0.0, 10.0, 20.0, 30.0, 42.0]
+    steering_positive_actual_deg: [0.0, 4.0, 10.0, 16.0, 26.0]
+    steering_positive_command: [0.0, 4.0, 10.0, 18.0, 32.0]
+
+    lane_steer_gain: 0.16
+    lane_half_width_px: 115.0
+    target_lane_side: center
+    lane_roi_top_ratio: 0.52
+    lane_roi_bottom_ratio: 0.98
+    lane_min_pixels: 120
+    yellow_h_min: 14
+    yellow_h_max: 45
+    yellow_sat_min: 60
+    yellow_val_min: 80
+    white_sat_max: 120
+    white_val_min: 145
+    emergency_stop_distance_m: 0.45
+    obstacle_distance_m: 1.15
+    pedestrian_stop_distance_m: 1.8
+    # Legacy pedestrian-stop parameters are retained only for old command lines.
+    enable_pedestrian_handling: false
+    pedestrian_required_frames: 1
+    pedestrian_clear_required_frames: 2
+    pedestrian_missing_clear_required_frames: 5
+    pedestrian_stop_min_area_ratio: 0.008
+    pedestrian_corridor_half_width_ratio: 0.24
+    pedestrian_min_y_ratio: 0.20
+    # 2026-07-15 rule: a person-shaped object is a fixed obstacle. Confirm it,
+    # move to the clear lane through the existing Stanley target, then rejoin.
+    enable_fixed_obstacle_handling: true
+    fixed_obstacle_detection_range_m: 2.2
+    fixed_obstacle_required_frames: 3
+    fixed_obstacle_clear_required_frames: 4
+    fixed_obstacle_min_area_ratio: 0.008
+    fixed_obstacle_corridor_half_width_ratio: 0.24
+    fixed_obstacle_min_y_ratio: 0.20
+    # A maneuver is committed only after the fixed_obstacle YOLO class and a
+    # LiDAR return agree. A bbox-only estimate may be displayed, but it cannot
+    # select a lane while this guard is enabled.
+    fixed_obstacle_require_lidar_confirmation: true
+    fixed_obstacle_speed: 3.0
+    fixed_obstacle_min_avoid_sec: 0.8
+    # CHANGE_OUT -> PASS -> REJOIN. Side/rear clearance is preferred; the
+    # visual/front-clear fallback is deliberately slower when a side sensor
+    # misses the obstacle.
+    fixed_obstacle_change_min_sec: 0.55
+    fixed_obstacle_no_side_fallback_sec: 2.0
+    fixed_obstacle_side_clear_hold_sec: 0.25
+    fixed_obstacle_direction_clear_hold_sec: 0.15
+    fixed_obstacle_pass_side_detect_cm: 30.0
+    fixed_obstacle_pass_side_clear_cm: 40.0
+    fixed_obstacle_front_clear_distance_m: 0.75
+    fixed_obstacle_rejoin_sec: 0.8
+    fixed_obstacle_rejoin_max_sec: 1.8
+    fixed_obstacle_rejoin_lane_confidence: 0.35
+    fixed_obstacle_cooldown_sec: 0.8
+    fixed_obstacle_bias_cmd: 16.0
+    fixed_obstacle_bias_sec: 0.5
+    side_clearance_m: 0.65
+
+    # The installed LiDAR reports the physical vehicle front as 0 deg.
+    scan_angle_offset_deg: 0.0
+    scan_min_range_m: 0.1
+    scan_max_range_m: 8.0
+    scan_front_min_deg: -12.0
+    scan_front_max_deg: 12.0
+    scan_left_min_deg: 20.0
+    scan_left_max_deg: 75.0
+    scan_right_min_deg: -75.0
+    scan_right_max_deg: -20.0
+
+    ultra_side_clearance_cm: 35.0
+    ultra_left_index: 0
+    ultra_right_index: 4
+    # Measured: 5=left rear, 6=rear center, 7=right rear (stuck near 2 cm).
+    ultra_left_back_index: 7
+    # A negative index disables the unreliable right-rear channel.
+    ultra_right_back_index: 5
+
+    cone_enable: true
+    cone_range_m: 1.55
+    cone_cluster_gap_m: 0.22
+    cone_min_cluster_points: 3
+    cone_max_cluster_diameter_m: 0.38
+    cone_vfh_max_angle_deg: 62.0
+    cone_steer_gain: 0.72
+    cone_image_min_area: 260.0
+    cone_yolo_keywords: cone,traffic_cone
+    cone_yolo_min_count: 2
+    cone_yolo_min_area_ratio: 0.002
+    use_yolo_cone_approach: true
+    cone_yolo_approach_speed: 1.8
+    # The competition cone section starts without a traffic-light cue.
+    # Enter from consecutive valid LiDAR corridor paths; YOLO remains optional corroboration.
+    cone_mode_require_yolo: false
+    cone_mode_entry_required_frames: 3
+    cone_mode_entry_confidence: 0.35
+    cone_mode_min_duration_sec: 1.0
+    cone_mode_exit_timeout_sec: 0.8
+    # Existing road markings may continue under the cone corridor. While recent
+    # cone clusters remain, never hand steering back to lane following.
+    cone_cluster_timeout_sec: 0.5
+    cone_mode_presence_min_clusters: 2
+    # Exit only after distinct, stable lane estimates. A weak lane is accepted
+    # only when its steering agrees with the last cone path.
+    cone_mode_lane_recovery_required_frames: 6
+    cone_mode_lane_recovery_confidence: 0.45
+    cone_mode_lane_recovery_aligned_confidence: 0.25
+    cone_mode_lane_recovery_max_angle_delta_deg: 12.0
+    cone_mode_lane_recovery_hold_sec: 0.35
+    # Keep moving briefly through a cone-path dropout, then blend steering into
+    # the recovered lane instead of switching direction in one control cycle.
+    cone_mode_exit_creep_timeout_sec: 1.4
+    cone_exit_creep_speed: 8.0
+    cone_exit_creep_steer_retention: 0.70
+    cone_lane_handoff_duration_sec: 0.65
+    cone_lane_handoff_max_speed: 3.5
+    cone_emergency_stop_distance_m: 0.35
+
+    # Dynamic obstacle handling is enabled only by the exact obstacle_vehicle
+    # YOLO class. A fresh matching LiDAR cluster and stable lane assignment are
+    # mandatory before a pass can be committed.
+    overtake_duration_sec: 8.0
+    overtake_bias_cmd: 4.0
+    overtake_lane_change_bias_sec: 0.4
+    overtake_detection_range_m: 3.0
+    overtake_curve_range_m: 1.0
+    overtake_multi_vehicle_gap_m: 0.8
+    overtake_target_time_gap_sec: 2.0
+    overtake_speed_to_mps_scale: 0.08
+    overtake_require_vehicle_detection: true
+    overtake_follow_kp: 0.80
+    overtake_follow_closing_gain: 4.0
+    overtake_follow_standstill_gap_m: 0.65
+    overtake_min_follow_speed: 3.0
+    overtake_curve_steer_threshold_cmd: 8.0
+    overtake_min_area_ratio: 0.006
+    overtake_vehicle_min_score: 0.45
+    overtake_confirm_frames: 4
+    overtake_detection_grace_sec: 0.35
+    overtake_prepare_distance_m: 2.4
+    overtake_min_commit_distance_m: 1.1
+    overtake_prepare_clear_hold_sec: 0.25
+    overtake_allow_curve_start: false
+    overtake_allow_multi_vehicle: false
+    overtake_min_lane_confidence: 0.45
+    # The yellow center and the outer white line on the target side must be
+    # observed in the current topology, not merely inferred from lane width.
+    overtake_require_target_lane_markings: true
+    overtake_min_ttc_sec: 3.0
+    overtake_hard_brake_ttc_sec: 1.6
+    overtake_emergency_ttc_sec: 0.9
+    # 3.0 is only the initial fallback. The actual vehicle speed is estimated
+    # online from LiDAR range rate and is not fixed to this assumption.
+    overtake_expected_vehicle_speed_cmd: 3.0
+    overtake_change_speed: 5.0
+    overtake_change_min_sec: 0.65
+    overtake_pass_min_speed: 6.5
+    overtake_pass_max_speed: 8.0
+    overtake_pass_speed_margin_cmd: 3.5
+    overtake_rejoin_speed: 5.0
+    overtake_timeout_hold_speed: 3.0
+    # A timeout lowers speed but never grants permission to cross back in
+    # front of an obstacle. Side/rear clear evidence remains mandatory.
+    overtake_no_side_fallback_sec: 3.0
+    overtake_front_clear_distance_m: 1.0
+    overtake_cooldown_sec: 1.0
+    overtake_abort_hold_sec: 0.8
+    # Once side-by-side, a cut-in keeps the passing lane target fixed and holds
+    # braking/yield behavior briefly instead of alternating lanes each frame.
+    overtake_cut_in_hold_sec: 0.6
+    overtake_require_fresh_ultra: true
+    ultra_timeout_sec: 0.5
+    overtake_relative_speed_alpha: 0.35
+    overtake_max_range_jump_m: 0.8
+    overtake_max_closing_speed_mps: 1.5
+    overtake_lidar_match_hfov_deg: 60.0
+    overtake_lidar_match_padding_deg: 3.0
+    overtake_lidar_match_min_points: 2
+    use_lidar_camera_projection: false
+    lidar_camera_extrinsic_yaml: ""
+    lidar_projection_bbox_padding_px: 3.0
+    lidar_projection_cluster_gap_m: 0.30
+    overtake_pass_side_detect_cm: 30.0
+    overtake_pass_side_clear_cm: 40.0
+    overtake_pass_clear_hold_sec: 0.30
+    overtake_side_emergency_cm: 18.0
+    overtake_position_smooth_alpha: 0.30
+    overtake_position_threshold: 0.15
+    # Do not commit while the slow vehicle is changing lanes. After passing,
+    # finish re-entry before the regulation's 0.90 m rear-gap deadline.
+    overtake_lane_stable_frames: 4
+    overtake_lane_deadband_ratio: 0.05
+    overtake_lateral_motion_threshold_ratio_per_sec: 0.08
+    overtake_lateral_velocity_alpha: 0.35
+    overtake_rejoin_min_sec: 0.65
+    overtake_rejoin_max_sec: 1.50
+    overtake_rejoin_deadline_m: 0.75
+    overtake_rejoin_lane_confidence: 0.35
+    overtake_rejoin_alignment_cmd: 5.0
+    overtake_rejoin_hard_timeout_sec: 2.5
+
+    enable_shortcut: true
+    shortcut_green_required_frames: 3
+    shortcut_duration_sec: 1.8
+    shortcut_bias_cmd: -18.0
+    # Prefer lap 2; if its left arrow is missed, a later eligible gate can be used.
+    shortcut_target_lap: 2
+
+    enable_lap_count: true
+    total_laps: 3
+    # Normal cone completion or shortcut completion arms one checkpoint. The
+    # next route-selection signal consumes it as exactly one completed lap.
+    lap_count_source: route_signal
+    route_gate_required_frames: 2
+    route_gate_clear_required_frames: 3
+    route_gate_recent_sec: 1.0
+    route_gate_min_interval_sec: 8.0
+    finish_required_frames: 2
+    finish_clear_required_frames: 3
+    finish_min_interval_sec: 12.0
+    finish_stop_after_laps: false
+    finish_min_area_ratio: 0.025
+    finish_use_image_checker: false
+
+    image_timeout_sec: 0.4
+    scan_timeout_sec: 0.8
+    debug_view: false
+
+my_rule_centerline_tracer:
+  ros__parameters:
+    image_topic: /wide_camera/rect/image_raw
+    detection_topic: /yolo/detections
+    use_detection_alt_topic: true
+    detection_alt_topic: /yolo_detections
+    center_curve_topic: /center_curve
+    detection_min_score: 0.35
+    detection_timeout_sec: 0.7
+    center_line_keywords: center_line,center_lane,centerline,centerlane
+    occluder_keywords: obstacle_vehicle,vehicle,car,truck,obstacle,fixed_obstacle,disabled_vehicle,broken_vehicle,pedestrian,person,human,mannequin,cone,traffic_cone
+    occlusion_overlap_ratio: 0.20
+    min_y_ratio: 0.30
+    min_points: 2
+    curve_sample_count: 40
+    publish_empty_curve: true
+    bbox_padding_px: 2
+    hough_threshold: 12
+    hough_min_line_length: 8
+    hough_max_line_gap: 4
+    min_segment_length_px: 6.0
+    min_point_distance_px: 3.0
+
+my_rule_lane_node:
+  ros__parameters:
+    image_topic: /wide_camera/rect/image_raw
+    # Keep the competition vehicle as the default. Gazebo overrides this in
+    # my_gazebo/config/rule_params_gazebo.yaml without changing real-car values.
+    camera_profile: real
+    lane_cmd_topic: my_rule/lane_cmd
+    lane_override_topic: my_rule/lane_override
+    cone_cmd_topic: my_rule/cone_cmd
+    traffic_light_topic: my_rule/traffic_light
+    center_curve_topic: /center_curve
+    center_curve_message_type: path
+    base_speed: 8.0
+    moderate_curve_speed: 6.5
+    curve_speed: 5.0
+    minimum_drive_speed: 4.0
+    enable_dynamic_speed_profile: true
+    moderate_curve_threshold_deg: 5.0
+    tight_curve_threshold_deg: 12.0
+    full_turn_threshold_deg: 22.0
+    curve_speed_steer_threshold_deg: 5.0
+    lane_confidence_stop: 0.12
+    lane_confidence_low: 0.35
+    lane_confidence_medium: 0.60
+    lane_confidence_high: 0.75
+    lane_low_confidence_speed: 4.0
+    lane_medium_confidence_speed: 6.5
+    lane_high_confidence_speed: 8.0
+    # Bridge only short, bounded perception dropouts.
+    lane_loss_hold_frames: 3
+    lane_loss_hold_speed: 3.0
+    lane_loss_hold_confidence: 0.15
+    max_steer_cmd: 26.0
+    controller_mode: stanley
+    target_lane_side: center
+    # Blend center <-> passing-lane targets with a smoothstep trajectory. This
+    # prevents the lane target from jumping by roughly half a lane in one frame.
+    lane_override_transition_sec: 0.65
+    use_bev_hough: true
+    use_color_fallback: true
+    debug_view: false
+    debug_view_width: 800
+    debug_view_rate_hz: 5.0
+    enable_traffic_light_detection: true
+    lane_steer_gain: 0.16
+    lane_half_width_px: 115.0
+    lane_roi_top_ratio: 0.52
+    lane_roi_bottom_ratio: 0.98
+    lane_min_pixels: 120
+    bev_width: 640
+    bev_height: 220
+    bev_reference_y_ratio: 0.5
+    bev_src_top_y_ratio: 0.520
+    bev_src_bottom_y_ratio: 0.625
+    # Real-car calibration restored after the camera mount was repaired.
+    bev_src_top_left_x_ratio: 0.357
+    bev_src_top_right_x_ratio: 0.777
+    bev_src_bottom_left_x_ratio: 0.170
+    bev_src_bottom_right_x_ratio: 0.965
+    bev_dst_margin_ratio: 0.10
+    yellow_h_min: 14
+    yellow_h_max: 45
+    yellow_sat_min: 60
+    yellow_val_min: 80
+    white_sat_max: 120
+    white_val_min: 145
+    # Preserve the existing HSV thresholds, then add locally brighter,
+    # low-saturation tape in dark/shadowed regions. Values are in 640x220 BEV.
+    enable_relative_white_detection: true
+    white_relative_val_floor: 85
+    white_relative_delta: 12.0
+    white_clahe_clip_limit: 2.0
+    white_clahe_grid_size: 8
+    white_local_background_sigma_px: 5.0
+    bev_valid_erode_px: 3
+    # Reflected yellow tape can satisfy both HSV classes. Yellow owns nearby
+    # pixels/candidates so the center stripe cannot become a red outer lane.
+    enable_yellow_white_exclusion: true
+    yellow_white_mask_exclusion_px: 4
+    yellow_white_candidate_exclusion_px: 30.0
+    # Actual-track glare creates lane-colored regions far wider than tape.
+    # Keep the measured HSV range, but reject implausibly wide horizontal runs.
+    enable_lane_run_width_filter: true
+    # Actual lane marks are about 15-20 px in normalized BEV. The thin
+    # white strip under the right wall is typically only 3-6 px.
+    white_run_width_min_px: 8
+    white_run_width_max_px: 42
+    yellow_run_width_min_px: 3
+    yellow_run_width_max_px: 38
+    lane_mask_wide_run_fraction: 0.20
+    lane_mask_contamination_penalty: 0.75
+    # Preserve the calibrated HSV/BEV detector. These checks only validate its
+    # candidates; adaptive threshold output never creates a lane by itself.
+    enable_yellow_component_filter: true
+    yellow_component_min_area: 12
+    yellow_component_max_area: 3000
+    yellow_component_min_height: 5
+    yellow_component_max_median_width_px: 38.0
+    yellow_component_max_width_cv: 0.90
+    # Canonical-road ideas are rescaled to this package's BEV; the simulation
+    # branch's 256x144 pixel constants are deliberately not copied.
+    enable_lane_component_geometry_filter: true
+    white_component_min_area: 20
+    white_component_max_area: 8000
+    white_component_min_span_px: 10
+    white_component_max_thickness_px: 42.0
+    white_component_min_elongation: 1.35
+    white_component_min_verticality: 0.18
+    white_component_max_fit_rmse_px: 8.0
+    white_component_max_mask_fraction: 0.16
+    white_component_max_per_side: 6
+    white_component_min_median_val: 90.0
+    white_component_redraw_width_px: 5
+    yellow_component_min_span_px: 6
+    yellow_component_max_thickness_px: 38.0
+    yellow_component_min_elongation: 1.20
+    yellow_component_min_verticality: 0.12
+    yellow_component_max_fit_rmse_px: 9.0
+    yellow_component_max_mask_fraction: 0.10
+    yellow_component_max_count: 10
+    yellow_component_redraw_width_px: 3
+    component_fit_mad_scale: 2.5
+    enable_robust_curve_candidates: true
+    curve_fit_min_support_rows: 5
+    curve_fit_max_rmse_px: 8.0
+    curve_fit_max_extrapolation_px: 85.0
+    enable_lane_topology_selection: true
+    lane_topology_spacing_tolerance_px: 70.0
+    lane_topology_outer_spacing_tolerance_px: 100.0
+    # A lifted/repositioned vehicle invalidates the previous temporal prior.
+    # Reacquire from two current-frame markings after a short confirmed loss.
+    enable_lane_reacquisition: true
+    lane_reacquire_after_frames: 8
+    lane_reacquire_confirmation_frames: 3
+    lane_reacquire_min_observed: 2
+    lane_reacquire_allow_yellow_only: true
+    lane_reacquire_yellow_only_confirmation_frames: 6
+    lane_reacquire_yellow_only_min_structure_support: 0.15
+    lane_reacquire_angle_tolerance_deg: 70.0
+    lane_reacquire_prediction_tolerance_px: 360.0
+    lane_reacquire_consistency_px: 65.0
+    lane_reacquire_heading_consistency_deg: 20.0
+    lane_model_center_margin_ratio: 0.10
+    enable_reflection_structure_validation: true
+    adaptive_threshold_block_size: 11
+    adaptive_threshold_c: 9.0
+    structure_canny_low: 70
+    structure_canny_high: 210
+    # The team test used 13 px. A conservative 5 px kernel avoids joining
+    # reflected floor patches, wall edges, and transverse markings.
+    structure_close_kernel_px: 5
+    structure_hough_threshold: 18
+    structure_hough_min_line_length: 10
+    structure_hough_max_line_gap: 3
+    structure_candidate_tolerance_px: 24.0
+    structure_required_contamination: 0.08
+    # Reject wall/object edges that cannot be associated with the calibrated
+    # left, center, or right lane prediction.
+    lane_candidate_prediction_tolerance_px: 100.0
+    # A white marking is an outer boundary. In degraded topology fallback it
+    # must never occupy the semantic yellow-center slot after a wide corner.
+    enable_white_outer_identity_guard: true
+    white_outer_identity_margin_px: 24.0
+    disable_color_fallback_on_contamination: true
+    # If a thick white lane is visible, yellow must keep the calibrated 39 cm
+    # (about 256 px) spacing. Prediction is used only in yellow-only sections.
+    yellow_candidate_prediction_tolerance_px: 70.0
+    yellow_candidate_spacing_tolerance_px: 70.0
+    canny_low: 50
+    canny_high: 150
+    hough_threshold: 25
+    hough_min_line_length: 10
+    hough_max_line_gap: 1
+    angle_tolerance_deg: 30.0
+    lane_initial_left_px: 64.0
+    lane_initial_center_px: 320.0
+    lane_initial_right_px: 576.0
+    lane_left_to_center_px: 256.0
+    lane_right_to_center_px: 256.0
+    lane_cluster_threshold_px: 30.0
+    lane_match_threshold_px: 70.0
+    lane_update_weight: 0.70
+    lane_prediction_weight: 0.30
+    lane_max_delta_px: 80.0
+    lane_min_cos_angle: 0.5
+    heading_prev_weight: 0.70
+    heading_new_weight: 0.30
+    heading_correction_gain_px: 80.0
+    # Keep normal lane driving unchanged. While a LiDAR cone path is active,
+    # prevent a single/cone-contaminated boundary from rotating the persistent
+    # road model across consecutive frames.
+    enable_heading_quality_gate: true
+    # Reacquisition handles temporal discontinuities. Keep ordinary heading
+    # updates unchanged until real-car validation proves a global gate safe.
+    enable_normal_weak_heading_gate: false
+    heading_trusted_history_size: 7
+    heading_inlier_tolerance_deg: 10.0
+    heading_max_innovation_deg: 30.0
+    heading_weak_max_innovation_deg: 12.0
+    heading_cone_max_innovation_deg: 8.0
+    heading_weak_min_structure_support: 0.45
+    heading_weak_structure_required_contamination: 0.50
+    heading_weak_max_contamination: 0.60
+    # LiDAR cone commands provide a temporary semantic guard until YOLO object
+    # masks are available. No HSV cone classifier is introduced here.
+    enable_cone_heading_guard: true
+    cone_heading_guard_min_confidence: 0.20
+    cone_heading_guard_timeout_sec: 0.80
+    cone_heading_guard_max_contamination: 0.35
+    normal_weak_geometry_min_structure_support: 0.35
+    normal_weak_geometry_structure_required_contamination: 0.50
+    lane_single_boundary_update_scale: 0.22
+    lane_single_boundary_max_delta_px: 24.0
+    use_center_curve_correction: true
+    center_curve_timeout_sec: 0.5
+    center_curve_min_points: 2
+    center_curve_x_mode: reference_y
+    center_curve_reference_window_px: 24.0
+    center_curve_agreement_threshold_px: 80.0
+    center_curve_correction_weight: 0.60
+    center_curve_fallback_confidence: 0.55
+    stanley_pixel_to_meter: 0.0015234375
+    stanley_heading_weight: 0.30
+    stanley_k_straight: 0.08
+    stanley_k_curve: 0.096
+    stanley_control_speed: 3.0
+    stanley_use_dynamic_speed: true
+    stanley_speed_to_mps_scale: 0.08
+    stanley_min_speed_mps: 0.24
+    # Partial k compensation preserves more cross-track authority at speed 8
+    # without removing Stanley's natural high-speed damping.
+    stanley_gain_reference_speed_mps: 0.24
+    stanley_speed_gain_exponent: 0.65
+    stanley_deg_to_cmd_scale: 1.0
+    curve_heading_threshold_deg: 6.0
+    steering_smooth_alpha: 0.35
+    steering_smooth_alpha_high_speed: 0.52
+    steering_smooth_reference_speed_mps: 0.24
+    steering_smooth_high_speed_mps: 0.64
+    traffic_roi_top_ratio: 0.0
+    traffic_roi_bottom_ratio: 0.45
+    traffic_green_min_pixels: 45
+    use_yolo_object_masking: true
+    detection_topic: /yolo/detections
+    use_detection_alt_topic: true
+    detection_alt_topic: /yolo_detections
+    detection_min_score: 0.35
+    detection_timeout_sec: 0.7
+    object_mask_target_keywords: obstacle_vehicle,vehicle,car,truck,obstacle,fixed_obstacle,disabled_vehicle,broken_vehicle,pedestrian,person,human,mannequin,cone,traffic_cone
+    object_mask_lane_keywords: center_lane,center_line,centerline,centerlane
+    object_mask_padding_px: 4
+    object_mask_hold_frames: 1
+    object_mask_grid_cell_size: 40
+    object_mask_bev_dilate_px: 1
+
+my_rule_cone_node:
+  ros__parameters:
+    scan_topic: /scan
+    cone_cmd_topic: my_rule/cone_cmd
+    cone_cluster_topic: my_rule/cone_clusters
+    cone_path_topic: my_rule/cone_path
+    max_range_m: 1.6
+    min_range_m: 0.18
+    scan_angle_offset_deg: 0.0
+    scan_front_min_deg: -70.0
+    scan_front_max_deg: 70.0
+    dbscan_eps_m: 0.15
+    dbscan_min_samples: 3
+    sparse_dbscan_min_samples: 2
+    sparse_cluster_min_range_m: 0.8
+    sparse_cluster_min_intensity: 80.0
+    sparse_cluster_match_distance_m: 0.18
+    sparse_cluster_required_frames: 2
+    sparse_cluster_history_frames: 3
+    max_cone_diameter_m: 0.3
+    angle_bin_deg: 12.0
+    group_grow_distance_m: 0.5
+    seed_min_angle_deg: 20.0
+    seed_max_angle_deg: 100.0
+    seed_max_range_m: 0.9
+    allow_single_boundary_fallback: true
+    single_boundary_min_cones: 2
+    single_boundary_min_span_m: 0.20
+    single_boundary_switch_frames: 3
+    single_boundary_confidence_cap: 0.60
+    nearest_gate_confidence_cap: 0.40
+    # Inferred paths never receive straight boost; keep their ceiling equal to
+    # the vehicle-tested minimum so one-side recovery remains predictable.
+    single_boundary_max_speed: 9.5
+    lidar_to_rear_axle_m: 0.42
+    wheelbase_m: 0.33
+    lookahead_min_m: 0.7
+    lookahead_max_m: 1.45
+    lookahead_scale: 0.12
+    far_preview_distance_m: 0.75
+    far_preview_weight: 0.65
+    steering_gain: 1.18
+    max_steer_cmd: 26.0
+    cone_speed: 17.0
+    cone_min_drive_speed: 9.5
+    # Pure Pursuit remains unchanged; only its speed is reduced by steering
+    # demand, path confidence and held-path age.
+    cone_speed_steer_exponent: 1.0
+    cone_speed_confidence_floor_ratio: 0.35
+    # Preserve the vehicle-tested 9.5~17 bend profile. Only a fresh, long,
+    # bilateral straight may rise to 21; upcoming curve demand pre-brakes.
+    cone_preview_speed_control: true
+    cone_straight_boost_speed: 21.0
+    cone_straight_boost_min_confidence: 0.75
+    cone_straight_boost_min_path_distance_m: 1.35
+    cone_straight_boost_full_angle_deg: 1.0
+    cone_straight_boost_max_angle_deg: 3.0
+    cone_speed_preview_near_m: 0.80
+    cone_speed_preview_far_m: 1.45
+    cone_speed_preview_samples: 4
+    min_confidence: 0.3
+    path_interpolation_method: linear
+    path_sample_count: 100
+    path_hold_frames: 5
+    # Competition corridor is expected to be 0.78-0.90 m wide. The wider
+    # acceptance band accounts for LiDAR surface measurements, while rejecting
+    # the 1.03-1.08 m displaced/diagonal pairs observed in the practice bag.
+    pair_max_forward_delta_m: 0.30
+    # Physical course width is 0.78-0.90 m; 0.68 m preserves tolerance for
+    # inward-biased LiDAR cluster centres while still rejecting ~0.53 m pairs.
+    min_corridor_width_m: 0.68
+    max_corridor_width_m: 0.98
+    expected_corridor_width_m: 0.85
+    min_path_midpoints: 2
+    min_path_span_m: 0.15
+    # Bilateral paths already passed the strict width/forward gate, so allow
+    # them to replace a stale one-sided estimate without several hold frames.
+    max_path_target_jump_m: 0.45
+    inferred_max_path_target_jump_m: 0.25
+    steering_median_window: 1
+    steering_max_delta_deg: 14.0
+    inferred_steering_max_delta_deg: 10.0
+    # Sharp S-turn fallback: use the nearest plausible cone gate, then keep the
+    # last valid steering only for a short bounded recovery window.
+    allow_nearest_gate_fallback: true
+    fallback_pair_min_lateral_separation_m: 0.4
+    fallback_pair_max_center_offset_m: 0.65
+    blind_recovery_frames: 10
+    blind_recovery_min_clusters: 2
+    blind_recovery_steer_decay: 0.92
