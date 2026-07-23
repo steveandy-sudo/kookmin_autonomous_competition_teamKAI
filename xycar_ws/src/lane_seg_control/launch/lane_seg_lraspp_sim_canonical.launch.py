@@ -21,6 +21,8 @@ def generate_launch_description():
                 launch_arguments={
                     "image_topic": "/image_raw",
                     "debug_rate_hz": "7.0",
+                    # Match the real vehicle's canonical runtime contract.
+                    "max_output_rate_hz": "7.0",
                     # The inference node publishes source/white/yellow as a
                     # timestamp-matched triplet. Keep several triplets so the
                     # adapter cannot lose one member while processing a frame.

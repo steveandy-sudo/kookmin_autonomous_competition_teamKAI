@@ -13,10 +13,18 @@ class RewardWeights:
     heading: float = 0.8
     steering_rate: float = 0.05
     steering_magnitude: float = 0.01
-    safe_speed: float = 0.30
+    # Reward speed per metre of safe progress. Unlike a positive reward paid
+    # every frame, this cannot be increased by deliberately taking more time.
+    safe_speed: float = 6.0
     unsafe_speed: float = 0.80
     curve_overspeed: float = 1.20
-    time_efficiency: float = 0.01
+    time_efficiency: float = 0.04
+    # Optional objective terms. They default to zero so existing checkpoints
+    # and reward recomputation remain unchanged.
+    lap_time: float = 0.0
+    lane_margin: float = 0.0
+    lane_margin_start_m: float = 0.24
+    lane_departure_threshold_m: float = 0.38
     large_oscillation: float = 0.20
     safe_cross_track_m: float = 0.12
     safe_heading_rad: float = math.radians(12.0)
@@ -24,13 +32,50 @@ class RewardWeights:
     straight_curvature_threshold: float = 0.35
     full_speed_curvature: float = 0.18
     minimum_speed_curvature: float = 0.90
-    straight_target_speed_mps: float = 0.97
-    curve_target_speed_mps: float = 0.56
+    # Measured conversion is approximately 0.080612 m/s per command.
+    # Straight target 24 leaves room above the required mean command 17;
+    # even the sharp-curve target remains command 17.
+    straight_target_speed_mps: float = 1.934688
+    curve_target_speed_mps: float = 1.370404
     reverse_progress: float = 4.0
     collision: float = 50.0
     off_track: float = 30.0
     stuck: float = 10.0
     lap_complete: float = 20.0
+
+
+def lap_time_objective_weights(
+    *,
+    lane_margin_start_m: float = 0.24,
+    lane_departure_threshold_m: float = 0.38,
+) -> RewardWeights:
+    """Prioritize safe completion, then minimize elapsed simulation time."""
+    threshold = max(0.01, float(lane_departure_threshold_m))
+    margin_start = min(
+        max(0.0, float(lane_margin_start_m)),
+        threshold - 1.0e-3,
+    )
+    return RewardWeights(
+        progress=4.0,
+        cross_track=0.0,
+        heading=0.0,
+        steering_rate=0.0,
+        steering_magnitude=0.0,
+        safe_speed=0.0,
+        unsafe_speed=0.0,
+        curve_overspeed=0.0,
+        time_efficiency=0.0,
+        lap_time=1.0,
+        lane_margin=20.0,
+        lane_margin_start_m=margin_start,
+        lane_departure_threshold_m=threshold,
+        large_oscillation=0.0,
+        reverse_progress=20.0,
+        collision=300.0,
+        off_track=300.0,
+        stuck=100.0,
+        lap_complete=300.0,
+    )
 
 
 @dataclass(frozen=True)
@@ -44,6 +89,8 @@ class RewardBreakdown:
     safe_speed: float
     unsafe_speed: float
     time_efficiency: float
+    lap_time: float
+    lane_margin: float
     large_oscillation: float
     terminal: float
 
@@ -90,6 +137,7 @@ def calculate_reward(
     off_track: bool = False,
     stuck: bool = False,
     lap_complete: bool = False,
+    dt_sec: float = 0.1,
     weights: RewardWeights = RewardWeights(),
 ) -> RewardBreakdown:
     forward_progress = max(0.0, float(progress_delta_m))
@@ -141,9 +189,14 @@ def calculate_reward(
         - curve_fraction
         * (weights.straight_target_speed_mps - weights.curve_target_speed_mps)
     )
+    speed_fraction = min(
+        1.0,
+        forward_speed / max(1.0e-6, target_speed_mps),
+    )
     safe_speed_term = (
         weights.safe_speed
-        * min(forward_speed, target_speed_mps)
+        * forward_progress
+        * speed_fraction
         * safe_factor
     )
     tracking_risk = forward_speed * (1.0 - safe_factor)
@@ -153,6 +206,29 @@ def calculate_reward(
         + weights.curve_overspeed * curve_speed_excess
     )
     time_efficiency_term = -weights.time_efficiency
+    elapsed_step_sec = max(0.0, float(dt_sec))
+    lap_time_term = -weights.lap_time * elapsed_step_sec
+    margin_denominator = max(
+        1.0e-6,
+        weights.lane_departure_threshold_m - weights.lane_margin_start_m,
+    )
+    lane_margin_ratio = max(
+        0.0,
+        min(
+            1.0,
+            (
+                abs(projection.cross_track_error_m)
+                - weights.lane_margin_start_m
+            )
+            / margin_denominator,
+        ),
+    )
+    lane_margin_term = (
+        -weights.lane_margin
+        * lane_margin_ratio
+        * lane_margin_ratio
+        * elapsed_step_sec
+    )
     oscillation_measure = 0.0
     if abs(float(track_curvature)) <= weights.straight_curvature_threshold:
         oscillation_measure = large_steering_oscillation(
@@ -174,6 +250,8 @@ def calculate_reward(
         + safe_speed_term
         + unsafe_speed_term
         + time_efficiency_term
+        + lap_time_term
+        + lane_margin_term
         + large_oscillation_term
         + terminal_term
     )
@@ -187,6 +265,8 @@ def calculate_reward(
         safe_speed=float(safe_speed_term),
         unsafe_speed=float(unsafe_speed_term),
         time_efficiency=float(time_efficiency_term),
+        lap_time=float(lap_time_term),
+        lane_margin=float(lane_margin_term),
         large_oscillation=float(large_oscillation_term),
         terminal=float(terminal_term),
     )

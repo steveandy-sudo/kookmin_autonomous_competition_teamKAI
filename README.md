@@ -161,6 +161,7 @@ git pull --ff-only origin simulation
 | 데이터 수집과 재학습 | [`domain_randomized_collection.md`](docs/domain_randomized_collection.md) |
 | 실차 룰베이스만 실행 | [`real_vehicle_deployment.md`](docs/real_vehicle_deployment.md) |
 | 고속 TD3+BC 학습·단계별 실차 shadow | [`high_speed_rl_20260717.md`](docs/high_speed_rl_20260717.md) |
+| 완주 우선 lap-time RL·병렬 Gazebo 수집 | [`lap_time_rl_20260723.md`](docs/lap_time_rl_20260723.md) |
 | ASUS에서 새 YOLO 차선 인지 검증 | [`real_vehicle_yolo_lane_20260720.md`](docs/real_vehicle_yolo_lane_20260720.md) |
 | YOLO11n 256 경량 모델의 정확도·속도 비교 | [`2026-07-21_yolo11n_256_ultralight.md`](docs/2026-07-21_yolo11n_256_ultralight.md) |
 | YOLO26n 256 재학습·실차 후보 비교 | [`2026-07-21_yolo26n_256_experiment.md`](docs/2026-07-21_yolo26n_256_experiment.md) |
@@ -483,6 +484,7 @@ publisher, 조향 scale, recovery와 반복 주행을 모두 기록해 재현 �
 | ONNX/LR-ASPP BEV·canonical 및 흰선 피팅 | [`2026-07-22_lane_seg_control_canonical.md`](docs/2026-07-22_lane_seg_control_canonical.md) | 실차 인지 프런트엔드 비교·재현 |
 | 룰베이스 실차 배포 | [`real_vehicle_deployment.md`](docs/real_vehicle_deployment.md) | rule baseline 시험 |
 | 고속 RL 보상·학습·체크포인트 | [`high_speed_rl_20260717.md`](docs/high_speed_rl_20260717.md) | TD3+BC 학습과 실차 단계 시험 |
+| 완주 우선 lap-time RL·10/12 Gazebo 병렬 수집 | [`lap_time_rl_20260723.md`](docs/lap_time_rl_20260723.md) | 최신 고속 정책 수집·선택 |
 | 강화학습 전체 로드맵 | [`reinforcement_learning_roadmap.md`](docs/reinforcement_learning_roadmap.md) | RL 데이터 계약과 gate 확인 |
 | 차량·센서 정합 | [`sim_to_real_vehicle_calibration.md`](docs/sim_to_real_vehicle_calibration.md) | 동역학/센서 재측정 |
 | 과거 raw RGB BC | [`real_bc_vehicle_runbook.md`](docs/real_bc_vehicle_runbook.md) | legacy 비교용 |

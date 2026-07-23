@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import torch
@@ -37,6 +38,67 @@ def denormalize_speed_command(
         raise ValueError("max_speed_command must be greater than min_speed_command")
     normalized = max(-1.0, min(1.0, float(speed_norm)))
     return low + 0.5 * (normalized + 1.0) * (high - low)
+
+
+def speed_head_range_transform(
+    *,
+    old_min_speed_command: float,
+    old_max_speed_command: float,
+    new_min_speed_command: float,
+    new_max_speed_command: float,
+    preserve_speed_command: float,
+) -> tuple[float, float]:
+    """Return a logit affine transform preserving speed and local sensitivity."""
+    old_low = float(old_min_speed_command)
+    old_high = float(old_max_speed_command)
+    new_low = float(new_min_speed_command)
+    new_high = float(new_max_speed_command)
+    if old_high <= old_low or new_high <= new_low:
+        raise ValueError("speed command ranges must be increasing")
+    preserve = float(preserve_speed_command)
+    if not old_low < preserve < old_high:
+        raise ValueError("preserved speed must be inside the old command range")
+    if not new_low < preserve < new_high:
+        raise ValueError("preserved speed must be inside the new command range")
+
+    old_action = normalize_speed_command(preserve, old_low, old_high)
+    new_action = normalize_speed_command(preserve, new_low, new_high)
+    old_logit = math.atanh(max(-0.999999, min(0.999999, old_action)))
+    new_logit = math.atanh(max(-0.999999, min(0.999999, new_action)))
+    old_sensitivity = (old_high - old_low) * (1.0 - old_action * old_action)
+    new_sensitivity = (new_high - new_low) * (1.0 - new_action * new_action)
+    scale = old_sensitivity / max(1.0e-9, new_sensitivity)
+    offset = new_logit - scale * old_logit
+    return float(scale), float(offset)
+
+
+def retarget_actor_speed_range(
+    actor: nn.Module,
+    *,
+    old_min_speed_command: float,
+    old_max_speed_command: float,
+    new_min_speed_command: float,
+    new_max_speed_command: float,
+    preserve_speed_command: float,
+) -> tuple[float, float]:
+    """Expand an actor's speed range without an initial physical-speed jump."""
+    head = getattr(actor, "head", None)
+    if not isinstance(head, nn.Sequential) or len(head) < 2:
+        raise TypeError("camera-speed actor has no supported output head")
+    output_layer = head[-2]
+    if not isinstance(output_layer, nn.Linear) or output_layer.out_features != 2:
+        raise TypeError("camera-speed actor output layer must be Linear(..., 2)")
+    scale, offset = speed_head_range_transform(
+        old_min_speed_command=old_min_speed_command,
+        old_max_speed_command=old_max_speed_command,
+        new_min_speed_command=new_min_speed_command,
+        new_max_speed_command=new_max_speed_command,
+        preserve_speed_command=preserve_speed_command,
+    )
+    with torch.no_grad():
+        output_layer.weight[1].mul_(scale)
+        output_layer.bias[1].mul_(scale).add_(offset)
+    return scale, offset
 
 
 class CameraSpeedActor(nn.Module):
@@ -100,6 +162,124 @@ class CompactCameraSpeedActor(nn.Module):
 
     def disable_dropout(self) -> None:
         self.head[2] = nn.Identity()
+
+
+class RangeExpandedCameraSpeedActor(nn.Module):
+    """Preserve source speeds exactly while learning into a wider range."""
+
+    def __init__(
+        self,
+        base_actor: nn.Module,
+        *,
+        source_min_speed_command: float,
+        source_max_speed_command: float,
+        target_min_speed_command: float,
+        target_max_speed_command: float,
+    ) -> None:
+        super().__init__()
+        self.temporal_frames = int(getattr(base_actor, "temporal_frames", 1))
+        self.image_encoder = base_actor.image_encoder
+        self.head = base_actor.head
+        self.source_min_speed_command = float(source_min_speed_command)
+        self.source_max_speed_command = float(source_max_speed_command)
+        self.target_min_speed_command = float(target_min_speed_command)
+        self.target_max_speed_command = float(target_max_speed_command)
+        if self.source_max_speed_command <= self.source_min_speed_command:
+            raise ValueError("source speed range must be increasing")
+        if self.target_max_speed_command <= self.target_min_speed_command:
+            raise ValueError("target speed range must be increasing")
+        self.speed_extension = nn.Linear(int(self.head[0].in_features), 1)
+        nn.init.zeros_(self.speed_extension.weight)
+        nn.init.zeros_(self.speed_extension.bias)
+        self._base_policy_frozen = False
+        self._encoder_frozen = False
+
+    def forward(self, image: torch.Tensor) -> torch.Tensor:
+        features = self.image_encoder(image)
+        base_action = self.head(features)
+        source_speed = self.source_min_speed_command + 0.5 * (
+            base_action[:, 1] + 1.0
+        ) * (
+            self.source_max_speed_command - self.source_min_speed_command
+        )
+        target_speed_action = (
+            2.0
+            * (source_speed - self.target_min_speed_command)
+            / (
+                self.target_max_speed_command
+                - self.target_min_speed_command
+            )
+            - 1.0
+        )
+        base_speed_logit = torch.atanh(
+            target_speed_action.clamp(-0.999999, 0.999999)
+        )
+        expanded_speed_action = torch.tanh(
+            base_speed_logit
+            + self.speed_extension(features).squeeze(1)
+        )
+        return torch.stack(
+            [base_action[:, 0], expanded_speed_action],
+            dim=1,
+        )
+
+    def disable_dropout(self) -> None:
+        self.head[2] = nn.Identity()
+
+    def freeze_base_policy(self) -> None:
+        """Keep perception and steering fixed while training speed extension."""
+        self._base_policy_frozen = True
+        self._encoder_frozen = True
+        for parameter in self.image_encoder.parameters():
+            parameter.requires_grad_(False)
+        for parameter in self.head.parameters():
+            parameter.requires_grad_(False)
+        for parameter in self.speed_extension.parameters():
+            parameter.requires_grad_(True)
+        self.image_encoder.eval()
+        self.head.eval()
+
+    def freeze_encoder(self) -> None:
+        """Keep visual features fixed while fine-tuning the control heads."""
+        self._encoder_frozen = True
+        for parameter in self.image_encoder.parameters():
+            parameter.requires_grad_(False)
+        self.image_encoder.eval()
+
+    def train(self, mode: bool = True):
+        super().train(mode)
+        if self._encoder_frozen:
+            self.image_encoder.eval()
+        if self._base_policy_frozen:
+            self.head.eval()
+            self.speed_extension.train(mode)
+        return self
+
+    @property
+    def speed_range_expansion(self) -> dict[str, float]:
+        return {
+            "source_min_speed_command": self.source_min_speed_command,
+            "source_max_speed_command": self.source_max_speed_command,
+            "target_min_speed_command": self.target_min_speed_command,
+            "target_max_speed_command": self.target_max_speed_command,
+        }
+
+
+def expand_actor_speed_range(
+    actor: nn.Module,
+    *,
+    source_min_speed_command: float,
+    source_max_speed_command: float,
+    target_min_speed_command: float,
+    target_max_speed_command: float,
+) -> RangeExpandedCameraSpeedActor:
+    return RangeExpandedCameraSpeedActor(
+        actor,
+        source_min_speed_command=source_min_speed_command,
+        source_max_speed_command=source_max_speed_command,
+        target_min_speed_command=target_min_speed_command,
+        target_max_speed_command=target_max_speed_command,
+    )
 
 
 def initialize_temporal_actor(
@@ -185,7 +365,13 @@ def load_camera_speed_actor(
 ) -> tuple[nn.Module, dict]:
     payload = checkpoint_payload(checkpoint_path, device)
     model_type = payload.get("model_type")
-    if model_type not in {
+    expanded = str(model_type).endswith("_range_expanded")
+    base_model_type = (
+        str(model_type).removesuffix("_range_expanded")
+        if expanded
+        else str(model_type)
+    )
+    if base_model_type not in {
         "camera_speed_resnet18",
         "camera_speed_temporal_resnet18",
         "camera_speed_compact",
@@ -203,9 +389,16 @@ def load_camera_speed_actor(
     )
     actor = (
         CompactCameraSpeedActor(temporal_frames=temporal_frames)
-        if "compact" in str(model_type)
+        if "compact" in base_model_type
         else CameraSpeedActor(temporal_frames=temporal_frames)
     )
+    if expanded:
+        expansion = payload.get("speed_range_expansion")
+        if not isinstance(expansion, dict):
+            raise ValueError(
+                "range-expanded camera-speed checkpoint has no expansion metadata"
+            )
+        actor = expand_actor_speed_range(actor, **expansion)
     actor.disable_dropout()
     state_dict = payload.get("actor_state_dict", payload.get("state_dict"))
     if not isinstance(state_dict, dict):

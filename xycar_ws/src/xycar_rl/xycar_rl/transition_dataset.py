@@ -18,7 +18,7 @@ from xycar_rl.camera_speed_models import (
     DEFAULT_MIN_SPEED_COMMAND,
     normalize_speed_command,
 )
-from xycar_rl.reward import calculate_reward
+from xycar_rl.reward import RewardWeights, calculate_reward
 from xycar_rl.track_geometry import TrackProjection, TrackReference
 
 
@@ -139,6 +139,9 @@ class CameraSpeedTransitionDataset(RLTransitionDataset):
         temporal_frames: int = 1,
         recompute_rewards: bool = False,
         world_sdf: str | Path | None = None,
+        target_right_offset_m: float = 0.0,
+        reward_weights: RewardWeights = RewardWeights(),
+        bc_successful_episodes_only: bool = False,
         input_width: int = 160,
         input_height: int = 90,
     ) -> None:
@@ -149,6 +152,16 @@ class CameraSpeedTransitionDataset(RLTransitionDataset):
         )
         self.min_speed_command = float(min_speed_command)
         self.max_speed_command = float(max_speed_command)
+        self.target_right_offset_m = float(target_right_offset_m)
+        self.reward_weights = reward_weights
+        self.bc_successful_episodes_only = bool(
+            bc_successful_episodes_only
+        )
+        self.successful_episode_keys = {
+            (root, row.get("episode_id", "0"))
+            for root, row in self.rows
+            if str(row.get("termination_reason") or "") == "lap_complete"
+        }
         self.temporal_frames = int(temporal_frames)
         if self.temporal_frames not in {1, 2}:
             raise ValueError("temporal_frames must be 1 or 2")
@@ -176,7 +189,10 @@ class CameraSpeedTransitionDataset(RLTransitionDataset):
             self._recompute_rewards(Path(world_sdf).expanduser().resolve())
 
     def _recompute_rewards(self, world_sdf: Path) -> None:
-        track = TrackReference.from_sdf(world_sdf, target_right_offset_m=0.0)
+        track = TrackReference.from_sdf(
+            world_sdf,
+            target_right_offset_m=self.target_right_offset_m,
+        )
         previous_actions: dict[tuple[Path, str], float] = {}
         steering_histories: dict[tuple[Path, str], deque[float]] = {}
         previous_rows: dict[tuple[Path, str], dict[str, str]] = {}
@@ -208,6 +224,17 @@ class CameraSpeedTransitionDataset(RLTransitionDataset):
                 segment_index=0,
             )
             reason = str(row.get("termination_reason") or "")
+            try:
+                dt_sec = max(
+                    0.001,
+                    (
+                        int(row["next_timestamp_ns"])
+                        - int(row["state_timestamp_ns"])
+                    )
+                    / 1.0e9,
+                )
+            except (KeyError, TypeError, ValueError):
+                dt_sec = 0.1
             reward = calculate_reward(
                 projection=projection,
                 progress_delta_m=float(row.get("progress_delta_m") or 0.0),
@@ -226,6 +253,8 @@ class CameraSpeedTransitionDataset(RLTransitionDataset):
                 off_track=reason == "off_track",
                 stuck=reason == "stuck",
                 lap_complete=reason == "lap_complete",
+                dt_sec=dt_sec,
+                weights=self.reward_weights,
             )
             self.recomputed_rewards.append(reward.total)
             previous_actions[episode_key] = action_norm
@@ -261,6 +290,19 @@ class CameraSpeedTransitionDataset(RLTransitionDataset):
             ),
             "action": torch.tensor(applied_action, dtype=torch.float32),
             "bc_action": torch.tensor(bc_action, dtype=torch.float32),
+            "bc_weight": torch.tensor(
+                [
+                    float(
+                        not self.bc_successful_episodes_only
+                        or (
+                            root,
+                            row.get("episode_id", "0"),
+                        )
+                        in self.successful_episode_keys
+                    )
+                ],
+                dtype=torch.float32,
+            ),
             "reward": torch.tensor(
                 [
                     self.recomputed_rewards[index]

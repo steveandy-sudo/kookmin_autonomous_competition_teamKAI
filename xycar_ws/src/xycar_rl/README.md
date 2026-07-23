@@ -226,3 +226,17 @@ launch default keeps the first real-car run capped at `4`.
   one command at a time only after repeated closed-course passes.
 
 See `docs/reinforcement_learning_roadmap.md` for gates and safety rules.
+
+## 2026-07-23 completion-first lap-time optimization
+
+The latest simulation-only experiment uses a lexicographic checkpoint gate:
+first require `5/5` safe laps, then minimize mean lap time among eligible
+candidates. Its actor action range is the physical command interval `4..100`
+without a lower simulation speed cap. Failed episodes remain Critic data but
+are excluded from the Actor BC loss.
+
+This workstation uses 10 isolated Gazebo workers for long collections. Twelve
+workers are available for monitored burst collection, but pushed available RAM
+down to about `3.3GiB` during the capacity test. See
+`docs/lap_time_rl_20260723.md` at the repository root for the current candidate,
+commands, benchmark results, and real-car safety restrictions.

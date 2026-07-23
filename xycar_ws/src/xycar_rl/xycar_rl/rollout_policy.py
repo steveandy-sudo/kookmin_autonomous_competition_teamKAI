@@ -41,6 +41,12 @@ def parse_args(argv=None):
     parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--max-steps", type=int, default=1_200)
     parser.add_argument(
+        "--control-rate-hz",
+        type=float,
+        default=7.0,
+        help="Camera policy and physical command rate; real vehicle contract is 7 Hz.",
+    )
+    parser.add_argument(
         "--total-steps",
         type=int,
         default=0,
@@ -49,7 +55,7 @@ def parse_args(argv=None):
     parser.add_argument("--seed", type=int, default=20260716)
     parser.add_argument("--speed-command", type=float, default=4.0)
     parser.add_argument("--min-speed-command", type=float, default=4.0)
-    parser.add_argument("--max-speed-command", type=float, default=10.0)
+    parser.add_argument("--max-speed-command", type=float, default=24.0)
     parser.add_argument(
         "--speed-cap-command",
         type=float,
@@ -78,6 +84,12 @@ def parse_args(argv=None):
     parser.add_argument("--start-yaw-error-deg", type=float, default=0.0)
     parser.add_argument("--action-noise", type=float, default=0.02)
     parser.add_argument("--speed-action-noise", type=float, default=0.0)
+    parser.add_argument(
+        "--speed-action-bias",
+        type=float,
+        default=0.0,
+        help="Positive normalized exploration bias; this is not a speed cap.",
+    )
     parser.add_argument(
         "--steering-gain",
         type=float,
@@ -112,6 +124,10 @@ def parse_args(argv=None):
         help="Current-frame speed weight; 1 disables temporal smoothing.",
     )
     parser.add_argument("--recovery-probability", type=float, default=0.40)
+    parser.add_argument("--recovery-min-lateral-m", type=float, default=0.08)
+    parser.add_argument("--recovery-max-lateral-m", type=float, default=0.22)
+    parser.add_argument("--recovery-min-yaw-deg", type=float, default=4.0)
+    parser.add_argument("--recovery-max-yaw-deg", type=float, default=14.0)
     parser.add_argument("--s-curve-focus-probability", type=float, default=0.50)
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     return parser.parse_args(argv)
@@ -130,7 +146,7 @@ def main(argv=None) -> None:
             args.checkpoint, device=device
         )
         checkpoint_min = float(policy_payload.get("min_speed_command", 4.0))
-        checkpoint_max = float(policy_payload.get("max_speed_command", 10.0))
+        checkpoint_max = float(policy_payload.get("max_speed_command", 24.0))
         if (
             abs(args.min_speed_command - checkpoint_min) > 1.0e-6
             or abs(args.max_speed_command - checkpoint_max) > 1.0e-6
@@ -152,6 +168,7 @@ def main(argv=None) -> None:
         variable_speed=variable_speed,
         min_speed_command=args.min_speed_command,
         max_speed_command=args.max_speed_command,
+        control_rate_hz=args.control_rate_hz,
     )
     rng = np.random.default_rng(args.seed)
     steering_stabilizer = AdaptiveSteeringStabilizer(
@@ -196,10 +213,14 @@ def main(argv=None) -> None:
                     )
                 if rng.random() < args.recovery_probability:
                     options["lateral_error_m"] = signed_uniform(
-                        rng, 0.08, 0.22
+                        rng,
+                        args.recovery_min_lateral_m,
+                        args.recovery_max_lateral_m,
                     )
                     options["yaw_error_rad"] = signed_uniform(
-                        rng, math.radians(4), math.radians(14)
+                        rng,
+                        math.radians(args.recovery_min_yaw_deg),
+                        math.radians(args.recovery_max_yaw_deg),
                     )
             observation, _ = env.reset(
                 seed=args.seed + episode,
@@ -231,6 +252,7 @@ def main(argv=None) -> None:
                         action[1] += float(
                             rng.normal(0.0, args.speed_action_noise)
                         )
+                    action[1] += float(args.speed_action_bias)
                     curve_hint = 0.0
                     if args.enable_preview_steering:
                         preview = preview_steering.update(observation["image"])

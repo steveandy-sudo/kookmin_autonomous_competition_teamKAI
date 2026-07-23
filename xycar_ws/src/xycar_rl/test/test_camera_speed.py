@@ -27,15 +27,19 @@ from xycar_rl.train_camera_speed_td3_bc import (
     save_checkpoint,
     transition_root,
 )
+from xycar_rl.policy_runtime_node import apply_optional_speed_cap
 from xycar_rl.transition_dataset import camera_speed_action_targets
 
 
 class CameraSpeedContractTest(unittest.TestCase):
-    def test_milestone_caps_are_gazebo_stages(self):
-        self.assertEqual(planned_simulation_cap(5, 20), 4.0)
-        self.assertEqual(planned_simulation_cap(10, 20), 5.0)
-        self.assertEqual(planned_simulation_cap(15, 20), 6.0)
-        self.assertEqual(planned_simulation_cap(20, 20), 8.0)
+    def test_milestones_do_not_add_a_speed_cap(self):
+        self.assertEqual(planned_simulation_cap(5, 20), 0.0)
+        self.assertEqual(planned_simulation_cap(20, 20), 0.0)
+
+    def test_runtime_zero_speed_cap_preserves_learned_speed(self):
+        self.assertEqual(apply_optional_speed_cap(19.5, 0.0), 19.5)
+        self.assertEqual(apply_optional_speed_cap(19.5, -1.0), 19.5)
+        self.assertEqual(apply_optional_speed_cap(19.5, 17.0), 17.0)
 
     def test_focus_transition_root_accepts_directory_or_csv(self):
         with TemporaryDirectory() as directory:
@@ -133,7 +137,7 @@ class CameraSpeedContractTest(unittest.TestCase):
     def test_straight_target_uses_maximum_speed(self):
         self.assertAlmostEqual(
             speed_target_from_transition(0.0, 0.0, 0.0),
-            10.0,
+            24.0,
         )
 
     def test_sharp_or_recovery_target_slows_down(self):
@@ -168,6 +172,22 @@ class CameraSpeedContractTest(unittest.TestCase):
             speed_weight=1.0,
         )
         self.assertGreater(steering_focused, balanced)
+
+    def test_failed_episode_can_be_excluded_from_bc_loss(self):
+        prediction = torch.tensor([[0.0, 0.0], [1.0, 1.0]])
+        target = torch.zeros_like(prediction)
+        weighted = camera_speed_bc_loss(
+            prediction,
+            target,
+            sample_weight=torch.tensor([[1.0], [0.0]]),
+        )
+        all_failed = camera_speed_bc_loss(
+            prediction,
+            target,
+            sample_weight=torch.zeros(2, 1),
+        )
+        self.assertEqual(float(weighted), 0.0)
+        self.assertEqual(float(all_failed), 0.0)
 
     def test_temporal_compact_camera_speed_td3_update_is_finite(self):
         agent = CameraSpeedTD3BCAgent(

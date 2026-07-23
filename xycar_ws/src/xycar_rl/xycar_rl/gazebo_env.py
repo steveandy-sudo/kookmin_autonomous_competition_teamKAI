@@ -295,7 +295,9 @@ class _GazeboEnvNode(Node):
             return self._sequence
 
     def wait_snapshot(
-        self, after_sequence: int, timeout_sec: float
+        self,
+        after_sequence: int,
+        timeout_sec: float,
     ) -> SensorSnapshot | None:
         deadline = time.monotonic() + float(timeout_sec)
         with self._condition:
@@ -428,7 +430,7 @@ class _GazeboEnvNode(Node):
 
 
 class GazeboXycarEnv(gym.Env):
-    """Synchronous 10Hz steering-only Gymnasium environment for Gazebo Sim."""
+    """Synchronous configurable-rate Gymnasium environment for Gazebo Sim."""
 
     metadata = {"render_modes": []}
 
@@ -458,10 +460,9 @@ class GazeboXycarEnv(gym.Env):
         min_speed_command: float = DEFAULT_MIN_SPEED_COMMAND,
         max_speed_command: float = DEFAULT_MAX_SPEED_COMMAND,
         max_steering_command: float = 42.0,
-        # RL target is the yellow CAD centerline itself. The previous 5 cm
-        # lane-side offset was useful for a lane-center reference, but it
-        # makes the RL objective different from the requested centerline task.
-        target_right_offset_m: float = 0.0,
+        # The observed vehicle body is centered over the yellow line when the
+        # geometric reference is calibrated 10 cm to its right.
+        target_right_offset_m: float = 0.10,
         reset_lateral_error_m: float = 0.22,
         reset_yaw_error_rad: float = math.radians(14.0),
         observation_timeout_sec: float = 2.0,
@@ -708,6 +709,15 @@ class GazeboXycarEnv(gym.Env):
             if self.last_snapshot is None or self.previous_projection is None:
                 raise RuntimeError("environment has no valid observation")
             snapshot = self.last_snapshot
+        step_dt_sec = self.control_dt_sec
+        if (
+            not observation_timed_out
+            and self.last_snapshot is not None
+            and snapshot.timestamp_ns > self.last_snapshot.timestamp_ns
+        ):
+            step_dt_sec = (
+                snapshot.timestamp_ns - self.last_snapshot.timestamp_ns
+            ) * 1.0e-9
 
         projection = self.track.project(
             snapshot.odom.x,
@@ -724,13 +734,25 @@ class GazeboXycarEnv(gym.Env):
             progress_delta = self.track.progress_delta(
                 self.previous_projection.progress_m, projection.progress_m
             )
-            progress_delta = float(np.clip(progress_delta, -0.25, 0.25))
+            plausible_progress_m = max(
+                0.25,
+                1.5
+                * abs(float(snapshot.odom.linear_speed_mps))
+                * step_dt_sec,
+            )
+            progress_delta = float(
+                np.clip(
+                    progress_delta,
+                    -plausible_progress_m,
+                    plausible_progress_m,
+                )
+            )
         self.cumulative_progress_m = max(
             0.0, self.cumulative_progress_m + progress_delta
         )
-        self.elapsed_sec += self.control_dt_sec
+        self.elapsed_sec += step_dt_sec
         terminal = self.termination.update(
-            dt_sec=self.control_dt_sec,
+            dt_sec=step_dt_sec,
             elapsed_sec=self.elapsed_sec,
             cross_track_error_m=projection.cross_track_error_m,
             linear_speed_mps=snapshot.odom.linear_speed_mps,
@@ -762,6 +784,7 @@ class GazeboXycarEnv(gym.Env):
             off_track=terminal.off_track,
             stuck=terminal.stuck,
             lap_complete=terminal.lap_complete,
+            dt_sec=step_dt_sec,
             weights=self.reward_weights,
         )
         self.previous_projection = projection
@@ -770,6 +793,7 @@ class GazeboXycarEnv(gym.Env):
         info = self._info(snapshot, projection, terminal.reason)
         info["reward_terms"] = reward.__dict__
         info["progress_delta_m"] = progress_delta
+        info["step_dt_sec"] = step_dt_sec
         info["track_curvature"] = track_curvature
         info["preview_curvature"] = preview_curvature
         return (
@@ -799,6 +823,7 @@ class GazeboXycarEnv(gym.Env):
             "progress_m": projection.progress_m,
             "progress_fraction": projection.progress_fraction,
             "cumulative_progress_m": self.cumulative_progress_m,
+            "elapsed_sec": self.elapsed_sec,
             "collision": snapshot.collision,
         }
 

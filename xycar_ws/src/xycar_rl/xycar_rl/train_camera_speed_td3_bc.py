@@ -18,6 +18,7 @@ from xycar_rl.camera_speed_models import (
     DEFAULT_MIN_SPEED_COMMAND,
     load_camera_speed_actor,
 )
+from xycar_rl.reward import RewardWeights, lap_time_objective_weights
 from xycar_rl.td3_bc import CameraSpeedTD3BCAgent, TD3BCConfig
 from xycar_rl.train_camera_speed_bc import grouped_split
 from xycar_rl.train_td3_bc import resolve_device
@@ -61,6 +62,36 @@ def parse_args(argv=None):
         type=Path,
         default=Path("worlds/kookmin_xycar_track_final.sdf"),
     )
+    parser.add_argument(
+        "--reward-objective",
+        choices=["legacy", "lap_time"],
+        default="legacy",
+        help="Reward contract used when --recompute-rewards is enabled.",
+    )
+    parser.add_argument("--target-right-offset-m", type=float, default=0.0)
+    parser.add_argument("--off-track-threshold-m", type=float, default=0.38)
+    parser.add_argument("--lane-margin-start-m", type=float, default=0.24)
+    parser.add_argument(
+        "--bc-successful-episodes-only",
+        action="store_true",
+        help="Use failed episodes for the critic but never imitate their actions.",
+    )
+    parser.add_argument(
+        "--speed-extension-only",
+        action="store_true",
+        help=(
+            "Freeze the approved encoder and steering head, and train only "
+            "RangeExpandedCameraSpeedActor.speed_extension."
+        ),
+    )
+    parser.add_argument(
+        "--freeze-encoder",
+        action="store_true",
+        help=(
+            "Keep the approved visual encoder and BatchNorm statistics fixed "
+            "while fine-tuning the steering/speed control heads."
+        ),
+    )
     parser.add_argument("--actor-lr", type=float, default=1.0e-5)
     parser.add_argument("--critic-lr", type=float, default=3.0e-4)
     parser.add_argument("--bc-alpha", type=float, default=2.5)
@@ -93,6 +124,13 @@ def validation_metrics(agent, loader) -> dict[str, float]:
     for batch in loader:
         image = batch["image"].to(agent.device)
         action = batch.get("bc_action", batch["action"]).to(agent.device)
+        sample_weight = batch.get("bc_weight")
+        if sample_weight is not None:
+            selected = sample_weight.reshape(-1) > 0.0
+            if not bool(selected.any()):
+                continue
+            image = image[selected]
+            action = action[selected]
         prediction = agent.actor(image)
         squared_error += (
             torch.sum((prediction - action) ** 2, dim=0).detach().cpu().numpy()
@@ -116,6 +154,11 @@ def save_checkpoint(
             "epoch": int(epoch),
             "min_speed_command": train_config["min_speed_command"],
             "max_speed_command": train_config["max_speed_command"],
+            "speed_range_expansion": getattr(
+                agent.actor,
+                "speed_range_expansion",
+                None,
+            ),
             "train_config": train_config,
             "metrics": metrics,
             "actor_state_dict": agent.actor.state_dict(),
@@ -131,13 +174,9 @@ def save_checkpoint(
 
 
 def planned_simulation_cap(epoch: int, epochs: int) -> float:
-    caps = (4.0, 5.0, 6.0, 8.0)
-    progress = max(0.0, min(1.0, float(epoch) / max(1, int(epochs))))
-    index = min(
-        len(caps) - 1,
-        int(max(0.0, progress * len(caps) - 1.0e-9)),
-    )
-    return caps[index]
+    del epoch, epochs
+    # Zero is the explicit runtime contract for "no additional deployment cap".
+    return 0.0
 
 
 def save_deployment_checkpoint(
@@ -158,8 +197,13 @@ def save_deployment_checkpoint(
             "epoch": int(epoch),
             "min_speed_command": train_config["min_speed_command"],
             "max_speed_command": train_config["max_speed_command"],
+            "speed_range_expansion": getattr(
+                agent.actor,
+                "speed_range_expansion",
+                None,
+            ),
             "planned_simulation_speed_cap": float(simulation_cap),
-            "suggested_shadow_speed_cap": 4.0,
+            "suggested_shadow_speed_cap": 0.0,
             "metrics": metrics,
             "actor_state_dict": agent.actor.state_dict(),
             "update_count": int(agent.update_count),
@@ -242,8 +286,8 @@ def write_milestone_manifest(
         "# High-speed TD3+BC milestones",
         "",
         "Every checkpoint is actor-only and intended for shadow evaluation first.",
-        "Every real-car test starts at cap 4 regardless of epoch.",
-        "The staged cap is for Gazebo testing and is not a real-car approval.",
+        "A deployment speed cap of 0 means the learned speed is not clipped again.",
+        "Shadow mode publishes commands without actuating the vehicle.",
         "",
         "```bash",
         'MODEL_DIR="$(ros2 pkg prefix xycar_rl)/share/xycar_rl/models/'
@@ -252,20 +296,28 @@ def write_milestone_manifest(
         "",
     ]
     for item in milestones:
+        title = (
+            f"Selected best (epoch {item['epoch']:03d})"
+            if item.get("selected", False)
+            else f"Epoch {item['epoch']:03d}"
+        )
         lines.extend(
             [
-                f"## Epoch {item['epoch']:03d}",
+                f"## {title}",
                 "",
-                f"Planned Gazebo cap: `{item['planned_simulation_speed_cap']:.1f}`",
+                "Additional deployment cap: `disabled (0.0)`",
                 "",
-                "Initial real shadow cap: `4.0`",
+                "Real shadow cap: `disabled (0.0)`",
                 "",
                 "```bash",
                 "ros2 launch xycar_rl real_shadow.launch.py \\",
                 "  policy_kind:=camera_speed_td3_bc \\",
                 f"  checkpoint_path:=$MODEL_DIR/{item['checkpoint']} \\",
-                "  min_speed_command:=4.0 max_speed_command:=12.0 \\",
-                "  deployment_speed_cap:=4.0 \\",
+                "  min_speed_command:=4.0 max_speed_command:=24.0 \\",
+                "  deployment_speed_cap:=0.0 \\",
+                "  adaptive_steering_enabled:=false \\",
+                "  steering_temporal_alpha:=1.0 speed_temporal_alpha:=1.0 \\",
+                "  max_inference_rate_hz:=7.0 \\",
                 "  drive_enabled:=false lidar_safety_enabled:=false device:=cpu",
                 "```",
                 "",
@@ -299,8 +351,33 @@ def main(argv=None) -> None:
     actor, initial_payload = load_camera_speed_actor(
         policy_checkpoint.expanduser().resolve(), device=device
     )
+    if args.speed_extension_only and args.freeze_encoder:
+        raise ValueError(
+            "--speed-extension-only already freezes the encoder; "
+            "choose only one freeze mode"
+        )
+    if args.speed_extension_only:
+        freeze_base_policy = getattr(actor, "freeze_base_policy", None)
+        if freeze_base_policy is None:
+            raise ValueError(
+                "--speed-extension-only requires a range-expanded actor"
+            )
+        freeze_base_policy()
+    elif args.freeze_encoder:
+        freeze_encoder = getattr(actor, "freeze_encoder", None)
+        if freeze_encoder is None:
+            raise ValueError("--freeze-encoder requires a range-expanded actor")
+        freeze_encoder()
     temporal_frames = int(getattr(actor, "temporal_frames", 1))
     model_type = str(initial_payload.get("model_type", "camera_speed_resnet18"))
+    reward_weights = (
+        lap_time_objective_weights(
+            lane_margin_start_m=args.lane_margin_start_m,
+            lane_departure_threshold_m=args.off_track_threshold_m,
+        )
+        if args.reward_objective == "lap_time"
+        else RewardWeights()
+    )
     dataset = CameraSpeedTransitionDataset(
         args.transitions,
         min_speed_command=args.min_speed_command,
@@ -308,6 +385,9 @@ def main(argv=None) -> None:
         temporal_frames=temporal_frames,
         recompute_rewards=args.recompute_rewards,
         world_sdf=args.world_sdf,
+        target_right_offset_m=args.target_right_offset_m,
+        reward_weights=reward_weights,
+        bc_successful_episodes_only=args.bc_successful_episodes_only,
     )
     train_indices, validation_indices = grouped_split(
         dataset, args.validation_ratio, args.seed
@@ -500,7 +580,7 @@ def main(argv=None) -> None:
                             "epoch": epoch,
                             "checkpoint": checkpoint_name,
                             "planned_simulation_speed_cap": simulation_cap,
-                            "suggested_shadow_speed_cap": 4.0,
+                            "suggested_shadow_speed_cap": 0.0,
                             "validation_steering_mse": row[
                                 "validation_steering_mse"
                             ],
@@ -519,9 +599,46 @@ def main(argv=None) -> None:
                 flush=True,
             )
 
-    best_actor, _ = load_camera_speed_actor(
+    best_actor, best_payload = load_camera_speed_actor(
         output_dir / "camera_speed_td3_bc_best.pth", device="cpu"
     )
+    if milestone_dir is not None:
+        selected_checkpoint = "camera_speed_td3_bc_best.pth"
+        torch.save(
+            {
+                key: best_payload[key]
+                for key in (
+                    "model_type",
+                    "temporal_frames",
+                    "algorithm",
+                    "epoch",
+                    "min_speed_command",
+                    "max_speed_command",
+                    "metrics",
+                    "actor_state_dict",
+                    "update_count",
+                )
+            }
+            | {
+                "planned_simulation_speed_cap": 0.0,
+                "suggested_shadow_speed_cap": 0.0,
+            },
+            milestone_dir / selected_checkpoint,
+        )
+        selected = {
+            "epoch": int(best_payload["epoch"]),
+            "checkpoint": selected_checkpoint,
+            "selected": True,
+            "planned_simulation_speed_cap": 0.0,
+            "suggested_shadow_speed_cap": 0.0,
+            "validation_steering_mse": float(
+                best_payload["metrics"]["validation_steering_mse"]
+            ),
+            "validation_speed_mse": float(
+                best_payload["metrics"]["validation_speed_mse"]
+            ),
+        }
+        write_milestone_manifest(milestone_dir, [selected, *milestones])
     export_scripted_actor(
         output_dir / "camera_speed_td3_bc_actor_scripted.pt",
         best_actor,

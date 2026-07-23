@@ -34,6 +34,8 @@ TRANSITION_COLUMNS = [
     "reward_safe_speed",
     "reward_unsafe_speed",
     "reward_time_efficiency",
+    "reward_lap_time",
+    "reward_lane_margin",
     "reward_large_oscillation",
     "reward_terminal",
     "terminated",

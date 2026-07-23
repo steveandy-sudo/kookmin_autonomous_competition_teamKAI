@@ -58,7 +58,22 @@ class TransitionRecorderNode(Node):
         ).expanduser().resolve()
         self.max_transitions = max(0, int(self.get_parameter("max_transitions").value))
         self.max_rate_hz = max(0.1, float(self.get_parameter("max_rate_hz").value))
-        self.min_period_ns = int(1.0e9 / self.max_rate_hz)
+        self.rate_period_tolerance_ratio = max(
+            0.90,
+            min(
+                1.0,
+                float(
+                    self.get_parameter(
+                        "rate_period_tolerance_ratio"
+                    ).value
+                ),
+            ),
+        )
+        self.min_period_ns = int(
+            self.rate_period_tolerance_ratio
+            * 1.0e9
+            / self.max_rate_hz
+        )
         self.max_steering_command = abs(
             float(self.get_parameter("max_steering_command").value)
         )
@@ -92,6 +107,9 @@ class TransitionRecorderNode(Node):
                 max_episode_sec=float(
                     self.get_parameter("max_episode_sec").value
                 ),
+                minimum_lap_fraction=float(
+                    self.get_parameter("minimum_lap_fraction").value
+                ),
             )
         )
         self.writer = TransitionWriter(
@@ -118,6 +136,10 @@ class TransitionRecorderNode(Node):
                 "require_expert_action_trace": self.require_expert_action_trace,
                 "sensor_sync_tolerance_sec": float(
                     self.get_parameter("sensor_sync_tolerance_sec").value
+                ),
+                "max_rate_hz": self.max_rate_hz,
+                "rate_period_tolerance_ratio": (
+                    self.rate_period_tolerance_ratio
                 ),
             },
             allow_overwrite=bool(self.get_parameter("allow_overwrite").value),
@@ -224,9 +246,11 @@ class TransitionRecorderNode(Node):
         self.declare_parameter("off_track_threshold_m", 0.38)
         self.declare_parameter("stuck_timeout_sec", 2.0)
         self.declare_parameter("max_episode_sec", 120.0)
+        self.declare_parameter("minimum_lap_fraction", 0.98)
         self.declare_parameter("max_steering_command", 42.0)
         self.declare_parameter("sensor_sync_tolerance_sec", 0.25)
         self.declare_parameter("max_rate_hz", 10.0)
+        self.declare_parameter("rate_period_tolerance_ratio", 0.99)
         self.declare_parameter("max_transitions", 0)
         self.declare_parameter("allow_overwrite", False)
         self.declare_parameter("require_action_trace", False)
@@ -518,7 +542,17 @@ class TransitionRecorderNode(Node):
             previous.projection.progress_m,
             current.projection.progress_m,
         )
-        progress_delta = float(np.clip(progress_delta, -0.25, 0.25))
+        plausible_progress_m = max(
+            0.25,
+            1.5 * abs(float(current.speed_mps)) * dt_sec,
+        )
+        progress_delta = float(
+            np.clip(
+                progress_delta,
+                -plausible_progress_m,
+                plausible_progress_m,
+            )
+        )
         self.cumulative_progress_m = max(
             0.0, self.cumulative_progress_m + progress_delta
         )
@@ -578,6 +612,7 @@ class TransitionRecorderNode(Node):
             off_track=terminal.off_track,
             stuck=terminal.stuck,
             lap_complete=terminal.lap_complete,
+            dt_sec=dt_sec,
         )
         state_image, state_scan = self.writer.save_observation(
             previous.timestamp_ns,
@@ -615,6 +650,8 @@ class TransitionRecorderNode(Node):
                 "reward_safe_speed": reward.safe_speed,
                 "reward_unsafe_speed": reward.unsafe_speed,
                 "reward_time_efficiency": reward.time_efficiency,
+                "reward_lap_time": reward.lap_time,
+                "reward_lane_margin": reward.lane_margin,
                 "reward_large_oscillation": reward.large_oscillation,
                 "reward_terminal": reward.terminal,
                 "terminated": int(terminal.terminated),

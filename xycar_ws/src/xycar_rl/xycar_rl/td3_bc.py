@@ -30,20 +30,24 @@ def camera_speed_bc_loss(
     *,
     steering_weight: float = 1.0,
     speed_weight: float = 1.0,
+    sample_weight: torch.Tensor | None = None,
 ) -> torch.Tensor:
     total_weight = float(steering_weight) + float(speed_weight)
     if steering_weight < 0.0 or speed_weight < 0.0 or total_weight <= 0.0:
         raise ValueError("camera-speed BC weights must be nonnegative and nonzero")
-    steering_loss = nn.functional.mse_loss(
-        predicted_action[:, 0], action[:, 0]
-    )
-    speed_loss = nn.functional.mse_loss(
-        predicted_action[:, 1], action[:, 1]
-    )
-    return (
-        float(steering_weight) * steering_loss
-        + float(speed_weight) * speed_loss
+    per_sample = (
+        float(steering_weight)
+        * (predicted_action[:, 0] - action[:, 0]).square()
+        + float(speed_weight)
+        * (predicted_action[:, 1] - action[:, 1]).square()
     ) / total_weight
+    if sample_weight is None:
+        return per_sample.mean()
+    weights = sample_weight.reshape(-1).to(per_sample)
+    weight_sum = weights.sum()
+    if float(weight_sum.detach().cpu()) <= 0.0:
+        return per_sample.sum() * 0.0
+    return (per_sample * weights).sum() / weight_sum
 
 
 def soft_update(target: nn.Module, source: nn.Module, tau: float) -> None:
@@ -68,8 +72,15 @@ class TD3BCAgent:
         self.actor_target = deepcopy(actor).to(self.device).eval()
         self.critic = TwinCritic().to(self.device)
         self.critic_target = deepcopy(self.critic).to(self.device).eval()
+        actor_parameters = [
+            parameter
+            for parameter in self.actor.parameters()
+            if parameter.requires_grad
+        ]
+        if not actor_parameters:
+            raise ValueError("actor has no trainable parameters")
         self.actor_optimizer = torch.optim.Adam(
-            self.actor.parameters(), lr=config.actor_lr
+            actor_parameters, lr=config.actor_lr
         )
         self.critic_optimizer = torch.optim.Adam(
             self.critic.parameters(), lr=config.critic_lr
@@ -170,6 +181,7 @@ class CameraSpeedTD3BCAgent:
         image = batch["image"]
         action = batch["action"]
         bc_action = batch.get("bc_action", action)
+        bc_weight = batch.get("bc_weight")
         reward = batch["reward"]
         next_image = batch["next_image"]
         done = batch["done"]
@@ -206,6 +218,7 @@ class CameraSpeedTD3BCAgent:
                 bc_action,
                 steering_weight=cfg.steering_bc_weight,
                 speed_weight=cfg.speed_bc_weight,
+                sample_weight=bc_weight,
             )
             actor_loss = -q_scale * q_value.mean() + bc_loss
             self.actor_optimizer.zero_grad(set_to_none=True)
