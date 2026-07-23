@@ -36,6 +36,10 @@ def generate_launch_description():
         "/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo",
         "/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan",
         "/imu@sensor_msgs/msg/Imu@gz.msgs.IMU",
+        "/model/xycar_ackermann/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry",
+        "/world/kookmin_xycar_track/dynamic_pose/info@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
+        "/xycar_contact@ros_gz_interfaces/msg/Contacts[gz.msgs.Contacts",
+        "/world/kookmin_xycar_track/control@ros_gz_interfaces/srv/ControlWorld",
     ]
     rviz_clean_env = (
         "import os, sys; "
@@ -51,6 +55,11 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "auto_start",
+                default_value="true",
+                description="Unpause Gazebo after startup. RL owns stepping when false.",
+            ),
             DeclareLaunchArgument(
                 "params_file",
                 default_value=params_file,
@@ -76,6 +85,14 @@ def generate_launch_description():
                 default_value="true",
                 description="Start RViz; disable for unattended dataset batches.",
             ),
+            DeclareLaunchArgument(
+                "enable_legacy_perception",
+                default_value="true",
+                description=(
+                    "Start the legacy camera perception node. Set false when "
+                    "another canonical perception backend is included."
+                ),
+            ),
             TimerAction(
                 period=1.0,
                 actions=[
@@ -95,6 +112,7 @@ def generate_launch_description():
                             "pause: false",
                         ],
                         output="screen",
+                        condition=IfCondition(LaunchConfiguration("auto_start")),
                     )
                 ],
             ),
@@ -121,6 +139,9 @@ def generate_launch_description():
                     {"calib_yaml": LaunchConfiguration("perception_calib")},
                 ],
                 output="screen",
+                condition=IfCondition(
+                    LaunchConfiguration("enable_legacy_perception")
+                ),
             ),
             Node(
                 package="tf2_ros",

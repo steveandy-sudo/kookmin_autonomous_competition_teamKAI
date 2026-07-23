@@ -54,6 +54,16 @@ def front_obstacle_distance(
     return float(np.min(ranges[valid])) if np.any(valid) else float("inf")
 
 
+def apply_optional_speed_cap(
+    learned_speed_command: float,
+    deployment_speed_cap: float,
+) -> float:
+    """Apply a positive deployment cap; zero or negative means uncapped."""
+    learned = float(learned_speed_command)
+    cap = float(deployment_speed_cap)
+    return min(learned, cap) if cap > 0.0 else learned
+
+
 class RLPolicyRuntimeNode(Node):
     def __init__(self) -> None:
         super().__init__("rl_policy_inference")
@@ -252,8 +262,8 @@ class RLPolicyRuntimeNode(Node):
         self.declare_parameter("drive_enabled", False)
         self.declare_parameter("speed_command", 3.0)
         self.declare_parameter("min_speed_command", 4.0)
-        self.declare_parameter("max_speed_command", 10.0)
-        self.declare_parameter("deployment_speed_cap", 4.0)
+        self.declare_parameter("max_speed_command", 24.0)
+        self.declare_parameter("deployment_speed_cap", 0.0)
         self.declare_parameter("speed_temporal_alpha", 0.35)
         self.declare_parameter("max_steering_command", 42.0)
         self.declare_parameter("steering_gain", 1.0)
@@ -328,7 +338,10 @@ class RLPolicyRuntimeNode(Node):
                 self.min_speed_command,
                 self.max_speed_command,
             )
-            target_speed = min(learned_speed, self.deployment_speed_cap)
+            target_speed = apply_optional_speed_cap(
+                learned_speed,
+                self.deployment_speed_cap,
+            )
         else:
             final_norm, base_norm, residual_norm = self.policy.action_components(
                 {"image": image, "lidar": lidar}

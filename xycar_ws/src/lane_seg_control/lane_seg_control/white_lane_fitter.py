@@ -512,6 +512,82 @@ def fit_yellow_centerline_reference(
     )
 
 
+def normalize_yellow_fragments(
+    yellow_mask: np.ndarray,
+    *,
+    line_width_px: int = 5,
+    min_component_area_px: int = 3,
+    smoothing_window_rows: int = 5,
+) -> np.ndarray:
+    """Give observed yellow fragments a stable width without filling gaps."""
+    if yellow_mask.ndim != 2:
+        raise ValueError(
+            f"yellow mask must be two-dimensional, got {yellow_mask.shape}"
+        )
+    binary = (yellow_mask > 0).astype(np.uint8)
+    component_count, labels, stats, _ = cv2.connectedComponentsWithStats(
+        binary,
+        connectivity=8,
+    )
+    output = np.zeros_like(binary, dtype=np.uint8)
+    smoothing_window = max(1, int(smoothing_window_rows))
+    if smoothing_window % 2 == 0:
+        smoothing_window += 1
+
+    for component_index in range(1, component_count):
+        area = int(stats[component_index, cv2.CC_STAT_AREA])
+        if area < max(1, int(min_component_area_px)):
+            continue
+        component_ys, component_xs = np.nonzero(labels == component_index)
+        occupied_rows = np.unique(component_ys)
+        if occupied_rows.size == 0:
+            continue
+        centers_x = np.asarray(
+            [
+                float(np.median(component_xs[component_ys == row]))
+                for row in occupied_rows
+            ],
+            dtype=np.float32,
+        )
+        if smoothing_window > 1 and centers_x.size >= smoothing_window:
+            padding = smoothing_window // 2
+            kernel = np.full(
+                smoothing_window,
+                1.0 / float(smoothing_window),
+                dtype=np.float32,
+            )
+            centers_x = np.convolve(
+                np.pad(centers_x, (padding, padding), mode="edge"),
+                kernel,
+                mode="valid",
+            )
+        points = np.column_stack(
+            (
+                np.rint(centers_x).astype(np.int32),
+                occupied_rows.astype(np.int32),
+            )
+        )
+        if points.shape[0] == 1:
+            cv2.circle(
+                output,
+                tuple(points[0]),
+                max(1, int(line_width_px)) // 2,
+                255,
+                -1,
+                cv2.LINE_8,
+            )
+        else:
+            cv2.polylines(
+                output,
+                [points],
+                False,
+                255,
+                thickness=max(1, int(line_width_px)),
+                lineType=cv2.LINE_8,
+            )
+    return output
+
+
 def compose_fitted_canonical(
     fitted_white: np.ndarray,
     yellow: np.ndarray,

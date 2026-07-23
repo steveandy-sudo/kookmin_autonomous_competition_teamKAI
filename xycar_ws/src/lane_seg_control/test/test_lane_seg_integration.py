@@ -23,12 +23,35 @@ from lane_seg_control.white_lane_fitter import (
     compose_fitted_canonical,
     fit_white_lane_boundaries,
     fit_yellow_centerline_reference,
+    normalize_yellow_fragments,
     render_white_lane_fit_debug,
 )
 from xycar_perception.canonical_road import make_canonical_road_image_from_masks
 
 
 class LaneSegIntegrationTest(unittest.TestCase):
+    def test_yellow_normalizer_preserves_dash_gaps_and_width(self):
+        yellow = np.zeros((144, 256), dtype=np.uint8)
+        cv2.line(yellow, (124, 12), (132, 54), 255, 13)
+        cv2.line(yellow, (131, 86), (137, 132), 255, 11)
+
+        normalized = normalize_yellow_fragments(
+            yellow,
+            line_width_px=3,
+            min_component_area_px=3,
+        )
+
+        component_count = cv2.connectedComponents(
+            (normalized > 0).astype(np.uint8),
+            connectivity=8,
+        )[0] - 1
+        self.assertEqual(component_count, 2)
+        self.assertEqual(np.count_nonzero(normalized[66:76]), 0)
+        self.assertLess(np.count_nonzero(normalized), np.count_nonzero(yellow))
+        occupied_rows = np.flatnonzero(np.any(normalized > 0, axis=1))
+        row_widths = np.count_nonzero(normalized[occupied_rows] > 0, axis=1)
+        self.assertLessEqual(int(np.percentile(row_widths, 90)), 5)
+
     def test_bag_montage_has_three_fixed_width_panels(self):
         rectified = np.zeros((1024, 1280, 3), dtype=np.uint8)
         bev = np.zeros((660, 640, 3), dtype=np.uint8)

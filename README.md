@@ -15,8 +15,12 @@
   -> 단계별 실차 shadow/저속 검증         <- 다음
 ```
 
-> 기준일: 2026-07-21
+> 기준일: 2026-07-23
 > 기준 브랜치: `simulation`
+
+2026-07-23 최종 중앙선 Stanley/Pure Pursuit 룰베이스와 평균 속도 명령 17
+이상의 camera-only TD3+BC 재현·실차 shadow 절차는
+[`docs/final_rule_rl_20260723.md`](docs/final_rule_rl_20260723.md)를 기준으로 한다.
 
 ---
 

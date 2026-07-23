@@ -23,6 +23,7 @@ from lane_seg_control.white_lane_fitter import (
     compose_fitted_canonical,
     fit_white_lane_boundaries,
     fit_yellow_centerline_reference,
+    normalize_yellow_fragments,
     render_white_lane_fit_debug,
 )
 
@@ -212,6 +213,10 @@ class CanonicalAdapterNode(Node):
         self.declare_parameter("canonical_yellow_divider_min_pixels", 3)
         self.declare_parameter("canonical_yellow_divider_residual_px", 6.0)
         self.declare_parameter("canonical_yellow_divider_line_width_px", 5)
+        self.declare_parameter("canonical_yellow_normalize_enabled", False)
+        self.declare_parameter("canonical_yellow_normalize_line_width_px", 5)
+        self.declare_parameter("canonical_yellow_normalize_min_area_px", 3)
+        self.declare_parameter("canonical_yellow_normalize_smoothing_rows", 5)
         self.declare_parameter("sync_queue_size", 10)
         self.declare_parameter("sync_qos_depth", 1)
         self.declare_parameter("sync_slop_sec", 0.08)
@@ -471,8 +476,28 @@ class CanonicalAdapterNode(Node):
                 divider_x_by_y=divider,
             )
             # The full-height line is an internal left/right divider only.
-            # Keep the model-facing yellow mask as its original fragments.
             output_yellow = raw_stages.yellow_mask
+            if bool(
+                self.get_parameter("canonical_yellow_normalize_enabled").value
+            ):
+                output_yellow = normalize_yellow_fragments(
+                    output_yellow,
+                    line_width_px=int(
+                        self.get_parameter(
+                            "canonical_yellow_normalize_line_width_px"
+                        ).value
+                    ),
+                    min_component_area_px=int(
+                        self.get_parameter(
+                            "canonical_yellow_normalize_min_area_px"
+                        ).value
+                    ),
+                    smoothing_window_rows=int(
+                        self.get_parameter(
+                            "canonical_yellow_normalize_smoothing_rows"
+                        ).value
+                    ),
+                )
             fitted_road, fitted_white = compose_fitted_canonical(
                 white_fit.mask,
                 output_yellow,
@@ -490,20 +515,22 @@ class CanonicalAdapterNode(Node):
 
         header = image_message.header
         header.frame_id = self.base_frame_id
-        outputs = [
-            (self.canonical_pub, stages.road_image, "bgr8"),
+        outputs = [(self.canonical_pub, stages.road_image, "bgr8")]
+        for publisher, frame, encoding in (
             (self.white_pub, stages.white_mask, "mono8"),
             (self.yellow_pub, stages.yellow_mask, "mono8"),
             (self.valid_pub, stages.valid_mask, "mono8"),
-        ]
+        ):
+            if publisher.get_subscription_count() > 0:
+                outputs.append((publisher, frame, encoding))
         if self.bev_color_pub is not None:
-            outputs.extend(
-                [
-                    (self.bev_color_pub, bev_image, "bgr8"),
-                    (self.bev_white_pub, bev_white, "mono8"),
-                    (self.bev_yellow_pub, bev_yellow, "mono8"),
-                ]
-            )
+            for publisher, frame, encoding in (
+                (self.bev_color_pub, bev_image, "bgr8"),
+                (self.bev_white_pub, bev_white, "mono8"),
+                (self.bev_yellow_pub, bev_yellow, "mono8"),
+            ):
+                if publisher.get_subscription_count() > 0:
+                    outputs.append((publisher, frame, encoding))
         for publisher, frame, encoding in outputs:
             output_message = self.bridge.cv2_to_imgmsg(frame, encoding=encoding)
             output_message.header = header

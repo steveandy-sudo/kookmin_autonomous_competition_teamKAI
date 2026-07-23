@@ -25,7 +25,7 @@ setup(
     maintainer="kai",
     maintainer_email="kai@example.com",
     description=(
-        "YOLO lane segmentation path generation and motor-free controller preview"
+        "LR-ASPP MobileNetV3 lane segmentation and canonical road perception"
     ),
     license="Apache-2.0",
     tests_require=["pytest"],

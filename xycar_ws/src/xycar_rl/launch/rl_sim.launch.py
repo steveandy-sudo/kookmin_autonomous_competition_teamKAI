@@ -46,6 +46,13 @@ def generate_launch_description():
             "xycar_gazebo_rviz.launch.py",
         ]
     )
+    canonical_launch = PathJoinSubstitution(
+        [
+            FindPackageShare("lane_seg_control"),
+            "launch",
+            "lane_seg_lraspp_sim_canonical.launch.py",
+        ]
+    )
 
     return LaunchDescription(
         [
@@ -82,7 +89,11 @@ def generate_launch_description():
                 launch_arguments={
                     "auto_start": "false",
                     "enable_rviz": enable_rviz,
+                    "enable_legacy_perception": "false",
                 }.items(),
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(canonical_launch),
             ),
             RegisterEventHandler(
                 OnProcessExit(

@@ -17,6 +17,8 @@ def generate_launch_description():
     min_speed_command = LaunchConfiguration("min_speed_command")
     max_speed_command = LaunchConfiguration("max_speed_command")
     deployment_speed_cap = LaunchConfiguration("deployment_speed_cap")
+    speed_temporal_alpha = LaunchConfiguration("speed_temporal_alpha")
+    max_inference_rate_hz = LaunchConfiguration("max_inference_rate_hz")
     device = LaunchConfiguration("device")
     return LaunchDescription(
         [
@@ -39,8 +41,17 @@ def generate_launch_description():
             DeclareLaunchArgument("drive_enabled", default_value="false"),
             DeclareLaunchArgument("speed_command", default_value="3.0"),
             DeclareLaunchArgument("min_speed_command", default_value="4.0"),
-            DeclareLaunchArgument("max_speed_command", default_value="10.0"),
-            DeclareLaunchArgument("deployment_speed_cap", default_value="4.0"),
+            DeclareLaunchArgument("max_speed_command", default_value="24.0"),
+            DeclareLaunchArgument(
+                "deployment_speed_cap",
+                default_value="0.0",
+                description=(
+                    "Positive values clip learned speed; zero disables the "
+                    "additional deployment cap."
+                ),
+            ),
+            DeclareLaunchArgument("speed_temporal_alpha", default_value="0.35"),
+            DeclareLaunchArgument("max_inference_rate_hz", default_value="15.0"),
             DeclareLaunchArgument("lidar_safety_enabled", default_value="false"),
             DeclareLaunchArgument("steering_gain", default_value="1.0"),
             DeclareLaunchArgument("steering_output_sign", default_value="1.0"),
@@ -90,6 +101,12 @@ def generate_launch_description():
                         ),
                         "deployment_speed_cap": ParameterValue(
                             deployment_speed_cap, value_type=float
+                        ),
+                        "speed_temporal_alpha": ParameterValue(
+                            speed_temporal_alpha, value_type=float
+                        ),
+                        "max_inference_rate_hz": ParameterValue(
+                            max_inference_rate_hz, value_type=float
                         ),
                         "lidar_safety_enabled": ParameterValue(
                             LaunchConfiguration("lidar_safety_enabled"),

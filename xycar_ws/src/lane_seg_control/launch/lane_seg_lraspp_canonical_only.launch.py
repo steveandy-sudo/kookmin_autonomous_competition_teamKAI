@@ -33,6 +33,16 @@ def generate_launch_description():
             DeclareLaunchArgument("opencv_threads", default_value="1"),
             DeclareLaunchArgument("pipeline_qos_depth", default_value="1"),
             DeclareLaunchArgument("debug_rate_hz", default_value="1.0"),
+            DeclareLaunchArgument("max_output_rate_hz", default_value="7.0"),
+            DeclareLaunchArgument(
+                "output_native_resolution", default_value="false"
+            ),
+            DeclareLaunchArgument(
+                "dst_left_ratio", default_value=str(80.0 / 640.0)
+            ),
+            DeclareLaunchArgument(
+                "dst_right_ratio", default_value=str(560.0 / 640.0)
+            ),
             DeclareLaunchArgument(
                 "canonical_white_fit_enabled", default_value="true"
             ),
@@ -68,6 +78,12 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "canonical_yellow_divider_line_width_px", default_value="5"
+            ),
+            DeclareLaunchArgument(
+                "canonical_yellow_normalize_enabled", default_value="false"
+            ),
+            DeclareLaunchArgument(
+                "canonical_yellow_normalize_line_width_px", default_value="5"
             ),
             Node(
                 package="lane_seg_control",
@@ -109,6 +125,14 @@ def generate_launch_description():
                         "debug_rate_hz": ParameterValue(
                             LaunchConfiguration("debug_rate_hz"), value_type=float
                         ),
+                        "max_output_rate_hz": ParameterValue(
+                            LaunchConfiguration("max_output_rate_hz"),
+                            value_type=float,
+                        ),
+                        "output_native_resolution": ParameterValue(
+                            LaunchConfiguration("output_native_resolution"),
+                            value_type=bool,
+                        ),
                     }
                 ],
             ),
@@ -131,8 +155,12 @@ def generate_launch_description():
                         "src_br_y_ratio": 612.0 / 1024.0,
                         "src_bl_x_ratio": 46.0 / 1280.0,
                         "src_bl_y_ratio": 622.0 / 1024.0,
-                        "dst_left_ratio": 80.0 / 640.0,
-                        "dst_right_ratio": 560.0 / 640.0,
+                        "dst_left_ratio": ParameterValue(
+                            LaunchConfiguration("dst_left_ratio"), value_type=float
+                        ),
+                        "dst_right_ratio": ParameterValue(
+                            LaunchConfiguration("dst_right_ratio"), value_type=float
+                        ),
                         "dst_top_y_ratio": 0.0,
                         "dst_bottom_y_ratio": 479.0 / 660.0,
                         "bev_width": 640,
@@ -201,6 +229,18 @@ def generate_launch_description():
                         "canonical_yellow_divider_line_width_px": ParameterValue(
                             LaunchConfiguration(
                                 "canonical_yellow_divider_line_width_px"
+                            ),
+                            value_type=int,
+                        ),
+                        "canonical_yellow_normalize_enabled": ParameterValue(
+                            LaunchConfiguration(
+                                "canonical_yellow_normalize_enabled"
+                            ),
+                            value_type=bool,
+                        ),
+                        "canonical_yellow_normalize_line_width_px": ParameterValue(
+                            LaunchConfiguration(
+                                "canonical_yellow_normalize_line_width_px"
                             ),
                             value_type=int,
                         ),

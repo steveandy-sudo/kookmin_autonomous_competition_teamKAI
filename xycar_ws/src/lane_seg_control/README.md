@@ -1,21 +1,19 @@
 # lane_seg_control
 
-KookminTY real-car lane segmentation and canonical perception pipeline.
-
-The package contains the fixed `512x512` ONNX model and does not require the
-old `/home/xytron/xycar_ws/.venvs/lane_seg_yolov8` environment.
+KookminTY real-car and Gazebo lane segmentation pipeline. The current runtime
+uses the packaged LR-ASPP MobileNetV3-Small TorchScript model; the legacy YOLO
+model is not part of the active driving path.
 
 Pipeline:
 
 ```text
 /wide_camera/rect/image_raw
-  -> best_512.onnx
+  -> LR-ASPP MobileNetV3-Small (RGB 256x144)
   -> /lane_seg/source_image (the exact processed frame)
   -> /lane_seg/white_boundary_mask
   -> /lane_seg/yellow_centerline_mask
-  -> lane_seg_unified_viewer + packaged bev_latest.json
-  -> /lane_seg_bev/* (640x480)
-  -> same-process /perception/canonical_road_image (256x144 bgr8)
+  -> calibrated BEV (640x660, 1.4m x 1.5m)
+  -> /perception/canonical_road_image (256x144 bgr8)
 ```
 
 Canonical-only conversion keeps the calibrated `640x480` BEV unchanged and
@@ -38,31 +36,27 @@ colcon build --packages-up-to lane_seg_control --symlink-install
 source install/setup.bash
 ```
 
-Run after the rectified camera is publishing:
+Run after the real rectified camera is publishing:
 
 ```bash
-ros2 launch lane_seg_control lane_seg_canonical_perception.launch.py
+ros2 launch lane_seg_control lane_seg_lraspp_canonical_only.launch.py
 ```
 
-The default launch opens the original `Lane Path Preview` and
-`BEV YOLO Detection` windows. Set `display_mode:=off` for a headless run.
-
-Canonical perception without path generation or OpenCV windows:
+Use the Gazebo-matched camera and BEV profile in simulation:
 
 ```bash
-ros2 launch lane_seg_control lane_seg_canonical_only.launch.py
+ros2 launch lane_seg_control lane_seg_lraspp_sim_canonical.launch.py
 ```
 
-The default class thresholds are `0.20` for white boundaries and `0.40` for
-the yellow centerline.
-
-Full-resolution YOLO and BEV debug images are rate-limited to `1Hz` by default
-so visualization does not reduce the canonical perception rate.
+The simulation profile consumes `/image_raw`, publishes debug images at 7Hz,
+and widens only the simulated BEV destination trapezoid so its 0.80m white-line
+spacing matches the real rosbag canonical input. Real-camera homography values
+remain unchanged.
 
 ## LR-ASPP MobileNetV3-Small
 
-The packaged TorchScript semantic-segmentation model can replace YOLO while
-keeping the same mask, BEV, and canonical topic contract:
+The packaged TorchScript semantic-segmentation model keeps the same mask, BEV,
+and canonical topic contract on the vehicle and in Gazebo:
 
 ```bash
 ros2 launch lane_seg_control lane_seg_lraspp_canonical_only.launch.py
