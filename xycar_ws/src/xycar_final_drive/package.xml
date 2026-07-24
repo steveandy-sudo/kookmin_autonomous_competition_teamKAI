@@ -13,6 +13,7 @@
   <exec_depend>lane_seg_control</exec_depend>
   <exec_depend>xycar_rl</exec_depend>
   <exec_depend>xycar_rule_drive</exec_depend>
+  <exec_depend>xycar_hybrid_drive</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

@@ -26,6 +26,7 @@ def generate_launch_description():
     world = LaunchConfiguration("world")
     headless = LaunchConfiguration("headless")
     enable_rviz = LaunchConfiguration("enable_rviz")
+    auto_start = LaunchConfiguration("auto_start")
     gui_requested = PythonExpression(["'", headless, "' == 'gui'"])
     gazebo_server = ExecuteProcess(
         cmd=["bash", "-lc", ["gz sim ", headless, " ", world]],
@@ -74,6 +75,14 @@ def generate_launch_description():
                 description="Use '-s' for server-only data collection or 'gui' for Gazebo GUI.",
             ),
             DeclareLaunchArgument("enable_rviz", default_value="false"),
+            DeclareLaunchArgument(
+                "auto_start",
+                default_value="false",
+                description=(
+                    "Unpause Gazebo for continuous drivers. Keep false when "
+                    "the RL environment owns world stepping."
+                ),
+            ),
             SetEnvironmentVariable(
                 name="GZ_SIM_RESOURCE_PATH",
                 value=[
@@ -87,7 +96,7 @@ def generate_launch_description():
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(bridge_launch),
                 launch_arguments={
-                    "auto_start": "false",
+                    "auto_start": auto_start,
                     "enable_rviz": enable_rviz,
                     "enable_legacy_perception": "false",
                 }.items(),

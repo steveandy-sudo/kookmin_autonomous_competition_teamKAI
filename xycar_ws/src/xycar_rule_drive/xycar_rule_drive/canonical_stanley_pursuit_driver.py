@@ -1004,8 +1004,11 @@ def fused_stanley_pursuit(
 
 
 class CanonicalStanleyPursuitDriver(Node):
-    def __init__(self) -> None:
-        super().__init__("canonical_stanley_pursuit_driver")
+    def __init__(
+        self,
+        node_name: str = "canonical_stanley_pursuit_driver",
+    ) -> None:
+        super().__init__(node_name)
         self.declare_parameter(
             "canonical_topic", "/perception/canonical_road_image"
         )
