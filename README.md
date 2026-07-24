@@ -8,6 +8,9 @@
 >
 > 새 장소에서 SLAM 지도를 만들고 실차 전역경로를 단계적으로 검증하는
 > 체크리스트: `docs/new_map_real_vehicle_test_KO.md`
+>
+> 2026-07-24 ROS bag의 LiDAR/IMU 기반 command odom 보정 결과:
+> `data/odom_calibration/2026-07-24/README.md`
 
 ```text
 트랙 재현

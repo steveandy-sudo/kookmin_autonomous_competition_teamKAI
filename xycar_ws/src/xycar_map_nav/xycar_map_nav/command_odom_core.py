@@ -50,9 +50,42 @@ def integrate_ackermann(
     dt = max(0.0, float(dt_sec))
     speed = float(speed_mps)
     yaw_rate = speed * float(curvature_per_m)
+    return integrate_planar_velocity(
+        state,
+        speed_mps=speed,
+        yaw_rate_rad_s=yaw_rate,
+        dt_sec=dt,
+    )
+
+
+def integrate_planar_velocity(
+    state: OdomState,
+    *,
+    speed_mps: float,
+    yaw_rate_rad_s: float,
+    dt_sec: float,
+) -> OdomState:
+    """Integrate forward speed and yaw rate with a midpoint SE(2) step."""
+    dt = max(0.0, float(dt_sec))
+    speed = float(speed_mps)
+    yaw_rate = float(yaw_rate_rad_s)
     middle_yaw = state.yaw + yaw_rate * dt * 0.5
     return OdomState(
         x=state.x + speed * math.cos(middle_yaw) * dt,
         y=state.y + speed * math.sin(middle_yaw) * dt,
         yaw=normalize_angle(state.yaw + yaw_rate * dt),
     )
+
+
+def first_order_response(
+    current: float,
+    target: float,
+    *,
+    dt_sec: float,
+    time_constant_sec: float,
+) -> float:
+    """Apply a stable first-order actuator response for any timer period."""
+    dt = max(0.0, float(dt_sec))
+    tau = max(1e-4, float(time_constant_sec))
+    response = 1.0 - math.exp(-dt / tau)
+    return float(current) + (float(target) - float(current)) * response

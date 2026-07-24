@@ -3,7 +3,9 @@ import math
 from xycar_map_nav.command_odom_core import (
     OdomState,
     curvature_for_steering_command,
+    first_order_response,
     integrate_ackermann,
+    integrate_planar_velocity,
 )
 
 
@@ -40,3 +42,28 @@ def test_real_steering_map_interpolation_and_sign():
     assert curvature_for_steering_command(
         21.0, commands, curvatures
     ) < 0.0
+
+
+def test_first_order_response_is_bounded_and_uses_time_constant():
+    halfway = first_order_response(
+        0.0,
+        1.0,
+        dt_sec=math.log(2.0),
+        time_constant_sec=1.0,
+    )
+    assert math.isclose(halfway, 0.5)
+    assert 0.0 < first_order_response(
+        0.0, 1.0, dt_sec=0.1, time_constant_sec=1.0
+    ) < 1.0
+
+
+def test_gyro_yaw_can_be_integrated_independently_from_command_curvature():
+    state = integrate_planar_velocity(
+        OdomState(),
+        speed_mps=0.25,
+        yaw_rate_rad_s=-0.5,
+        dt_sec=1.0,
+    )
+    assert state.x > 0.0
+    assert state.y < 0.0
+    assert math.isclose(state.yaw, -0.5)

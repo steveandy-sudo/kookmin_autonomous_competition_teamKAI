@@ -9,8 +9,11 @@ xycar_command_odom:
     command_timeout_sec: 0.30
     maximum_dt_sec: 0.10
 
-    # Production baseline from the VESC real-vehicle dynamics tests.
-    speed_gain_mps_per_command: 0.080612
+    # Provisional value from the globally optimized Cartographer trajectory.
+    # Do not promote to the production config until a surveyed straight-distance
+    # run resolves the 0.0802 (VESC), 0.0867 (global SLAM), and 0.0988
+    # (pairwise LiDAR ICP) disagreement.
+    speed_gain_mps_per_command: 0.086683
     speed_deadzone_command: 3.0
     speed_min_mps: -4.0
     speed_max_mps: 8.0
@@ -19,8 +22,9 @@ xycar_command_odom:
     speed_brake_tau_sec: 0.09
     steering_delay_sec: 0.10
 
-    # Disabled in the baseline so bags without /imu work unchanged.
-    use_gyro_yaw: false
+    # If /imu is absent or stale, the node automatically falls back to the
+    # steering-command curvature model.
+    use_gyro_yaw: true
     imu_topic: /imu
     gyro_z_bias_rad_s: 0.026983
     gyro_z_sign: -1.0

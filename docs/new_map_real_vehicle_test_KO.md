@@ -37,6 +37,10 @@ LiDAR/TF 확인
 
 `command_odom_real.yaml`의 `0.080612 m/s/command`는 기존 실차/시뮬레이션
 캘리브레이션에서 가져온 시작값이다. 새 차량에서 확정값으로 간주하면 안 된다.
+2026-07-24 백의 LiDAR/IMU 재분석 결과와 임시 비교 설정은
+[`data/odom_calibration/2026-07-24/README.md`](../data/odom_calibration/2026-07-24/README.md)에
+있다. 이 분석은 도면 치수를 거리 정답으로 사용하지 않았고, 분석기 간 차이가
+커서 production 값은 자동 변경하지 않았다.
 
 ## 1. 설치와 빌드
 
@@ -154,17 +158,19 @@ ros2 run xycar_rule_drive keyboard_teleop
 `q`는 종료다. 바퀴 방향과 조향 부호가 맞고, 키 입력을 멈춘 뒤 0.3초 안에
 `/odom` 속도가 0이 되는지 확인한다.
 
-그다음 평평한 바닥에서 직진 명령 하나를 고정해 시간과 실제 이동거리를 잰다.
+그다음 평평한 바닥에서 줄자로 5.00 m를 표시한다. 첫 표시 1 m 전부터 직진
+명령 하나를 고정해 정상속도로 두 표시를 통과하고 실제 거리와 odom 거리 차이를
+잰다.
 
 ```text
-speed_gain_mps_per_command
-  = 실제 이동거리(m) / (speed command 절댓값 * 주행시간(s))
+새 speed_gain_mps_per_command
+  = 시험에 사용한 speed_gain * 5.00 / odom 측정거리
 ```
 
-3회 중앙값을
+정방향 5회와 역방향 5회의 중앙값을
 `xycar_map_nav/config/command_odom_real.yaml`의
-`speed_gain_mps_per_command`에 넣고 다시 빌드한다. 직진 3 m에서 추정 이동거리
-오차가 10%를 넘으면 매핑을 시작하지 않는다. 이 검사는 엔코더 odom을 대신하지
+`speed_gain_mps_per_command`에 넣고 다시 빌드한다. 직진 5 m에서 추정 이동거리
+오차가 5%를 넘으면 매핑을 시작하지 않는다. 이 검사는 엔코더 odom을 대신하지
 않으며 scan matching이 시작될 정도의 초기값만 맞추는 절차다.
 
 ## 5. rosbag 기록 시작

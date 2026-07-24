@@ -4,13 +4,14 @@
 from __future__ import annotations
 
 import math
-import time
+from collections import deque
 
 from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from sensor_msgs.msg import Imu
 from std_msgs.msg import Float32MultiArray
 from std_srvs.srv import Empty
 from tf2_ros import TransformBroadcaster
@@ -18,7 +19,8 @@ from tf2_ros import TransformBroadcaster
 from .command_odom_core import (
     OdomState,
     curvature_for_steering_command,
-    integrate_ackermann,
+    first_order_response,
+    integrate_planar_velocity,
 )
 
 
@@ -37,6 +39,23 @@ class CommandOdomNode(Node):
             self.get_parameter("command_timeout_sec").value
         )
         self.maximum_dt = float(self.get_parameter("maximum_dt_sec").value)
+        self.speed_deadzone = float(
+            self.get_parameter("speed_deadzone_command").value
+        )
+        self.speed_min = float(self.get_parameter("speed_min_mps").value)
+        self.speed_max = float(self.get_parameter("speed_max_mps").value)
+        self.speed_delay = float(
+            self.get_parameter("speed_delay_sec").value
+        )
+        self.steering_delay = float(
+            self.get_parameter("steering_delay_sec").value
+        )
+        self.accel_tau = float(
+            self.get_parameter("speed_accel_tau_sec").value
+        )
+        self.brake_tau = float(
+            self.get_parameter("speed_brake_tau_sec").value
+        )
         self.commands = [
             float(value)
             for value in self.get_parameter("steering_map_commands").value
@@ -46,10 +65,38 @@ class CommandOdomNode(Node):
             for value in self.get_parameter("steering_map_curvatures").value
         ]
         self.state = OdomState()
+        self.speed_mps = 0.0
         self.angle_command = 0.0
         self.speed_command = 0.0
         self.last_command_sec = 0.0
-        self.last_update_sec = time.monotonic()
+        self.last_update_sec = self._now_sec()
+        self.angle_history = deque()
+        self.speed_history = deque()
+        self.use_gyro_yaw = bool(
+            self.get_parameter("use_gyro_yaw").value
+        )
+        self.gyro_bias = float(
+            self.get_parameter("gyro_z_bias_rad_s").value
+        )
+        self.gyro_sign = float(
+            self.get_parameter("gyro_z_sign").value
+        )
+        self.gyro_scale = float(
+            self.get_parameter("gyro_z_scale").value
+        )
+        self.gyro_alpha = min(
+            1.0,
+            max(0.0, float(self.get_parameter("gyro_low_pass_alpha").value)),
+        )
+        self.gyro_blend = min(
+            1.0,
+            max(0.0, float(self.get_parameter("gyro_command_blend").value)),
+        )
+        self.gyro_timeout = float(
+            self.get_parameter("gyro_timeout_sec").value
+        )
+        self.filtered_gyro_yaw_rate = None
+        self.last_gyro_sec = 0.0
 
         self.odom_pub = self.create_publisher(
             Odometry, str(self.get_parameter("odom_topic").value), 20
@@ -61,6 +108,13 @@ class CommandOdomNode(Node):
             self._on_motor,
             20,
         )
+        if self.use_gyro_yaw:
+            self.create_subscription(
+                Imu,
+                str(self.get_parameter("imu_topic").value),
+                self._on_imu,
+                50,
+            )
         self.create_service(Empty, "~/reset", self._on_reset)
         rate = max(10.0, float(self.get_parameter("publish_rate_hz").value))
         self.create_timer(1.0 / rate, self._on_timer)
@@ -78,6 +132,21 @@ class CommandOdomNode(Node):
         self.declare_parameter("command_timeout_sec", 0.30)
         self.declare_parameter("maximum_dt_sec", 0.10)
         self.declare_parameter("speed_gain_mps_per_command", 0.080612)
+        self.declare_parameter("speed_deadzone_command", 3.0)
+        self.declare_parameter("speed_min_mps", -4.0)
+        self.declare_parameter("speed_max_mps", 8.0)
+        self.declare_parameter("speed_delay_sec", 0.20)
+        self.declare_parameter("speed_accel_tau_sec", 0.19)
+        self.declare_parameter("speed_brake_tau_sec", 0.09)
+        self.declare_parameter("steering_delay_sec", 0.10)
+        self.declare_parameter("use_gyro_yaw", False)
+        self.declare_parameter("imu_topic", "/imu")
+        self.declare_parameter("gyro_z_bias_rad_s", 0.026983)
+        self.declare_parameter("gyro_z_sign", -1.0)
+        self.declare_parameter("gyro_z_scale", 1.061768)
+        self.declare_parameter("gyro_low_pass_alpha", 0.35)
+        self.declare_parameter("gyro_command_blend", 0.65)
+        self.declare_parameter("gyro_timeout_sec", 0.15)
         self.declare_parameter(
             "steering_map_commands",
             [
@@ -97,17 +166,58 @@ class CommandOdomNode(Node):
     def _on_motor(self, message: Float32MultiArray) -> None:
         if len(message.data) < 2:
             return
+        now_sec = self._now_sec()
         self.angle_command = float(message.data[0])
         self.speed_command = float(message.data[1])
-        self.last_command_sec = time.monotonic()
+        self.angle_history.append((now_sec, self.angle_command))
+        self.speed_history.append((now_sec, self.speed_command))
+        self.last_command_sec = now_sec
+
+    def _on_imu(self, message: Imu) -> None:
+        corrected = (
+            self.gyro_sign
+            * (float(message.angular_velocity.z) - self.gyro_bias)
+            * self.gyro_scale
+        )
+        if self.filtered_gyro_yaw_rate is None:
+            self.filtered_gyro_yaw_rate = corrected
+        else:
+            self.filtered_gyro_yaw_rate = (
+                self.gyro_alpha * corrected
+                + (1.0 - self.gyro_alpha)
+                * self.filtered_gyro_yaw_rate
+            )
+        self.last_gyro_sec = self._now_sec()
+
+    def _now_sec(self) -> float:
+        return self.get_clock().now().nanoseconds * 1e-9
+
+    @staticmethod
+    def _delayed_value(history, cutoff_sec: float, default: float) -> float:
+        while len(history) >= 2 and history[1][0] <= cutoff_sec:
+            history.popleft()
+        if history and history[0][0] <= cutoff_sec:
+            return float(history[0][1])
+        return float(default)
+
+    def _speed_target(self, command: float) -> float:
+        if abs(command) < self.speed_deadzone:
+            return 0.0
+        return min(
+            self.speed_max,
+            max(self.speed_min, command * self.speed_gain),
+        )
 
     def _on_reset(self, _, response):
         self.state = OdomState()
-        self.last_update_sec = time.monotonic()
+        self.speed_mps = 0.0
+        self.angle_history.clear()
+        self.speed_history.clear()
+        self.last_update_sec = self._now_sec()
         return response
 
     def _on_timer(self) -> None:
-        now_monotonic = time.monotonic()
+        now_monotonic = self._now_sec()
         dt = min(
             self.maximum_dt,
             max(0.0, now_monotonic - self.last_update_sec),
@@ -116,21 +226,53 @@ class CommandOdomNode(Node):
         command_fresh = (
             now_monotonic - self.last_command_sec <= self.command_timeout
         )
-        speed_mps = (
-            self.speed_command * self.speed_gain if command_fresh else 0.0
-        )
-        curvature = curvature_for_steering_command(
+        delayed_angle = self._delayed_value(
+            self.angle_history,
+            now_monotonic - self.steering_delay,
             self.angle_command,
+        )
+        delayed_speed = self._delayed_value(
+            self.speed_history,
+            now_monotonic - self.speed_delay,
+            0.0,
+        )
+        speed_target = (
+            self._speed_target(delayed_speed) if command_fresh else 0.0
+        )
+        accelerating = abs(speed_target) > abs(self.speed_mps)
+        tau = self.accel_tau if accelerating else self.brake_tau
+        previous_speed = self.speed_mps
+        self.speed_mps = first_order_response(
+            previous_speed,
+            speed_target,
+            dt_sec=dt,
+            time_constant_sec=tau,
+        )
+        speed_mps = 0.5 * (previous_speed + self.speed_mps)
+        curvature = curvature_for_steering_command(
+            delayed_angle,
             self.commands,
             self.curvatures,
         )
-        self.state = integrate_ackermann(
+        command_yaw_rate = speed_mps * curvature
+        yaw_rate = command_yaw_rate
+        gyro_fresh = (
+            self.use_gyro_yaw
+            and self.filtered_gyro_yaw_rate is not None
+            and now_monotonic - self.last_gyro_sec <= self.gyro_timeout
+        )
+        if gyro_fresh:
+            yaw_rate = (
+                (1.0 - self.gyro_blend) * command_yaw_rate
+                + self.gyro_blend * float(self.filtered_gyro_yaw_rate)
+            )
+        self.state = integrate_planar_velocity(
             self.state,
             speed_mps=speed_mps,
-            curvature_per_m=curvature,
+            yaw_rate_rad_s=yaw_rate,
             dt_sec=dt,
         )
-        self._publish(speed_mps, speed_mps * curvature)
+        self._publish(self.speed_mps, yaw_rate)
 
     def _publish(self, speed_mps: float, yaw_rate: float) -> None:
         stamp = self.get_clock().now().to_msg()
