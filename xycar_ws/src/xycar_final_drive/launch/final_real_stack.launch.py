@@ -19,12 +19,14 @@ def generate_launch_description():
     drive_enabled = LaunchConfiguration("drive_enabled")
     start_perception = LaunchConfiguration("start_perception")
     device = LaunchConfiguration("device")
+    perception_cpu_threads = LaunchConfiguration("perception_cpu_threads")
+    policy_cpu_threads = LaunchConfiguration("policy_cpu_threads")
 
     perception_launch = PathJoinSubstitution(
         [
             FindPackageShare("lane_seg_control"),
             "launch",
-            "lane_seg_lraspp_canonical_only.launch.py",
+            "lane_seg_lraspp_low_latency_real.launch.py",
         ]
     )
     rule_launch = PathJoinSubstitution(
@@ -52,9 +54,16 @@ def generate_launch_description():
             DeclareLaunchArgument("drive_enabled", default_value="false"),
             DeclareLaunchArgument("start_perception", default_value="true"),
             DeclareLaunchArgument("device", default_value="cpu"),
+            DeclareLaunchArgument(
+                "perception_cpu_threads", default_value="4"
+            ),
+            DeclareLaunchArgument("policy_cpu_threads", default_value="4"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(perception_launch),
                 condition=IfCondition(start_perception),
+                launch_arguments={
+                    "cpu_threads": perception_cpu_threads,
+                }.items(),
             ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(rule_launch),
@@ -69,6 +78,7 @@ def generate_launch_description():
                 launch_arguments={
                     "drive_enabled": drive_enabled,
                     "device": device,
+                    "policy_cpu_threads": policy_cpu_threads,
                 }.items(),
             ),
         ]

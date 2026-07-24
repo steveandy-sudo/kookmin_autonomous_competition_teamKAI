@@ -5,6 +5,7 @@ from pathlib import Path
 import threading
 import time
 
+import cv2
 import numpy as np
 import rclpy
 from cv_bridge import CvBridge
@@ -109,6 +110,19 @@ class RLPolicyRuntimeNode(Node):
         if device_name == "auto":
             device_name = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = torch.device(device_name)
+        policy_cpu_threads = max(
+            1, int(self.get_parameter("policy_cpu_threads").value)
+        )
+        policy_opencv_threads = max(
+            1, int(self.get_parameter("policy_opencv_threads").value)
+        )
+        if self.device.type == "cpu":
+            torch.set_num_threads(policy_cpu_threads)
+            try:
+                torch.set_num_interop_threads(1)
+            except RuntimeError:
+                pass
+        cv2.setNumThreads(policy_opencv_threads)
         checkpoint = Path(
             str(self.get_parameter("checkpoint_path").value)
         ).expanduser().resolve()
@@ -253,19 +267,30 @@ class RLPolicyRuntimeNode(Node):
         self.lock = threading.Lock()
 
         motor_topic = str(self.get_parameter("motor_topic").value)
-        self.motor_pub = self.create_publisher(Float32MultiArray, motor_topic, 10)
+        command_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
+        self.motor_pub = self.create_publisher(
+            Float32MultiArray,
+            motor_topic,
+            command_qos,
+        )
         self.shadow_pub = self.create_publisher(
             Float32MultiArray,
             str(self.get_parameter("shadow_topic").value),
-            10,
+            command_qos,
         )
         self.debug_pub = self.create_publisher(
             Float32MultiArray,
             str(self.get_parameter("debug_topic").value),
-            10,
+            command_qos,
         )
         self.status_pub = self.create_publisher(
-            String, str(self.get_parameter("status_topic").value), 10
+            String,
+            str(self.get_parameter("status_topic").value),
+            command_qos,
         )
         self.debug_image_pub = self.create_publisher(
             Image, str(self.get_parameter("debug_image_topic").value), 2
@@ -286,7 +311,9 @@ class RLPolicyRuntimeNode(Node):
         self.create_timer(0.05, self._safety_timer)
         mode = "DRIVE" if self.drive_enabled else "SHADOW"
         self.get_logger().info(
-            f"RL policy ready in {mode} mode: {checkpoint}, device={self.device}"
+            f"RL policy ready in {mode} mode: {checkpoint}, "
+            f"device={self.device}, threads=torch:{policy_cpu_threads},"
+            f"opencv:{policy_opencv_threads}"
         )
 
     def _declare_parameters(self) -> None:
@@ -302,6 +329,8 @@ class RLPolicyRuntimeNode(Node):
         self.declare_parameter("checkpoint_path", str(default_bc))
         self.declare_parameter("residual_base_checkpoint", "")
         self.declare_parameter("device", "cpu")
+        self.declare_parameter("policy_cpu_threads", 4)
+        self.declare_parameter("policy_opencv_threads", 1)
         self.declare_parameter("image_topic", "/perception/canonical_road_image")
         self.declare_parameter("scan_topic", "/scan")
         self.declare_parameter("motor_topic", "/xycar_motor")
@@ -491,11 +520,12 @@ class RLPolicyRuntimeNode(Node):
         status = String()
         status.data = "obstacle_stop" if obstacle_stop else "running"
         self.status_pub.publish(status)
-        debug_image = self.bridge.cv2_to_imgmsg(
-            model_input_to_bgr(image), encoding="bgr8"
-        )
-        debug_image.header = msg.header
-        self.debug_image_pub.publish(debug_image)
+        if self.debug_image_pub.get_subscription_count() > 0:
+            debug_image = self.bridge.cv2_to_imgmsg(
+                model_input_to_bgr(image), encoding="bgr8"
+            )
+            debug_image.header = msg.header
+            self.debug_image_pub.publish(debug_image)
 
     def _publish_command(self, angle: float, speed: float) -> None:
         message = Float32MultiArray()

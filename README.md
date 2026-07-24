@@ -15,7 +15,7 @@
   -> 단계별 실차 shadow/저속 검증         <- 다음
 ```
 
-> 기준일: 2026-07-23
+> 기준일: 2026-07-24
 > 기준 브랜치: `simulation`
 
 2026-07-23 최종 중앙선 Stanley/Pure Pursuit 룰베이스와 평균 속도 명령 17
@@ -43,6 +43,8 @@ LiDAR 없이 이전·현재 canonical 영상만 쓰는 TD3+BC 학습과 1차 Gaz
 - CAD 중심선 보상, reset, transition recorder와 TD3+BC를 포함한 `xycar_rl`
 - 고속 Actor/Critic의 이전·현재 canonical 2프레임 입력과 조향·속도 동시 출력
 - Ryzen 5 실차용 YOLO11n-seg 256 경량 차선 인지와 camera-only shadow 통합 launch
+- 압축 카메라에서 canonical까지 한 프로세스로 처리하는 7 Hz 실차 저지연
+  LR-ASPP 경로와 단계별 p50/p95 측정 도구
 
 ### 최신 모델
 
@@ -163,6 +165,7 @@ git pull --ff-only origin simulation
 | 고속 TD3+BC 학습·단계별 실차 shadow | [`high_speed_rl_20260717.md`](docs/high_speed_rl_20260717.md) |
 | 완주 우선 lap-time RL·병렬 Gazebo 수집 | [`lap_time_rl_20260723.md`](docs/lap_time_rl_20260723.md) |
 | 2026-07-24 실차 곡선 이탈 분석·수정·Copilot 인수인계 | [`real_curve_fix_handoff_20260724.md`](docs/real_curve_fix_handoff_20260724.md) |
+| 2026-07-24 실차 인지·정책 지연 최소화 실행 및 Codex 인수인계 | [`real_low_latency_handoff_20260724.md`](docs/real_low_latency_handoff_20260724.md) |
 | ASUS에서 새 YOLO 차선 인지 검증 | [`real_vehicle_yolo_lane_20260720.md`](docs/real_vehicle_yolo_lane_20260720.md) |
 | YOLO11n 256 경량 모델의 정확도·속도 비교 | [`2026-07-21_yolo11n_256_ultralight.md`](docs/2026-07-21_yolo11n_256_ultralight.md) |
 | YOLO26n 256 재학습·실차 후보 비교 | [`2026-07-21_yolo26n_256_experiment.md`](docs/2026-07-21_yolo26n_256_experiment.md) |

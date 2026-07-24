@@ -7,14 +7,17 @@ model is not part of the active driving path.
 Pipeline:
 
 ```text
-/wide_camera/rect/image_raw
+/wide_camera_mjpeg/image_raw/compressed
+  -> decode + rectify only the newest selected 7 Hz frame
   -> LR-ASPP MobileNetV3-Small (RGB 256x144)
-  -> /lane_seg/source_image (the exact processed frame)
-  -> /lane_seg/white_boundary_mask
-  -> /lane_seg/yellow_centerline_mask
-  -> calibrated BEV (640x660, 1.4m x 1.5m)
+  -> in-process white/yellow masks
+  -> in-process calibrated BEV (640x660, 1.4m x 1.5m)
   -> /perception/canonical_road_image (256x144 bgr8)
 ```
+
+The real-car low-latency path does not serialize three intermediate images,
+run an approximate-time synchronizer, or warp a color BEV. The legacy
+two-node adapter remains available for pixel-equivalence checks.
 
 Canonical-only conversion keeps the calibrated `640x480` BEV unchanged and
 extends its canvas to `640x660`. The additional rows retain accepted near-field
@@ -36,10 +39,10 @@ colcon build --packages-up-to lane_seg_control --symlink-install
 source install/setup.bash
 ```
 
-Run after the real rectified camera is publishing:
+Run after the real MJPEG camera is publishing:
 
 ```bash
-ros2 launch lane_seg_control lane_seg_lraspp_canonical_only.launch.py
+ros2 launch lane_seg_control lane_seg_lraspp_low_latency_real.launch.py
 ```
 
 Use the Gazebo-matched camera and BEV profile in simulation:
@@ -58,8 +61,11 @@ remain unchanged.
 The packaged TorchScript semantic-segmentation model keeps the same mask, BEV,
 and canonical topic contract on the vehicle and in Gazebo:
 
+The generic launch also defaults to the direct in-process canonical path:
+
 ```bash
-ros2 launch lane_seg_control lane_seg_lraspp_canonical_only.launch.py
+ros2 launch lane_seg_control lane_seg_lraspp_canonical_only.launch.py \
+  image_topic:=/wide_camera/rect/image_raw
 ```
 
 It consumes RGB ImageNet-normalized `256x144` input and maps output classes as
@@ -95,9 +101,13 @@ debug topics in RViz:
 rviz2 -d "$(ros2 pkg prefix --share xycar_rule_drive)/rviz/real_yolo_camera_canonical.rviz"
 ```
 
-For throttled rosbag reprocessing, set `pipeline_qos_depth:=10` so the source,
-white, and yellow messages for each recorded frame remain synchronized. The
-default stays at `1` to prioritize fresh frames during live driving.
+For a legacy adapter comparison, use
+`direct_canonical_enabled:=false publish_intermediate_topics:=true`.
+The live default keeps queue depth 1 to prioritize the newest frame.
+
+`/lane_seg/diagnostics` contains model, total callback, decode/rectify,
+canonical, source-age, replaced-input, and stale-input timings. Use
+`scripts/measure_live_pipeline_latency.py` for a 30-second p50/p95 report.
 
 Export 10 Hz side-by-side montages directly from a compressed-camera rosbag:
 

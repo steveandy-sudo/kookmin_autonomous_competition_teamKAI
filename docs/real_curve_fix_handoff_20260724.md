@@ -4,6 +4,11 @@
 룰베이스와 학습 모델을 같은 조건으로 재현하고, shadow부터 안전하게 검증하기
 위한 기준 문서다. 실차에서는 Gazebo를 실행하지 않는다.
 
+인지 실행은 이후 추가된
+[`real_low_latency_handoff_20260724.md`](real_low_latency_handoff_20260724.md)의
+압축 카메라 직접 입력 경로를 우선한다. 아래의 외부 rectifier와
+`lane_seg_lraspp_canonical_only.launch.py` 절차는 호환 비교용이다.
+
 ## 1. 이번 실차 데이터에서 확인한 문제
 
 분석에 사용한 정상 기록:

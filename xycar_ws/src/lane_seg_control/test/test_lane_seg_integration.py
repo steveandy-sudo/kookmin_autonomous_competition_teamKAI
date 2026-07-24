@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -7,9 +8,17 @@ from lane_seg_control.bag_montage_exporter import (
     make_montage,
     nearest_motor_command,
 )
+from lane_seg_control.camera_input import (
+    CameraRectifier,
+    decode_compressed_bgr,
+    scale_camera_matrix,
+)
 from lane_seg_control.canonical_adapter_node import (
+    CanonicalRenderConfig,
     build_bev_geometry,
+    render_canonical_from_bev_masks,
     warp_semantic_masks,
+    warp_semantic_masks_only,
 )
 from lane_seg_control.lane_seg_inference_node import (
     class_roles,
@@ -30,6 +39,198 @@ from xycar_perception.canonical_road import make_canonical_road_image_from_masks
 
 
 class LaneSegIntegrationTest(unittest.TestCase):
+    def test_compressed_decode_and_camera_matrix_scaling(self):
+        frame = np.zeros((48, 64, 3), dtype=np.uint8)
+        frame[:, :32] = (10, 90, 180)
+        ok, encoded = cv2.imencode(".jpg", frame)
+        self.assertTrue(ok)
+        decoded = decode_compressed_bgr(encoded.tobytes())
+        self.assertIsNotNone(decoded)
+        self.assertEqual(decoded.shape, frame.shape)
+
+        matrix = np.asarray(
+            [[400.0, 0.0, 320.0], [0.0, 420.0, 240.0], [0.0, 0.0, 1.0]]
+        )
+        scaled = scale_camera_matrix(matrix, (640, 480), (320, 240))
+        np.testing.assert_allclose(
+            scaled,
+            np.asarray(
+                [
+                    [200.0, 0.0, 160.0],
+                    [0.0, 210.0, 120.0],
+                    [0.0, 0.0, 1.0],
+                ]
+            ),
+        )
+
+    def test_camera_rectifier_reuses_cached_maps(self):
+        calibration = (
+            Path(__file__).resolve().parents[2]
+            / "xycar_perception"
+            / "config"
+            / "wide_camera_fisheye_1280x1024_20260708.yaml"
+        )
+        rectifier = CameraRectifier(calibration, 0.3)
+        frame = np.zeros((96, 128, 3), dtype=np.uint8)
+        first = rectifier.rectify(frame)
+        first_map = rectifier.map1
+        second = rectifier.rectify(frame)
+        self.assertEqual(first.shape, frame.shape)
+        self.assertIs(first_map, rectifier.map1)
+        np.testing.assert_array_equal(first, second)
+
+    def test_direct_mask_warp_is_pixel_identical_to_adapter_warp(self):
+        height, width = 144, 256
+        image = np.full((height, width, 3), 48, dtype=np.uint8)
+        white = np.zeros((height, width), dtype=np.uint8)
+        yellow = np.zeros_like(white)
+        cv2.line(white, (32, 140), (78, 62), 255, 5)
+        cv2.line(white, (224, 140), (180, 62), 255, 5)
+        cv2.line(yellow, (126, 140), (130, 82), 255, 5)
+        geometry = build_bev_geometry(
+            width,
+            height,
+            source_ratios=(
+                472.0 / 1280.0,
+                494.0 / 1024.0,
+                906.0 / 1280.0,
+                486.0 / 1024.0,
+                1272.0 / 1280.0,
+                612.0 / 1024.0,
+                46.0 / 1280.0,
+                622.0 / 1024.0,
+            ),
+            destination_ratios=(
+                80.0 / 640.0,
+                560.0 / 640.0,
+                0.0,
+                479.0 / 660.0,
+            ),
+            bev_width=640,
+            bev_height=660,
+        )
+        _, legacy_white, legacy_yellow, legacy_valid = warp_semantic_masks(
+            image,
+            white,
+            yellow,
+            geometry,
+            valid_lateral_margin_px=0,
+            valid_erode_px=0,
+            clip_to_source_polygon=False,
+        )
+        direct_white, direct_yellow, direct_valid = (
+            warp_semantic_masks_only(
+                white,
+                yellow,
+                geometry,
+                valid_lateral_margin_px=0,
+                valid_erode_px=0,
+                clip_to_source_polygon=False,
+            )
+        )
+        np.testing.assert_array_equal(direct_white, legacy_white)
+        np.testing.assert_array_equal(direct_yellow, legacy_yellow)
+        np.testing.assert_array_equal(direct_valid, legacy_valid)
+
+    def test_direct_canonical_render_is_pixel_identical_to_legacy_steps(self):
+        white = np.zeros((660, 640), dtype=np.uint8)
+        yellow = np.zeros_like(white)
+        valid = np.full_like(white, 255)
+        cv2.line(white, (90, 650), (205, 80), 255, 12)
+        cv2.line(white, (550, 650), (430, 80), 255, 12)
+        cv2.line(yellow, (315, 650), (320, 500), 255, 9)
+        cv2.line(yellow, (321, 420), (327, 270), 255, 9)
+        config = CanonicalRenderConfig(
+            lateral_m_per_px=1.4 / 640.0,
+            forward_m_per_px=1.5 / 660.0,
+            lateral_range_m=1.4,
+            forward_range_m=1.5,
+            output_width=256,
+            output_height=144,
+            background_gray=36,
+            line_width_px=5,
+            white_fit_enabled=True,
+            white_fit_window_count=9,
+            white_fit_margin_px=24,
+            white_fit_min_pixels=4,
+            white_fit_min_centers=2,
+            white_fit_min_span_px=8,
+            white_fit_residual_px=6.0,
+            white_fit_line_width_px=5,
+            yellow_divider_enabled=True,
+            yellow_divider_min_pixels=3,
+            yellow_divider_residual_px=6.0,
+            yellow_divider_line_width_px=5,
+            yellow_normalize_enabled=False,
+            yellow_normalize_line_width_px=5,
+            yellow_normalize_min_area_px=3,
+            yellow_normalize_smoothing_rows=5,
+        )
+
+        direct = render_canonical_from_bev_masks(
+            white,
+            yellow,
+            valid,
+            config,
+        )
+        raw = make_canonical_road_image_from_masks(
+            white,
+            yellow,
+            valid_mask=valid,
+            lateral_m_per_px=config.lateral_m_per_px,
+            forward_m_per_px=config.forward_m_per_px,
+            lateral_range_m=config.lateral_range_m,
+            forward_range_m=config.forward_range_m,
+            output_width=config.output_width,
+            output_height=config.output_height,
+            background_gray=config.background_gray,
+            line_width_px=config.line_width_px,
+            min_component_area_px=1,
+            white_max_component_thickness_px=0.0,
+            yellow_max_component_thickness_px=0.0,
+            geometry_filter_enabled=False,
+            preserve_white_mask=True,
+            top_ignore_m=0.0,
+            bottom_ignore_m=0.0,
+            return_stages=True,
+        )
+        reference = fit_yellow_centerline_reference(
+            raw.yellow_mask,
+            min_pixels=config.yellow_divider_min_pixels,
+            residual_threshold_px=config.yellow_divider_residual_px,
+            line_width_px=config.yellow_divider_line_width_px,
+        )
+        fitted = fit_white_lane_boundaries(
+            raw.white_mask,
+            window_count=config.white_fit_window_count,
+            window_margin_px=config.white_fit_margin_px,
+            min_pixels_per_window=config.white_fit_min_pixels,
+            min_centers=config.white_fit_min_centers,
+            min_span_px=config.white_fit_min_span_px,
+            residual_threshold_px=config.white_fit_residual_px,
+            line_width_px=config.white_fit_line_width_px,
+            divider_x_by_y=reference.x_by_y,
+        )
+        legacy_road, legacy_white = compose_fitted_canonical(
+            fitted.mask,
+            raw.yellow_mask,
+            raw.valid_mask,
+            background_gray=config.background_gray,
+        )
+        np.testing.assert_array_equal(direct.stages.road_image, legacy_road)
+        np.testing.assert_array_equal(
+            direct.stages.white_mask,
+            legacy_white,
+        )
+        np.testing.assert_array_equal(
+            direct.stages.yellow_mask,
+            raw.yellow_mask,
+        )
+        np.testing.assert_array_equal(
+            direct.stages.valid_mask,
+            raw.valid_mask,
+        )
+
     def test_yellow_normalizer_preserves_dash_gaps_and_width(self):
         yellow = np.zeros((144, 256), dtype=np.uint8)
         cv2.line(yellow, (124, 12), (132, 54), 255, 13)

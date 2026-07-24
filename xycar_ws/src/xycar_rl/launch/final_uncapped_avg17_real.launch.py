@@ -19,6 +19,7 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("drive_enabled", default_value="false"),
             DeclareLaunchArgument("device", default_value="cpu"),
+            DeclareLaunchArgument("policy_cpu_threads", default_value="4"),
             DeclareLaunchArgument(
                 "checkpoint_path",
                 default_value=checkpoint,
@@ -34,6 +35,9 @@ def generate_launch_description():
                     "checkpoint_path": LaunchConfiguration("checkpoint_path"),
                     "drive_enabled": LaunchConfiguration("drive_enabled"),
                     "device": LaunchConfiguration("device"),
+                    "policy_cpu_threads": LaunchConfiguration(
+                        "policy_cpu_threads"
+                    ),
                     "image_topic": "/perception/canonical_road_image",
                     "min_speed_command": "4.0",
                     "max_speed_command": "24.0",

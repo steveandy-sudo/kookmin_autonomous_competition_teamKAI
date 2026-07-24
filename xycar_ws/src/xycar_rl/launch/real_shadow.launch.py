@@ -86,11 +86,25 @@ def generate_launch_description():
             DeclareLaunchArgument("preview_steering_enabled", default_value="false"),
             DeclareLaunchArgument("preview_steering_blend", default_value="0.35"),
             DeclareLaunchArgument("device", default_value="cpu"),
+            DeclareLaunchArgument("policy_cpu_threads", default_value="4"),
+            DeclareLaunchArgument(
+                "policy_opencv_threads", default_value="1"
+            ),
             Node(
                 package="xycar_rl",
                 executable="rl_policy_inference",
                 name="rl_policy_inference",
                 output="screen",
+                additional_env={
+                    "OMP_NUM_THREADS": LaunchConfiguration(
+                        "policy_cpu_threads"
+                    ),
+                    "OMP_WAIT_POLICY": "PASSIVE",
+                    "MKL_NUM_THREADS": LaunchConfiguration(
+                        "policy_cpu_threads"
+                    ),
+                    "OPENBLAS_NUM_THREADS": "1",
+                },
                 parameters=[
                     {
                         "use_sim_time": False,
@@ -194,6 +208,14 @@ def generate_launch_description():
                             value_type=float,
                         ),
                         "device": device,
+                        "policy_cpu_threads": ParameterValue(
+                            LaunchConfiguration("policy_cpu_threads"),
+                            value_type=int,
+                        ),
+                        "policy_opencv_threads": ParameterValue(
+                            LaunchConfiguration("policy_opencv_threads"),
+                            value_type=int,
+                        ),
                     }
                 ],
             ),
