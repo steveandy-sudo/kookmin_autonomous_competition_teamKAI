@@ -64,6 +64,11 @@ ros2 topic echo /hybrid/mode
 ros2 topic echo /xycar_motor_shadow
 ```
 
+When `xycar_map_nav` owns final actuation, keep this hybrid node in shadow
+mode. The map navigator accepts `/xycar_motor_shadow` only while its configured
+segment is `cone_rule`; outside that segment it ignores cone false positives.
+Never enable both nodes as `/xycar_motor` publishers.
+
 After the lifted-wheel, steering-sign, mode-transition, and emergency-stop
 checks pass:
 
@@ -92,9 +97,15 @@ ros2 launch xycar_hybrid_drive hybrid_sim.launch.py \
   cone_speed_cap:=9.5
 ```
 
-The current competition world may not contain a cone corridor. Lane/model mode
-switching can still be checked there; cone mode requires cone-sized LiDAR
-clusters with a `0.68-0.98 m` corridor.
+The generated SLAM world contains a lower-right cone corridor. It uses the
+repository's fixed `1.632 m` road width, a `0.85 m` cone corridor, and the
+reference cone size `0.18 x 0.18 x 0.36 m`. The map-frame handover contract is
+installed as `config/cone_rule_zone_slam_map.yaml`.
+
+Inside that zone, keep SLAM localization running but ignore the coarse global
+path for actuation. `CONE_RULE` owns steering and speed until the cones end and
+lane recovery is confirmed. This prevents individual movable cones from being
+treated as permanent SLAM-map obstacles.
 
 ## Debug Topics
 

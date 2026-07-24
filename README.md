@@ -3,6 +3,12 @@
 국민대학교 Xycar 자율주행 트랙을 Gazebo Sim에 재현하고, 시뮬레이션에서 만든
 인지·제어·학습 결과를 실제 Xycar까지 옮기기 위한 프로젝트입니다.
 
+> ROS bag SLAM 지도를 Gazebo에서 실행하고 차량·장애물 좌표를 직접 바꾸는
+> 방법: `docs/slam_map_gazebo_coordinate_control_KO.md`
+>
+> 새 장소에서 SLAM 지도를 만들고 실차 전역경로를 단계적으로 검증하는
+> 체크리스트: `docs/new_map_real_vehicle_test_KO.md`
+
 ```text
 트랙 재현
   -> 실차 동역학을 반영한 차량·센서 모델

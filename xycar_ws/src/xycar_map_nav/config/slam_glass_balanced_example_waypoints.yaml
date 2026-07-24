@@ -1,0 +1,32 @@
+# Provisional coordinates on the current SLAM-derived map.
+# Replace them by clicking the real saved map in RViz before driving.
+#
+# controller_to_next is the authority for the segment from this point to the
+# next point. The last entry controls the closing segment back to the first.
+frame_id: map
+closed: true
+waypoints:
+  - {name: top_start, x: 8.6493, y: 7.4200, controller_to_next: global_path}
+  - {name: top_mid_1, x: 5.7696, y: 7.1770, controller_to_next: global_path}
+  - {name: top_mid_2, x: 2.8093, y: 7.1016, controller_to_next: global_path}
+  - {name: upper_left_turn, x: 0.0554, y: 7.5833, controller_to_next: global_path}
+
+  # Example only: replace these two boundary coordinates with the real
+  # dynamic-vehicle mission entry/exit. The rule remains idle until a front
+  # vehicle is reported by /yolo_obstacle/stable_counts.
+  - {name: dynamic_entry, x: 0.1588, y: 5.3699, controller_to_next: dynamic_vehicle_rule}
+  - {name: dynamic_mid, x: 0.2025, y: 2.7577, controller_to_next: dynamic_vehicle_rule}
+  - {name: dynamic_exit, x: -0.4613, y: 0.1682, controller_to_next: global_path}
+
+  - {name: bottom_mid, x: 2.4433, y: -0.0502, controller_to_next: global_path}
+
+  # Confirmed lower-right provisional cone-rule boundary from the generated
+  # map metadata. Global-path motor authority stops at cone_entry.
+  - {name: cone_entry, x: 5.9486, y: -0.1589, controller_to_next: cone_rule}
+  - {name: cone_straight, x: 8.4239, y: -0.3851, controller_to_next: cone_rule}
+  - {name: cone_turn, x: 11.3514, y: -0.4062, controller_to_next: cone_rule}
+  - {name: cone_exit, x: 13.0270, y: 1.2009, controller_to_next: global_path}
+
+  - {name: right_mid, x: 13.1284, y: 4.0116, controller_to_next: global_path}
+  - {name: upper_right_turn, x: 13.0728, y: 6.9240, controller_to_next: global_path}
+  - {name: top_rejoin, x: 10.1868, y: 7.5180, controller_to_next: global_path}

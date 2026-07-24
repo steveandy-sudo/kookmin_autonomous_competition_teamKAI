@@ -28,6 +28,19 @@ setup(
             os.path.join("share", package_name, "rviz"),
             glob("rviz/*.rviz"),
         ),
+        (
+            os.path.join("share", package_name, "worlds"),
+            glob("worlds/*.sdf"),
+        ),
+        (
+            os.path.join(
+                "share",
+                package_name,
+                "maps",
+                "slam_glass_balanced",
+            ),
+            glob("maps/slam_glass_balanced/*"),
+        ),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -39,6 +52,9 @@ setup(
         "console_scripts": [
             "xycar_motor_bridge = xycar_gazebo_bridge.xycar_motor_bridge:main",
             "xycar_sensor_rviz_republisher = xycar_gazebo_bridge.xycar_sensor_rviz_republisher:main",
+            "xycar_slam_world_generator = xycar_gazebo_bridge.slam_world_generator:main",
+            "xycar_sim_control = xycar_gazebo_bridge.sim_control:main",
+            "xycar_sim_control_gui = xycar_gazebo_bridge.sim_control_gui:main",
         ],
     },
 )

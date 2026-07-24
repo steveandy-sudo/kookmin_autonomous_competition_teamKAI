@@ -1,0 +1,22 @@
+xycar_command_odom:
+  ros__parameters:
+    use_sim_time: false
+    motor_topic: /xycar_motor
+    odom_topic: /odom
+    odom_frame: odom
+    base_frame: base_footprint
+    publish_rate_hz: 50.0
+    command_timeout_sec: 0.30
+    maximum_dt_sec: 0.10
+
+    # Temporary encoder-less estimate. Measure actual distance at a constant
+    # command and replace this value before mapping.
+    speed_gain_mps_per_command: 0.080612
+
+    steering_map_commands:
+      [-42.0, -40.0, -35.0, -30.0, -20.0, -10.0, 0.0,
+       10.0, 20.0, 30.0, 35.0, 40.0, 42.0]
+    steering_map_curvatures:
+      [1.502435, 1.383494, 1.174860, 0.922781, 0.552809,
+       0.194230, 0.0, -0.556883, -0.959829, -1.369323,
+       -1.601706, -1.853397, -1.939236]
