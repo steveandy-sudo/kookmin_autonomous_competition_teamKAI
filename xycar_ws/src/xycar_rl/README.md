@@ -204,12 +204,20 @@ ros2 launch xycar_rl real_shadow.launch.py \
   checkpoint_path:=$PWD/models/rl/camera_speed_compact_temporal2_lead1_dagger_iter2_46k_20260717/camera_speed_bc_best.pth \
   min_speed_command:=4.0 max_speed_command:=12.0 \
   drive_enabled:=false deployment_speed_cap:=4.0 \
+  max_inference_rate_hz:=0.0 \
   lidar_safety_enabled:=false steering_gain:=1.0 device:=cpu
 ```
 
 Increase `deployment_speed_cap` only after shadow output and each closed-course
 gate pass. The selected experimental policy may request up to `12`, but the
 launch default keeps the first real-car run capped at `4`.
+
+The real canonical source is already limited to about 7 Hz. Keep
+`max_inference_rate_hz:=0.0` so the policy processes each source frame instead
+of applying a second 7 Hz gate. The 2026-07-24 real run produced only 4.47 Hz
+when both rates were set to 7 Hz. See
+`docs/real_curve_fix_handoff_20260724.md` for the measured timing, the dedicated
+lap-time model launch, and the speed 4/6/8 validation gates.
 
 ## 2026-07-16 validation status
 

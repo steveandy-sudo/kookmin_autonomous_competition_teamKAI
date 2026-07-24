@@ -9,7 +9,6 @@ import time
 
 import cv2
 from cv_bridge import CvBridge
-from geometry_msgs.msg import Point
 from geometry_msgs.msg import TwistStamped
 from kaiev26_msgs.msg import Centerline
 import numpy as np
@@ -1048,6 +1047,7 @@ class CanonicalStanleyPursuitDriver(Node):
         self.declare_parameter("white_fallback_span_advantage_m", 0.15)
         self.declare_parameter("yellow_fusion_weight", 1.0)
         self.declare_parameter("short_yellow_fusion_weight", 1.0)
+        self.declare_parameter("extend_fused_path_to_white", False)
         self.declare_parameter("target_path_previous_weight", 0.10)
         self.declare_parameter("temporal_path_ego_compensation_enabled", False)
         self.declare_parameter("wheel_base_m", 0.32)
@@ -1417,7 +1417,11 @@ class CanonicalStanleyPursuitDriver(Node):
                 point_count=int(
                     self.get_parameter("path_point_count").value
                 ),
-                extend_to_union=False,
+                extend_to_union=bool(
+                    self.get_parameter(
+                        "extend_fused_path_to_white"
+                    ).value
+                ),
             )
             connected = yellow_connected
             path_source = "fused"

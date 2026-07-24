@@ -1,0 +1,23 @@
+canonical_stanley_pursuit_driver:
+  ros__parameters:
+    use_sim_time: false
+
+    # A valid outer-white fit may extend a short yellow curve. The existing
+    # separation and temporal consistency checks still reject unrelated edges.
+    extend_fused_path_to_white: true
+    temporal_path_ego_compensation_enabled: true
+
+    # The 2026-07-24 bags measured about 0.37 s from camera exposure to yaw
+    # response. Start below that estimate and validate at speed 4, 6, then 8.
+    control_latency_preview_sec: 0.30
+    steering_lead_time_sec: 0.08
+    steering_max_lead_command: 6.0
+
+    # Safe first real-car defaults. The launch arguments can raise these only
+    # after shadow output and curve completion have been checked.
+    cruise_speed_command: 8.0
+    minimum_speed_command: 6.0
+    curve_slowdown_angle_command: 18.0
+    lane_loss_speed_command: 4.0
+    command_rate_hz: 7.0
+    command_on_canonical: true

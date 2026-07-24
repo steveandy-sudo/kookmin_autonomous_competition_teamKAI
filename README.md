@@ -162,6 +162,7 @@ git pull --ff-only origin simulation
 | 실차 룰베이스만 실행 | [`real_vehicle_deployment.md`](docs/real_vehicle_deployment.md) |
 | 고속 TD3+BC 학습·단계별 실차 shadow | [`high_speed_rl_20260717.md`](docs/high_speed_rl_20260717.md) |
 | 완주 우선 lap-time RL·병렬 Gazebo 수집 | [`lap_time_rl_20260723.md`](docs/lap_time_rl_20260723.md) |
+| 2026-07-24 실차 곡선 이탈 분석·수정·Copilot 인수인계 | [`real_curve_fix_handoff_20260724.md`](docs/real_curve_fix_handoff_20260724.md) |
 | ASUS에서 새 YOLO 차선 인지 검증 | [`real_vehicle_yolo_lane_20260720.md`](docs/real_vehicle_yolo_lane_20260720.md) |
 | YOLO11n 256 경량 모델의 정확도·속도 비교 | [`2026-07-21_yolo11n_256_ultralight.md`](docs/2026-07-21_yolo11n_256_ultralight.md) |
 | YOLO26n 256 재학습·실차 후보 비교 | [`2026-07-21_yolo26n_256_experiment.md`](docs/2026-07-21_yolo26n_256_experiment.md) |

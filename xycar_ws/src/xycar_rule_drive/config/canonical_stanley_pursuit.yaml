@@ -44,6 +44,7 @@ canonical_stanley_pursuit_driver:
     # Use the observed yellow centerline wherever it exists.
     yellow_fusion_weight: 1.0
     short_yellow_fusion_weight: 1.0
+    extend_fused_path_to_white: false
     target_path_previous_weight: 0.10
     temporal_path_ego_compensation_enabled: false
 

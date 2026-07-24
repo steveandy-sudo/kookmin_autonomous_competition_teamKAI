@@ -9,7 +9,7 @@ import numpy as np
 import rclpy
 from cv_bridge import CvBridge
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image, LaserScan
 from std_msgs.msg import Float32MultiArray, String
 import torch
@@ -62,6 +62,43 @@ def apply_optional_speed_cap(
     learned = float(learned_speed_command)
     cap = float(deployment_speed_cap)
     return min(learned, cap) if cap > 0.0 else learned
+
+
+def inference_frame_due(
+    now_sec: float,
+    last_sec: float,
+    maximum_rate_hz: float,
+    slack_sec: float,
+) -> bool:
+    """Return true when a frame should run; a non-positive rate is source-driven."""
+    if maximum_rate_hz <= 0.0 or last_sec <= 0.0:
+        return True
+    minimum_interval = max(
+        0.0,
+        1.0 / maximum_rate_hz - max(0.0, slack_sec),
+    )
+    return now_sec - last_sec >= minimum_interval
+
+
+def temporal_pair_requires_reset(
+    current_stamp_ns: int,
+    previous_stamp_ns: int,
+    maximum_gap_sec: float,
+) -> bool:
+    if current_stamp_ns <= 0 or previous_stamp_ns <= 0:
+        return False
+    gap_sec = (current_stamp_ns - previous_stamp_ns) / 1.0e9
+    return gap_sec <= 0.0 or (
+        maximum_gap_sec > 0.0 and gap_sec > maximum_gap_sec
+    )
+
+
+def latest_sensor_qos() -> QoSProfile:
+    return QoSProfile(
+        history=HistoryPolicy.KEEP_LAST,
+        depth=1,
+        reliability=ReliabilityPolicy.BEST_EFFORT,
+    )
 
 
 class RLPolicyRuntimeNode(Node):
@@ -179,8 +216,18 @@ class RLPolicyRuntimeNode(Node):
         self.sensor_timeout_sec = float(
             self.get_parameter("sensor_timeout_sec").value
         )
-        self.inference_period_sec = 1.0 / max(
-            0.1, float(self.get_parameter("max_inference_rate_hz").value)
+        self.max_inference_rate_hz = float(
+            self.get_parameter("max_inference_rate_hz").value
+        )
+        self.inference_rate_slack_sec = max(
+            0.0, float(self.get_parameter("inference_rate_slack_sec").value)
+        )
+        self.max_image_age_sec = max(
+            0.0, float(self.get_parameter("max_image_age_sec").value)
+        )
+        self.max_temporal_frame_gap_sec = max(
+            0.0,
+            float(self.get_parameter("max_temporal_frame_gap_sec").value),
         )
         self.stop_distance_m = float(
             self.get_parameter("lidar_stop_distance_m").value
@@ -197,6 +244,9 @@ class RLPolicyRuntimeNode(Node):
         self.latest_scan: tuple[int, np.ndarray, float] | None = None
         self.latest_scan_wall_sec = 0.0
         self.last_inference_wall_sec = 0.0
+        self.last_processed_image_stamp_ns = 0
+        self.rate_limited_frame_count = 0
+        self.stale_frame_count = 0
         self.last_steering_command = 0.0
         self.last_speed_command = self.min_speed_command
         self.last_valid_output_wall_sec = 0.0
@@ -225,13 +275,13 @@ class RLPolicyRuntimeNode(Node):
                 LaserScan,
                 str(self.get_parameter("scan_topic").value),
                 self._on_scan,
-                qos_profile_sensor_data,
+                latest_sensor_qos(),
             )
         self.create_subscription(
             Image,
             str(self.get_parameter("image_topic").value),
             self._on_image,
-            qos_profile_sensor_data,
+            latest_sensor_qos(),
         )
         self.create_timer(0.05, self._safety_timer)
         mode = "DRIVE" if self.drive_enabled else "SHADOW"
@@ -283,6 +333,9 @@ class RLPolicyRuntimeNode(Node):
         self.declare_parameter("sync_tolerance_sec", 0.08)
         self.declare_parameter("sensor_timeout_sec", 0.50)
         self.declare_parameter("max_inference_rate_hz", 15.0)
+        self.declare_parameter("inference_rate_slack_sec", 0.04)
+        self.declare_parameter("max_image_age_sec", 0.30)
+        self.declare_parameter("max_temporal_frame_gap_sec", 0.25)
         self.declare_parameter("lidar_safety_enabled", False)
         self.declare_parameter("lidar_stop_distance_m", 0.25)
         self.declare_parameter("lidar_front_half_angle_deg", 20.0)
@@ -307,13 +360,38 @@ class RLPolicyRuntimeNode(Node):
 
     def _on_image(self, msg: Image) -> None:
         now_wall = time.monotonic()
-        if now_wall - self.last_inference_wall_sec < self.inference_period_sec:
+        if not inference_frame_due(
+            now_wall,
+            self.last_inference_wall_sec,
+            self.max_inference_rate_hz,
+            self.inference_rate_slack_sec,
+        ):
+            self.rate_limited_frame_count += 1
             return
         with self.lock:
             scan = self.latest_scan
         if not self.camera_speed_policy and scan is None:
             return
         image_stamp = message_stamp_ns(msg)
+        now_ros_ns = self.get_clock().now().nanoseconds
+        image_age_sec = (
+            (now_ros_ns - image_stamp) / 1.0e9
+            if image_stamp > 0 and now_ros_ns >= image_stamp
+            else -1.0
+        )
+        if (
+            self.max_image_age_sec > 0.0
+            and 0.0 <= image_age_sec < 60.0
+            and image_age_sec > self.max_image_age_sec
+        ):
+            self.stale_frame_count += 1
+            return
+        if self.camera_speed_policy and temporal_pair_requires_reset(
+            image_stamp,
+            self.last_processed_image_stamp_ns,
+            self.max_temporal_frame_gap_sec,
+        ):
+            self.policy.reset()
         if scan is None:
             scan_stamp = 0
             lidar = None
@@ -384,12 +462,13 @@ class RLPolicyRuntimeNode(Node):
         self.last_steering_command = angle
         self.last_speed_command = speed
         self.last_inference_wall_sec = now_wall
+        self.last_processed_image_stamp_ns = image_stamp
         self.last_valid_output_wall_sec = now_wall
         inference_ms = (time.perf_counter() - started) * 1000.0
         sensor_age_ms = 0.0
-        now_ros_ns = self.get_clock().now().nanoseconds
-        if image_stamp > 0 and now_ros_ns >= image_stamp:
-            delta_ns = now_ros_ns - image_stamp
+        publish_ros_ns = self.get_clock().now().nanoseconds
+        if image_stamp > 0 and publish_ros_ns >= image_stamp:
+            delta_ns = publish_ros_ns - image_stamp
             sensor_age_ms = delta_ns / 1.0e6 if delta_ns < 60_000_000_000 else -1.0
         self._publish_command(angle, speed)
         debug = Float32MultiArray()
@@ -405,6 +484,8 @@ class RLPolicyRuntimeNode(Node):
             preview_value,
             preview_confidence,
             preview_curve_hint,
+            float(self.rate_limited_frame_count),
+            float(self.stale_frame_count),
         ]
         self.debug_pub.publish(debug)
         status = String()
@@ -436,6 +517,9 @@ class RLPolicyRuntimeNode(Node):
             or now - self.last_valid_output_wall_sec > self.sensor_timeout_sec
         )
         if sensor_stale:
+            if self.camera_speed_policy:
+                self.policy.reset()
+            self.last_processed_image_stamp_ns = 0
             self.steering_stabilizer.reset()
             self.preview_steering.reset()
             self.last_steering_command = 0.0
@@ -459,6 +543,9 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        node.destroy_node()
+        try:
+            node.destroy_node()
+        except KeyboardInterrupt:
+            pass
         if rclpy.ok():
             rclpy.shutdown()

@@ -51,7 +51,21 @@ def generate_launch_description():
                 ),
             ),
             DeclareLaunchArgument("speed_temporal_alpha", default_value="0.35"),
-            DeclareLaunchArgument("max_inference_rate_hz", default_value="15.0"),
+            DeclareLaunchArgument(
+                "max_inference_rate_hz",
+                default_value="0.0",
+                description=(
+                    "Zero processes every canonical frame. Use a positive value "
+                    "only when the source is faster than the policy can handle."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "inference_rate_slack_sec", default_value="0.04"
+            ),
+            DeclareLaunchArgument("max_image_age_sec", default_value="0.30"),
+            DeclareLaunchArgument(
+                "max_temporal_frame_gap_sec", default_value="0.25"
+            ),
             DeclareLaunchArgument("lidar_safety_enabled", default_value="false"),
             DeclareLaunchArgument("steering_gain", default_value="1.0"),
             DeclareLaunchArgument("steering_output_sign", default_value="1.0"),
@@ -107,6 +121,18 @@ def generate_launch_description():
                         ),
                         "max_inference_rate_hz": ParameterValue(
                             max_inference_rate_hz, value_type=float
+                        ),
+                        "inference_rate_slack_sec": ParameterValue(
+                            LaunchConfiguration("inference_rate_slack_sec"),
+                            value_type=float,
+                        ),
+                        "max_image_age_sec": ParameterValue(
+                            LaunchConfiguration("max_image_age_sec"),
+                            value_type=float,
+                        ),
+                        "max_temporal_frame_gap_sec": ParameterValue(
+                            LaunchConfiguration("max_temporal_frame_gap_sec"),
+                            value_type=float,
                         ),
                         "lidar_safety_enabled": ParameterValue(
                             LaunchConfiguration("lidar_safety_enabled"),
