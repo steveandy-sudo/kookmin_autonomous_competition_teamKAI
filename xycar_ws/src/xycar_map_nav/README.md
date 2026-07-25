@@ -10,21 +10,24 @@ A* 전역경로를 만들고 Pure Pursuit으로 추종하는 ROS 2 패키지다.
 
 ## 매핑과 localization
 
-엔코더 odom이 아직 없을 때는 `/xycar_motor` 명령을 적분한 근사 odom으로
-scan matching을 시작할 수 있다. 누적 오차가 있으므로 저속 사전 시험용이며,
-정확한 엔코더 odom이 생기면 `use_command_odom:=false`로 교체한다.
+엔코더 odom이 아직 없을 때는 `/xycar_motor`의 병진 명령과 `/imu`의 상대
+yaw를 결합한 `/slam/odom`으로 scan matching을 시작한다. LiDAR는
+`/slam/scan_filtered`에서 `0.20~6.0 m`만 사용한다. 병진 누적 오차가
+남으므로 저속 사전 시험용이며, 정확한 엔코더 odom이 생기면
+`use_command_odom:=false`로 교체한다.
 
 ```bash
 ros2 launch xycar_map_nav real_mapping.launch.py \
-  laser_x:=0.00 laser_y:=0.00 laser_z:=0.02 laser_yaw:=0.00
+  laser_x:=0.065 laser_y:=0.00 laser_z:=0.080 laser_yaw:=0.00
 
 ros2 launch xycar_map_nav real_localization.launch.py \
-  pose_graph:=$HOME/xycar_maps/new_site_01/map \
-  laser_x:=0.00 laser_y:=0.00 laser_z:=0.02 laser_yaw:=0.00
+  pose_graph:=$HOME/xycar_maps/new_site_02/map \
+  laser_x:=0.065 laser_y:=0.00 laser_z:=0.080 laser_yaw:=0.00
 ```
 
-위 LiDAR 위치 기본값은 실측 전 임시값이다. `/scan`과 차량의 기존 모터
-bridge는 별도로 먼저 실행해야 한다.
+위 LiDAR 위치는 simulation 브랜치의 2026-07-12 실차 정합값이며 앞바퀴
+중심 기준 `(0.065, 0.000, 0.080) m`, yaw `0`이다. `/scan`, `/imu`와
+차량의 기존 모터 bridge는 별도로 먼저 실행해야 한다.
 
 ## 제어권
 
@@ -57,7 +60,7 @@ RViz의 `Publish Point` 도구로 진행 순서대로 클릭한다. 클릭할 �
 - Map: `/map`
 - Path: `/map_nav/global_path`
 - MarkerArray: `/map_nav/waypoints`
-- TF: `map -> odom -> base_footprint`
+- TF: `map -> slam_odom -> base_footprint`
 
 되돌리기와 초기화:
 

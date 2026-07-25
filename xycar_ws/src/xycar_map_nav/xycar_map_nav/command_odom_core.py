@@ -89,3 +89,23 @@ def first_order_response(
     tau = max(1e-4, float(time_constant_sec))
     response = 1.0 - math.exp(-dt / tau)
     return float(current) + (float(target) - float(current)) * response
+
+
+def integrate_with_heading(
+    state: OdomState,
+    *,
+    speed_mps: float,
+    heading_rad: float,
+    dt_sec: float,
+) -> OdomState:
+    """Integrate translation while taking heading from an external sensor."""
+    dt = max(0.0, float(dt_sec))
+    heading = normalize_angle(heading_rad)
+    heading_delta = normalize_angle(heading - state.yaw)
+    middle_yaw = normalize_angle(state.yaw + heading_delta * 0.5)
+    distance = float(speed_mps) * dt
+    return OdomState(
+        x=state.x + distance * math.cos(middle_yaw),
+        y=state.y + distance * math.sin(middle_yaw),
+        yaw=heading,
+    )

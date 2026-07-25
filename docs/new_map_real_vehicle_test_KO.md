@@ -24,8 +24,10 @@ LiDAR/TF 확인
 - LiDAR 입력은 `/scan`, 프레임은 `laser_frame`이다.
 - 모터 명령은 `/xycar_motor`,
   `std_msgs/msg/Float32MultiArray [angle, speed]`이다.
-- 지도 프레임 연결은 `map -> odom -> base_footprint -> laser_frame`이다.
-- IMU는 없어도 시험할 수 있다.
+- 지도 프레임 연결은
+  `map -> slam_odom -> base_footprint -> laser_frame`이다.
+- 현재 실차 보정 절차에서는 `/imu`의 상대 yaw를 사용한다. IMU가 끊겼다는
+  경고가 나오면 지도를 저장하지 않는다.
 - 현재 저장소에는 실차 엔코더 odom 발행기가 없다. 따라서 기본 launch는
   `/xycar_motor` 명령으로 만든 근사 odom을 SLAM scan matching의 초기 추정값으로
   쓴다. 바퀴 미끄러짐과 배터리 상태를 측정하지 못하므로 누적 오차가 생긴다.
@@ -56,7 +58,7 @@ sudo apt install -y \
 
 cd ~/xycar_ws
 colcon build --packages-up-to \
-  xycar_lidar xycar_rule_drive xycar_map_nav xycar_hybrid_drive \
+  xycar_imu xycar_lidar xycar_rule_drive xycar_map_nav xycar_hybrid_drive \
   --symlink-install
 source install/setup.bash
 ```
@@ -77,9 +79,9 @@ export ROS_DOMAIN_ID=7
 - `laser_z`: 바닥에서 LiDAR 스캔면까지 높이(m)
 - `laser_yaw`: 차량 정면 대비 LiDAR 회전(rad)
 
-기본값 `x=0, y=0, z=0.02, yaw=0`은 실행 확인용일 뿐 실측값이 아니다.
-LiDAR가 1 cm 잘못 놓이면 곡선과 벽 모서리에서 지도 오차가 커질 수 있으므로
-실측값을 기록한다.
+simulation 브랜치의 2026-07-12 실차 정합값은 앞바퀴 중심 기준
+`x=0.065, y=0, z=0.080, yaw=0`이다. 이 차량에서는 해당 값을 기본으로
+사용한다.
 
 바닥에는 차량의 시작 위치와 방향을 테이프로 표시한다. 매핑 종료점과
 localization 재시작점을 이 표시에 맞춘다.
@@ -94,7 +96,16 @@ localization 재시작점을 이 표시에 맞춘다.
 
 차량의 기존 모터/ROS bridge를 먼저 실행한다. 다른 자율주행 노드는 모두 끈다.
 
-터미널 A에서 LiDAR만 실행한다.
+터미널 A에서 IMU를 실행한다.
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/xycar_ws/install/setup.bash
+export ROS_DOMAIN_ID=7
+ros2 launch xycar_imu xycar_imu.launch.py
+```
+
+터미널 B에서 LiDAR를 실행한다.
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -103,14 +114,15 @@ export ROS_DOMAIN_ID=7
 ros2 launch xycar_lidar xycar_lidar.launch.py
 ```
 
-터미널 B에서 확인한다.
+다른 터미널에서 확인한다.
 
 ```bash
 source /opt/ros/humble/setup.bash
 source ~/xycar_ws/install/setup.bash
 export ROS_DOMAIN_ID=7
 
-ros2 topic list -t | grep -E '/scan|/xycar_motor'
+ros2 topic list -t | grep -E '/imu|/scan|/xycar_motor'
+ros2 topic hz /imu
 ros2 topic type /scan
 ros2 topic hz /scan
 ros2 topic info /xycar_motor -v
@@ -120,6 +132,7 @@ ros2 topic echo /scan --once
 통과 조건:
 
 - `/scan` 타입이 `sensor_msgs/msg/LaserScan`이다.
+- `/imu`가 약 35 Hz로 연속 수신된다.
 - `/scan`이 약 10 Hz로 연속 수신되고 `frame_id`가 `laser_frame`이다.
 - `range_min`, `range_max`, `angle_min`, `angle_max`가 비정상 값이 아니다.
 - `/xycar_motor` 구독자에 실제 모터 bridge가 보인다.
@@ -136,15 +149,16 @@ source ~/xycar_ws/install/setup.bash
 export ROS_DOMAIN_ID=7
 
 ros2 launch xycar_map_nav real_mapping.launch.py \
-  laser_x:=0.00 laser_y:=0.00 laser_z:=0.02 laser_yaw:=0.00 \
+  laser_x:=0.065 laser_y:=0.00 laser_z:=0.080 laser_yaw:=0.00 \
   use_command_odom:=true
 ```
 
 다른 터미널에서 TF와 odom을 확인한다.
 
 ```bash
-ros2 topic hz /odom
-ros2 run tf2_ros tf2_echo odom base_footprint
+ros2 topic hz /slam/odom
+ros2 topic hz /slam/scan_filtered
+ros2 run tf2_ros tf2_echo slam_odom base_footprint
 ros2 run tf2_ros tf2_echo base_footprint laser_frame
 ```
 
@@ -156,7 +170,7 @@ ros2 run xycar_rule_drive keyboard_teleop
 
 `w/s`는 속도, `a/d`는 조향, `e`는 조향 중앙, `x`와 `space`는 정지,
 `q`는 종료다. 바퀴 방향과 조향 부호가 맞고, 키 입력을 멈춘 뒤 0.3초 안에
-`/odom` 속도가 0이 되는지 확인한다.
+`/slam/odom` 속도가 0이 되는지 확인한다.
 
 그다음 평평한 바닥에서 줄자로 5.00 m를 표시한다. 첫 표시 1 m 전부터 직진
 명령 하나를 고정해 정상속도로 두 표시를 통과하고 실제 거리와 odom 거리 차이를
@@ -176,16 +190,18 @@ ros2 run xycar_rule_drive keyboard_teleop
 ## 5. rosbag 기록 시작
 
 시험마다 새 이름으로 센서, TF, 명령을 함께 기록한다.
+rosbag은 매핑 launch와 주행을 시작하기 전에 켠다. 기록하지 않은 주행은
+pose graph가 잘못된 뒤 원시 센서 기준으로 재처리할 수 없다.
 
 ```bash
 mkdir -p ~/xycar_test_bags
 ros2 bag record \
-  -o ~/xycar_test_bags/new_site_mapping_01 \
-  /scan /imu /odom /tf /tf_static /map /xycar_motor
+  -o ~/xycar_test_bags/new_site_mapping_02 \
+  /scan /slam/scan_filtered /imu /slam/odom \
+  /tf /tf_static /map /xycar_motor
 ```
 
-`/imu`가 없어도 나머지 토픽은 기록된다. 기록 직후 `ros2 bag info`로 토픽과
-메시지 수를 확인한다.
+기록 직후 `ros2 bag info`로 모든 토픽과 메시지 수를 확인한다.
 
 ## 6. 새 장소 지도 만들기
 
@@ -210,7 +226,7 @@ RViz에 `Map`, `LaserScan`, `TF`를 추가하고 Fixed Frame을 `map`으로 둔�
 
 - 벽이 평행한 두 줄 이상으로 찢어진다.
 - 출발점으로 돌아왔을 때 기존 지도가 크게 밀린다.
-- 차량이 정지했는데 `map -> odom`이 계속 크게 뛴다.
+- 차량이 정지했는데 `map -> slam_odom`이 계속 크게 뛴다.
 - 유리 구간이 열린 공간처럼 사라지거나 반대쪽 물체가 벽으로 찍힌다.
 - 복도 폭이 주행 방향에 따라 눈에 띄게 달라진다.
 
@@ -219,7 +235,7 @@ RViz에 `Map`, `LaserScan`, `TF`를 추가하고 Fixed Frame을 `map`으로 둔�
 매핑이 안정된 상태에서 새 터미널을 연다.
 
 ```bash
-MAP_DIR=~/xycar_maps/new_site_01
+MAP_DIR=~/xycar_maps/new_site_02
 mkdir -p "$MAP_DIR"
 
 ros2 run nav2_map_server map_saver_cli \
@@ -233,7 +249,7 @@ ros2 service call /slam_toolbox/serialize_map \
 다음 결과물을 보관한다.
 
 ```text
-~/xycar_maps/new_site_01/
+~/xycar_maps/new_site_02/
 ├── map.yaml
 ├── map.pgm
 ├── map.posegraph
@@ -262,7 +278,7 @@ command odom gain부터 다시 확인한다.
 
 ## 9. 저장 지도에서 localization
 
-매핑 launch와 키보드 노드를 모두 종료하고 LiDAR만 다시 실행한다. 차량을
+매핑 launch와 키보드 노드를 모두 종료하고 IMU와 LiDAR만 다시 실행한다. 차량을
 바닥의 시작 표시에 같은 방향으로 놓는다.
 
 ```bash
@@ -271,8 +287,8 @@ source ~/xycar_ws/install/setup.bash
 export ROS_DOMAIN_ID=7
 
 ros2 launch xycar_map_nav real_localization.launch.py \
-  pose_graph:=$HOME/xycar_maps/new_site_01/map \
-  laser_x:=0.00 laser_y:=0.00 laser_z:=0.02 laser_yaw:=0.00 \
+  pose_graph:=$HOME/xycar_maps/new_site_02/map \
+  laser_x:=0.065 laser_y:=0.00 laser_z:=0.080 laser_yaw:=0.00 \
   use_command_odom:=true
 ```
 
@@ -280,7 +296,7 @@ RViz에서 저장된 벽과 현재 LaserScan이 겹치는지 확인한다. 필�
 `2D Pose Estimate`로 시작 자세를 지정한다. 다음 TF가 모두 끊기지 않아야 한다.
 
 ```bash
-ros2 run tf2_ros tf2_echo map odom
+ros2 run tf2_ros tf2_echo map slam_odom
 ros2 run tf2_ros tf2_echo map base_footprint
 ```
 
@@ -292,11 +308,11 @@ ros2 run tf2_ros tf2_echo map base_footprint
 localization을 유지한 채 waypoint 노드를 shadow로 실행한다.
 
 ```bash
-WAYPOINTS=$HOME/xycar_maps/new_site_01/waypoints.yaml
+WAYPOINTS=$HOME/xycar_maps/new_site_02/waypoints.yaml
 
 ros2 launch xycar_map_nav real_waypoint_nav.launch.py \
   drive_enabled:=false \
-  map_yaml:=$HOME/xycar_maps/new_site_01/map.yaml \
+  map_yaml:=$HOME/xycar_maps/new_site_02/map.yaml \
   capture_output_yaml:=$WAYPOINTS
 ```
 
@@ -350,8 +366,8 @@ ros2 launch xycar_map_nav real_waypoint_nav.launch.py \
   drive_enabled:=true \
   cruise_speed_command:=3.0 \
   minimum_speed_command:=3.0 \
-  map_yaml:=$HOME/xycar_maps/new_site_01/map.yaml \
-  waypoints_yaml:=$HOME/xycar_maps/new_site_01/waypoints.yaml
+  map_yaml:=$HOME/xycar_maps/new_site_02/map.yaml \
+  waypoints_yaml:=$HOME/xycar_maps/new_site_02/waypoints.yaml
 ```
 
 `Ctrl+C`, LiDAR 차단, localization 중단 각각에서 속도 0이 되는지 확인한다.
@@ -406,7 +422,7 @@ GLOBAL_PATH -> DYNAMIC_VEHICLE_RULE_* -> GLOBAL_PATH
 
 - 물리 비상정지 담당자가 자리를 비움
 - `/xycar_motor`에 의도하지 않은 publisher가 추가됨
-- `/scan`, `/odom`, `map -> base_footprint` 중 하나가 stale
+- `/scan`, `/slam/odom`, `map -> base_footprint` 중 하나가 stale
 - 지도상 차량이 다른 통로나 벽 너머로 이동
 - 유리벽 쪽 점유영역이 사라져 계획 경로가 유리 방향으로 생성
 - 조향 부호가 반대이거나 정지 명령 후 차량이 계속 움직임

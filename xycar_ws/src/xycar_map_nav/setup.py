@@ -25,6 +25,10 @@ setup(
             glob("launch/*.launch.py"),
         ),
         (
+            os.path.join("share", package_name, "rviz"),
+            glob("rviz/*.rviz"),
+        ),
+        (
             os.path.join("share", package_name, "scripts"),
             glob("scripts/*.sh"),
         ),
@@ -41,6 +45,7 @@ setup(
     entry_points={
         "console_scripts": [
             "command_odom_node = xycar_map_nav.command_odom_node:main",
+            "scan_filter_node = xycar_map_nav.scan_filter_node:main",
             "waypoint_nav_node = xycar_map_nav.waypoint_nav_node:main",
         ],
     },

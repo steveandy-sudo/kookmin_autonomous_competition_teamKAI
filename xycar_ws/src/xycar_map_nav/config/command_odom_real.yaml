@@ -2,12 +2,19 @@ xycar_command_odom:
   ros__parameters:
     use_sim_time: false
     motor_topic: /xycar_motor
-    odom_topic: /odom
-    odom_frame: odom
+    odom_topic: /slam/odom
+    odom_frame: slam_odom
     base_frame: base_footprint
     publish_rate_hz: 50.0
     command_timeout_sec: 0.30
     maximum_dt_sec: 0.10
+    use_imu_yaw: true
+    imu_topic: /imu
+    imu_timeout_sec: 0.30
+    imu_yaw_sign: 1.0
+    imu_yaw_offset_rad: 0.0
+    imu_rebase_when_stopped: true
+    stopped_speed_threshold_mps: 0.02
 
     # Production baseline from the VESC real-vehicle dynamics tests.
     speed_gain_mps_per_command: 0.080612
@@ -19,9 +26,8 @@ xycar_command_odom:
     speed_brake_tau_sec: 0.09
     steering_delay_sec: 0.10
 
-    # Disabled in the baseline so bags without /imu work unchanged.
+    # Optional angular-rate fallback. Absolute IMU orientation is preferred.
     use_gyro_yaw: false
-    imu_topic: /imu
     gyro_z_bias_rad_s: 0.026983
     gyro_z_sign: -1.0
     gyro_z_scale: 1.061768

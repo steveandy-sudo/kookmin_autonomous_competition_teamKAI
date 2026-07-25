@@ -17,6 +17,9 @@ def generate_launch_description():
     odom_params = PathJoinSubstitution(
         [package_share, "config", "command_odom_real.yaml"]
     )
+    rviz_config = PathJoinSubstitution(
+        [package_share, "rviz", "real_mapping.rviz"]
+    )
     use_command_odom = LaunchConfiguration("use_command_odom")
     use_sim_time = LaunchConfiguration("use_sim_time")
 
@@ -36,11 +39,16 @@ def generate_launch_description():
                 "command_odom_params_file", default_value=odom_params
             ),
             DeclareLaunchArgument("use_command_odom", default_value="true"),
+            DeclareLaunchArgument("use_imu_yaw", default_value="true"),
+            DeclareLaunchArgument("imu_topic", default_value="/imu"),
             DeclareLaunchArgument("use_sim_time", default_value="false"),
             DeclareLaunchArgument("enable_rviz", default_value="true"),
-            DeclareLaunchArgument("laser_x", default_value="0.0"),
+            DeclareLaunchArgument(
+                "rviz_config", default_value=rviz_config
+            ),
+            DeclareLaunchArgument("laser_x", default_value="0.065"),
             DeclareLaunchArgument("laser_y", default_value="0.0"),
-            DeclareLaunchArgument("laser_z", default_value="0.02"),
+            DeclareLaunchArgument("laser_z", default_value="0.080"),
             DeclareLaunchArgument("laser_yaw", default_value="0.0"),
             Node(
                 package="xycar_map_nav",
@@ -51,10 +59,28 @@ def generate_launch_description():
                 parameters=[
                     LaunchConfiguration("command_odom_params_file"),
                     {
+                        "use_imu_yaw": ParameterValue(
+                            LaunchConfiguration("use_imu_yaw"),
+                            value_type=bool,
+                        ),
+                        "imu_topic": LaunchConfiguration("imu_topic"),
                         "use_sim_time": ParameterValue(
                             use_sim_time, value_type=bool
                         )
                     },
+                ],
+            ),
+            Node(
+                package="xycar_map_nav",
+                executable="scan_filter_node",
+                name="slam_scan_filter",
+                output="screen",
+                parameters=[
+                    {
+                        "use_sim_time": ParameterValue(
+                            use_sim_time, value_type=bool
+                        )
+                    }
                 ],
             ),
             Node(
@@ -103,6 +129,7 @@ def generate_launch_description():
                 executable="rviz2",
                 name="rviz2",
                 output="screen",
+                arguments=["-d", LaunchConfiguration("rviz_config")],
                 condition=IfCondition(
                     LaunchConfiguration("enable_rviz")
                 ),

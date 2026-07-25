@@ -6,6 +6,7 @@ from xycar_map_nav.command_odom_core import (
     first_order_response,
     integrate_ackermann,
     integrate_planar_velocity,
+    integrate_with_heading,
 )
 
 
@@ -67,3 +68,15 @@ def test_gyro_yaw_can_be_integrated_independently_from_command_curvature():
     assert state.x > 0.0
     assert state.y < 0.0
     assert math.isclose(state.yaw, -0.5)
+
+
+def test_external_heading_controls_translation_and_wraparound():
+    state = integrate_with_heading(
+        OdomState(yaw=math.radians(179.0)),
+        speed_mps=1.0,
+        heading_rad=math.radians(-179.0),
+        dt_sec=1.0,
+    )
+    assert state.x < -0.99
+    assert abs(state.y) < 0.05
+    assert math.isclose(state.yaw, math.radians(-179.0))
