@@ -108,5 +108,12 @@ IMU 상대 yaw는 회전 오차를 줄이지만 병진 누적 오차를 직접 �
 5. 결과가 불량하면 엔코더 odom을 추가한 뒤 새 rosbag을 기록한다.
 6. 검증 전에는 `new_site_02_corrected`를 덮어쓰거나 주행에 사용하지 않는다.
 
-큰 rosbag은 Git에 직접 넣지 않는다. 별도 저장소나 Git LFS에 올릴 때는
-파일의 SHA-256과 다운로드 위치만 이 문서에 추가한다.
+큰 rosbag은 Git에 직접 넣지 않는다. 실패한 임시 지도는 재현과 비교를 위해
+다음 디렉터리에 보존했다.
+
+```text
+artifacts/real_slam/20260725_new_site_02_corrected_failed/
+```
+
+`map.posegraph`와 `map.data`는 저장소 크기를 줄이기 위해 gzip으로 압축했다.
+이 결과는 진단 전용이며 localization 또는 실제 주행에 사용하지 않는다.
