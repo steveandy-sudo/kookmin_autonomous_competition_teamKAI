@@ -7,7 +7,7 @@ import math
 import wx
 
 from sensor_msgs.msg import Imu
-from transforms3d.euler import quat2euler as euler_from_quaternion
+from xycar_imu.orientation import euler_from_ros_quaternion
 
 rad2degrees = 180.0 / math.pi
 precision = 2  # round to this number of digits
@@ -115,12 +115,12 @@ class Display3DNode(Node):
             self.yaw_offset += -self.yaw
 
     def process_imu_message(self, imu_msg):
-        quaternion = (
+        self.roll, self.pitch, self.yaw = euler_from_ros_quaternion(
             imu_msg.orientation.x,
             imu_msg.orientation.y,
             imu_msg.orientation.z,
-            imu_msg.orientation.w)
-        self.roll, self.pitch, self.yaw = euler_from_quaternion(quaternion)
+            imu_msg.orientation.w,
+        )
 
         # add align offset to yaw
         self.yaw += self.yaw_offset

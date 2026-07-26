@@ -10,24 +10,59 @@ A* 전역경로를 만들고 Pure Pursuit으로 추종하는 ROS 2 패키지다.
 
 ## 매핑과 localization
 
-엔코더 odom이 아직 없을 때는 `/xycar_motor`의 병진 명령과 `/imu`의 상대
-yaw를 결합한 `/slam/odom`으로 scan matching을 시작한다. LiDAR는
-`/slam/scan_filtered`에서 `0.20~6.0 m`만 사용한다. 병진 누적 오차가
-남으므로 저속 사전 시험용이며, 정확한 엔코더 odom이 생기면
-`use_command_odom:=false`로 교체한다.
+기본 실차 odometry는 native ROS2 `xycar_vesc_driver`가 발행하는
+`/vehicle/vesc_state`의 tachometer 이동량과 `/imu`의 상대 yaw를 결합해
+`/slam/odom`을 발행한다.
+기본 `slam_toolbox_mapping.yaml`은 공식 Karto scan matching과 automatic
+loop closure를 사용한다. 반복 문 복도에서는 서로 다른 문 홈의 스캔이 비슷해
+잘못 정합될 수 있으므로, 첫 바퀴 정합을 확인한 다음 같은 방향으로 2~3회
+재관측하며 기존 벽과 현재 LaserScan이 계속 한 줄로 겹치는지 확인한다.
+
+```text
+VESC tachometer + IMU yaw
+  -> /slam/odom + slam_odom -> base_footprint
+LiDAR scans
+  -> occupancy map + pose graph
+```
+
+VESC는 독립 휠 엔코더가 아니므로 바퀴 미끄러짐 오차는 남지만, 모터 명령을
+거리로 간주하던 command odom보다 실제 이동을 더 직접적으로 반영한다.
+`command` 모드는 측정 telemetry를 사용할 수 없을 때만 쓰는 fallback이다.
+한 바퀴 뒤 시작점에서 자동 정합이 실패했다면 어긋난 맵을 이어 쓰지 않는다.
+rosbag을 보존하고 고유한 모서리와 비대칭 구조가 포함되도록 새 빈 맵에서 다시
+측정한다.
+
+motor 없이 저장 bag을 재처리할 때는 다음 launch를 사용한다.
+
+```bash
+ros2 launch xycar_map_nav replay_mapping.launch.py enable_rviz:=true
+```
+
+재생 토픽은 `/slam/scan_filtered`와 `/slam/odom`만 사용한다. 기존 bag의
+`/tf`, `/map`, 모터 토픽은 이 launch에 재생하지 않는다.
 
 ```bash
 ros2 launch xycar_map_nav real_mapping.launch.py \
+  odom_source:=vesc_imu \
+  vesc_drive_enabled:=false \
   laser_x:=0.065 laser_y:=0.00 laser_z:=0.080 laser_yaw:=0.00
 
 ros2 launch xycar_map_nav real_localization.launch.py \
   pose_graph:=$HOME/xycar_maps/new_site_02/map \
+  odom_source:=vesc_imu \
+  vesc_drive_enabled:=false \
   laser_x:=0.065 laser_y:=0.00 laser_z:=0.080 laser_yaw:=0.00
 ```
 
 위 LiDAR 위치는 simulation 브랜치의 2026-07-12 실차 정합값이며 앞바퀴
-중심 기준 `(0.065, 0.000, 0.080) m`, yaw `0`이다. `/scan`, `/imu`와
-차량의 기존 모터 bridge는 별도로 먼저 실행해야 한다.
+중심 기준 `(0.065, 0.000, 0.080) m`, yaw `0`이다. `/scan`과 `/imu`는
+별도로 먼저 실행한다. mapping/localization launch가 native VESC 드라이버를
+기본으로 시작하며, driver raw TF는 끄고 `/slam/odom`과
+`slam_odom -> base_footprint`는 융합 노드 하나만 발행한다.
+
+전체 실행 및 검증 절차는
+[`docs/real_vesc_imu_lidar_odometry_KO.md`](../../../docs/real_vesc_imu_lidar_odometry_KO.md)에
+정리되어 있다.
 
 ## 제어권
 
@@ -51,6 +86,7 @@ ros2 launch xycar_map_nav real_localization.launch.py \
 ros2 launch xycar_map_nav real_waypoint_nav.launch.py \
   drive_enabled:=false \
   map_yaml:=/absolute/path/to/map.yaml \
+  waypoints_yaml:=/absolute/path/to/my_waypoints.yaml \
   capture_output_yaml:=/absolute/path/to/my_waypoints.yaml
 ```
 
@@ -78,6 +114,8 @@ ros2 service call /xycar_waypoint_nav/reload_route std_srvs/srv/Trigger {}
 ```
 
 실제 위치를 측정하기 전까지 제공된 example 파일은 실차 기준값이 아니다.
+순환 코스는 waypoint YAML의 `closed`를 `true`로 설정한다. 마지막 좌표가
+출발점 근처인데 `closed: false`이면 시작 직후 `ROUTE_COMPLETE`가 될 수 있다.
 
 ## 검증 순서
 
@@ -93,3 +131,13 @@ ros2 service call /xycar_waypoint_nav/reload_route std_srvs/srv/Trigger {}
 
 LiDAR 전방 `0.38 m` 이내 물체는 모드와 관계없이 `EMERGENCY_STOP`이다.
 동적차량 구간에서 YOLO count 토픽이 stale이면 주행하지 않고 정지한다.
+
+## 실차 속도 제한
+
+2026-07-26 실차 순환 경로는 command `3`에서 안정적으로 주행했다. 속도를
+높이면 고정 `0.65 m` lookahead, 조향기 지연과 localization 잡음의 영향으로
+좌우 오실레이션이 커졌다. speed-dependent lookahead, 조향 rate limit/필터와
+곡률 기반 감속을 rosbag으로 검증하기 전까지 waypoint 실차 승인 속도는
+command `3`이다. 자세한 기록 토픽과 중단 조건은
+[`docs/new_map_real_vehicle_test_KO.md`](../../../docs/new_map_real_vehicle_test_KO.md)에
+정리되어 있다.

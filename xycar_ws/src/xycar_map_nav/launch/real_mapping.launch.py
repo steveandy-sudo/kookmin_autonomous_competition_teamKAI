@@ -8,6 +8,8 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
+from xycar_map_nav.real_odom_launch import make_real_odom_nodes
+
 
 def _launch_bool(context, name):
     return LaunchConfiguration(name).perform(context).strip().lower() in {
@@ -65,10 +67,19 @@ def generate_launch_description():
     odom_params = PathJoinSubstitution(
         [package_share, "config", "command_odom_real.yaml"]
     )
+    vesc_imu_odom_params = PathJoinSubstitution(
+        [package_share, "config", "vesc_imu_odom_real.yaml"]
+    )
+    vesc_driver_config = PathJoinSubstitution(
+        [
+            FindPackageShare("xycar_vesc_driver"),
+            "config",
+            "xycar_vesc_driver.yaml",
+        ]
+    )
     rviz_config = PathJoinSubstitution(
         [package_share, "rviz", "real_mapping.rviz"]
     )
-    use_command_odom = LaunchConfiguration("use_command_odom")
     use_sim_time = LaunchConfiguration("use_sim_time")
 
     return LaunchDescription(
@@ -79,7 +90,49 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "command_odom_params_file", default_value=odom_params
             ),
-            DeclareLaunchArgument("use_command_odom", default_value="true"),
+            DeclareLaunchArgument(
+                "vesc_imu_odom_params_file",
+                default_value=vesc_imu_odom_params,
+            ),
+            DeclareLaunchArgument(
+                "odom_source",
+                default_value="vesc_imu",
+                description="vesc_imu, command, or external",
+            ),
+            DeclareLaunchArgument(
+                "use_command_odom",
+                default_value="false",
+                description=(
+                    "Backward-compatible override; true selects command odom"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "vesc_driver_config",
+                default_value=vesc_driver_config,
+            ),
+            DeclareLaunchArgument(
+                "start_native_vesc_driver",
+                default_value="true",
+                description=(
+                    "Start the native ROS 2 owner of /dev/ttyMOTOR; set false "
+                    "when one native driver is already running"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "vesc_port",
+                default_value="/dev/ttyMOTOR",
+            ),
+            DeclareLaunchArgument(
+                "vesc_drive_enabled",
+                default_value="false",
+                description=(
+                    "Explicitly allow non-zero native VESC output"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "vesc_topic",
+                default_value="/vehicle/vesc_state",
+            ),
             DeclareLaunchArgument("use_imu_yaw", default_value="true"),
             DeclareLaunchArgument("imu_topic", default_value="/imu"),
             DeclareLaunchArgument(
@@ -147,26 +200,7 @@ def generate_launch_description():
                 default_value="0.0",
                 description="Measured laser yaw in radians",
             ),
-            Node(
-                package="xycar_map_nav",
-                executable="command_odom_node",
-                name="xycar_command_odom",
-                output="screen",
-                condition=IfCondition(use_command_odom),
-                parameters=[
-                    LaunchConfiguration("command_odom_params_file"),
-                    {
-                        "use_imu_yaw": ParameterValue(
-                            LaunchConfiguration("use_imu_yaw"),
-                            value_type=bool,
-                        ),
-                        "imu_topic": LaunchConfiguration("imu_topic"),
-                        "use_sim_time": ParameterValue(
-                            use_sim_time, value_type=bool
-                        )
-                    },
-                ],
-            ),
+            OpaqueFunction(function=make_real_odom_nodes),
             Node(
                 package="xycar_map_nav",
                 executable="scan_filter_node",
@@ -204,6 +238,19 @@ def generate_launch_description():
                 ],
             ),
             OpaqueFunction(function=_make_slam_toolbox_node),
+            Node(
+                package="xycar_map_nav",
+                executable="occupancy_grid_to_cloud",
+                name="occupancy_grid_to_cloud",
+                output="screen",
+                parameters=[
+                    {
+                        "use_sim_time": ParameterValue(
+                            use_sim_time, value_type=bool
+                        )
+                    }
+                ],
+            ),
             Node(
                 package="rviz2",
                 executable="rviz2",

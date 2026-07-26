@@ -17,7 +17,9 @@ find_package(sensor_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/XycarMotor.msg"
+  "msg/XycarSystemTelemetry.msg"
   "msg/XycarUltrasonic.msg"
+  "msg/XycarVescState.msg"
   DEPENDENCIES std_msgs sensor_msgs
 )
 

@@ -26,20 +26,29 @@ LiDAR/TF 확인
   `std_msgs/msg/Float32MultiArray [angle, speed]`이다.
 - 지도 프레임 연결은
   `map -> slam_odom -> base_footprint -> laser_frame`이다.
-- 현재 실차 보정 절차에서는 `/imu`의 상대 yaw를 사용한다. IMU가 끊겼다는
-  경고가 나오면 지도를 저장하지 않는다.
-- 현재 저장소에는 실차 엔코더 odom 발행기가 없다. 따라서 기본 launch는
-  `/xycar_motor` 명령으로 만든 근사 odom을 SLAM scan matching의 초기 추정값으로
-  쓴다. 바퀴 미끄러짐과 배터리 상태를 측정하지 못하므로 누적 오차가 생긴다.
-- 엔코더 odom을 확보하면 `use_command_odom:=false`로 바꾸고, 엔코더 노드가
-  `/odom`과 `odom -> base_footprint` TF를 발행하게 한다. 본선 정밀 주행은 이
-  구성이 권장된다.
+- 기본 launch는 native ROS2 VESC telemetry의 tachometer 이동량과 `/imu`의
+  상대 yaw를 결합한 `/slam/odom`을 쓴다.
+- 기본 `slam_toolbox_mapping.yaml`은 공식 Karto 방식의 scan matching과
+  automatic loop closure를 사용한다.
+- 반복되는 20 cm 문 홈이 있는 긴 직선에서는 서로 다른 위치의 스캔이 비슷해
+  잘못 정합될 수 있다. 따라서 같은 지역을 여러 번 지나며 기존 벽과 현재
+  LaserScan이 계속 한 줄로 겹치는지 확인하고, 고유한 모서리와 비대칭 구조를
+  반복 관측한다.
+- VESC tachometer는 독립 휠 엔코더가 아니므로 바퀴 미끄러짐 오차는 남는다.
+  한 바퀴 뒤 시작점 정합이 실패했다면 어긋난 지도 위에서 계속 돌지 말고
+  rosbag을 보존한 뒤 새 빈 맵으로 다시 시작한다.
+- IMU가 0.5초 이상 끊기면 로컬 이동 적분을 중단한다. 경고가 나오면 지도를
+  저장하지 않는다.
+- `odom_source:=command`는 VESC telemetry를 받을 수 없을 때만 쓰는 임시
+  fallback이다.
 - 새 장소 시험에서는 처음부터 라바콘과 동적차량을 넣지 않는다. 먼저 모든
   구간을 `global_path`로 통과시킨 후 두 rule 구간을 하나씩 추가한다.
 
-`command_odom_real.yaml`의 `0.080612 m/s/command`는 기존 실차/시뮬레이션
-캘리브레이션에서 가져온 시작값이다. 새 차량에서 확정값으로 간주하면 안 된다.
-2026-07-24 백의 LiDAR/IMU 재분석 결과와 임시 비교 설정은
+`vesc_imu_odom_real.yaml`의 tachometer 환산값은 2026-07-26에 수행한
+5 m 실측 5회의 중앙값인 `0.002527806 m/count`를 사용한다. 각 구간의
+분석 결과와 원본 rosbag 위치는
+[`data/odom_calibration/2026-07-26/README.md`](../data/odom_calibration/2026-07-26/README.md)에
+있다. 2026-07-24 백의 LiDAR/IMU 재분석 결과와 임시 비교 설정은
 [`data/odom_calibration/2026-07-24/README.md`](../data/odom_calibration/2026-07-24/README.md)에
 있다. 이 분석은 도면 치수를 거리 정답으로 사용하지 않았고, 분석기 간 차이가
 커서 production 값은 자동 변경하지 않았다.
@@ -56,10 +65,12 @@ sudo apt install -y \
   ros-humble-nav2-map-server \
   ros-humble-rviz2
 
-cd ~/xycar_ws
+cd ~/kookmin_ty/slam_gazebo_controller/xycar_ws
 colcon build --packages-up-to \
-  xycar_imu xycar_lidar xycar_rule_drive xycar_map_nav xycar_hybrid_drive \
-  --symlink-install
+  xycar_vesc_driver xycar_imu xycar_lidar xycar_rule_drive \
+  xycar_map_nav xycar_hybrid_drive \
+  --symlink-install \
+  --allow-overriding xycar_msgs xycar_cam
 source install/setup.bash
 ```
 
@@ -94,13 +105,24 @@ localization 재시작점을 이 표시에 맞춘다.
 
 ## 3. 센서와 모터 인터페이스 확인
 
-차량의 기존 모터/ROS bridge를 먼저 실행한다. 다른 자율주행 노드는 모두 끈다.
+기존 ROS1 모터 컨테이너와 `ros1_bridge`는 실행하지 않는다. 다른 자율주행
+노드를 모두 끄고 native 드라이버를 출력 비활성 상태로 확인한다.
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/kookmin_ty/slam_gazebo_controller/xycar_ws/install/setup.bash
+export ROS_DOMAIN_ID=7
+unset ROS_NAMESPACE
+
+ros2 launch xycar_vesc_driver xycar_vesc_driver.launch.py \
+  drive_enabled:=false
+```
 
 터미널 A에서 IMU를 실행한다.
 
 ```bash
 source /opt/ros/humble/setup.bash
-source ~/xycar_ws/install/setup.bash
+source ~/kookmin_ty/slam_gazebo_controller/xycar_ws/install/setup.bash
 export ROS_DOMAIN_ID=7
 ros2 launch xycar_imu xycar_imu.launch.py
 ```
@@ -109,7 +131,7 @@ ros2 launch xycar_imu xycar_imu.launch.py
 
 ```bash
 source /opt/ros/humble/setup.bash
-source ~/xycar_ws/install/setup.bash
+source ~/kookmin_ty/slam_gazebo_controller/xycar_ws/install/setup.bash
 export ROS_DOMAIN_ID=7
 ros2 launch xycar_lidar xycar_lidar.launch.py
 ```
@@ -118,13 +140,14 @@ ros2 launch xycar_lidar xycar_lidar.launch.py
 
 ```bash
 source /opt/ros/humble/setup.bash
-source ~/xycar_ws/install/setup.bash
+source ~/kookmin_ty/slam_gazebo_controller/xycar_ws/install/setup.bash
 export ROS_DOMAIN_ID=7
 
-ros2 topic list -t | grep -E '/imu|/scan|/xycar_motor'
+ros2 topic list -t | grep -E '/imu|/scan|/vehicle/vesc_state|/xycar_motor'
 ros2 topic hz /imu
 ros2 topic type /scan
 ros2 topic hz /scan
+ros2 topic hz /vehicle/vesc_state
 ros2 topic info /xycar_motor -v
 ros2 topic echo /scan --once
 ```
@@ -134,23 +157,26 @@ ros2 topic echo /scan --once
 - `/scan` 타입이 `sensor_msgs/msg/LaserScan`이다.
 - `/imu`가 약 35 Hz로 연속 수신된다.
 - `/scan`이 약 10 Hz로 연속 수신되고 `frame_id`가 `laser_frame`이다.
+- `/vehicle/vesc_state`가 약 50 Hz로 연속 수신된다.
 - `range_min`, `range_max`, `angle_min`, `angle_max`가 비정상 값이 아니다.
-- `/xycar_motor` 구독자에 실제 모터 bridge가 보인다.
+- `/xycar_motor` 구독자에 `xycar_vesc_driver` 하나만 보인다.
 - 키보드나 자율주행 publisher가 아직 실행 중이지 않다.
 
-## 4. 근사 odom 캘리브레이션
+## 4. 측정 odom 검증
 
-처음에는 바퀴를 띄우거나 차량을 롤러 위에 고정한다. 터미널 C에서 매핑 launch를
-실측 LiDAR 위치로 실행한다.
+처음에는 바퀴를 띄우거나 차량을 롤러 위에 고정한다. shadow 확인용 native
+드라이버를 종료한 뒤 터미널 C에서 매핑 launch를 실측 LiDAR 위치로 실행한다.
 
 ```bash
 source /opt/ros/humble/setup.bash
-source ~/xycar_ws/install/setup.bash
+source ~/kookmin_ty/slam_gazebo_controller/xycar_ws/install/setup.bash
 export ROS_DOMAIN_ID=7
 
 ros2 launch xycar_map_nav real_mapping.launch.py \
   laser_x:=0.065 laser_y:=0.00 laser_z:=0.080 laser_yaw:=0.00 \
-  use_command_odom:=true
+  odom_source:=vesc_imu \
+  start_native_vesc_driver:=true \
+  vesc_drive_enabled:=true
 ```
 
 다른 터미널에서 TF와 odom을 확인한다.
@@ -169,23 +195,22 @@ ros2 run xycar_rule_drive keyboard_teleop
 ```
 
 `w/s`는 속도, `a/d`는 조향, `e`는 조향 중앙, `x`와 `space`는 정지,
-`q`는 종료다. 바퀴 방향과 조향 부호가 맞고, 키 입력을 멈춘 뒤 0.3초 안에
-`/slam/odom` 속도가 0이 되는지 확인한다.
+`q`는 종료다. 바퀴 방향과 조향 부호가 맞고, 정지 후 `/slam/odom`의 이동이
+멈추는지 확인한다.
 
 그다음 평평한 바닥에서 줄자로 5.00 m를 표시한다. 첫 표시 1 m 전부터 직진
 명령 하나를 고정해 정상속도로 두 표시를 통과하고 실제 거리와 odom 거리 차이를
 잰다.
 
 ```text
-새 speed_gain_mps_per_command
-  = 시험에 사용한 speed_gain * 5.00 / odom 측정거리
+새 meters_per_tachometer_count
+  = 현재 meters_per_tachometer_count * 5.00 / odom 측정거리
 ```
 
 정방향 5회와 역방향 5회의 중앙값을
-`xycar_map_nav/config/command_odom_real.yaml`의
-`speed_gain_mps_per_command`에 넣고 다시 빌드한다. 직진 5 m에서 추정 이동거리
-오차가 5%를 넘으면 매핑을 시작하지 않는다. 이 검사는 엔코더 odom을 대신하지
-않으며 scan matching이 시작될 정도의 초기값만 맞추는 절차다.
+`xycar_map_nav/config/vesc_imu_odom_real.yaml`의
+`meters_per_tachometer_count`에 넣고 다시 빌드한다. 직진 5 m에서 추정
+이동거리 오차가 5%를 넘으면 매핑을 시작하지 않는다.
 
 ## 5. rosbag 기록 시작
 
@@ -197,7 +222,7 @@ pose graph가 잘못된 뒤 원시 센서 기준으로 재처리할 수 없다.
 mkdir -p ~/xycar_test_bags
 ros2 bag record \
   -o ~/xycar_test_bags/new_site_mapping_02 \
-  /scan /slam/scan_filtered /imu /slam/odom \
+  /scan /slam/scan_filtered /imu /vehicle/vesc_state /slam/odom \
   /tf /tf_static /map /xycar_motor
 ```
 
@@ -215,9 +240,19 @@ RViz에 `Map`, `LaserScan`, `TF`를 추가하고 Fixed Frame을 `map`으로 둔�
 3. 직선은 차선 중앙 부근으로 가고, 곡선은 급조향하거나 제자리 회전하지 않는다.
 4. 꼬불꼬불한 구간과 모서리는 속도를 낮춰 LiDAR가 같은 벽을 여러 각도에서
    보게 한다.
-5. 처음 지나간 특징적인 모서리와 직선을 다시 통과해 loop closure를 만든다.
-6. 반대 방향으로 한 바퀴 더 돌고 시작 표시로 복귀한다.
-7. RViz에서 시작 부근 스캔과 기존 벽이 겹친 뒤 지도가 보정되는지 확인한다.
+5. 처음 지나간 특징적인 모서리와 직선을 다시 통과한다.
+6. 먼저 시작 표시로 돌아와 같은 위치와 방향에 정지한다.
+7. 시작 부근 현재 LaserScan, 기존 벽, graph node가 한 위치로 수렴했는지
+   확인한다. 여기서 이미 이중 벽이 생겼으면 더 돌지 않고 중단한다.
+8. 첫 바퀴 정합이 맞았다면 같은 방향으로 2~3바퀴 더 천천히 돈다. 직선만
+   반복하지 말고 고유한 모서리, 문 홈, 폭이 변하는 구간을 매 바퀴 다시
+   통과시켜 누적된 지도와 스캔을 계속 맞춘다.
+9. 각 바퀴마다 시작점에서 멈춰 벽 두께, `map -> base_footprint`, 시작점
+   오차를 확인한다. 정상 재관측은 벽을 선명하게 만들지만 새 평행 벽이나
+   별도 공간을 만들지 않아야 한다.
+10. 동일 구간 재방문 중 위치가 `0.20 m` 이상 점프하거나 벽이 두 줄로
+    갈라지면 즉시 정지한다. 어긋난 상태에서 반복 주행하면 잘못된 정합이
+    pose graph 전체에 누적되므로 해당 맵은 주행용으로 사용하지 않는다.
 
 매핑 중 사람과 이동 물체를 최소화한다. 라바콘과 차량 모형은 아직 놓지 않는다.
 오른쪽 위 유리 구간은 임시 비투명 경계물을 유지한다.
@@ -274,7 +309,7 @@ ros2 service call /slam_toolbox/serialize_map \
 | 정지 안정성 | 차량 정지 중 위치가 갑자기 0.20 m 이상 뛰지 않음 |
 
 실측 통로 폭과 지도상의 폭 차이가 0.10 m보다 크면 LiDAR 위치, scan 방향,
-command odom gain부터 다시 확인한다.
+VESC tachometer 환산값부터 다시 확인한다.
 
 ## 9. 저장 지도에서 localization
 
@@ -283,13 +318,15 @@ command odom gain부터 다시 확인한다.
 
 ```bash
 source /opt/ros/humble/setup.bash
-source ~/xycar_ws/install/setup.bash
+source ~/kookmin_ty/slam_gazebo_controller/xycar_ws/install/setup.bash
 export ROS_DOMAIN_ID=7
 
 ros2 launch xycar_map_nav real_localization.launch.py \
   pose_graph:=$HOME/xycar_maps/new_site_02/map \
   laser_x:=0.065 laser_y:=0.00 laser_z:=0.080 laser_yaw:=0.00 \
-  use_command_odom:=true
+  odom_source:=vesc_imu \
+  start_native_vesc_driver:=true \
+  vesc_drive_enabled:=false
 ```
 
 RViz에서 저장된 벽과 현재 LaserScan이 겹치는지 확인한다. 필요하면 RViz의
@@ -310,9 +347,15 @@ localization을 유지한 채 waypoint 노드를 shadow로 실행한다.
 ```bash
 WAYPOINTS=$HOME/xycar_maps/new_site_02/waypoints.yaml
 
+printf '%s\n' \
+  'frame_id: map' \
+  'closed: false' \
+  'waypoints: []' > "$WAYPOINTS"
+
 ros2 launch xycar_map_nav real_waypoint_nav.launch.py \
   drive_enabled:=false \
   map_yaml:=$HOME/xycar_maps/new_site_02/map.yaml \
+  waypoints_yaml:=$WAYPOINTS \
   capture_output_yaml:=$WAYPOINTS
 ```
 
@@ -326,6 +369,11 @@ RViz의 `Publish Point`로 주행 순서대로 좌표를 찍는다.
 
 처음 저장할 때는 모든 `controller_to_next`를 `global_path`로 둔다.
 `/map_nav/global_path`가 벽과 inflation 영역을 침범하지 않는지 확인한다.
+
+한 바퀴를 계속 반복하는 코스라면 좌표를 모두 찍은 뒤 `waypoints.yaml`의
+`closed`를 `true`로 바꾼다. 마지막 좌표가 출발점 근처인데 `closed: false`면
+시작하자마자 `ROUTE_COMPLETE`로 판정할 수 있다. 한 번만 달리고 마지막
+좌표에서 멈추려면 `closed: false`를 유지한다.
 
 잘못 찍은 점:
 
@@ -360,6 +408,19 @@ shadow에서는 waypoint 노드가 `/xycar_motor` publisher를 만들지 않아�
 - 전방 0.38 m 안에 물체를 두면 `EMERGENCY_STOP`과 속도 0이 나온다.
 
 그 후 차량을 고정하고 구동 바퀴를 띄운 상태에서만 실제 publisher를 켠다.
+localization launch도 종료한 뒤 native VESC 출력을 명시적으로 허용해서 다시
+실행한다.
+
+```bash
+ros2 launch xycar_map_nav real_localization.launch.py \
+  pose_graph:=$HOME/xycar_maps/new_site_02/map \
+  odom_source:=vesc_imu \
+  start_native_vesc_driver:=true \
+  vesc_drive_enabled:=true \
+  enable_rviz:=true
+```
+
+다른 터미널에서:
 
 ```bash
 ros2 launch xycar_map_nav real_waypoint_nav.launch.py \
@@ -389,6 +450,33 @@ ros2 launch xycar_map_nav real_waypoint_nav.launch.py \
 주행 중 지도 위치가 0.20 m 이상 순간 이동하거나 경로와 실제 차량 차이가
 0.20 m를 넘으면 즉시 멈추고 localization과 TF를 먼저 조사한다. 속도를 올려
 해결하지 않는다.
+
+### 2026-07-26 실차 waypoint 결과와 고속 제한
+
+`feature_map_20260726_221839`에서 RViz로 16개 waypoint를 찍어 A* 경로
+788개 점을 만들었다. `cruise_speed_command=3.0`,
+`minimum_speed_command=3.0`에서는 순환 경로를 안정적으로 추종했다.
+
+속도를 높이자 좌우 조향이 반복해서 커지는 오실레이션이 발생했다. 현재
+controller는 고정 `lookahead_distance_m=0.65`와 고정 조향 보정표를 사용하므로
+속도가 커질수록 같은 위치 오차에 대한 조향이 늦고 과도하게 반영될 수 있다.
+SLAM localization 잡음, 조향기 지연, 경로 곡률 변화도 함께 영향을 준다.
+
+따라서 현재 실차 승인 속도는 command `3`이다. command `4` 이상은 다음
+데이터를 기록해 speed-dependent lookahead, 조향 rate limit/저역통과 필터,
+곡률 기반 감속을 검증하기 전까지 사용하지 않는다.
+
+```bash
+ros2 bag record \
+  -o "$HOME/xycar_test_bags/waypoint_oscillation_speed_test" \
+  /scan /imu /vehicle/vesc_state /slam/odom /tf /tf_static \
+  /map_nav/global_path /map_nav/debug /map_nav/xycar_motor_shadow \
+  /map_nav/control_mode /xycar_motor
+```
+
+비교 시험은 `speed=3`을 기준으로 시작하고 한 번에 한 단계만 올린다. 조향
+진폭이 연속해서 커지거나 차량 중심이 경로에서 `0.20 m` 이상 벗어나면 즉시
+정지한다.
 
 ## 13. 라바콘과 동적차량 rule 구간 추가
 
@@ -444,7 +532,7 @@ ros2 topic pub --once /xycar_motor \
 - slam_toolbox pose graph와 data 파일
 - `waypoints.yaml`
 - 실측 `laser_x/y/z/yaw`
-- command odom gain 측정 3회 원자료
+- VESC tachometer 거리 환산 측정 원자료
 - 각 단계 rosbag과 성공/중단 메모
 - 유리벽 임시 경계물 사진과 위치
 - 주행 시작점 바닥 표시 사진

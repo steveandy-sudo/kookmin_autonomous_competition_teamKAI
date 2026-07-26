@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 from pathlib import Path
+import signal
 import time
 
 from geometry_msgs.msg import PointStamped, PoseStamped
@@ -20,6 +21,7 @@ from rclpy.qos import (
     QoSProfile,
     ReliabilityPolicy,
 )
+from rclpy.signals import SignalHandlerOptions
 from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Float32MultiArray, Int32MultiArray, String
@@ -749,14 +751,18 @@ class WaypointNavNode(Node):
 
 
 def main(args=None) -> None:
-    rclpy.init(args=args)
+    rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     node = WaypointNavNode()
     try:
         rclpy.spin(node)
-    except (KeyboardInterrupt, ExternalShutdownException):
+    except KeyboardInterrupt:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+    except ExternalShutdownException:
         pass
     finally:
-        node.stop()
+        if rclpy.ok():
+            node.stop()
+            rclpy.spin_once(node, timeout_sec=0.05)
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

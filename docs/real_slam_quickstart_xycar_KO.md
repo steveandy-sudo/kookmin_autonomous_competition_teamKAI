@@ -23,13 +23,14 @@ sudo apt install -y \
 ## 2. 빌드와 공통 환경
 
 ```bash
-cd /home/xytron/kookmin_ty/slam_gazebo_controller
+cd /home/xytron/kookmin_ty/slam_gazebo_controller/xycar_ws
 set +u
 source /opt/ros/humble/setup.bash
 
 colcon build --packages-up-to \
   xycar_imu xycar_lidar xycar_rule_drive xycar_map_nav xycar_hybrid_drive \
-  --symlink-install
+  --symlink-install \
+  --allow-overriding xycar_msgs xycar_cam
 
 source install/setup.bash
 export ROS_DOMAIN_ID=7
@@ -41,7 +42,7 @@ unset ROS_NAMESPACE
 터미널 1:
 
 ```bash
-cd /home/xytron/kookmin_ty/slam_gazebo_controller
+cd /home/xytron/kookmin_ty/slam_gazebo_controller/xycar_ws
 set +u
 source /opt/ros/humble/setup.bash
 source install/setup.bash
@@ -59,17 +60,15 @@ ros2 topic echo /imu --once
 ```
 
 현재 실차에서는 약 35 Hz가 정상이다. 매핑 launch는 IMU의 상대 yaw를
-`slam_odom -> base_footprint` 회전에 사용한다. `/imu`가 끊기면 명령 기반
-회전 추정으로 자동 전환되므로, 경고가 나오면 지도를 저장하지 않는다. 차량이
-정지한 동안에는 AHRS 정지 편향이 지도를 돌리지 않도록 IMU yaw 기준을
-재설정한다.
+`slam_odom -> base_footprint` 회전에 사용한다. `/imu`가 0.5초 이상
+끊기면 이동 적분을 멈추므로 경고가 나오면 지도를 저장하지 않는다.
 
 ## 4. LiDAR
 
 터미널 2:
 
 ```bash
-cd /home/xytron/kookmin_ty/slam_gazebo_controller
+cd /home/xytron/kookmin_ty/slam_gazebo_controller/xycar_ws
 set +u
 source /opt/ros/humble/setup.bash
 source install/setup.bash
@@ -82,7 +81,7 @@ ros2 launch xycar_lidar xycar_lidar.launch.py
 다른 터미널에서 확인:
 
 ```bash
-cd /home/xytron/kookmin_ty/slam_gazebo_controller
+cd /home/xytron/kookmin_ty/slam_gazebo_controller/xycar_ws
 set +u
 source /opt/ros/humble/setup.bash
 source install/setup.bash
@@ -103,7 +102,7 @@ ros2 topic echo /scan --once --field header
 터미널 3:
 
 ```bash
-cd /home/xytron/kookmin_ty/slam_gazebo_controller
+cd /home/xytron/kookmin_ty/slam_gazebo_controller/xycar_ws
 set +u
 source /opt/ros/humble/setup.bash
 source install/setup.bash
@@ -111,18 +110,21 @@ export ROS_DOMAIN_ID=7
 unset ROS_NAMESPACE
 
 ros2 launch xycar_map_nav real_mapping.launch.py \
+  odom_source:=vesc_imu \
+  start_native_vesc_driver:=true \
+  vesc_drive_enabled:=true \
   laser_x:=0.065 \
   laser_y:=0.00 \
   laser_z:=0.080 \
   laser_yaw:=0.00 \
-  use_command_odom:=true \
   enable_rviz:=true
 ```
 
 이 launch는 다음 전용 입력을 만든다.
 
 - `/slam/scan_filtered`: `0.20~6.0 m` 범위만 사용하는 LiDAR, 약 10 Hz
-- `/slam/odom`: IMU yaw와 모터 속도 명령을 합친 초기 추정, 약 50 Hz
+- `/vehicle/vesc_state`: native ROS2 VESC telemetry, 약 50 Hz
+- `/slam/odom`: VESC tachometer 이동량과 IMU yaw를 합친 초기 추정, 약 50 Hz
 - TF: `map -> slam_odom -> base_footprint -> laser_frame`
 - 지도 갱신: `0.5초`, 차량 이동 `0.04 m` 또는 회전 `0.04 rad`마다 스캔 추가
 - Karto 상관 탐색: `0.80 m / 0.01 m`로 coarse grid 경계 정렬
@@ -137,7 +139,9 @@ publisher가 정확히 하나여야 한다.
 ```bash
 ros2 topic info /slam/scan_filtered -v
 ros2 topic info /slam/odom -v
+ros2 topic info /vehicle/vesc_state -v
 ros2 topic hz /slam/scan_filtered
+ros2 topic hz /vehicle/vesc_state
 ros2 topic hz /imu
 ```
 
@@ -147,10 +151,11 @@ RViz가 OpenGL 오류로 종료되면 같은 터미널에서 먼저 다음을 �
 export LIBGL_ALWAYS_SOFTWARE=1
 ```
 
-터미널 4에서 바탕화면의 모터 구동 아이콘을 먼저 실행한 뒤 수동 주행한다.
+mapping launch가 `/dev/ttyMOTOR`를 직접 소유하므로 기존 ROS1 모터 구동
+아이콘은 실행하지 않는다. 터미널 4에서 수동 주행 노드만 실행한다.
 
 ```bash
-cd /home/xytron/kookmin_ty/slam_gazebo_controller
+cd /home/xytron/kookmin_ty/slam_gazebo_controller/xycar_ws
 set +u
 source /opt/ros/humble/setup.bash
 source install/setup.bash
@@ -161,8 +166,11 @@ ros2 run xycar_rule_drive keyboard_teleop
 ```
 
 `w/s` 속도, `a/d` 조향, `e` 조향 중앙, `x` 또는 `space` 정지, `q` 종료다.
-처음에는 속도 명령 2~3으로 외곽 한 바퀴, 반대 방향 한 바퀴를 천천히 돌고
-시작점으로 복귀해 loop closure를 확인한다.
+처음에는 속도 명령 2~3으로 외곽을 같은 방향으로 천천히 돈다. 첫 바퀴에서
+시작점 loop closure와 벽 겹침을 확인한 뒤에만 같은 구간을 2~3바퀴 반복
+주행한다. 고유한 모서리와 폭 변화 구간을 매 바퀴 다시 통과하며 기존 벽과
+현재 LaserScan이 한 줄로 유지되는지 확인한다. 이중 벽이나 `0.20 m` 이상의
+위치 점프가 생기면 더 돌지 않고 해당 맵을 폐기한다.
 
 ## 6. 매핑 rosbag
 
@@ -173,7 +181,7 @@ mkdir -p "$HOME/xycar_test_bags"
 
 ros2 bag record \
   -o "$HOME/xycar_test_bags/new_site_mapping_02" \
-  /scan /slam/scan_filtered /imu /slam/odom \
+  /scan /slam/scan_filtered /imu /vehicle/vesc_state /slam/odom \
   /tf /tf_static /map /xycar_motor
 ```
 
@@ -216,7 +224,7 @@ mkdir -p "$HOME/xycar_test_bags"
 
 ros2 bag record \
   -o "$HOME/xycar_test_bags/new_site_02_recovery_01" \
-  /scan /slam/scan_filtered /imu /slam/odom \
+  /scan /slam/scan_filtered /imu /vehicle/vesc_state /slam/odom \
   /tf /tf_static /map /xycar_motor
 ```
 
@@ -250,19 +258,18 @@ pose graph에서 수 m 이상 떨어졌다면 이 옵션으로 마지막 추정 
 주행을 마친 뒤 `Ctrl+C`로 종료하고 `ros2 bag info`로 `/scan`, `/imu`,
 `/slam/odom`, `/tf`, `/map`의 메시지 수를 확인한다.
 
-RViz의 `SlamToolboxPlugin`에서 `Interactive Mode`를 켜면 그래프 노드를
-수동으로 움직일 수 있다. 어긋난 구간을 정렬한 뒤 `Save Changes`로 최적화하고,
-잘못 움직였으면 `Clear Changes`를 누른다. 단일 마지막 노드를 시작점으로
-옮기는 것만으로는 새로운 loop constraint가 생기지 않으므로 큰 누적 오차를
-해결할 수 없다. 보정 후에는 기존 파일을 덮어쓰지 말고, 시작-종료 정합을
-눈으로 확인한 경우에만 새 이름으로 map과 pose graph를 저장한다.
+RViz의 `SlamToolboxPlugin` interactive 기능은 진단용으로만 사용한다. 단일
+마지막 노드를 시작점으로 옮겨도 새로운 loop constraint가 생기지 않으며,
+800개 이상 노드가 있는 실차 그래프에서는 최적화가 멈추고 잘못된 공간이 생긴
+사례가 있었다. 자동 폐합이 실패한 지도는 주행용으로 억지 보정하지 말고 bag을
+오프라인 재처리하거나 새 빈 맵으로 다시 만든다. 기존 파일은 덮어쓰지 않는다.
 
 ## 9. 저장 지도 localization
 
 매핑과 키보드 노드를 종료하고 IMU와 LiDAR만 실행한 상태에서:
 
 ```bash
-cd /home/xytron/kookmin_ty/slam_gazebo_controller
+cd /home/xytron/kookmin_ty/slam_gazebo_controller/xycar_ws
 set +u
 source /opt/ros/humble/setup.bash
 source install/setup.bash
@@ -271,11 +278,13 @@ unset ROS_NAMESPACE
 
 ros2 launch xycar_map_nav real_localization.launch.py \
   pose_graph:="$HOME/xycar_maps/new_site_02/map" \
+  odom_source:=vesc_imu \
+  start_native_vesc_driver:=true \
+  vesc_drive_enabled:=false \
   laser_x:=0.065 \
   laser_y:=0.00 \
   laser_z:=0.080 \
   laser_yaw:=0.00 \
-  use_command_odom:=true \
   enable_rviz:=true
 ```
 

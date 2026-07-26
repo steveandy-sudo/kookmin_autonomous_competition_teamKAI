@@ -8,8 +8,10 @@ Panels:
         - /Map1
         - /LaserScan1
         - /TF1
+        - /Global Path1
+        - /Waypoints1
       Splitter Ratio: 0.5
-    Tree Height: 520
+    Tree Height: 70
   - Class: rviz_common/Selection
     Name: Selection
   - Class: rviz_common/Tool Properties
@@ -28,7 +30,7 @@ Panels:
 Visualization Manager:
   Class: ""
   Displays:
-    - Alpha: 0.35
+    - Alpha: 0.3499999940395355
       Cell Size: 1
       Class: rviz_default_plugins/Grid
       Color: 100; 100; 100
@@ -46,6 +48,40 @@ Visualization Manager:
       Plane Cell Count: 40
       Reference Frame: <Fixed Frame>
       Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 245; 245; 245
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: false
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: Occupied Map Cells
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.05000000074505806
+      Style: Flat Squares
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /map_points
+      Use Fixed Frame: true
+      Use rainbow: false
+      Value: false
     - Alpha: 0.75
       Class: rviz_default_plugins/Map
       Color Scheme: map
@@ -55,6 +91,7 @@ Visualization Manager:
       Topic:
         Depth: 5
         Durability Policy: Transient Local
+        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /map
@@ -105,25 +142,78 @@ Visualization Manager:
       Frame Timeout: 15
       Frames:
         All Enabled: true
+        base_footprint:
+          Value: true
+        laser_frame:
+          Value: true
+        map:
+          Value: true
+        slam_odom:
+          Value: true
       Marker Scale: 0.5
       Name: TF
       Show Arrows: true
       Show Axes: true
       Show Names: true
-      Tree: {}
+      Tree:
+        map:
+          slam_odom:
+            base_footprint:
+              laser_frame:
+                {}
       Update Interval: 0
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: SLAM Graph
       Namespaces:
-        SLAM_TOOLBOX_GRAPH: true
+        slam_toolbox: true
+        slam_toolbox_edges: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /slam_toolbox/graph_visualization
+      Value: true
+    - Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 25; 255; 80
+      Enabled: true
+      Head Diameter: 0.18
+      Head Length: 0.12
+      Length: 0.10
+      Line Style: Lines
+      Line Width: 0.06
+      Name: Global Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.04
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.06
+      Shaft Length: 0.10
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /map_nav/global_path
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Waypoints
+      Namespaces:
+        map_waypoints: true
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /map_nav/waypoints
       Value: true
   Enabled: true
   Global Options:
@@ -170,20 +260,24 @@ Visualization Manager:
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
+      Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Scale: 30
+      Scale: 43.03726577758789
       Target Frame: base_footprint
       Value: TopDownOrtho (rviz)
-      X: 0
-      Y: 0
+      X: 2.5770606994628906
+      Y: -1.4901704788208008
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 900
+  Height: 1052
   Hide Left Dock: false
   Hide Right Dock: false
+  QMainWindow State: 000000ff00000000fd000000010000000000000217000003c2fc0200000005fb000000100044006900730070006c006100790073010000003d000000c9000000c900fffffffb0000001200530065006c0065006300740069006f006e010000010c0000005c0000005c00fffffffb0000001e0054006f006f006c002000500072006f0070006500720074006900650073010000016e0000005c0000005c00fffffffb0000000a0056006900650077007301000001d0000000a4000000a400fffffffb000000220053006c0061006d0054006f006f006c0062006f00780050006c007500670069006e010000027a000001850000018500ffffff0000035b000003c200000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Selection:
+    collapsed: false
   SlamToolboxPlugin:
     collapsed: false
   Tool Properties:
@@ -191,5 +285,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1400
-  X: 80
-  Y: 60
+  X: -105
+  Y: 70

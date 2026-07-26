@@ -1,37 +1,31 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>xycar_map_nav</name>
+  <name>xycar_vesc_driver</name>
   <version>0.1.0</version>
-  <description>Occupancy-map waypoint planning, path following, and rule-controller handover for Xycar.</description>
-  <maintainer email="team.kai@example.com">Team K.A.I.</maintainer>
+  <description>Native ROS 2 serial driver and safety bridge for the Xycar VESC motor controller.</description>
+  <maintainer email="xytron@example.com">xytron</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_python</buildtool_depend>
 
   <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>diagnostic_msgs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
-  <exec_depend>nav2_map_server</exec_depend>
+  <exec_depend>python3-serial</exec_depend>
   <exec_depend>rclpy</exec_depend>
-  <exec_depend>rviz2</exec_depend>
-  <exec_depend>sensor_msgs</exec_depend>
-  <exec_depend>sensor_msgs_py</exec_depend>
-  <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>std_srvs</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
-  <exec_depend>visualization_msgs</exec_depend>
-  <exec_depend>python3-numpy</exec_depend>
-  <exec_depend>python3-opencv</exec_depend>
-  <exec_depend>python3-yaml</exec_depend>
-  <exec_depend>xycar_gazebo_bridge</exec_depend>
   <exec_depend>xycar_msgs</exec_depend>
-  <exec_depend>xycar_vesc_driver</exec_depend>
 
-  <test_depend>pytest</test_depend>
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
 
   <export>
     <build_type>ament_python</build_type>
