@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import csv
+import bisect
 import heapq
 import math
 from pathlib import Path
@@ -67,6 +69,50 @@ class PlannedRoute:
     points: tuple[Point, ...]
     segment_indices: tuple[int, ...]
     snapped_waypoints: tuple[Point, ...]
+
+
+def load_path_csv(
+    path_csv: str | Path,
+    *,
+    spacing_m: float,
+    closed: bool,
+) -> tuple[Point, ...]:
+    source = Path(path_csv).expanduser().resolve()
+    with source.open("r", encoding="utf-8", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    points = [
+        (float(row["x"]), float(row["y"]))
+        for row in rows
+    ]
+    if (
+        closed
+        and len(points) > 1
+        and math.hypot(
+            points[-1][0] - points[0][0],
+            points[-1][1] - points[0][1],
+        )
+        < 1.0e-6
+    ):
+        points.pop()
+    if len(points) < 2:
+        raise ValueError(f"path CSV has fewer than two points: {source}")
+
+    spacing = max(0.02, float(spacing_m))
+    sampled = [points[0]]
+    accumulated = 0.0
+    previous = points[0]
+    for point in points[1:]:
+        accumulated += math.hypot(
+            point[0] - previous[0],
+            point[1] - previous[1],
+        )
+        previous = point
+        if accumulated >= spacing:
+            sampled.append(point)
+            accumulated = 0.0
+    if not closed and sampled[-1] != points[-1]:
+        sampled.append(points[-1])
+    return tuple(sampled)
 
 
 def load_map_grid(
@@ -155,7 +201,14 @@ _NEIGHBORS = (
 )
 
 
-def astar(grid: MapGrid, start: Cell, goal: Cell) -> list[Cell]:
+def astar(
+    grid: MapGrid,
+    start: Cell,
+    goal: Cell,
+    *,
+    clearance_cost_weight: float = 0.0,
+    clearance_cost_decay_m: float = 0.35,
+) -> list[Cell]:
     if not grid.contains(start) or not bool(grid.free[start]):
         raise ValueError(f"A* start is occupied or outside map: {start}")
     if not grid.contains(goal) or not bool(grid.free[goal]):
@@ -167,6 +220,18 @@ def astar(grid: MapGrid, start: Cell, goal: Cell) -> list[Cell]:
     cost = {start: 0.0}
     parent: dict[Cell, Cell] = {}
     visited: set[Cell] = set()
+    clearance_weight = max(0.0, float(clearance_cost_weight))
+    clearance_decay = max(grid.resolution, float(clearance_cost_decay_m))
+    clearance_m = None
+    if clearance_weight > 0.0:
+        clearance_m = (
+            cv2.distanceTransform(
+                grid.free.astype(np.uint8),
+                cv2.DIST_L2,
+                5,
+            )
+            * grid.resolution
+        )
     while frontier:
         _, current_cost, current = heapq.heappop(frontier)
         if current in visited:
@@ -186,7 +251,14 @@ def astar(grid: MapGrid, start: Cell, goal: Cell) -> list[Cell]:
                 side_b = (current[0], current[1] + delta_column)
                 if not bool(grid.free[side_a]) or not bool(grid.free[side_b]):
                     continue
-            candidate_cost = current_cost + step
+            clearance_penalty = 0.0
+            if clearance_m is not None:
+                clearance_penalty = clearance_weight * math.exp(
+                    -float(clearance_m[neighbor]) / clearance_decay
+                )
+            candidate_cost = current_cost + step * (
+                1.0 + clearance_penalty
+            )
             if candidate_cost >= cost.get(neighbor, float("inf")):
                 continue
             cost[neighbor] = candidate_cost
@@ -253,7 +325,9 @@ def simplify_cells(grid: MapGrid, path: Sequence[Cell]) -> list[Cell]:
     return simplified
 
 
-def resample_polyline(points: Sequence[Point], spacing_m: float) -> list[Point]:
+def resample_polyline(
+    points: Sequence[Point], spacing_m: float
+) -> list[Point]:
     if not points:
         return []
     if len(points) == 1:
@@ -274,6 +348,69 @@ def resample_polyline(points: Sequence[Point], spacing_m: float) -> list[Point]:
     return output
 
 
+def smooth_path_points(
+    grid: MapGrid,
+    points: Sequence[Point],
+    *,
+    closed: bool,
+    data_weight: float,
+    smooth_weight: float,
+    iterations: int,
+    anchor_indices: Sequence[int] = (),
+    anchor_data_weight: float = 0.02,
+) -> list[Point]:
+    """Smooth a resampled path without crossing inflated occupied cells."""
+    if len(points) < 3 or iterations <= 0 or smooth_weight <= 0.0:
+        return list(points)
+    original = np.asarray(points, dtype=np.float64)
+    smoothed = original.copy()
+    data_gain = max(0.0, float(data_weight))
+    smooth_gain = max(0.0, float(smooth_weight))
+    anchors = {int(index) % len(points) for index in anchor_indices}
+
+    for _ in range(int(iterations)):
+        candidate = smoothed.copy()
+        indices = range(len(points)) if closed else range(1, len(points) - 1)
+        for index in indices:
+            before = (index - 1) % len(points)
+            after = (index + 1) % len(points)
+            point_data_gain = (
+                max(data_gain, float(anchor_data_weight))
+                if index in anchors
+                else data_gain
+            )
+            candidate[index] += point_data_gain * (
+                original[index] - smoothed[index]
+            ) + smooth_gain * (
+                smoothed[before] + smoothed[after] - 2.0 * smoothed[index]
+            )
+
+        valid = True
+        segment_count = len(candidate) if closed else len(candidate) - 1
+        cells = [
+            grid.world_to_cell(float(point[0]), float(point[1]))
+            for point in candidate
+        ]
+        if any(
+            not grid.contains(cell) or not bool(grid.free[cell])
+            for cell in cells
+        ):
+            valid = False
+        if valid:
+            for index in range(segment_count):
+                following = (index + 1) % len(candidate)
+                if not line_is_free(grid, cells[index], cells[following]):
+                    valid = False
+                    break
+        if not valid:
+            break
+        smoothed = candidate
+    return [
+        (float(point[0]), float(point[1]))
+        for point in smoothed
+    ]
+
+
 def plan_waypoint_route(
     grid: MapGrid,
     waypoints: Sequence[Point],
@@ -281,6 +418,13 @@ def plan_waypoint_route(
     closed: bool,
     path_spacing_m: float,
     waypoint_snap_radius_m: float,
+    path_smoothing_enabled: bool = True,
+    path_smoothing_data_weight: float = 0.0005,
+    path_smoothing_weight: float = 0.45,
+    path_smoothing_iterations: int = 2500,
+    path_smoothing_anchor_weight: float = 0.02,
+    clearance_cost_weight: float = 3.0,
+    clearance_cost_decay_m: float = 0.35,
 ) -> PlannedRoute:
     if len(waypoints) < 2:
         raise ValueError("at least two waypoints are required")
@@ -299,7 +443,15 @@ def plan_waypoint_route(
     for segment_index in range(pair_count):
         start = cells[segment_index]
         goal = cells[(segment_index + 1) % len(cells)]
-        cell_path = simplify_cells(grid, astar(grid, start, goal))
+        cell_path = astar(
+            grid,
+            start,
+            goal,
+            clearance_cost_weight=clearance_cost_weight,
+            clearance_cost_decay_m=clearance_cost_decay_m,
+        )
+        if clearance_cost_weight <= 0.0:
+            cell_path = simplify_cells(grid, cell_path)
         world_path = resample_polyline(
             [grid.cell_to_world(cell) for cell in cell_path],
             path_spacing_m,
@@ -324,6 +476,48 @@ def plan_waypoint_route(
         segment_indices.pop()
     if len(route_points) < 2:
         raise ValueError("planned route contains fewer than two points")
+    if path_smoothing_enabled:
+        anchor_indices = {
+            0,
+            *(
+                index
+                for index in range(1, len(segment_indices))
+                if segment_indices[index] != segment_indices[index - 1]
+            ),
+        }
+        route_points = smooth_path_points(
+            grid,
+            route_points,
+            closed=closed,
+            data_weight=path_smoothing_data_weight,
+            smooth_weight=path_smoothing_weight,
+            iterations=path_smoothing_iterations,
+            anchor_indices=tuple(sorted(anchor_indices)),
+            anchor_data_weight=path_smoothing_anchor_weight,
+        )
+        boundaries = [0]
+        for segment_index in range(1, pair_count):
+            original_boundary = segment_indices.index(segment_index)
+            search_start = max(
+                boundaries[-1] + 1, original_boundary - 30
+            )
+            search_stop = min(
+                len(route_points), original_boundary + 31
+            )
+            boundary = min(
+                range(search_start, search_stop),
+                key=lambda index: (
+                    route_points[index][0] - snapped[segment_index][0]
+                ) ** 2
+                + (
+                    route_points[index][1] - snapped[segment_index][1]
+                ) ** 2,
+            )
+            boundaries.append(boundary)
+        segment_indices = [
+            bisect.bisect_right(boundaries, index) - 1
+            for index in range(len(route_points))
+        ]
     return PlannedRoute(
         points=tuple(route_points),
         segment_indices=tuple(segment_indices),

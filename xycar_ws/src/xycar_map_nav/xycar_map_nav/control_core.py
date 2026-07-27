@@ -15,6 +15,10 @@ def clamp(value: float, minimum: float, maximum: float) -> float:
     return max(float(minimum), min(float(maximum), float(value)))
 
 
+def normalize_angle(angle_rad: float) -> float:
+    return math.atan2(math.sin(float(angle_rad)), math.cos(float(angle_rad)))
+
+
 def steering_command_for_curvature(
     curvature_per_m: float,
     commands: Sequence[float],
@@ -128,6 +132,315 @@ class PathCommand:
     target_distance_m: float
 
 
+@dataclass(frozen=True)
+class StanleyPathCommand:
+    curvature_per_m: float
+    target_index: int
+    cross_track_error_m: float
+    heading_error_rad: float
+    path_curvature_per_m: float
+    steering_angle_rad: float
+
+
+def _path_index_at_distance(
+    points: Sequence[Point],
+    start_index: int,
+    distance_m: float,
+    *,
+    direction: int,
+    closed: bool,
+) -> int:
+    if not points:
+        raise ValueError("path is empty")
+    direction = 1 if int(direction) >= 0 else -1
+    target = max(0.0, float(distance_m))
+    travelled = 0.0
+    index = int(start_index)
+    maximum_steps = len(points) if closed else len(points) - 1
+    for _ in range(maximum_steps):
+        following = index + direction
+        if closed:
+            following %= len(points)
+        elif following < 0 or following >= len(points):
+            break
+        travelled += math.hypot(
+            points[following][0] - points[index][0],
+            points[following][1] - points[index][1],
+        )
+        index = following
+        if travelled >= target:
+            break
+    return index
+
+
+def _path_geometry(
+    points: Sequence[Point],
+    index: int,
+    *,
+    heading_window_m: float,
+    curvature_window_m: float,
+    closed: bool,
+) -> tuple[float, float]:
+    heading_half_window = max(0.05, float(heading_window_m) * 0.5)
+    heading_before = _path_index_at_distance(
+        points,
+        index,
+        heading_half_window,
+        direction=-1,
+        closed=closed,
+    )
+    heading_after = _path_index_at_distance(
+        points,
+        index,
+        heading_half_window,
+        direction=1,
+        closed=closed,
+    )
+    heading = math.atan2(
+        points[heading_after][1] - points[heading_before][1],
+        points[heading_after][0] - points[heading_before][0],
+    )
+
+    curvature_half_window = max(0.08, float(curvature_window_m) * 0.5)
+    before = _path_index_at_distance(
+        points,
+        index,
+        curvature_half_window,
+        direction=-1,
+        closed=closed,
+    )
+    after = _path_index_at_distance(
+        points,
+        index,
+        curvature_half_window,
+        direction=1,
+        closed=closed,
+    )
+    first = points[before]
+    middle = points[index]
+    last = points[after]
+    first_to_middle = math.hypot(
+        middle[0] - first[0], middle[1] - first[1]
+    )
+    middle_to_last = math.hypot(
+        last[0] - middle[0], last[1] - middle[1]
+    )
+    first_to_last = math.hypot(last[0] - first[0], last[1] - first[1])
+    denominator = first_to_middle * middle_to_last * first_to_last
+    if denominator < 1.0e-8:
+        curvature = 0.0
+    else:
+        cross = (
+            (middle[0] - first[0]) * (last[1] - first[1])
+            - (middle[1] - first[1]) * (last[0] - first[0])
+        )
+        curvature = 2.0 * cross / denominator
+    return heading, curvature
+
+
+def stanley_path_command(
+    points: Sequence[Point],
+    nearest_index: int,
+    *,
+    vehicle_x: float,
+    vehicle_y: float,
+    vehicle_yaw: float,
+    speed_mps: float,
+    lateral_offset_m: float,
+    closed: bool,
+    wheelbase_m: float,
+    front_axle_offset_m: float,
+    steering_delay_sec: float,
+    stanley_gain: float,
+    stanley_softening_mps: float,
+    heading_gain: float,
+    curvature_feedforward_gain: float,
+    heading_window_m: float,
+    heading_preview_m: float,
+    curvature_window_m: float,
+    curvature_preview_m: float,
+    maximum_steering_angle_rad: float,
+) -> StanleyPathCommand:
+    if len(points) < 2:
+        raise ValueError("path needs at least two points")
+
+    speed = max(0.0, abs(float(speed_mps)))
+    control_offset = max(
+        0.0,
+        float(front_axle_offset_m)
+        + speed * max(0.0, float(steering_delay_sec)),
+    )
+    control_x = float(vehicle_x) + control_offset * math.cos(vehicle_yaw)
+    control_y = float(vehicle_y) + control_offset * math.sin(vehicle_yaw)
+    control_index = nearest_path_index(
+        points,
+        control_x,
+        control_y,
+        previous_index=nearest_index,
+        closed=closed,
+        search_back=12,
+        search_ahead=60,
+    )
+    local_heading, _ = _path_geometry(
+        points,
+        control_index,
+        heading_window_m=heading_window_m,
+        curvature_window_m=curvature_window_m,
+        closed=closed,
+    )
+    heading_index = lookahead_index(
+        points,
+        control_index,
+        max(0.0, float(heading_preview_m)),
+        closed=closed,
+    )
+    path_heading, _ = _path_geometry(
+        points,
+        heading_index,
+        heading_window_m=heading_window_m,
+        curvature_window_m=curvature_window_m,
+        closed=closed,
+    )
+    reference = offset_path_point(
+        points,
+        control_index,
+        lateral_offset_m,
+        closed=closed,
+    )
+    left_normal_x = -math.sin(local_heading)
+    left_normal_y = math.cos(local_heading)
+    cross_track_error = (
+        (control_x - reference[0]) * left_normal_x
+        + (control_y - reference[1]) * left_normal_y
+    )
+    heading_error = normalize_angle(path_heading - float(vehicle_yaw))
+
+    preview_distance = max(
+        0.0,
+        float(curvature_preview_m) + speed * max(0.0, steering_delay_sec),
+    )
+    preview_index = lookahead_index(
+        points,
+        control_index,
+        preview_distance,
+        closed=closed,
+    )
+    _, path_curvature = _path_geometry(
+        points,
+        preview_index,
+        heading_window_m=heading_window_m,
+        curvature_window_m=curvature_window_m,
+        closed=closed,
+    )
+
+    wheelbase = max(0.05, float(wheelbase_m))
+    feedforward = math.atan(
+        wheelbase * float(curvature_feedforward_gain) * path_curvature
+    )
+    cross_track = -math.atan2(
+        max(0.0, float(stanley_gain)) * cross_track_error,
+        speed + max(0.01, float(stanley_softening_mps)),
+    )
+    steering_angle = (
+        feedforward + float(heading_gain) * heading_error + cross_track
+    )
+    maximum_angle = max(0.05, abs(float(maximum_steering_angle_rad)))
+    steering_angle = clamp(
+        steering_angle, -maximum_angle, maximum_angle
+    )
+    return StanleyPathCommand(
+        curvature_per_m=math.tan(steering_angle) / wheelbase,
+        target_index=preview_index,
+        cross_track_error_m=cross_track_error,
+        heading_error_rad=heading_error,
+        path_curvature_per_m=path_curvature,
+        steering_angle_rad=steering_angle,
+    )
+
+
+def filtered_steering_command(
+    target_command: float,
+    previous_command: float,
+    *,
+    dt_sec: float,
+    rate_limit_command_per_sec: float,
+    time_constant_sec: float,
+) -> float:
+    dt = clamp(dt_sec, 0.0, 0.25)
+    if dt <= 0.0:
+        return float(previous_command)
+    time_constant = max(0.0, float(time_constant_sec))
+    alpha = 1.0 if time_constant <= 1.0e-6 else dt / (time_constant + dt)
+    filtered_target = float(previous_command) + alpha * (
+        float(target_command) - float(previous_command)
+    )
+    maximum_change = max(0.0, float(rate_limit_command_per_sec)) * dt
+    return float(previous_command) + clamp(
+        filtered_target - float(previous_command),
+        -maximum_change,
+        maximum_change,
+    )
+
+
+def alignment_limited_speed_command(
+    target_command: float,
+    minimum_command: float,
+    *,
+    cross_track_error_m: float,
+    heading_error_rad: float,
+    cross_track_soft_m: float,
+    cross_track_hard_m: float,
+    heading_soft_rad: float,
+    heading_hard_rad: float,
+) -> float:
+    target = float(target_command)
+    minimum = min(target, float(minimum_command))
+
+    def _error_ratio(error: float, soft: float, hard: float) -> float:
+        soft_limit = max(0.0, float(soft))
+        hard_limit = max(soft_limit + 1.0e-6, float(hard))
+        return clamp(
+            (abs(float(error)) - soft_limit)
+            / (hard_limit - soft_limit),
+            0.0,
+            1.0,
+        )
+
+    misalignment = max(
+        _error_ratio(
+            cross_track_error_m,
+            cross_track_soft_m,
+            cross_track_hard_m,
+        ),
+        _error_ratio(
+            heading_error_rad,
+            heading_soft_rad,
+            heading_hard_rad,
+        ),
+    )
+    return target + (minimum - target) * misalignment
+
+
+def rate_limited_speed_command(
+    target_command: float,
+    previous_command: float,
+    *,
+    dt_sec: float,
+    acceleration_rate_command_per_sec: float,
+    deceleration_rate_command_per_sec: float,
+) -> float:
+    dt = clamp(dt_sec, 0.0, 0.25)
+    if dt <= 0.0:
+        return float(previous_command)
+    delta = float(target_command) - float(previous_command)
+    rate = (
+        max(0.0, float(acceleration_rate_command_per_sec))
+        if delta >= 0.0
+        else max(0.0, float(deceleration_rate_command_per_sec))
+    )
+    return float(previous_command) + clamp(delta, -rate * dt, rate * dt)
+
+
 def pure_pursuit_command(
     points: Sequence[Point],
     nearest_index: int,
@@ -223,7 +536,10 @@ class DynamicVehicleRule:
             elif int(front_count) == 0 and int(behind_count) == 0:
                 if self.clear_started_sec is None:
                     self.clear_started_sec = now
-                elif now - self.clear_started_sec >= self.config.clear_reset_sec:
+                elif (
+                    now - self.clear_started_sec
+                    >= self.config.clear_reset_sec
+                ):
                     self.mode = "RETURN_CENTER"
             else:
                 self.clear_started_sec = None

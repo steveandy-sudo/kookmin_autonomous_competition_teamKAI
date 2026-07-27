@@ -30,7 +30,7 @@ setup(
         ),
         (
             os.path.join("share", package_name, "scripts"),
-            glob("scripts/*.sh"),
+            glob("scripts/*.sh") + glob("scripts/*.py"),
         ),
     ],
     install_requires=["setuptools"],

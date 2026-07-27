@@ -1,8 +1,8 @@
 # Xycar map waypoint navigation
 
 저장된 ROS occupancy map에서 여러 체크포인트를 순서대로 연결해 구간별
-A* 전역경로를 만들고 Pure Pursuit으로 추종하는 ROS 2 패키지다. SLAM은
-`map -> base_footprint` TF를 계속 제공해야 한다.
+A* 전역경로를 만들고, 실차 동역학을 반영한 Stanley 제어기로 추종하는
+ROS 2 패키지다. SLAM은 `map -> base_footprint` TF를 계속 제공해야 한다.
 
 새 장소에서 지도 생성부터 실차 저속 주행까지의 전체 순서는
 [`docs/new_map_real_vehicle_test_KO.md`](../../../docs/new_map_real_vehicle_test_KO.md)에
@@ -69,7 +69,7 @@ ros2 launch xycar_map_nav real_localization.launch.py \
 `controller_to_next`는 해당 체크포인트에서 다음 체크포인트까지의 제어
 방식을 뜻한다.
 
-- `global_path`: 전역경로 Pure Pursuit
+- `global_path`: 전역경로 Stanley 추종
 - `cone_rule`: 전역 모터 명령을 멈추고 `xycar_hybrid_drive`의 라바콘
   shadow 명령만 전달
 - `dynamic_vehicle_rule`: 전역경로를 기준으로 YOLO 차량 검출에 따라
@@ -132,12 +132,25 @@ ros2 service call /xycar_waypoint_nav/reload_route std_srvs/srv/Trigger {}
 LiDAR 전방 `0.38 m` 이내 물체는 모드와 관계없이 `EMERGENCY_STOP`이다.
 동적차량 구간에서 YOLO count 토픽이 stale이면 주행하지 않고 정지한다.
 
-## 실차 속도 제한
+## 고속 오실레이션 억제
 
-2026-07-26 실차 순환 경로는 command `3`에서 안정적으로 주행했다. 속도를
-높이면 고정 `0.65 m` lookahead, 조향기 지연과 localization 잡음의 영향으로
-좌우 오실레이션이 커졌다. speed-dependent lookahead, 조향 rate limit/필터와
-곡률 기반 감속을 rosbag으로 검증하기 전까지 waypoint 실차 승인 속도는
-command `3`이다. 자세한 기록 토픽과 중단 조건은
-[`docs/new_map_real_vehicle_test_KO.md`](../../../docs/new_map_real_vehicle_test_KO.md)에
+2026-07-26 실차에서는 command `3`보다 높일 때 기존 고정 lookahead
+Pure Pursuit의 큰 좌우 반전이 관찰됐다. 현재 전역경로 제어에는 다음을
+적용했다.
+
+- 충돌 검사 후 곡률을 제한하는 경로 평활화
+- 측정 속도와 조향 지연을 반영한 front-axle Stanley 제어
+- 곡률 feedforward와 실제 yaw-rate 감쇠
+- 직선/곡선별 steering rate limit 및 저역통과 필터
+- 곡률, 횡가속도, CTE, heading 정렬을 함께 보는 속도 계획
+- 빠른 감속과 완만한 재가속
+
+Gazebo 실차 동역학 회귀시험에서 command `10` 상한으로 한 바퀴를 완주했고
+CTE 평균 `0.049 m`, 95% `0.103 m`, 최대 `0.132 m`, 큰 직선 조향 반전
+`0회`를 기록했다. 이는 실차 command `10`을 바로 승인한다는 뜻이 아니다.
+실차는 기존 검증값 `3`부터 `4 -> 5 -> 7 -> 10` 순서로 올리고 각 단계의
+rosbag을 확인해야 한다.
+
+구현 원리, Gazebo 재현 명령, rosbag 분석법과 실차 중단 조건은
+[`docs/global_path_stanley_oscillation_20260728_KO.md`](../../../docs/global_path_stanley_oscillation_20260728_KO.md)에
 정리되어 있다.

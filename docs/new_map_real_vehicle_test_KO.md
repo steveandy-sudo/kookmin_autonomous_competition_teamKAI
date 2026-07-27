@@ -451,20 +451,23 @@ ros2 launch xycar_map_nav real_waypoint_nav.launch.py \
 0.20 m를 넘으면 즉시 멈추고 localization과 TF를 먼저 조사한다. 속도를 올려
 해결하지 않는다.
 
-### 2026-07-26 실차 waypoint 결과와 고속 제한
+### 2026-07-26 실차 waypoint 결과와 2026-07-28 제어 개선
 
 `feature_map_20260726_221839`에서 RViz로 16개 waypoint를 찍어 A* 경로
 788개 점을 만들었다. `cruise_speed_command=3.0`,
 `minimum_speed_command=3.0`에서는 순환 경로를 안정적으로 추종했다.
 
-속도를 높이자 좌우 조향이 반복해서 커지는 오실레이션이 발생했다. 현재
-controller는 고정 `lookahead_distance_m=0.65`와 고정 조향 보정표를 사용하므로
-속도가 커질수록 같은 위치 오차에 대한 조향이 늦고 과도하게 반영될 수 있다.
-SLAM localization 잡음, 조향기 지연, 경로 곡률 변화도 함께 영향을 준다.
+속도를 높이자 기존 고정 `lookahead_distance_m=0.65` Pure Pursuit에서
+좌우 조향이 반복해서 커지는 오실레이션이 발생했다. 2026-07-28부터는 측정
+속도와 조향 지연을 반영한 Stanley 제어, 실제 yaw-rate 감쇠, 직선/곡선별
+조향 필터, 곡률과 정렬 상태 기반 속도 계획을 사용한다. 경로도 A* 계단형
+polyline을 그대로 쓰지 않고 점유영역 충돌을 검사하며 평활화한다.
 
-따라서 현재 실차 승인 속도는 command `3`이다. command `4` 이상은 다음
-데이터를 기록해 speed-dependent lookahead, 조향 rate limit/저역통과 필터,
-곡률 기반 감속을 검증하기 전까지 사용하지 않는다.
+Gazebo 실차 동역학 시험에서는 command `10` 상한 한 바퀴를 CTE 최대
+`0.132 m`와 큰 직선 반전 `0회`로 완주했다. 그러나 실제 SLAM 오차와 바닥
+마찰은 Gazebo보다 크므로 현재 실차 승인 속도는 여전히 command `3`이다.
+command `4` 이상은 다음 데이터를 기록하면서 `3 -> 4 -> 5 -> 7 -> 10`
+순서로 한 단계씩만 올린다.
 
 ```bash
 ros2 bag record \
@@ -477,6 +480,10 @@ ros2 bag record \
 비교 시험은 `speed=3`을 기준으로 시작하고 한 번에 한 단계만 올린다. 조향
 진폭이 연속해서 커지거나 차량 중심이 경로에서 `0.20 m` 이상 벗어나면 즉시
 정지한다.
+
+세부 제어 원리와 bag 자동 분석 명령은
+[`global_path_stanley_oscillation_20260728_KO.md`](global_path_stanley_oscillation_20260728_KO.md)에
+있다.
 
 ## 13. 라바콘과 동적차량 rule 구간 추가
 

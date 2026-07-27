@@ -10,7 +10,7 @@ import signal
 import time
 
 from geometry_msgs.msg import PointStamped, PoseStamped
-from nav_msgs.msg import Path as PathMessage
+from nav_msgs.msg import Odometry, Path as PathMessage
 import rclpy
 from rclpy.duration import Duration
 from rclpy.executors import ExternalShutdownException
@@ -31,13 +31,22 @@ from visualization_msgs.msg import Marker, MarkerArray
 import yaml
 
 from .control_core import (
+    alignment_limited_speed_command,
     DynamicAvoidanceConfig,
     DynamicVehicleRule,
+    filtered_steering_command,
     nearest_path_index,
-    pure_pursuit_command,
+    rate_limited_speed_command,
+    stanley_path_command,
     steering_command_for_curvature,
 )
-from .grid_planner import PlannedRoute, load_map_grid, plan_waypoint_route
+from .grid_planner import (
+    PlannedRoute,
+    load_map_grid,
+    load_path_csv,
+    plan_waypoint_route,
+    smooth_path_points,
+)
 
 
 VALID_CONTROLLERS = {
@@ -77,6 +86,12 @@ class WaypointNavNode(Node):
         self.waypoints_yaml = Path(
             str(self.get_parameter("waypoints_yaml").value)
         ).expanduser().resolve()
+        path_csv_value = str(self.get_parameter("path_csv").value)
+        self.path_csv = (
+            Path(path_csv_value).expanduser().resolve()
+            if path_csv_value.strip()
+            else None
+        )
         output_value = str(self.get_parameter("capture_output_yaml").value)
         self.capture_output_yaml = (
             Path(output_value).expanduser().resolve()
@@ -148,6 +163,12 @@ class WaypointNavNode(Node):
         self.emergency_front_range_m = float("inf")
         self.scan_time = 0.0
         self.last_published_mode = ""
+        self.latest_speed_mps = 0.0
+        self.latest_yaw_rate_radps = 0.0
+        self.odom_time = 0.0
+        self.last_steering_command = 0.0
+        self.last_speed_command = 0.0
+        self.last_control_time = time.monotonic()
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -200,6 +221,12 @@ class WaypointNavNode(Node):
             sensor_qos,
         )
         self.create_subscription(
+            Odometry,
+            str(self.get_parameter("odom_topic").value),
+            self._on_odom,
+            sensor_qos,
+        )
+        self.create_subscription(
             Int32MultiArray,
             str(self.get_parameter("dynamic_counts_topic").value),
             self._on_dynamic_counts,
@@ -224,7 +251,9 @@ class WaypointNavNode(Node):
             10,
         )
         self.create_service(Trigger, "~/undo_waypoint", self._undo_waypoint)
-        self.create_service(Trigger, "~/clear_waypoints", self._clear_waypoints)
+        self.create_service(
+            Trigger, "~/clear_waypoints", self._clear_waypoints
+        )
         self.create_service(Trigger, "~/reload_route", self._reload_route)
 
         self._load_route()
@@ -240,6 +269,7 @@ class WaypointNavNode(Node):
     def _declare_parameters(self) -> None:
         self.declare_parameter("map_yaml", "")
         self.declare_parameter("waypoints_yaml", "")
+        self.declare_parameter("path_csv", "")
         self.declare_parameter("capture_output_yaml", "")
         self.declare_parameter("frame_id", "map")
         self.declare_parameter("base_frame_id", "base_footprint")
@@ -249,13 +279,63 @@ class WaypointNavNode(Node):
         self.declare_parameter("unknown_is_occupied", True)
         self.declare_parameter("waypoint_snap_radius_m", 0.45)
         self.declare_parameter("path_spacing_m", 0.10)
-        self.declare_parameter("lookahead_distance_m", 0.65)
+        self.declare_parameter("path_smoothing_enabled", True)
+        self.declare_parameter("path_smoothing_data_weight", 0.0005)
+        self.declare_parameter("path_smoothing_weight", 0.45)
+        self.declare_parameter("path_smoothing_iterations", 2500)
+        self.declare_parameter("path_smoothing_anchor_weight", 0.02)
+        self.declare_parameter("csv_path_smoothing_enabled", True)
+        self.declare_parameter("csv_path_smoothing_data_weight", 0.10)
+        self.declare_parameter("csv_path_smoothing_weight", 0.40)
+        self.declare_parameter("csv_path_smoothing_iterations", 100)
+        self.declare_parameter("clearance_cost_weight", 3.0)
+        self.declare_parameter("clearance_cost_decay_m", 0.35)
         self.declare_parameter("goal_tolerance_m", 0.25)
         self.declare_parameter("cruise_speed_command", 5.0)
         self.declare_parameter("minimum_speed_command", 3.0)
         self.declare_parameter("curve_slowdown_curvature_per_m", 0.8)
+        self.declare_parameter("speed_gain_mps_per_command", 0.080612)
+        self.declare_parameter("maximum_lateral_accel_mps2", 0.90)
+        self.declare_parameter("speed_alignment_cross_track_soft_m", 0.05)
+        self.declare_parameter("speed_alignment_cross_track_hard_m", 0.20)
+        self.declare_parameter("speed_alignment_heading_soft_rad", 0.08)
+        self.declare_parameter("speed_alignment_heading_hard_rad", 0.35)
+        self.declare_parameter(
+            "speed_acceleration_rate_command_per_sec", 5.0
+        )
+        self.declare_parameter(
+            "speed_deceleration_rate_command_per_sec", 30.0
+        )
         self.declare_parameter("control_rate_hz", 20.0)
         self.declare_parameter("pose_timeout_sec", 0.25)
+        self.declare_parameter("odom_topic", "/slam/odom")
+        self.declare_parameter("odom_timeout_sec", 0.35)
+        self.declare_parameter("wheelbase_m", 0.32)
+        self.declare_parameter("front_axle_offset_m", 0.16)
+        self.declare_parameter("steering_delay_sec", 0.10)
+        self.declare_parameter("stanley_gain", 1.20)
+        self.declare_parameter("stanley_softening_mps", 0.45)
+        self.declare_parameter("stanley_heading_gain", 1.0)
+        self.declare_parameter("straight_stanley_gain", 0.45)
+        self.declare_parameter("straight_stanley_softening_mps", 0.80)
+        self.declare_parameter("straight_stanley_heading_gain", 0.55)
+        self.declare_parameter("curvature_feedforward_gain", 0.50)
+        self.declare_parameter("path_heading_window_m", 0.40)
+        self.declare_parameter("path_heading_preview_m", 0.0)
+        self.declare_parameter("path_curvature_window_m", 0.55)
+        self.declare_parameter("path_curvature_preview_m", 0.10)
+        self.declare_parameter("maximum_steering_angle_rad", 0.62)
+        self.declare_parameter("straight_curvature_threshold_per_m", 0.16)
+        self.declare_parameter(
+            "straight_steering_rate_command_per_sec", 90.0
+        )
+        self.declare_parameter(
+            "curve_steering_rate_command_per_sec", 300.0
+        )
+        self.declare_parameter("straight_steering_filter_sec", 0.16)
+        self.declare_parameter("curve_steering_filter_sec", 0.04)
+        self.declare_parameter("straight_yaw_rate_damping_sec", 0.45)
+        self.declare_parameter("curve_yaw_rate_damping_sec", 0.12)
         self.declare_parameter("motor_topic", "/xycar_motor")
         self.declare_parameter(
             "shadow_motor_topic", "/map_nav/xycar_motor_shadow"
@@ -350,6 +430,51 @@ class WaypointNavNode(Node):
             self.current_path_index = None
             self._publish_route()
             return
+        if self.path_csv is not None:
+            points = list(
+                load_path_csv(
+                    self.path_csv,
+                    spacing_m=float(
+                        self.get_parameter("path_spacing_m").value
+                    ),
+                    closed=self.closed_route,
+                )
+            )
+            if bool(
+                self.get_parameter("csv_path_smoothing_enabled").value
+            ):
+                points = smooth_path_points(
+                    self.map_grid,
+                    points,
+                    closed=self.closed_route,
+                    data_weight=float(
+                        self.get_parameter(
+                            "csv_path_smoothing_data_weight"
+                        ).value
+                    ),
+                    smooth_weight=float(
+                        self.get_parameter(
+                            "csv_path_smoothing_weight"
+                        ).value
+                    ),
+                    iterations=int(
+                        self.get_parameter(
+                            "csv_path_smoothing_iterations"
+                        ).value
+                    ),
+                )
+            self.route = PlannedRoute(
+                points=tuple(points),
+                segment_indices=tuple(0 for _ in points),
+                snapped_waypoints=tuple(
+                    (waypoint.x, waypoint.y)
+                    for waypoint in self.waypoints
+                ),
+            )
+            self.current_path_index = None
+            self.route_complete = False
+            self._publish_route()
+            return
         self.route = plan_waypoint_route(
             self.map_grid,
             [(waypoint.x, waypoint.y) for waypoint in self.waypoints],
@@ -359,6 +484,27 @@ class WaypointNavNode(Node):
             ),
             waypoint_snap_radius_m=float(
                 self.get_parameter("waypoint_snap_radius_m").value
+            ),
+            path_smoothing_enabled=bool(
+                self.get_parameter("path_smoothing_enabled").value
+            ),
+            path_smoothing_data_weight=float(
+                self.get_parameter("path_smoothing_data_weight").value
+            ),
+            path_smoothing_weight=float(
+                self.get_parameter("path_smoothing_weight").value
+            ),
+            path_smoothing_iterations=int(
+                self.get_parameter("path_smoothing_iterations").value
+            ),
+            path_smoothing_anchor_weight=float(
+                self.get_parameter("path_smoothing_anchor_weight").value
+            ),
+            clearance_cost_weight=float(
+                self.get_parameter("clearance_cost_weight").value
+            ),
+            clearance_cost_decay_m=float(
+                self.get_parameter("clearance_cost_decay_m").value
             ),
         )
         self.current_path_index = None
@@ -406,7 +552,9 @@ class WaypointNavNode(Node):
             if waypoint.controller_to_next == "cone_rule":
                 marker.color.r, marker.color.g, marker.color.b = 1.0, 0.45, 0.0
             elif waypoint.controller_to_next == "dynamic_vehicle_rule":
-                marker.color.r, marker.color.g, marker.color.b = 0.85, 0.15, 0.85
+                marker.color.r = 0.85
+                marker.color.g = 0.15
+                marker.color.b = 0.85
             else:
                 marker.color.r, marker.color.g, marker.color.b = 0.1, 0.8, 0.2
             marker.color.a = 1.0
@@ -429,6 +577,16 @@ class WaypointNavNode(Node):
                 minimum = min(minimum, float(value))
         self.emergency_front_range_m = minimum
         self.scan_time = time.monotonic()
+
+    def _on_odom(self, message: Odometry) -> None:
+        self.latest_speed_mps = math.hypot(
+            float(message.twist.twist.linear.x),
+            float(message.twist.twist.linear.y),
+        )
+        self.latest_yaw_rate_radps = float(
+            message.twist.twist.angular.z
+        )
+        self.odom_time = time.monotonic()
 
     def _on_dynamic_counts(self, message: Int32MultiArray) -> None:
         if len(message.data) < 4:
@@ -668,23 +826,143 @@ class WaypointNavNode(Node):
             behind_count=counts[3],
             armed=dynamic_armed,
         )
-        command = pure_pursuit_command(
-            self.route.points,
-            self.current_path_index,
-            vehicle_x=vehicle_x,
-            vehicle_y=vehicle_y,
-            vehicle_yaw=vehicle_yaw,
-            lookahead_m=float(
-                self.get_parameter("lookahead_distance_m").value
-            ),
-            lateral_offset_m=dynamic.lateral_offset_m,
-            closed=self.closed_route,
+        odom_fresh = now - self.odom_time <= float(
+            self.get_parameter("odom_timeout_sec").value
         )
-        angle = steering_command_for_curvature(
-            command.curvature_per_m,
+        speed_gain = max(
+            0.001,
+            float(self.get_parameter("speed_gain_mps_per_command").value),
+        )
+        measured_speed = (
+            self.latest_speed_mps
+            if odom_fresh
+            else float(self.get_parameter("minimum_speed_command").value)
+            * speed_gain
+        )
+        command_kwargs = {
+            "points": self.route.points,
+            "nearest_index": self.current_path_index,
+            "vehicle_x": vehicle_x,
+            "vehicle_y": vehicle_y,
+            "vehicle_yaw": vehicle_yaw,
+            "speed_mps": measured_speed,
+            "lateral_offset_m": dynamic.lateral_offset_m,
+            "closed": self.closed_route,
+            "wheelbase_m": float(self.get_parameter("wheelbase_m").value),
+            "front_axle_offset_m": float(
+                self.get_parameter("front_axle_offset_m").value
+            ),
+            "steering_delay_sec": float(
+                self.get_parameter("steering_delay_sec").value
+            ),
+            "curvature_feedforward_gain": float(
+                self.get_parameter("curvature_feedforward_gain").value
+            ),
+            "heading_window_m": float(
+                self.get_parameter("path_heading_window_m").value
+            ),
+            "heading_preview_m": float(
+                self.get_parameter("path_heading_preview_m").value
+            ),
+            "curvature_window_m": float(
+                self.get_parameter("path_curvature_window_m").value
+            ),
+            "curvature_preview_m": float(
+                self.get_parameter("path_curvature_preview_m").value
+            ),
+            "maximum_steering_angle_rad": float(
+                self.get_parameter("maximum_steering_angle_rad").value
+            ),
+        }
+        command = stanley_path_command(
+            stanley_gain=float(self.get_parameter("stanley_gain").value),
+            stanley_softening_mps=float(
+                self.get_parameter("stanley_softening_mps").value
+            ),
+            heading_gain=float(
+                self.get_parameter("stanley_heading_gain").value
+            ),
+            **command_kwargs,
+        )
+        straight = (
+            abs(command.path_curvature_per_m)
+            <= float(
+                self.get_parameter(
+                    "straight_curvature_threshold_per_m"
+                ).value
+            )
+        )
+        if straight:
+            command = stanley_path_command(
+                stanley_gain=float(
+                    self.get_parameter("straight_stanley_gain").value
+                ),
+                stanley_softening_mps=float(
+                    self.get_parameter(
+                        "straight_stanley_softening_mps"
+                    ).value
+                ),
+                heading_gain=float(
+                    self.get_parameter(
+                        "straight_stanley_heading_gain"
+                    ).value
+                ),
+                **command_kwargs,
+            )
+        damping_parameter = (
+            "straight_yaw_rate_damping_sec"
+            if straight
+            else "curve_yaw_rate_damping_sec"
+        )
+        desired_yaw_rate = (
+            measured_speed * command.path_curvature_per_m
+        )
+        damped_steering_angle = command.steering_angle_rad - float(
+            self.get_parameter(damping_parameter).value
+        ) * (self.latest_yaw_rate_radps - desired_yaw_rate)
+        maximum_steering_angle = abs(
+            float(
+                self.get_parameter("maximum_steering_angle_rad").value
+            )
+        )
+        damped_steering_angle = max(
+            -maximum_steering_angle,
+            min(maximum_steering_angle, damped_steering_angle),
+        )
+        damped_curvature = math.tan(damped_steering_angle) / max(
+            0.05,
+            float(self.get_parameter("wheelbase_m").value),
+        )
+        target_angle = steering_command_for_curvature(
+            damped_curvature,
             self.command_inputs,
             self.curvature_inputs,
         )
+        control_now = time.monotonic()
+        dt = control_now - self.last_control_time
+        self.last_control_time = control_now
+        rate_parameter = (
+            "straight_steering_rate_command_per_sec"
+            if straight
+            else "curve_steering_rate_command_per_sec"
+        )
+        filter_parameter = (
+            "straight_steering_filter_sec"
+            if straight
+            else "curve_steering_filter_sec"
+        )
+        angle = filtered_steering_command(
+            target_angle,
+            self.last_steering_command,
+            dt_sec=dt,
+            rate_limit_command_per_sec=float(
+                self.get_parameter(rate_parameter).value
+            ),
+            time_constant_sec=float(
+                self.get_parameter(filter_parameter).value
+            ),
+        )
+        self.last_steering_command = angle
         cruise = float(self.get_parameter("cruise_speed_command").value)
         minimum = float(self.get_parameter("minimum_speed_command").value)
         slowdown = max(
@@ -695,10 +973,64 @@ class WaypointNavNode(Node):
                 ).value
             ),
         )
-        curve_ratio = min(1.0, abs(command.curvature_per_m) / slowdown)
+        path_curvature = abs(command.path_curvature_per_m)
+        curve_ratio = min(1.0, path_curvature / slowdown)
         speed = cruise + (minimum - cruise) * curve_ratio
+        maximum_lateral_accel = max(
+            0.05,
+            float(
+                self.get_parameter("maximum_lateral_accel_mps2").value
+            ),
+        )
+        if path_curvature > 1.0e-4:
+            lateral_speed_cap_mps = math.sqrt(
+                maximum_lateral_accel / path_curvature
+            )
+            speed = min(speed, lateral_speed_cap_mps / speed_gain)
+        speed = alignment_limited_speed_command(
+            speed,
+            minimum,
+            cross_track_error_m=command.cross_track_error_m,
+            heading_error_rad=command.heading_error_rad,
+            cross_track_soft_m=float(
+                self.get_parameter(
+                    "speed_alignment_cross_track_soft_m"
+                ).value
+            ),
+            cross_track_hard_m=float(
+                self.get_parameter(
+                    "speed_alignment_cross_track_hard_m"
+                ).value
+            ),
+            heading_soft_rad=float(
+                self.get_parameter(
+                    "speed_alignment_heading_soft_rad"
+                ).value
+            ),
+            heading_hard_rad=float(
+                self.get_parameter(
+                    "speed_alignment_heading_hard_rad"
+                ).value
+            ),
+        )
         if dynamic.speed_limit_command is not None:
             speed = min(speed, dynamic.speed_limit_command)
+        speed = rate_limited_speed_command(
+            speed,
+            self.last_speed_command,
+            dt_sec=dt,
+            acceleration_rate_command_per_sec=float(
+                self.get_parameter(
+                    "speed_acceleration_rate_command_per_sec"
+                ).value
+            ),
+            deceleration_rate_command_per_sec=float(
+                self.get_parameter(
+                    "speed_deceleration_rate_command_per_sec"
+                ).value
+            ),
+        )
+        self.last_speed_command = speed
         mode = (
             f"DYNAMIC_VEHICLE_RULE_{dynamic.mode}"
             if dynamic.mode != "NORMAL"
@@ -712,10 +1044,17 @@ class WaypointNavNode(Node):
                 float(self.current_path_index),
                 float(command.target_index),
                 float(command.curvature_per_m),
+                float(command.path_curvature_per_m),
+                float(command.cross_track_error_m),
+                float(command.heading_error_rad),
+                float(measured_speed),
+                1.0 if odom_fresh else 0.0,
                 float(dynamic.lateral_offset_m),
                 float(self.emergency_front_range_m),
                 float(counts[0]),
                 float(counts[3]),
+                float(damped_curvature),
+                float(self.latest_yaw_rate_radps),
             ],
         )
 
@@ -726,6 +1065,9 @@ class WaypointNavNode(Node):
         mode: str,
         debug: list[float] | None = None,
     ) -> None:
+        if speed <= 0.0:
+            self.last_steering_command = 0.0
+            self.last_speed_command = 0.0
         command = Float32MultiArray()
         command.data = [float(angle), float(speed)]
         self.shadow_motor_pub.publish(command)
