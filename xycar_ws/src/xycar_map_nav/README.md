@@ -54,6 +54,56 @@ ros2 launch xycar_map_nav real_localization.launch.py \
   laser_x:=0.065 laser_y:=0.00 laser_z:=0.080 laser_yaw:=0.00
 ```
 
+### 주행 중 localization 점프 보호
+
+`slam_toolbox_localization.yaml`은 반복 복도에서 오래된 유사 스캔이 동시에
+후보가 되지 않도록 localization rolling buffer를 `100`에서 공식 예제와
+같은 `3`으로 줄였다. 먼 loop 후보와 낮은 점수의 loop constraint도 제한하고,
+단일 오정합이 pose graph 전체를 당기는 영향을 줄이기 위해 Ceres
+`HuberLoss`를 사용한다.
+
+전역경로 제어기는 별도로 `map -> slam_odom` 변화를 감시한다.
+
+- 한 번에 `0.20 m` 또는 `5 deg`를 넘는 보정: raw TF를 조향에 사용하지 않고
+  마지막 정상 `map -> slam_odom`과 현재 VESC/IMU odom으로 잠시 진행
+- raw TF가 `0.30 s` 안에 정상 범위로 복귀: 자동으로 정상 추종 복귀
+- 큰 보정이 `0.30 s` 이상 지속: `LOCALIZATION_JUMP_STOP`, 모터 `[0, 0]`
+- fault는 자동 해제하지 않음
+
+상태와 수치는 항상 rosbag에 포함한다.
+
+```bash
+ros2 topic echo /map_nav/localization_guard/status
+ros2 topic echo /map_nav/localization_guard/debug
+```
+
+`debug` 배열은 다음 순서다.
+
+```text
+[state, translation_m, yaw_rad, outlier_age_sec,
+ raw_x, raw_y, raw_yaw, accepted_x, accepted_y, accepted_yaw]
+state: 0=DISABLED, 1=TRACKING, 2=HOLDING, 3=FAULT
+```
+
+fault가 발생하면 차량을 먼저 정지시킨다. RViz에서 지도와 LaserScan 정합을
+확인하고 `route_scan_localizer/relocalize`를 수행한 다음에만 guard를
+초기화한다.
+
+```bash
+ros2 service call /route_scan_localizer/relocalize \
+  std_srvs/srv/Trigger {}
+
+ros2 service call /xycar_waypoint_nav/reset_localization_guard \
+  std_srvs/srv/Trigger {}
+```
+
+실차 시작 전에는 `/tf`의 `map -> slam_odom` publisher가 하나인지 확인한다.
+
+```bash
+ros2 topic info /tf --verbose
+ros2 run tf2_ros tf2_monitor map slam_odom
+```
+
 ### 경로 위 자동 초기 위치 추정
 
 실차가 저장된 순환 경로 위 어딘가에 있고 진행 방향을 바라본다는 조건에서는

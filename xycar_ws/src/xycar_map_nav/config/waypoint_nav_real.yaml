@@ -45,6 +45,18 @@ xycar_waypoint_nav:
     # speed and projects the front axle by the measured steering delay.
     odom_topic: /slam/odom
     odom_timeout_sec: 0.35
+    localization_odom_frame_id: slam_odom
+
+    # A single scan match must never move the controller by a lane width.
+    # Brief outliers are dead-reckoned with slam_odom; persistent jumps stop
+    # motor output and require localization to be checked before reset.
+    localization_guard_enabled: true
+    localization_maximum_translation_jump_m: 0.20
+    localization_maximum_yaw_jump_deg: 5.0
+    localization_jump_fault_after_sec: 0.30
+    localization_guard_status_topic: /map_nav/localization_guard/status
+    localization_guard_debug_topic: /map_nav/localization_guard/debug
+
     wheelbase_m: 0.32
     front_axle_offset_m: 0.16
     steering_delay_sec: 0.10

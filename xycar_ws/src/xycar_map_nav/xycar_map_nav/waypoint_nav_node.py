@@ -52,6 +52,12 @@ from .grid_planner import (
     plan_waypoint_route,
     smooth_path_points,
 )
+from .localization_guard import (
+    compose_planar,
+    GuardResult,
+    LocalizationJumpGuard,
+    PlanarTransform,
+)
 
 
 VALID_CONTROLLERS = {
@@ -175,6 +181,33 @@ class WaypointNavNode(Node):
         self.latest_speed_mps = 0.0
         self.latest_yaw_rate_radps = 0.0
         self.odom_time = 0.0
+        self.localization_odom_frame_id = str(
+            self.get_parameter("localization_odom_frame_id").value
+        )
+        self.localization_guard_enabled = bool(
+            self.get_parameter("localization_guard_enabled").value
+        )
+        self.localization_guard = LocalizationJumpGuard(
+            maximum_translation_jump_m=float(
+                self.get_parameter(
+                    "localization_maximum_translation_jump_m"
+                ).value
+            ),
+            maximum_yaw_jump_rad=math.radians(
+                float(
+                    self.get_parameter(
+                        "localization_maximum_yaw_jump_deg"
+                    ).value
+                )
+            ),
+            fault_after_sec=float(
+                self.get_parameter(
+                    "localization_jump_fault_after_sec"
+                ).value
+            ),
+        )
+        self.latest_guard_result: GuardResult | None = None
+        self.last_guard_state = ""
         self.last_steering_command = 0.0
         self.last_speed_command = 0.0
         self.last_control_time = time.monotonic()
@@ -213,6 +246,24 @@ class WaypointNavNode(Node):
         self.debug_pub = self.create_publisher(
             Float32MultiArray,
             str(self.get_parameter("debug_topic").value),
+            10,
+        )
+        self.localization_guard_status_pub = self.create_publisher(
+            String,
+            str(
+                self.get_parameter(
+                    "localization_guard_status_topic"
+                ).value
+            ),
+            10,
+        )
+        self.localization_guard_debug_pub = self.create_publisher(
+            Float32MultiArray,
+            str(
+                self.get_parameter(
+                    "localization_guard_debug_topic"
+                ).value
+            ),
             10,
         )
         self.shadow_motor_pub = self.create_publisher(
@@ -284,6 +335,11 @@ class WaypointNavNode(Node):
             Trigger, "~/clear_waypoints", self._clear_waypoints
         )
         self.create_service(Trigger, "~/reload_route", self._reload_route)
+        self.create_service(
+            Trigger,
+            "~/reset_localization_guard",
+            self._reset_localization_guard,
+        )
 
         self._load_route()
         rate = max(2.0, float(self.get_parameter("control_rate_hz").value))
@@ -365,6 +421,27 @@ class WaypointNavNode(Node):
         self.declare_parameter("pose_timeout_sec", 0.25)
         self.declare_parameter("odom_topic", "/slam/odom")
         self.declare_parameter("odom_timeout_sec", 0.35)
+        self.declare_parameter(
+            "localization_odom_frame_id", "slam_odom"
+        )
+        self.declare_parameter("localization_guard_enabled", True)
+        self.declare_parameter(
+            "localization_maximum_translation_jump_m", 0.20
+        )
+        self.declare_parameter(
+            "localization_maximum_yaw_jump_deg", 5.0
+        )
+        self.declare_parameter(
+            "localization_jump_fault_after_sec", 0.30
+        )
+        self.declare_parameter(
+            "localization_guard_status_topic",
+            "/map_nav/localization_guard/status",
+        )
+        self.declare_parameter(
+            "localization_guard_debug_topic",
+            "/map_nav/localization_guard/debug",
+        )
         self.declare_parameter("wheelbase_m", 0.32)
         self.declare_parameter("front_axle_offset_m", 0.16)
         self.declare_parameter("steering_delay_sec", 0.10)
@@ -832,25 +909,158 @@ class WaypointNavNode(Node):
         response.message = "route reloaded"
         return response
 
+    def _reset_localization_guard(self, _, response):
+        if self.latest_speed_mps > 0.05:
+            response.success = False
+            response.message = (
+                "stop the vehicle before resetting localization guard"
+            )
+            return response
+        self.localization_guard.reset()
+        self.latest_guard_result = None
+        self.last_guard_state = ""
+        self.drive_start_time = time.monotonic() + max(
+            0.0,
+            float(self.get_parameter("drive_start_delay_sec").value),
+        )
+        response.success = True
+        response.message = (
+            "localization guard reset; current transform will be accepted"
+        )
+        return response
+
+    def _publish_localization_guard(
+        self,
+        result: GuardResult,
+        raw: PlanarTransform,
+    ) -> None:
+        status = (
+            f"{result.state} "
+            f"translation={result.translation_residual_m:.3f}m "
+            f"yaw={math.degrees(result.yaw_residual_rad):.2f}deg "
+            f"age={result.outlier_age_sec:.3f}s"
+        )
+        self.localization_guard_status_pub.publish(String(data=status))
+        state_codes = {
+            "DISABLED": 0.0,
+            "TRACKING": 1.0,
+            "HOLDING": 2.0,
+            "FAULT": 3.0,
+        }
+        debug = Float32MultiArray()
+        debug.data = [
+            state_codes[result.state],
+            float(result.translation_residual_m),
+            float(result.yaw_residual_rad),
+            float(result.outlier_age_sec),
+            float(raw.x),
+            float(raw.y),
+            float(raw.yaw),
+            float(result.transform.x),
+            float(result.transform.y),
+            float(result.transform.yaw),
+        ]
+        self.localization_guard_debug_pub.publish(debug)
+        if result.state != self.last_guard_state:
+            if result.state == "FAULT":
+                self.get_logger().error(
+                    "localization jump persisted; motor output stopped: "
+                    + status
+                )
+            elif result.state == "HOLDING":
+                self.get_logger().warning(
+                    "localization jump rejected temporarily: " + status
+                )
+            else:
+                self.get_logger().info(
+                    "localization guard -> " + status
+                )
+            self.last_guard_state = result.state
+
     def _vehicle_pose(self) -> tuple[float, float, float]:
-        transform = self.tf_buffer.lookup_transform(
+        timeout = Duration(
+            seconds=float(
+                self.get_parameter("pose_timeout_sec").value
+            )
+        )
+        if not self.localization_guard_enabled:
+            transform = self.tf_buffer.lookup_transform(
+                self.frame_id,
+                self.base_frame_id,
+                Time(),
+                timeout=timeout,
+            )
+            translation = transform.transform.translation
+            rotation = transform.transform.rotation
+            self.latest_guard_result = None
+            return (
+                float(translation.x),
+                float(translation.y),
+                quaternion_yaw(
+                    rotation.x,
+                    rotation.y,
+                    rotation.z,
+                    rotation.w,
+                ),
+            )
+        map_to_odom = self.tf_buffer.lookup_transform(
             self.frame_id,
+            self.localization_odom_frame_id,
+            Time(),
+            timeout=timeout,
+        )
+        odom_to_base = self.tf_buffer.lookup_transform(
+            self.localization_odom_frame_id,
             self.base_frame_id,
             Time(),
-            timeout=Duration(
-                seconds=float(
-                    self.get_parameter("pose_timeout_sec").value
-                )
+            timeout=timeout,
+        )
+        map_translation = map_to_odom.transform.translation
+        map_rotation = map_to_odom.transform.rotation
+        raw = PlanarTransform(
+            x=float(map_translation.x),
+            y=float(map_translation.y),
+            yaw=quaternion_yaw(
+                map_rotation.x,
+                map_rotation.y,
+                map_rotation.z,
+                map_rotation.w,
             ),
         )
-        translation = transform.transform.translation
-        rotation = transform.transform.rotation
-        return (
-            float(translation.x),
-            float(translation.y),
-            quaternion_yaw(
-                rotation.x, rotation.y, rotation.z, rotation.w
+        guard_enabled = (
+            self.localization_guard_enabled
+            and self.route_localization_ready
+            and time.monotonic() >= self.drive_start_time
+        )
+        odom_translation = odom_to_base.transform.translation
+        odom_rotation = odom_to_base.transform.rotation
+        local_pose = PlanarTransform(
+            x=float(odom_translation.x),
+            y=float(odom_translation.y),
+            yaw=quaternion_yaw(
+                odom_rotation.x,
+                odom_rotation.y,
+                odom_rotation.z,
+                odom_rotation.w,
             ),
+        )
+        result = self.localization_guard.update(
+            raw,
+            now_sec=time.monotonic(),
+            enabled=guard_enabled,
+            child_to_base=local_pose,
+        )
+        self.latest_guard_result = result
+        self._publish_localization_guard(result, raw)
+
+        pose = compose_planar(
+            result.transform,
+            local_pose,
+        )
+        return (
+            pose.x,
+            pose.y,
+            pose.yaw,
         )
 
     def _active_controller(self, path_index: int) -> str:
@@ -880,6 +1090,16 @@ class WaypointNavNode(Node):
         except TransformException as exc:
             self._publish_command(0.0, 0.0, "WAIT_LOCALIZATION")
             self.get_logger().debug(f"TF unavailable: {exc}")
+            return
+        if (
+            self.latest_guard_result is not None
+            and self.latest_guard_result.faulted
+        ):
+            self._publish_command(
+                0.0,
+                0.0,
+                "LOCALIZATION_JUMP_STOP",
+            )
             return
         if (
             self.drive_enabled

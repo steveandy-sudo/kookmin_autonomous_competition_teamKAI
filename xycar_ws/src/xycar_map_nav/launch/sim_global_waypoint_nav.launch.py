@@ -127,6 +127,7 @@ def generate_launch_description():
                                 ),
                                 "use_sim_time": True,
                                 "odom_topic": gazebo_odom_topic,
+                                "localization_guard_enabled": False,
                                 "cruise_speed_command": ParameterValue(
                                     LaunchConfiguration(
                                         "cruise_speed_command"

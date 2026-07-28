@@ -74,3 +74,34 @@ def test_default_mapping_profile_matches_original_karto_tuning():
     assert params["correlation_search_space_smear_deviation"] == 0.1
     assert params["loop_search_space_dimension"] == 10.0
     assert params["use_response_expansion"] is True
+
+
+def test_localization_profile_rejects_distant_repeated_corridor_matches():
+    data = yaml.safe_load(
+        (CONFIG_DIR / "slam_toolbox_localization.yaml").read_text()
+    )
+    params = data["slam_toolbox"]["ros__parameters"]
+
+    assert params["mode"] == "localization"
+    assert params["ceres_loss_function"] == "HuberLoss"
+    assert params["scan_queue_size"] == 1
+    assert params["scan_buffer_size"] == 3
+    assert params["scan_buffer_maximum_scan_distance"] <= 1.0
+    assert params["link_scan_maximum_distance"] <= 0.5
+    assert params["loop_search_maximum_distance"] <= 0.75
+    assert params["loop_search_space_dimension"] <= 0.8
+    assert params["loop_match_minimum_response_fine"] >= 0.65
+    assert params["use_response_expansion"] is False
+
+
+def test_real_waypoint_controller_stops_on_persistent_map_jump():
+    data = yaml.safe_load(
+        (CONFIG_DIR / "waypoint_nav_real.yaml").read_text()
+    )
+    params = data["xycar_waypoint_nav"]["ros__parameters"]
+
+    assert params["localization_guard_enabled"] is True
+    assert params["localization_odom_frame_id"] == "slam_odom"
+    assert params["localization_maximum_translation_jump_m"] <= 0.20
+    assert params["localization_maximum_yaw_jump_deg"] <= 5.0
+    assert params["localization_jump_fault_after_sec"] <= 0.30

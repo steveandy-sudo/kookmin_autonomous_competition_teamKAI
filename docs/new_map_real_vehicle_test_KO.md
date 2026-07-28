@@ -474,12 +474,16 @@ ros2 bag record \
   -o "$HOME/xycar_test_bags/waypoint_oscillation_speed_test" \
   /scan /imu /vehicle/vesc_state /slam/odom /tf /tf_static \
   /map_nav/global_path /map_nav/debug /map_nav/xycar_motor_shadow \
-  /map_nav/control_mode /xycar_motor
+  /map_nav/control_mode /map_nav/localization_guard/status \
+  /map_nav/localization_guard/debug /xycar_motor
 ```
 
 비교 시험은 `speed=3`을 기준으로 시작하고 한 번에 한 단계만 올린다. 조향
 진폭이 연속해서 커지거나 차량 중심이 경로에서 `0.20 m` 이상 벗어나면 즉시
-정지한다.
+정지한다. `LOCALIZATION_JUMP_STOP`은 조향 문제가 아니라
+`map -> slam_odom`의 순간 보정이 허용 범위를 넘은 상태다. RViz 정합을
+확인하고 route localization을 다시 수행하기 전에는 guard를 초기화하지
+않는다.
 
 세부 제어 원리와 bag 자동 분석 명령은
 [`global_path_stanley_oscillation_20260728_KO.md`](global_path_stanley_oscillation_20260728_KO.md)에
