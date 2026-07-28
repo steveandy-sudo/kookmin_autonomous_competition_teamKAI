@@ -6,6 +6,7 @@ from xycar_map_nav.control_core import (
     DynamicVehicleRule,
     filtered_steering_command,
     forward_backward_velocity_profile,
+    minimum_effective_speed_command,
     minimum_profile_value_ahead,
     nearest_path_index,
     path_curvature_profile,
@@ -295,6 +296,21 @@ def test_speed_rate_limit_accelerates_slowly_and_brakes_quickly():
     )
     assert math.isclose(accelerating, 3.25)
     assert math.isclose(braking, 8.5)
+
+
+def test_minimum_effective_speed_skips_motor_deadzone_on_start():
+    assert math.isclose(
+        minimum_effective_speed_command(1.25, 3.0, 3.0),
+        3.0,
+    )
+    assert math.isclose(
+        minimum_effective_speed_command(0.0, 0.0, 3.0),
+        0.0,
+    )
+    assert math.isclose(
+        minimum_effective_speed_command(4.0, 8.0, 3.0),
+        4.0,
+    )
 
 
 def test_dynamic_vehicle_rule_sequence_and_meter_offsets():

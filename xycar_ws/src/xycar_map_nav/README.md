@@ -54,6 +54,65 @@ ros2 launch xycar_map_nav real_localization.launch.py \
   laser_x:=0.065 laser_y:=0.00 laser_z:=0.080 laser_yaw:=0.00
 ```
 
+### 경로 위 자동 초기 위치 추정
+
+실차가 저장된 순환 경로 위 어딘가에 있고 진행 방향을 바라본다는 조건에서는
+`route_scan_localizer`가 `/slam/scan_filtered`를 지도와 대조해 현재 위치를
+찾을 수 있다. 경로 전체를 `0.4 m` 간격으로 탐색하고, 좌우 위치와 yaw를
+세부 탐색한 다음 같은 결과가 4개 LiDAR 프레임에서 반복될 때만
+`/initialpose`를 한 번 발행한다.
+
+반복되는 직선 복도처럼 서로 2 m 이상 떨어진 두 후보의 점수가 비슷하면
+`AMBIGUOUS` 상태를 유지하고 위치를 추측하지 않는다. 이때 차량을 움직이지
+말고 문 홈이나 코너가 더 잘 보이는 위치로 옮긴다. 첫 웨이포인트 강제
+초기화와 동시에 사용하지 않는다.
+
+먼저 모터를 발행하지 않는 상태로 확인한다.
+
+```bash
+MAP_DIR=$HOME/xycar_maps/map_20260728_143906
+
+ros2 launch xycar_map_nav real_waypoint_nav.launch.py \
+  map_yaml:=$MAP_DIR/map.yaml \
+  waypoints_yaml:=$MAP_DIR/waypoints_pure_pursuit.yaml \
+  auto_localize_on_route:=true \
+  initialize_pose_from_first_waypoint:=false \
+  drive_enabled:=false
+```
+
+상태와 후보 자세를 확인한다.
+
+```bash
+ros2 topic echo /map_nav/route_localization/status
+ros2 topic echo /map_nav/route_localization/debug
+ros2 topic echo /map_nav/route_localization/best_pose
+ros2 topic echo /map_nav/route_localization/ready
+```
+
+`READY`가 되고 RViz의 분홍색 `Route Match` 화살표와 실제 차량 방향이
+일치해야 한다. 다시 위치를 찾게 하려면 다음 서비스를 호출한다.
+
+```bash
+ros2 service call /route_scan_localizer/relocalize \
+  std_srvs/srv/Trigger {}
+```
+
+실차 주행에서도 `auto_localize_on_route:=true`를 유지하면 내비게이션 노드는
+준비 신호 전까지 `WAIT_ROUTE_LOCALIZATION`과 속도 `0`만 발행한다. 준비된
+뒤에도 `drive_start_delay_sec` 동안 기다린 다음 출발한다.
+
+```bash
+ros2 launch xycar_map_nav real_waypoint_nav.launch.py \
+  map_yaml:=$MAP_DIR/map.yaml \
+  waypoints_yaml:=$MAP_DIR/waypoints_pure_pursuit.yaml \
+  auto_localize_on_route:=true \
+  initialize_pose_from_first_waypoint:=false \
+  drive_enabled:=true \
+  drive_start_delay_sec:=3.0 \
+  cruise_speed_command:=3.0 \
+  minimum_speed_command:=3.0
+```
+
 위 LiDAR 위치는 simulation 브랜치의 2026-07-12 실차 정합값이며 앞바퀴
 중심 기준 `(0.065, 0.000, 0.080) m`, yaw `0`이다. `/scan`과 `/imu`는
 별도로 먼저 실행한다. mapping/localization launch가 native VESC 드라이버를
@@ -116,6 +175,21 @@ ros2 service call /xycar_waypoint_nav/reload_route std_srvs/srv/Trigger {}
 실제 위치를 측정하기 전까지 제공된 example 파일은 실차 기준값이 아니다.
 순환 코스는 waypoint YAML의 `closed`를 `true`로 설정한다. 마지막 좌표가
 출발점 근처인데 `closed: false`이면 시작 직후 `ROUTE_COMPLETE`가 될 수 있다.
+
+곡선 구간에서 속도 적응형 Pure Pursuit를 시험하려면 실차 launch에 다음
+인자를 명시한다. 직선은 낮은 gain의 Stanley를 계속 사용하며, 곡선
+lookahead는 `0.30 + measured_speed * 0.12` m로 계산된다.
+
+```bash
+ros2 launch xycar_map_nav real_waypoint_nav.launch.py \
+  curve_controller:=pure_pursuit \
+  curve_pure_pursuit_lookahead_m:=0.30 \
+  curve_pure_pursuit_speed_preview_sec:=0.12
+```
+
+기본값 `curve_controller:=stanley`는 2026-07-28 고속 오실레이션 회귀시험을
+통과한 실차 기준이다. Pure Pursuit는 먼저 `drive_enabled:=false` shadow와
+speed command `3`에서 검증한다.
 
 ### 기존 사용자 제작 Gazebo 트랙
 

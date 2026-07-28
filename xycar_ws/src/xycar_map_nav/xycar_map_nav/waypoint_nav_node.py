@@ -24,7 +24,7 @@ from rclpy.qos import (
 from rclpy.signals import SignalHandlerOptions
 from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import Float32MultiArray, Int32MultiArray, String
+from std_msgs.msg import Bool, Float32MultiArray, Int32MultiArray, String
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
@@ -36,6 +36,7 @@ from .control_core import (
     DynamicVehicleRule,
     filtered_steering_command,
     forward_backward_velocity_profile,
+    minimum_effective_speed_command,
     minimum_profile_value_ahead,
     nearest_path_index,
     path_curvature_profile,
@@ -181,6 +182,12 @@ class WaypointNavNode(Node):
             0.0,
             float(self.get_parameter("drive_start_delay_sec").value),
         )
+        self.require_route_localization = bool(
+            self.get_parameter("require_route_localization").value
+        )
+        self.route_localization_ready = (
+            not self.require_route_localization
+        )
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -257,6 +264,16 @@ class WaypointNavNode(Node):
             10,
         )
         self.create_subscription(
+            Bool,
+            str(
+                self.get_parameter(
+                    "route_localization_ready_topic"
+                ).value
+            ),
+            self._on_route_localization_ready,
+            transient_qos,
+        )
+        self.create_subscription(
             PointStamped,
             str(self.get_parameter("clicked_point_topic").value),
             self._on_clicked_point,
@@ -270,7 +287,10 @@ class WaypointNavNode(Node):
 
         self._load_route()
         rate = max(2.0, float(self.get_parameter("control_rate_hz").value))
-        self.create_timer(1.0 / rate, self._control_step)
+        self.control_timer = self.create_timer(
+            1.0 / rate,
+            self._control_step,
+        )
         mode = "DRIVE" if self.drive_enabled else "SHADOW"
         self.get_logger().info(
             f"{mode}: {len(self.waypoints)} waypoints, "
@@ -288,6 +308,11 @@ class WaypointNavNode(Node):
         self.declare_parameter("closed_route", True)
         self.declare_parameter("drive_enabled", False)
         self.declare_parameter("drive_start_delay_sec", 0.0)
+        self.declare_parameter("require_route_localization", False)
+        self.declare_parameter(
+            "route_localization_ready_topic",
+            "/map_nav/route_localization/ready",
+        )
         self.declare_parameter("inflation_radius_m", 0.23)
         self.declare_parameter("unknown_is_occupied", True)
         self.declare_parameter("ignore_map_occupancy", False)
@@ -698,6 +723,18 @@ class WaypointNavNode(Node):
         self.cone_command = (float(message.data[0]), float(message.data[1]))
         self.cone_command_time = time.monotonic()
 
+    def _on_route_localization_ready(self, message: Bool) -> None:
+        was_ready = self.route_localization_ready
+        self.route_localization_ready = bool(message.data)
+        if self.route_localization_ready and not was_ready:
+            self.drive_start_time = time.monotonic() + max(
+                0.0,
+                float(self.get_parameter("drive_start_delay_sec").value),
+            )
+            self.get_logger().info(
+                "route localization ready; drive start delay begins"
+            )
+
     def _on_clicked_point(self, message: PointStamped) -> None:
         if message.header.frame_id != self.frame_id:
             self.get_logger().warning(
@@ -827,6 +864,16 @@ class WaypointNavNode(Node):
     def _control_step(self) -> None:
         if self.route is None:
             self._publish_command(0.0, 0.0, "NO_ROUTE")
+            return
+        if (
+            self.require_route_localization
+            and not self.route_localization_ready
+        ):
+            self._publish_command(
+                0.0,
+                0.0,
+                "WAIT_ROUTE_LOCALIZATION",
+            )
             return
         try:
             vehicle_x, vehicle_y, vehicle_yaw = self._vehicle_pose()
@@ -1196,8 +1243,9 @@ class WaypointNavNode(Node):
         )
         if dynamic.speed_limit_command is not None:
             speed = min(speed, dynamic.speed_limit_command)
+        target_speed = speed
         speed = rate_limited_speed_command(
-            speed,
+            target_speed,
             self.last_speed_command,
             dt_sec=dt,
             acceleration_rate_command_per_sec=float(
@@ -1210,6 +1258,11 @@ class WaypointNavNode(Node):
                     "speed_deceleration_rate_command_per_sec"
                 ).value
             ),
+        )
+        speed = minimum_effective_speed_command(
+            speed,
+            target_speed,
+            minimum,
         )
         fixed_speed = float(
             self.get_parameter("fixed_speed_command").value
@@ -1275,6 +1328,7 @@ class WaypointNavNode(Node):
             self.last_published_mode = mode
 
     def stop(self) -> None:
+        self.control_timer.cancel()
         self._publish_command(0.0, 0.0, "SHUTDOWN_STOP")
 
 
@@ -1287,6 +1341,9 @@ def main(args=None) -> None:
         signal.signal(signal.SIGINT, signal.SIG_IGN)
     except ExternalShutdownException:
         pass
+    except RuntimeError as exc:
+        if "Unable to convert call argument to Python object" not in str(exc):
+            raise
     finally:
         if rclpy.ok():
             node.stop()

@@ -587,6 +587,18 @@ def rate_limited_speed_command(
     return float(previous_command) + clamp(delta, -rate * dt, rate * dt)
 
 
+def minimum_effective_speed_command(
+    limited_command: float,
+    target_command: float,
+    minimum_command: float,
+) -> float:
+    limited = float(limited_command)
+    minimum = max(0.0, float(minimum_command))
+    if float(target_command) >= minimum and 0.0 < limited < minimum:
+        return minimum
+    return limited
+
+
 def pure_pursuit_command(
     points: Sequence[Point],
     nearest_index: int,

@@ -52,6 +52,10 @@ setup(
             "xycar_map_nav.gazebo_pose_tf_republisher:main",
             "occupancy_grid_to_cloud = "
             "xycar_map_nav.occupancy_grid_to_cloud:main",
+            "route_start_pose_publisher = "
+            "xycar_map_nav.route_start_pose_publisher:main",
+            "route_scan_localizer = "
+            "xycar_map_nav.route_scan_localizer:main",
             "static_track_map_node = "
             "xycar_map_nav.static_track_map_node:main",
             "scan_filter_node = xycar_map_nav.scan_filter_node:main",
