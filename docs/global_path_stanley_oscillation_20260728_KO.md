@@ -198,8 +198,7 @@ CTE가 `0.20 m`를 넘거나 큰 좌우 반전 진폭이 커지면 물리 비상
    속도 프로파일 최솟값을 미리 사용한다. 이 보정 전에는 직선에서
    `2.47 m/s`까지 오른 뒤 급곡선 진입 시 `2.28 m/s`가 남아 이탈했다.
 4. 원래 전역경로에서 지정 거리 이상 벗어나지 않는 제한형 스무딩을
-   적용한다. 현재 최선은 최대 허용 `0.15 m`, 실제 최대 이동 약
-   `0.087 m`다.
+   적용한다. 최종 반복 검증 프로파일은 최대 허용 `0.22 m`를 사용한다.
 5. 병렬 시험은 인스턴스마다 `ROS_DOMAIN_ID`, `GZ_PARTITION`,
    `IGN_PARTITION`을 분리한다. 동일한 월드·노드·토픽 이름을 사용해도
    결과가 섞이지 않는다.
@@ -212,12 +211,18 @@ CTE가 `0.20 m`를 넘거나 큰 좌우 반전 진폭이 커지면 물리 비상
 | 단순 `cruise=21` | 1 | `30.55 s` | `11.16` | `0.326 m` | 2 |
 | 전진/후진 계획, 지연 보정 전 고속 | 0 | - | `11.27` | `0.352 m` | 0 |
 | 전진/후진 + 제동 미리보기 | 1 | `32.98 s` | `10.50` | `0.187 m` | 0 |
-| 최종 제한형 경로 + 속도 계획 | 1 | `29.00 s` | `10.86` | `0.192 m` | 0 |
+| 1차 제한형 경로 + 속도 계획 | 1 | `29.00 s` | `10.86` | `0.192 m` | 0 |
+| 최종 고속 프로파일 4회 평균 | 4/4 | `24.14 s` | `12.91` | `0.215 m` | 0 |
 
-최종 프로파일은 기존 안정 기준보다 약 10.8% 빠르고 큰 직선 오실레이션은
-발생하지 않았다. 평균 speed command `17`은 아직 달성하지 못했다. 이
+최종 프로파일은 1차 프로파일보다 약 16.8%, 기존 안정 기준보다 약
+25.7% 빠르다. 독립 반복 4회의 랩타임 범위는 `24.09~24.20 s`였고 큰
+직선 오실레이션은 한 번도 발생하지 않았다. 평균 speed command `17`은
+아직 달성하지 못했다. 이
 트랙은 반경 약 `0.58 m` 수준의 연속 급곡선이 있고 조향 command가
 `42`에서 포화되므로, 최고속도만 높여 평균을 맞춘 후보는 모두 이탈했다.
+동일 파라미터를 custom-track launch 기본값으로 저장한 뒤 성능 인자를
+하나도 넘기지 않은 최종 검증도 `24.16 s`, P95 CTE `0.213 m`, 큰 직선
+반전 `0회`로 완주했다.
 
 ### 최종 프로파일 실행
 
@@ -239,18 +244,31 @@ ros2 launch xycar_map_nav sim_custom_track_waypoint_nav.launch.py \
   speed_planner_mode:=forward_backward \
   cruise_speed_command:=40.0 \
   minimum_speed_command:=5.0 \
-  maximum_lateral_accel_mps2:=0.35 \
-  speed_profile_max_accel_mps2:=1.2 \
-  speed_profile_max_decel_mps2:=1.8 \
-  speed_profile_braking_preview_sec:=0.30 \
+  maximum_lateral_accel_mps2:=0.54 \
+  speed_profile_max_accel_mps2:=1.4 \
+  speed_profile_max_decel_mps2:=2.0 \
+  speed_profile_braking_preview_sec:=0.35 \
+  speed_alignment_cross_track_soft_m:=0.10 \
   speed_alignment_cross_track_hard_m:=0.60 \
+  speed_alignment_heading_soft_rad:=0.15 \
   speed_alignment_heading_hard_rad:=1.20 \
-  path_smoothing_data_weight:=0.008 \
-  path_smoothing_weight:=0.40 \
-  path_smoothing_iterations:=1000 \
-  path_smoothing_anchor_weight:=0.15 \
-  path_smoothing_maximum_deviation_m:=0.15 \
-  curvature_feedforward_gain:=0.50
+  path_smoothing_data_weight:=0.005 \
+  path_smoothing_weight:=0.43 \
+  path_smoothing_iterations:=1500 \
+  path_smoothing_anchor_weight:=0.09 \
+  path_smoothing_maximum_deviation_m:=0.22 \
+  curvature_feedforward_gain:=0.35
+```
+
+위 값은 사용자 트랙 launch의 기본값으로도 저장되어 있다. 동일 프로파일을
+간단히 실행하려면 다음 명령으로 충분하다.
+
+```bash
+ros2 launch xycar_map_nav sim_custom_track_waypoint_nav.launch.py \
+  project_root:=$PWD \
+  drive_enabled:=true \
+  drive_start_delay_sec:=3.0 \
+  reposition_vehicle:=true
 ```
 
 ### 병렬 재탐색
@@ -263,9 +281,9 @@ source xycar_ws/install/setup.bash
 python3 scripts/parallel_waypoint_profile_search.py \
   --project-root "$PWD" \
   --workers 4 \
-  --domain-base 140 \
-  --timeout-sec 85 \
-  --profiles-json scripts/profile_sets/global_path_paper_stage6.json
+  --domain-base 80 \
+  --timeout-sec 60 \
+  --profiles-json scripts/profile_sets/global_path_lap_final_repeat.json
 ```
 
 결과는 실행 시각별

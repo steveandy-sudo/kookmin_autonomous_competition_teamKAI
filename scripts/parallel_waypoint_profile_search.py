@@ -135,6 +135,13 @@ COMMON_LAUNCH_ARGUMENTS = {
     "enable_rviz": "false",
     "drive_enabled": "true",
     "drive_start_delay_sec": 3.0,
+    "reposition_vehicle": "true",
+    "start_x": -2.725,
+    "start_y": 2.4456,
+    "start_yaw_deg": -173.257623,
+}
+
+LEGACY_TUNING_ARGUMENTS = {
     "fixed_speed_command": -1.0,
     "speed_alignment_cross_track_soft_m": 0.05,
     "speed_alignment_cross_track_hard_m": 0.30,
@@ -142,10 +149,6 @@ COMMON_LAUNCH_ARGUMENTS = {
     "speed_alignment_heading_hard_rad": 0.45,
     "path_heading_preview_m": 0.0,
     "path_curvature_preview_m": 0.10,
-    "reposition_vehicle": "true",
-    "start_x": -2.725,
-    "start_y": 2.4456,
-    "start_yaw_deg": -173.257623,
 }
 
 
@@ -197,10 +200,16 @@ def run_profile(
         "--timeout-sec",
         str(monitor_timeout_sec),
     ]
+    use_launch_defaults = bool(profile.get("use_launch_defaults", False))
     launch_arguments = {
         **COMMON_LAUNCH_ARGUMENTS,
+        **({} if use_launch_defaults else LEGACY_TUNING_ARGUMENTS),
         "project_root": str(project_root),
-        **{key: value for key, value in profile.items() if key != "name"},
+        **{
+            key: value
+            for key, value in profile.items()
+            if key not in {"name", "use_launch_defaults"}
+        },
     }
     launch_command = [
         "ros2",
@@ -270,17 +279,20 @@ def run_profile(
 
 
 def ranking_key(result: dict) -> tuple:
-    speed = result.get("speed_command", {}).get("mean", 0.0)
     reversals = result.get("steering_command", {}).get(
         "large_straight_reversals",
         999,
     )
     cte = result.get("cross_track_error_m", {}).get("p95_abs", 99.0)
+    lap_time = result.get("lap_time_sec")
+    if lap_time is None:
+        lap_time = float("inf")
     return (
         0 if result.get("success") else 1,
-        reversals,
-        abs(float(speed) - 17.0),
+        0 if reversals == 0 else 1,
+        float(lap_time),
         cte,
+        reversals,
     )
 
 
@@ -299,9 +311,17 @@ def main() -> None:
 
     project_root = Path(options.project_root).expanduser().resolve()
     if options.profiles_json:
-        profiles = json.loads(
+        profile_data = json.loads(
             Path(options.profiles_json).read_text(encoding="utf-8")
         )
+        if isinstance(profile_data, dict):
+            base_profile = profile_data.get("base", {})
+            profiles = [
+                {**base_profile, **profile}
+                for profile in profile_data.get("profiles", [])
+            ]
+        else:
+            profiles = profile_data
     else:
         profiles = DEFAULT_PROFILES
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -342,16 +362,22 @@ def main() -> None:
                 "large_straight_reversals",
                 0,
             )
+            lap_time = result.get("lap_time_sec")
+            lap_text = "-" if lap_time is None else f"{lap_time:.2f}s"
             print(
                 f"[{result['profile']}] {result['reason']} "
-                f"mean_speed={speed:.2f} p95_cte={cte:.3f} "
+                f"lap={lap_text} mean_speed={speed:.2f} "
+                f"p95_cte={cte:.3f} "
                 f"large_reversals={reversals}",
                 flush=True,
             )
 
     ranked = sorted(results, key=ranking_key)
     summary = {
-        "target_mean_speed_command": 17.0,
+        "objective": (
+            "complete lap, avoid large straight steering reversals, "
+            "then minimize simulation lap time"
+        ),
         "workers": options.workers,
         "profiles": len(profiles),
         "ranking": ranked,

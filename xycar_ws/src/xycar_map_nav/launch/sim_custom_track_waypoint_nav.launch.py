@@ -76,31 +76,31 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "path_smoothing_data_weight",
-                default_value="0.02",
+                default_value="0.005",
             ),
             DeclareLaunchArgument(
                 "path_smoothing_weight",
-                default_value="0.35",
+                default_value="0.43",
             ),
             DeclareLaunchArgument(
                 "path_smoothing_iterations",
-                default_value="500",
+                default_value="1500",
             ),
             DeclareLaunchArgument(
                 "path_smoothing_anchor_weight",
-                default_value="0.50",
+                default_value="0.09",
             ),
             DeclareLaunchArgument(
                 "path_smoothing_maximum_deviation_m",
-                default_value="-1.0",
+                default_value="0.22",
             ),
             DeclareLaunchArgument(
                 "cruise_speed_command",
-                default_value="5.0",
+                default_value="40.0",
             ),
             DeclareLaunchArgument(
                 "minimum_speed_command",
-                default_value="3.0",
+                default_value="5.0",
             ),
             DeclareLaunchArgument(
                 "fixed_speed_command",
@@ -112,16 +112,16 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "speed_planner_mode",
-                default_value="local",
+                default_value="forward_backward",
                 description="local or forward_backward",
             ),
             DeclareLaunchArgument(
                 "speed_profile_max_accel_mps2",
-                default_value="0.80",
+                default_value="1.40",
             ),
             DeclareLaunchArgument(
                 "speed_profile_max_decel_mps2",
-                default_value="1.40",
+                default_value="2.00",
             ),
             DeclareLaunchArgument(
                 "speed_profile_curvature_window_m",
@@ -133,11 +133,11 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "speed_profile_braking_preview_sec",
-                default_value="0.30",
+                default_value="0.35",
             ),
             DeclareLaunchArgument(
                 "maximum_lateral_accel_mps2",
-                default_value="2.0",
+                default_value="0.54",
             ),
             DeclareLaunchArgument(
                 "speed_acceleration_rate_command_per_sec",
@@ -149,19 +149,19 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "speed_alignment_cross_track_soft_m",
-                default_value="0.05",
+                default_value="0.10",
             ),
             DeclareLaunchArgument(
                 "speed_alignment_cross_track_hard_m",
-                default_value="0.30",
+                default_value="0.60",
             ),
             DeclareLaunchArgument(
                 "speed_alignment_heading_soft_rad",
-                default_value="0.08",
+                default_value="0.15",
             ),
             DeclareLaunchArgument(
                 "speed_alignment_heading_hard_rad",
-                default_value="0.45",
+                default_value="1.20",
             ),
             DeclareLaunchArgument(
                 "path_heading_preview_m",
@@ -181,7 +181,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "curvature_feedforward_gain",
-                default_value="0.50",
+                default_value="0.35",
             ),
             DeclareLaunchArgument(
                 "path_curvature_preview_m",
@@ -231,9 +231,12 @@ def generate_launch_description():
                     "enabling the controller."
                 ),
             ),
-            DeclareLaunchArgument("start_x", default_value="-2.7"),
-            DeclareLaunchArgument("start_y", default_value="2.25"),
-            DeclareLaunchArgument("start_yaw_deg", default_value="0.0"),
+            DeclareLaunchArgument("start_x", default_value="-2.725"),
+            DeclareLaunchArgument("start_y", default_value="2.4456"),
+            DeclareLaunchArgument(
+                "start_yaw_deg",
+                default_value="-173.257623",
+            ),
             SetEnvironmentVariable(
                 "GZ_SIM_RESOURCE_PATH",
                 [

@@ -129,6 +129,53 @@ def calculate_metrics(
         }
         for stamp, row in tracking[context_start::4]
     ]
+    sector_metrics = []
+    sector_count = 8
+    for sector in range(sector_count):
+        lower = path_point_count * sector / sector_count
+        upper = path_point_count * (sector + 1) / sector_count
+        sector_rows = [
+            (stamp, row)
+            for stamp, row in tracking
+            if lower <= int(round(row[2])) < upper
+        ]
+        sector_duration = sum(
+            current_stamp - previous_stamp
+            for (previous_stamp, _), (current_stamp, current_row)
+            in zip(tracking, tracking[1:])
+            if (
+                lower
+                <= int(round(current_row[2]))
+                < upper
+                and current_stamp >= previous_stamp
+            )
+        )
+        sector_speed_commands = [row[1] for _, row in sector_rows]
+        sector_measured_speed = [row[8] for _, row in sector_rows]
+        sector_cte = [abs(row[6]) for _, row in sector_rows]
+        sector_metrics.append(
+            {
+                "sector": sector,
+                "path_index_start": int(round(lower)),
+                "path_index_end": int(round(upper)) - 1,
+                "samples": len(sector_rows),
+                "duration_sec": sector_duration,
+                "mean_speed_command": (
+                    statistics.fmean(sector_speed_commands)
+                    if sector_speed_commands
+                    else 0.0
+                ),
+                "mean_measured_speed_mps": (
+                    statistics.fmean(sector_measured_speed)
+                    if sector_measured_speed
+                    else 0.0
+                ),
+                "p95_abs_cross_track_error_m": percentile(
+                    sector_cte,
+                    0.95,
+                ),
+            }
+        )
     return {
         "reason": reason,
         "success": completed_laps > 0,
@@ -169,6 +216,7 @@ def calculate_metrics(
             "large_straight_reversals": large_reversals,
             "large_straight_reversal_events": reversal_events,
         },
+        "path_sector_metrics": sector_metrics,
         "final_context_5hz": final_context,
     }
 

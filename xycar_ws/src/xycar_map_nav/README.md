@@ -145,9 +145,15 @@ waypoint, 선은 실제 Stanley 제어기가 받을 `/map_nav/global_path`다.
 ros2 launch xycar_map_nav sim_custom_track_waypoint_nav.launch.py \
   project_root:=$PWD \
   drive_enabled:=true \
-  cruise_speed_command:=5.0 \
-  minimum_speed_command:=3.0
+  drive_start_delay_sec:=3.0 \
+  reposition_vehicle:=true
 ```
+
+사용자 트랙 launch의 기본 주행 파라미터는 2026-07-28 병렬 Gazebo
+탐색에서 확정한 전진/후진 속도 계획 프로파일이다. 4회 독립 반복에서
+`24.09~24.20 s`, 평균 `24.14 s`, P95 CTE 평균 `0.215 m`, 큰 직선
+조향 반전 `0회`를 기록했다. 캡처가 목적이면 반드시 위쪽 예시처럼
+`drive_enabled:=false`를 사용한다.
 
 경로를 다시 만들려면 capture 모드에서 다음 서비스를 호출한다.
 
