@@ -1,129 +1,252 @@
-# Team KAI - Kookmin Autonomous Driving Mission 1
+# kookmin_autonomous_competition_teamKAI — `main`
 
-## 과제
+ROS 2 Humble 기반 Xycar 자율주행 프로젝트다. 현재 코드는 다음 기능을 하나의 주행 관리 노드로 통합한다.
 
-국민대학교 자율주행 경진대회 예선 과제 1번을 위한 ROS2 Humble 기반 주행 패키지이다. 시뮬레이터에서 제공하는 전방 카메라, LiDAR, odom, IMU 토픽을 사용해 라바콘 구간 주행, 어린이보호구역 감속, 보행자/방해차량 대응, 신호등 및 정지선 판단, 교차로 경로 선택을 수행한다.
+- LR-ASPP 차선 인지와 차선 추종
+- LiDAR 기반 라바콘 주행
+- YOLO 기반 신호등·라바콘·장애물 확인
+- 정적/동적 장애물 회피
+- ROS 2 VESC 구동
 
-## 실행법
+- 미니 PC 워크스페이스: `/home/xytron/xycar_ws`
+- ROS 배포판: ROS 2 Humble
 
-### 1. 워크스페이스 빌드
-
-제출 코드를 ROS2 워크스페이스의 `src/track_drive` 위치에 둔 뒤 빌드한다.
-
-```bash
-cd ~/xycar_ws
-source /opt/ros/humble/setup.bash
-colcon build --symlink-install --packages-select track_drive cone_il
-source install/setup.bash
-```
-
-필요하면 같은 터미널에서 ROS domain을 맞춘다.
-
-```bash
-export ROS_DOMAIN_ID=18
-```
-
-### 2. ROS-TCP endpoint 실행
-
-터미널 1에서 endpoint를 실행한다.
-
-```bash
-cd ~/xycar_ws
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-ros2 run ros_tcp_endpoint default_server_endpoint
-```
-
-시뮬레이터의 ROS-TCP 연결 설정은 일반 localhost 연결 기준으로 다음 값을 사용한다.
-
-```text
-Host/Address: 127.0.0.1
-Port: 10000
-```
-
-### 3. 시뮬레이터 실행
-
-Kookmin/Xytron 시뮬레이터를 실행하고 ROS-TCP endpoint와 연결한다. 연결 후 `/usb_cam/image_raw/front`, `/scan`, `/odom`, `/imu` 등의 토픽이 발행되는지 확인한다.
-
-### 4. 주행 노드 실행
-
-터미널 2에서 주행 launch 파일을 실행한다.
-
-```bash
-cd ~/xycar_ws
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-ros2 launch track_drive ai_direct_hybrid.launch.py startup_light_require_signal:=false
-```
-
-## 코드 계층구조
+## 1. 프로젝트 개요 및 저장소 구조
 
 ```text
 kookmin_autonomous_competition_teamKAI/
-├── assets/models/          # CNN 조향 모델(.pt), YOLO/ONNX 객체 인식 모델
-├── cone_il/                # CNN End-to-End 조향 모델 관련 ROS2 패키지
-├── launch/                 # 통합 주행 및 디버그 launch 파일
-├── resource/               # ROS2 ament package marker
-├── rviz/                   # 디버그 시각화 설정
-├── track_drive/            # 과제 1 통합 주행 로직
-├── package.xml             # ROS2 패키지 의존성 정의
-├── setup.py                # Python 노드, launch, 모델 파일 설치 설정
-├── setup.cfg               # ROS2 Python 실행 파일 설치 경로 설정
-├── requirements.txt        # Python 실행 의존성 참고
-├── reports/                # 개발 과정과 실험 내용을 정리한 보고서
-└── GoogleDrive.txt         # 추가 자료/영상 공유 링크
+├── README.md
+└── xycar_ws/
+    └── src/
+        ├── study/
+        │   ├── my_rule/             # 통합 주행 로직
+        │   └── my_rule_msgs/        # 전용 ROS 2 메시지
+        ├── xycar_application/
+        │   ├── wide_camera/         # MJPEG 카메라
+        │   └── xycar_perception/    # BEV·카메라 보정
+        ├── xycar_device/
+        │   ├── xycar_lidar/
+        │   ├── xycar_msgs/
+        │   ├── xycar_ultrasonic/
+        │   └── xycar_vesc_driver/
+        └── yolo_ros/
 ```
 
-## 각 소스코드의 역할
+주요 노드:
 
-### track_drive 패키지
+| 노드 | 역할 |
+| --- | --- |
+| `wide_camera` | `1280x1024` MJPEG 영상 발행 |
+| `my_rule_lane_perception_node` | LR-ASPP 차선 분할과 Canonical BEV 생성 |
+| `my_rule_object_detection_node` | 저주기 YOLO 객체 판단 |
+| `my_rule_cone_node` | LiDAR 라바콘 경로 생성 |
+| `my_rule_drive_manager` | 미션 판단과 최종 모터 명령 |
+| `xycar_vesc_driver` | VESC 직렬 구동과 상태 발행 |
+| `my_rule_perception_view` | 선택형 2×2 디버깅 화면 |
 
-- `track_drive/track_drive.py`: 과제 1 전체 주행을 담당하는 메인 노드이다. 여러 판단을 종합해 최종 주행 명령을 만든다.
-- `track_drive/switchable_cone_ai_driver.py`: CNN 조향 노드를 외부 enable/speed limit 토픽으로 켜고 끄는 노드이다.
-- `track_drive/safety_supervisor.py`: 신호등, 정지선, 차량 등 안전 정지 조건을 통합 관리한다.
-- `track_drive/traffic_light_detector.py`: ONNX 객체 인식 모델과 색상 기반 보조 판단으로 신호등 상태를 추정한다.
-- `track_drive/stop_line_detector.py`: 카메라 이미지를 BEV로 변환해 흰색 정지선을 검출한다.
-- `track_drive/school_zone_detector.py`: 노란색 노면 표식과 BEV 기반 분석으로 어린이보호구역을 판단한다.
-- `track_drive/intersection_decider.py`: 교차로 경로 판단 호출 경계를 담당한다.
-- `track_drive/perception.py`: 카메라/객체 인식 결과를 주행 판단에서 쓰기 좋은 형태로 정리한다.
-- `track_drive/lidar_utils.py`: LiDAR scan 데이터를 전방 장애물/라바콘 판단에 사용할 수 있도록 보조 처리한다.
-- `track_drive/control.py`: 조향/속도 명령 계산에 필요한 제어 보조 함수를 담는다.
-- `track_drive/mission_state.py`: 미션 진행 상태를 표현하는 보조 구조를 담는다.
-- `track_drive/package_paths.py`: 설치된 ROS2 패키지 내부의 모델/리소스 경로를 찾는다.
-- `track_drive/utils.py`: 공통 유틸리티 함수 모음이다.
-- `track_drive/*_debug_node.py`: 신호등, 정지선, 어린이보호구역, 교차로 판단을 개별 확인하기 위한 디버그 노드이다.
+## 2. 전체 주행 로직과 핵심 원리
+- 주행 중 신호등 제어는 아직 비활성 상태다.
+- 동적 장애물 추월도 구현만 되어 있고 비활성 상태다.
 
-### cone_il 패키지
+```
+- 카메라
+  ├─ LR-ASPP 7 Hz → Canonical 경로 → Stanley + Pure Pursuit   ┐
+  └─ YOLO 3 Hz → 신호등·cone·car·yellow_centerline 확인         ├ drive_manager
+- LiDAR 9.6 Hz → 라바콘 경로·장애물 거리                           │
+- 초음파 → 정적 장애물 측면·후방 확인                                ┘
+                               ↓
+                     /xycar_motor 100 Hz
+                               ↓
+                     ROS 2 VESC driver
+```
 
-- `cone_il/cone_il/cone_ai_driver_node.py`: 이미지를 모델에 입력해 조향각을 예측하고 `/xycar_motor`를 발행한다.
-- `cone_il/cone_il/preprocess.py`: 이미지를 crop, resize, RGB 변환, 정규화, CHW 텐서 형태로 전처리를 수행한다.
-- `cone_il/cone_il/model.py`: CNN 조향 모델 구조를 정의한다.
-- `cone_il/cone_il/cone_data_recorder_node.py`: 주행 데이터 수집용 노드이다.
-- `cone_il/cone_il/xycar_*_teleop_node.py`: 데이터 수집 또는 수동 조작에 사용하는 키보드 teleop 노드이다.
-- `cone_il/scripts/train_cone_bc.py`: 수집된 이미지/조향 데이터를 이용해 CNN 조향 모델을 학습한다.
-- `cone_il/scripts/merge_cone_datasets.py`: 여러 주행 데이터셋을 학습용 데이터셋으로 병합한다.
 
-## 모델 설명 / 학습 원리
+## 3. LR-ASPP 차선 인지·경로 생성·차선 추종
 
-### CNN End-to-End 조향 모델
+- `yellow_centerline` YOLO는 경로를 직접 만들지 않는다.
+- 이는 LR-ASPP의 잘못된 노란 후보를 제거할 때만 보조한다.
 
-`assets/models/cone_bc_scripted_*.pt` 파일은 전방 카메라 이미지를 입력으로 받아 조향각을 출력하는 TorchScript CNN 모델이다. 입력 이미지는 하단 도로 영역을 중심으로 crop하고, 고정 크기로 resize한 뒤, RGB 변환과 0~1 정규화를 거쳐 CHW 형태의 float32 텐서로 변환된다. 학습은 사람이 주행하거나 기존 주행 로직으로 얻은 카메라 이미지와 조향각 데이터를 짝지어 진행한다. 모델은 이미지에서 라바콘 배치와 도로 진행 방향을 학습하고, 실제 주행 중에는 매 프레임 조향각을 예측한다. 주행 안정성을 위해 예측 조향각에는 smoothing, 최대 조향각 제한, 조향각 기반 속도 제한을 함께 적용한다.
+1. `my_rule_lane.pt`에 `256x144` 영상을 입력한다.
+2. 흰 차선과 노란 중앙선을 분할한다.
+3. 실차 ROI를 BEV와 Canonical 영상으로 변환한다.
+4. 흰 차선은 곡선 피팅으로 연결한다.
+5. 노란 점선은 허용 간격 안에서 연결한다.
+6. 노란 중앙선 오른쪽 `0.10 m`를 기본 목표로 사용한다.
+7. Stanley와 Pure Pursuit를 결합해 조향한다.
 
-### 객체 인식 모델
 
-`assets/models/final.onnx`는 신호등, 보행자, 차량, 라바콘 등 미션 객체 인식을 위한 ONNX 모델이다. 메인 주행 노드는 이 모델의 검출 결과와 색상/위치/크기 조건을 함께 사용해 신호등 상태, 보행자 위험, 차량 존재, 좌측 라바콘 존재 여부를 판단한다.
+현재 차선 속도:
 
-## 미션내용
+| 상태 | 속도 명령 |
+| --- | ---: |
+| 직선 최고 | 8.0 |
+| 곡선 최저 | 6.0 |
+| 차선 완전 손실 | 4.0 |
 
-- 출발 신호등 확인 후 주행 시작
-- 라바콘 구간에서 CNN End-to-End 기반 조향 주행
-- 아스팔트/구불길 구간 통과
-- 보행자 회피 및 안전 정지 판단
-- 방해차량 인식 및 추월/회피 판단
-- 어린이보호구역 노면 표식 인식 및 속도 제한
-- 신호등, 정지선, 좌측 라바콘 상태를 조합한 교차로 직진/좌회전 판단
-- 총 3바퀴 주행 후 종료
+차선 경로는 최대 `7 Hz`로 갱신된다.
+제어 지연을 고려해 약 `0.30초` 앞을 예측한다.
 
-## 참고
+## 4. LiDAR 기반 라바콘 경로 생성 및 주행
 
-이 패키지는 ROS2 Humble, Python 3, OpenCV, NumPy, PyTorch, ONNX Runtime 환경을 기준으로 작성되었다. CUDA 사용이 가능한 환경에서는 CNN/ONNX 추론이 GPU에서 동작할 수 있으며, CUDA가 없는 경우 CPU 경로로 동작한다.
+1. 전방 `-70~70도`, `0.18~1.6 m` 점을 사용한다.
+2. DBSCAN으로 라바콘 군집을 만든다.
+3. 좌우 군집을 연결해 gate를 만든다.
+4. gate 중점을 중앙 경로로 사용한다.
+5. Pure Pursuit로 조향한다.
+6. 경로와 조향량에 따라 속도를 정한다.
+
+현재 주요 값:
+
+| 항목 | 값 |
+| --- | ---: |
+| 예상 통로 폭 | 0.85 m |
+| 일반 최고속도 | 17.0 |
+| 최소속도 | 9.0 |
+| 한쪽 경계 상한 | 9.5 |
+| 직선 부스트 | 21.0 |
+| 비상정지 거리 | 0.35 m |
+
+라바콘 진입은 YOLO와 LiDAR가 함께 확인해야 한다.
+종료 후 `0.65초` 동안 라바콘 조향과 차선 조향을 혼합한다.
+
+## 5. 라바콘 전용 주행 실행 매뉴얼
+
+- `cone_only.launch.py`는 라바콘 주행만 수행한다.
+- 차선주행, 신호등, 장애물 회피는 실행하지 않는다.
+- YOLO는 라바콘 진입 확인에만 사용한다.
+- 차량을 첫 라바콘 약 `1 m` 앞에 두고 실행해야 한다.
+
+
+### 터미널 1 (주행 명령어)
+
+- 차량을 첫 라바콘 약 `1 m` 앞에 두고 실행해야 한다.
+- 라바콘 구간이 끝나도 차선 주행을 실시하지 않는다.
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/xycar_ws/install/setup.bash
+
+ros2 launch my_rule cone_only.launch.py \
+  motor_drive_enabled:=true
+```
+
+### 터미널 2 (확인용 2×2 화면)
+
+- 주행 상태를 확인하고 싶을 때, 입력한다.
+- 주행과 관련되어 hz에 영향을 줄 수 있으므로, 가능하면 실행하지 않는다.
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/xycar_ws/install/setup.bash
+
+ros2 launch my_rule perception_view.launch.py \
+  mode:=auto \
+  view_rate_hz:=5.0
+```
+
+| 위치 | 화면 |
+| --- | --- |
+| 좌측 상단 | 카메라 + LiDAR 투영 |
+| 우측 상단 | 차선 또는 라바콘 BEV |
+| 좌측 하단 | 카메라 + ROI + YOLO |
+| 우측 하단 | 추종 경로 + 조향·속도 |
+
+
+## 6. 차선·라바콘 통합 주행 실행 매뉴얼
+
+`integrated_drive.launch.py`는 현재 활성 기능을 모두 실행한다.
+
+- 최초 초록불 대기
+- 차선 주행
+- 라바콘 주행
+- 정적 장애물 회피
+
+### 터미널 1 (주행 명령어)
+
+- 통합 주행은 반드시 시작 신호등 밑에서 출발해야 한다.
+- 차선 중간에 두면, 신호등을 확인 못하기에 작동하지 않는다.
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/xycar_ws/install/setup.bash
+
+ros2 launch my_rule integrated_drive.launch.py \
+  motor_drive_enabled:=true
+```
+
+### 터미널 2 (확인용 2×2 화면)
+
+- 주행 상태를 확인하고 싶을 때, 입력한다.
+- 주행과 관련되어 hz에 영향을 줄 수 있으므로, 가능하면 실행하지 않는다.
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/xycar_ws/install/setup.bash
+
+ros2 launch my_rule perception_view.launch.py \
+  mode:=auto \
+  view_rate_hz:=5.0
+```
+
+| 위치 | 화면 |
+| --- | --- |
+| 좌측 상단 | 카메라 + LiDAR 투영 |
+| 우측 상단 | 차선 또는 라바콘 BEV |
+| 좌측 하단 | 카메라 + ROI + YOLO |
+| 우측 하단 | 추종 경로 + 조향·속도 |
+
+
+## 7. 주요 설정값·실측 주기 및 안전 주의사항
+
+| 항목 | 실측 주기 |
+| --- | ---: |
+| 광각 카메라 | 약 27 Hz |
+| LiDAR | 약 9.65 Hz |
+| 차선 경로·명령 | 약 7.1 Hz |
+| 객체 YOLO | 약 3.0 Hz |
+| 라바콘 명령 | 약 9.66 Hz |
+| 최종 모터 명령 | 약 100~106 Hz |
+| VESC 상태 | 약 50 Hz |
+
+주요 설정:
+
+- 차선 인지: `config/lane_perception.yaml`
+- 차선 제어: `config/lane_control.yaml`
+- 라바콘: `config/cone_control.yaml`
+- 미션: `config/drive_manager.yaml`
+- 객체 YOLO: `config/object_detection.yaml`
+- 디버깅 화면: `config/perception_view.yaml`
+
+## 8. 현재 AI 모델과 향후 작업
+
+### 차선 모델
+
+- 파일: `models/my_rule_lane.pt`
+- 형식: TorchScript LR-ASPP
+- 클래스: `background`, `white`, `yellow`
+- 역할: 차선 경로의 주 인지
+
+### 객체 모델
+
+- 파일: `models/my_rule_objects.pt`
+- 형식: Ultralytics YOLO detection
+- 실행 주기: `3 Hz`
+
+| 클래스 | 사용 방식 |
+| --- | --- |
+| `cone` | 라바콘 진입 확인 |
+| `car` | 정적 장애물 확인 |
+| `red`, `green` | 최초 출발 신호 |
+| `yellow` | 아직은 진단만 수행 |
+| `yellow_centerline` | 중앙선 후보 보조 |
+| `obstacle_vehicle` | 동적 추월용 클래스 (아직 모델링 안됨) |
+
+## 9. 향후 작업
+
+0. 차선 주행 속도 높이기 + 라바콘 주행 속도 최적화
+1. 정적 장애물 회피 실차 검증
+2. `obstacle_vehicle` 모델 학습 (동적 장애물 클래스 추가)
+3. 동적 장애물 회피 실차 검증
+4. 주행 중 신호등 빨간불에 따른 정지 위치 조정
+5. 지름길로의 좌회전 로직 구현
+6. SLAM에서의 경로를 전역경로로 한 로직 통합

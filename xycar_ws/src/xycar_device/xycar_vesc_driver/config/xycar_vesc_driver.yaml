@@ -1,0 +1,59 @@
+xycar_vesc_driver:
+  ros__parameters:
+    # Vehicle launch is intentionally armed by default for competition use.
+    drive_enabled: true
+    require_telemetry: true
+
+    port: /dev/ttyMOTOR
+    baud_rate: 115200
+    motor_topic: /xycar_motor
+    vesc_state_topic: /vehicle/vesc_state
+    system_telemetry_topic: /vehicle/system_telemetry
+    odom_topic: /odom
+    debug_topic: /xycar_motor_bridge/debug
+    clear_fault_service: /vehicle/clear_motor_fault
+
+    odom_frame: odom
+    base_frame: base_link
+    publish_tf: true
+    wheelbase_m: 0.32
+
+    # Preserve the existing Xycar ROS 1 command contract.
+    angle_command_min: -50.0
+    angle_command_max: 100.0
+    speed_command_min: -50.0
+    speed_command_max: 100.0
+    angle_to_steering_gain: -0.0068
+    speed_to_mps_gain: 0.08
+
+    # Preserve the installed VESC/Ackermann calibration.
+    speed_to_erpm_gain: 4614.0
+    speed_to_erpm_offset: 0.0
+    steering_to_servo_gain: -1.2135
+    steering_to_servo_offset: 0.5004
+    servo_min: 0.15
+    servo_max: 0.85
+
+    control_hz: 20.0
+    telemetry_poll_hz: 50.0
+    command_timeout_sec: 0.5
+    telemetry_timeout_sec: 0.25
+    expected_firmware_major: 2
+    expected_firmware_minor: 18
+    allow_firmware_mismatch: false
+    # 0 -> speed command 10 takes about 2.7 s. This prevents the measured
+    # launch-current spike while keeping the same eventual top speed.
+    acceleration_limit_mps2: 0.3
+    deceleration_limit_mps2: 1.5
+
+    # Match the Xytron old VESC Tool guide: linearly reduce propulsion from
+    # 7.5 V to zero at 6.0 V. Any VESC fault still latches output off.
+    low_voltage_limit: 7.5
+    low_voltage_stop: 6.0
+    low_voltage_recovery: 8.0
+    recovery_stable_sec: 3.0
+    # Only an undervoltage latch auto-recovers. A VESC hardware fault still
+    # requires inspection and /vehicle/clear_motor_fault.
+    auto_recover: true
+
+    disk_path: /home/xytron

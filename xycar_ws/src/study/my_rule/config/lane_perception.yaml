@@ -1,0 +1,76 @@
+my_rule_lane_perception_node:
+  ros__parameters:
+    image_topic: /wide_camera_mjpeg/image_raw/compressed
+    use_compressed_image: true
+    enable_rectify: true
+    rect_balance: 0.3
+    max_input_age_sec: 0.35
+
+    input_width: 256
+    input_height: 144
+    white_class_id: 1
+    yellow_class_id: 2
+    white_confidence: 0.50
+    yellow_confidence: 0.50
+    yellow_yolo_assist_enabled: true
+    object_detections_topic: /my_rule/object_detections
+    yellow_yolo_class_name: yellow_centerline
+    yellow_yolo_confidence: 0.45
+    yellow_yolo_timeout_sec: 0.60
+    yellow_yolo_horizontal_margin_px: 18
+    yellow_yolo_minimum_pixels: 3
+    yellow_yolo_minimum_retained_fraction: 0.25
+    yellow_yolo_minimum_vertical_span_fraction: 0.55
+    cpu_threads: 4
+    opencv_threads: 1
+    output_qos_depth: 1
+    debug_rate_hz: 1.0
+    max_output_rate_hz: 7.0
+    output_native_resolution: false
+    publish_intermediate_topics: false
+    direct_canonical_enabled: true
+
+    canonical_topic: /perception/canonical_road_image
+    canonical_white_topic: /perception/canonical_white_mask
+    canonical_yellow_topic: /perception/canonical_yellow_mask
+    canonical_valid_topic: /perception/canonical_valid_mask
+    base_frame_id: base_footprint
+
+    src_tl_x_ratio: 0.36875
+    src_tl_y_ratio: 0.482421875
+    src_tr_x_ratio: 0.7078125
+    src_tr_y_ratio: 0.474609375
+    src_br_x_ratio: 0.99375
+    src_br_y_ratio: 0.59765625
+    src_bl_x_ratio: 0.0359375
+    src_bl_y_ratio: 0.607421875
+    dst_left_ratio: 0.125
+    dst_right_ratio: 0.875
+    dst_top_y_ratio: 0.0
+    dst_bottom_y_ratio: 0.7257575757575757
+    bev_width: 640
+    bev_height: 660
+    bev_valid_lateral_margin_px: 0
+    bev_valid_erode_px: 0
+    bev_clip_to_source_polygon: false
+    lateral_m_per_px: 0.0021875
+    forward_m_per_px: 0.0022727272727272726
+
+    canonical_width: 256
+    canonical_height: 144
+    canonical_lateral_range_m: 1.4
+    canonical_forward_range_m: 1.5
+    canonical_white_fit_enabled: true
+    canonical_white_fit_window_count: 9
+    canonical_white_fit_margin_px: 24
+    canonical_white_fit_min_pixels: 4
+    canonical_white_fit_min_centers: 2
+    canonical_white_fit_min_span_px: 8
+    canonical_white_fit_residual_px: 6.0
+    canonical_white_fit_line_width_px: 5
+    canonical_yellow_divider_enabled: true
+    canonical_yellow_divider_min_pixels: 3
+    canonical_yellow_divider_residual_px: 6.0
+    canonical_yellow_divider_line_width_px: 5
+    canonical_yellow_normalize_enabled: false
+    canonical_yellow_normalize_line_width_px: 5
