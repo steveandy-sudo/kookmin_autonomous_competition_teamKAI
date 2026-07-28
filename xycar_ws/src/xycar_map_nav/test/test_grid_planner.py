@@ -1,12 +1,14 @@
 import math
 from pathlib import Path
 
+import cv2
 import numpy as np
 
 from xycar_map_nav.grid_planner import (
     MapGrid,
     astar,
     line_is_free,
+    load_map_grid,
     load_path_csv,
     plan_waypoint_route,
     smooth_path_points,
@@ -47,6 +49,33 @@ def test_astar_uses_gap_and_prevents_corner_cutting():
     assert path[-1] == goal
     assert any(13 <= row <= 16 and column == 20 for row, column in path)
     assert not line_is_free(grid, start, goal)
+
+
+def test_trinary_gray_pixel_is_blocked_when_unknown_is_occupied(tmp_path):
+    image_path = tmp_path / "map.pgm"
+    cv2.imwrite(
+        str(image_path),
+        np.asarray([[0, 205, 254]], dtype=np.uint8),
+    )
+    yaml_path = tmp_path / "map.yaml"
+    yaml_path.write_text(
+        "image: map.pgm\n"
+        "mode: trinary\n"
+        "resolution: 0.05\n"
+        "origin: [0.0, 0.0, 0.0]\n"
+        "negate: 0\n"
+        "occupied_thresh: 0.65\n"
+        "free_thresh: 0.25\n",
+        encoding="utf-8",
+    )
+
+    grid = load_map_grid(
+        yaml_path,
+        inflation_radius_m=0.0,
+        unknown_is_occupied=True,
+    )
+
+    assert grid.free.tolist() == [[False, False, True]]
 
 
 def test_waypoints_are_planned_segment_by_segment():

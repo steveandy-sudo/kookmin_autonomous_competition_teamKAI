@@ -19,6 +19,18 @@ bag이다. 지도 이미지와 최종 웨이포인트를 함께 보존해 당시
 - 세 번째 `clicked_02`: `(0.1982, -0.3442)`
 - 네 번째 `clicked_03`: `(1.0712, -0.8731)`
 
+## 지도 점유공간 규칙
+
+이 지도는 `map.pgm`의 픽셀값을 다음과 같이 사용한다.
+
+- `254`: 확인된 자유공간
+- `205`: 미확인 공간
+- `0`: 점유공간
+
+`map.yaml`의 `free_thresh`는 `0.19`다. 따라서 `205` 회색 영역은
+자유공간이 아니며, `unknown_is_occupied: true`인 전역경로 계획에서는
+통과할 수 없다. 새 지도를 저장하거나 교체할 때도 이 값을 유지한다.
+
 ## 기록 토픽
 
 | 토픽 | 메시지 수 | 평균 주기 |
@@ -59,7 +71,7 @@ ros2 bag play "$BAG_DIR" --clock
 ```text
 ad1748917156f7fe3ad886bfcd93c9e2b0ad263ffb455f7dd5aed35b4b89fc35  edited_route_20260728_182433_0.db3.zstd
 52364f68aaa9eb36e5e73afcd9ed22ee30e6ed6042c3983eb3433360ba766f6e  map.pgm
-1a216a82fbd44fde74254b857933b977bcd60dcdae8a6aef2fc65f2c7ac5bf54  map.yaml
+833ba5851978c9d30c736224deb9f8831dfa3388dd16f7c7ade68d03161cb971  map.yaml
 0aaa8bd1395775d7bcf642d2baea8d2fc6112f12190e3aafebec4bfc84cf2d19  metadata.yaml
 88621bff35e8428cb3a83ebfe15f4222c041d1d2a457a6223422920abad58e86  waypoints_pure_pursuit.yaml
 ```

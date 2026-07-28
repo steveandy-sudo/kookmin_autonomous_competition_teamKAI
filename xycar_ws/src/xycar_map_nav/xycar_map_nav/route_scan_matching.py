@@ -91,10 +91,15 @@ def load_likelihood_field(map_yaml: str | Path) -> LikelihoodField:
     occupied_threshold = float(data.get("occupied_thresh", 0.65))
     free_threshold = float(data.get("free_thresh", 0.25))
     occupied = occupied_probability >= occupied_threshold
+    trinary_unknown = np.logical_and(
+        str(data.get("mode", "trinary")).lower() == "trinary",
+        image == 205,
+    )
     known = np.logical_or(
         occupied,
         occupied_probability <= free_threshold,
     )
+    known = np.logical_and(known, np.logical_not(trinary_unknown))
     distance_pixels = cv2.distanceTransform(
         np.logical_not(occupied).astype(np.uint8),
         cv2.DIST_L2,

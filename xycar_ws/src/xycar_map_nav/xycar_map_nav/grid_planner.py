@@ -136,10 +136,17 @@ def load_map_grid(
     occupied_probability = normalized if negate else 1.0 - normalized
     occupied_threshold = float(data.get("occupied_thresh", 0.65))
     free_threshold = float(data.get("free_thresh", 0.25))
+    trinary_unknown = np.logical_and(
+        str(data.get("mode", "trinary")).lower() == "trinary",
+        image == 205,
+    )
     if ignore_occupancy:
         blocked = np.zeros(image.shape, dtype=bool)
     elif unknown_is_occupied:
-        blocked = occupied_probability > free_threshold
+        blocked = np.logical_or(
+            occupied_probability > free_threshold,
+            trinary_unknown,
+        )
     else:
         blocked = occupied_probability >= occupied_threshold
 

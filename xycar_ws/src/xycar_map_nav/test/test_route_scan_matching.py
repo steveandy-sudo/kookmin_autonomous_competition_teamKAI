@@ -6,6 +6,7 @@ import numpy as np
 from xycar_map_nav.route_scan_matching import (
     LikelihoodField,
     MatchConfig,
+    load_likelihood_field,
     match_scan_to_route,
     scan_points_in_base,
 )
@@ -74,6 +75,29 @@ def _config():
         minimum_score_margin=0.05,
         ambiguity_separation_m=1.0,
     )
+
+
+def test_trinary_gray_pixel_is_unknown_for_scan_matching(tmp_path):
+    image_path = tmp_path / "map.pgm"
+    cv2.imwrite(
+        str(image_path),
+        np.asarray([[0, 205, 254]], dtype=np.uint8),
+    )
+    yaml_path = tmp_path / "map.yaml"
+    yaml_path.write_text(
+        "image: map.pgm\n"
+        "mode: trinary\n"
+        "resolution: 0.05\n"
+        "origin: [0.0, 0.0, 0.0]\n"
+        "negate: 0\n"
+        "occupied_thresh: 0.65\n"
+        "free_thresh: 0.25\n",
+        encoding="utf-8",
+    )
+
+    field = load_likelihood_field(yaml_path)
+
+    assert field.known.tolist() == [[True, False, True]]
 
 
 def test_unique_route_location_is_accepted():
