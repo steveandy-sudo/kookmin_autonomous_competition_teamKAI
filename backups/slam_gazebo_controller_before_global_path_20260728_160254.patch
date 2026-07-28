@@ -1,0 +1,96 @@
+diff --git a/xycar_ws/src/xycar_map_nav/rviz/real_mapping.rviz b/xycar_ws/src/xycar_map_nav/rviz/real_mapping.rviz
+index 35e1d9d..89bdb04 100644
+--- a/xycar_ws/src/xycar_map_nav/rviz/real_mapping.rviz
++++ b/xycar_ws/src/xycar_map_nav/rviz/real_mapping.rviz
+@@ -176,25 +176,26 @@ Visualization Manager:
+         Reliability Policy: Reliable
+         Value: /slam_toolbox/graph_visualization
+       Value: true
+-    - Buffer Length: 1
++    - Alpha: 1
++      Buffer Length: 1
+       Class: rviz_default_plugins/Path
+       Color: 25; 255; 80
+       Enabled: true
+-      Head Diameter: 0.18
+-      Head Length: 0.12
+-      Length: 0.10
++      Head Diameter: 0.18000000715255737
++      Head Length: 0.11999999731779099
++      Length: 0.10000000149011612
+       Line Style: Lines
+-      Line Width: 0.06
++      Line Width: 0.05999999865889549
+       Name: Global Path
+       Offset:
+         X: 0
+         Y: 0
+-        Z: 0.04
++        Z: 0.03999999910593033
+       Pose Color: 255; 85; 255
+       Pose Style: None
+-      Radius: 0.03
+-      Shaft Diameter: 0.06
+-      Shaft Length: 0.10
++      Radius: 0.029999999329447746
++      Shaft Diameter: 0.05999999865889549
++      Shaft Length: 0.10000000149011612
+       Topic:
+         Depth: 1
+         Durability Policy: Transient Local
+@@ -263,7 +264,7 @@ Visualization Manager:
+       Invert Z Axis: false
+       Name: Current View
+       Near Clip Distance: 0.009999999776482582
+-      Scale: 43.03726577758789
++      Scale: 22.712139129638672
+       Target Frame: base_footprint
+       Value: TopDownOrtho (rviz)
+       X: 2.5770606994628906
+diff --git a/xycar_ws/src/xycar_map_nav/test/test_slam_config.py b/xycar_ws/src/xycar_map_nav/test/test_slam_config.py
+index a69d289..5a5dea8 100644
+--- a/xycar_ws/src/xycar_map_nav/test/test_slam_config.py
++++ b/xycar_ws/src/xycar_map_nav/test/test_slam_config.py
+@@ -10,6 +10,7 @@ def test_correlation_search_grid_is_coarse_search_aligned():
+     for filename in (
+         "slam_toolbox_mapping.yaml",
+         "slam_toolbox_localization.yaml",
++        "slam_toolbox_localization_lidar_primary.yaml",
+     ):
+         data = yaml.safe_load((CONFIG_DIR / filename).read_text())
+         params = data["slam_toolbox"]["ros__parameters"]
+@@ -44,6 +45,7 @@ def test_slam_and_measured_odom_share_one_tf_contract():
+     for filename in (
+         "slam_toolbox_mapping.yaml",
+         "slam_toolbox_localization.yaml",
++        "slam_toolbox_localization_lidar_primary.yaml",
+     ):
+         data = yaml.safe_load((CONFIG_DIR / filename).read_text())
+         params = data["slam_toolbox"]["ros__parameters"]
+@@ -52,6 +54,26 @@ def test_slam_and_measured_odom_share_one_tf_contract():
+         assert params["base_frame"] == odom["base_frame"]
+ 
+ 
++def test_lidar_primary_localization_can_recover_from_local_odom_error():
++    data = yaml.safe_load(
++        (
++            CONFIG_DIR
++            / "slam_toolbox_localization_lidar_primary.yaml"
++        ).read_text()
++    )
++    params = data["slam_toolbox"]["ros__parameters"]
++
++    assert params["mode"] == "localization"
++    assert params["use_scan_matching"] is True
++    assert params["minimum_travel_distance"] == 0.04
++    assert params["minimum_travel_heading"] == 0.04
++    assert params["correlation_search_space_dimension"] == 0.80
++    assert params["distance_variance_penalty"] >= 1.0
++    assert params["angle_variance_penalty"] >= 2.0
++    assert params["minimum_angle_penalty"] >= 0.95
++    assert params["use_response_expansion"] is True
++
++
+ def test_default_mapping_profile_matches_original_karto_tuning():
+     data = yaml.safe_load(
+         (CONFIG_DIR / "slam_toolbox_mapping.yaml").read_text()

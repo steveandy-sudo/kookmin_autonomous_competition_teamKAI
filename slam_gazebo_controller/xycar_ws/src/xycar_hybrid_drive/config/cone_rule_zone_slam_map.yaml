@@ -1,0 +1,59 @@
+# Map-frame contract for the lower-right cone section.
+# Geometry sources:
+# - scripts/generate_kookmin_track.py: ROAD_W = 1.632 m
+# - scripts/generate_kookmin_track.py: inner white-line width = 0.800 m,
+#   white-line center spacing = 0.824 m
+# - hybrid cone planner: expected corridor width = 0.85 m
+frame_id: map
+zone_name: bottom_right_rule
+
+road:
+  fixed_width_m: 1.632
+  white_line_inner_width_m: 0.800
+  white_line_center_spacing_m: 0.824
+  cone_corridor_width_m: 0.85
+  cone_spacing_m: 0.48
+  cone_size_m: [0.18, 0.18, 0.36]
+
+control_polygon:
+  - [5.50, -1.45]
+  - [13.90, -1.45]
+  - [14.15, 1.95]
+  - [11.95, 1.95]
+  - [11.35, 0.75]
+  - [5.50, 0.75]
+
+entry_gate:
+  x: 5.95
+  y: -0.16
+  yaw_deg: 0.0
+
+exit_gate:
+  x: 13.04
+  y: 1.35
+  yaw_deg: 90.0
+
+# This is deliberately coarse and straight. Do not encode the movable cones
+# in the static SLAM path; the LiDAR cone rule supplies the local center path.
+slam_reference:
+  - [5.50, -0.16]
+  - [11.70, -0.30]
+
+phases_by_route_s:
+  - {name: straight_entry, start_s: 24.50, end_s: 26.00}
+  - {name: winding, start_s: 26.00, end_s: 29.70}
+  - {name: straight_exit, start_s: 29.70, end_s: 30.70}
+  - {name: turn_curve, start_s: 30.70, end_s: 33.10}
+
+control_sequence:
+  - SLAM_PATH_FOLLOW
+  - CONE_RULE
+  - SLAM_PATH_REJOIN
+
+handover:
+  keep_slam_localization_running: true
+  enter_rule_after_consecutive_cone_frames: 3
+  cone_entry_confidence: 0.35
+  leave_rule_after_lane_recovery_frames: 4
+  cone_path_timeout_sec: 0.8
+  note: "Only steering/speed authority changes; SLAM localization is not stopped."

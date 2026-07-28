@@ -1,0 +1,57 @@
+route_scan_localizer:
+  ros__parameters:
+    use_sim_time: false
+
+    path_topic: /map_nav/global_path
+    scan_topic: /slam/scan_filtered
+    initial_pose_topic: /initialpose
+    map_frame: map
+    base_frame: base_footprint
+    ready_topic: /map_nav/route_localization/ready
+    status_topic: /map_nav/route_localization/status
+    debug_topic: /map_nav/route_localization/debug
+    best_pose_topic: /map_nav/route_localization/best_pose
+
+    # Measured real-vehicle LiDAR pose in base_footprint.
+    laser_x: 0.065
+    laser_y: 0.0
+    laser_yaw: 0.0
+
+    minimum_scan_points: 80
+    maximum_scan_points: 180
+    maximum_scan_range_m: 6.0
+    matching_rate_hz: 2.0
+
+    # Coarse route search, followed by a local x/y/yaw refinement.
+    route_sample_spacing_m: 0.40
+    lateral_search_m: 0.30
+    lateral_step_m: 0.15
+    yaw_search_deg: 20.0
+    yaw_step_deg: 5.0
+    refinement_xy_m: 0.12
+    refinement_xy_step_m: 0.04
+    refinement_yaw_deg: 4.0
+    refinement_yaw_step_deg: 2.0
+    allow_reverse_heading: false
+    lateral_prior_weight: 0.02
+    yaw_prior_weight: 0.04
+
+    # Refuse repetitive-corridor guesses unless the best route region is
+    # clearly better than another route region at least 2 m away.
+    inlier_distance_m: 0.15
+    maximum_distance_m: 0.60
+    ambiguity_separation_m: 2.0
+    minimum_inlier_ratio: 0.45
+    maximum_mean_distance_m: 0.22
+    minimum_score_margin: 0.06
+    batch_size: 128
+
+    required_consistent_scans: 4
+    consistency_route_distance_m: 0.75
+    consistency_position_m: 0.50
+    consistency_yaw_deg: 12.0
+    localization_settle_sec: 2.0
+    alignment_position_tolerance_m: 0.75
+    alignment_yaw_tolerance_deg: 20.0
+    initial_covariance_xy: 0.04
+    initial_covariance_yaw: 0.007615435

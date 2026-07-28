@@ -1,0 +1,217 @@
+# Domain-randomized simulation collection
+
+이 파이프라인은 최종 맵의 차선 형상과 차량 실측 기준은 보존하면서 학습에
+필요한 시각·센서·동역학 변화와 차선 이탈 복구 상태를 자동 생성합니다.
+`worlds/kookmin_xycar_track_final.sdf`는 수정하지 않습니다.
+
+## 적용되는 변화
+
+| preset | 주요 변화 |
+|---|---|
+| `baseline` | 원본 환경, 차량 이탈·복구만 적용 |
+| `visual_light` | 밝은 조명, 배경 색과 가구 위치의 작은 변화 |
+| `visual_dark` | 낮은 조도, 색조·그림자 변화 |
+| `sensor` | 카메라 위치·각도·노이즈, LiDAR 거리 노이즈 |
+| `dynamics` | 마찰, 가속도, 속도 gain, 조향·속도 지연 |
+| `mixed` | 위 변화를 실차 주변의 제한된 범위에서 함께 적용 |
+
+흰색 경계선과 노란 중앙선 모델의 pose는 모든 preset에서 변경하지 않습니다.
+각 환경은 seed로 결정되므로 같은 preset과 seed는 다시 생성할 수 있습니다.
+
+## 복구 데이터 생성
+
+시나리오 관리자는 트랙 전체의 직선·좌우 곡선·S자에서 다음 오차를
+무작위로 만듭니다.
+
+- 기준 경로 좌우 `8, 12, 17, 22cm`
+- 기준 진행 방향 대비 `4, 7, 10, 14도`
+- 기본 24초 간격
+- 순간이동 직후 기본 0.8초: `bad_data`로 라벨링하여 저장 제외
+- 이후 기본 9초: `recovery`
+- 나머지 정상 주행: `general_drive`
+- 완전 이탈로 룰베이스 속도 명령이 0이 되면 해당 정지 프레임과 직전 10초를
+  지연 버퍼에서 폐기
+- canonical 흰선·노란선이 모두 없는 프레임은 저장 전에 폐기
+- 정지가 1초 지속되면 1초 뒤 새 복구 위치로 재배치
+
+복구 조향 라벨은 현재 카메라 룰베이스가 생성합니다. 첫 GUI 점검에서 흰색
+경계를 완전히 놓치는 극단 자세가 보이면 lateral/yaw 범위를 넓히지 말고 해당
+구간을 먼저 수정해야 합니다.
+
+## 빌드
+
+```bash
+cd ~/xycar_kookmin_gazebo_track
+source /opt/ros/humble/setup.bash
+
+colcon build --packages-select \
+  kaiev26_msgs xycar_perception xycar_rule_drive \
+  xycar_gazebo_bridge il_data_tools \
+  --symlink-install
+source install/setup.bash
+```
+
+## 1. GUI로 먼저 확인
+
+새 데이터 500장을 `mixed/seed 2026` 환경에서 수집합니다.
+
+```bash
+ros2 launch il_data_tools collect_randomized_sim_dataset.launch.py \
+  project_root:="$PWD" \
+  session_name:=sim_randomized_preview \
+  max_samples:=500 \
+  preset:=mixed \
+  seed:=2026 \
+  show_gui:=true
+```
+
+확인할 항목:
+
+- 차량이 차선 위 여러 위치로 이동하는가
+- 순간이동 직후 차량이 올바른 방향을 향하는가
+- 룰베이스가 노란선과 흰선 사이로 복귀하는가
+- 조명과 배경 변화가 실제 실내 환경 범위를 벗어나지 않는가
+- 카메라와 LiDAR가 끊기지 않는가
+
+500장에 도달하면 recorder, 룰베이스, bridge와 Gazebo가 함께 종료됩니다.
+
+## 2. 새 데이터 10만 장 자동 수집
+
+기본값은 5천 장씩 20개 독립 세션입니다. 첫 세션만 GUI로 보고 나머지는
+headless로 실행합니다.
+
+```bash
+cd ~/xycar_kookmin_gazebo_track
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+PROFILE="$PWD/xycar_ws/src/il_data_tools/config/real_reference_profile_20260715.json"
+
+ros2 run il_data_tools collect_randomized_batches \
+  --project-root "$PWD" \
+  --output-root "$PWD/datasets/il_canonical" \
+  --total-samples 100000 \
+  --batch-samples 5000 \
+  --seed 2026071524 \
+  --canonical-input --canonical-artifacts \
+  --canonical-artifact-mode real_visibility \
+  --real-reference-profile "$PROFILE" \
+  --show-gui-first
+```
+
+GUI 확인이 이미 끝났다면 `--show-gui-first`를 생략하면 전 세션이 headless로
+실행됩니다. 기존 `sim_drive_01` 등의 세션은 삭제하거나 덮어쓰지 않습니다.
+
+현재 sim-to-real용 canonical BEV 데이터는 아래 단일 파이프라인을 사용합니다.
+수집 후 파일·복구 비율 검증, 세션 단위 split, 학습, held-out 평가, 모델 게시가
+모두 성공해야 전원을 끕니다.
+
+```bash
+PROFILE="$PWD/xycar_ws/src/il_data_tools/config/real_reference_profile_20260715.json"
+
+ros2 run il_data_tools run_canonical_pipeline \
+  --project-root "$PWD" \
+  --total-samples 100000 \
+  --batch-samples 5000 \
+  --seed 2026071524 \
+  --run-name drive_canonical_real_reference_200k_20260715 \
+  --real-reference-profile "$PROFILE" \
+  --include-run drive_canonical_50k_20260714 \
+  --existing-visibility-variants 2 \
+  --epochs 50 \
+  --batch-size 256 \
+  --num-workers 8 \
+  --device cuda \
+  --show-gui-first \
+  --publish-model \
+  --git-remotes origin,teamkai \
+  --poweroff-on-success
+```
+
+이 명령은 `/perception/canonical_road_image_augmented`를 PNG로 저장한다. 실제
+본선·임시트랙에서 측정한 흰선 2개/1개/0개와 노란선 관측 비율을 시간 연속
+가림으로 재현하지만 선의 위치와 곡률은 바꾸지 않는다. 과거 clean canonical
+5만 장은 같은 형식의 두 파생본으로 변환하므로 신규 10만 장과 합쳐 총 20만
+장에 가까운 199,898장이 된다. 과거 데이터의 완전 빈 프레임 51장은 각 파생본에서
+제외한다. raw RGB 세션과 선을 직접 옮기거나 굽힌 legacy 3만 장은 넣지 않는다.
+본선 로스백에서 0.6초 이상 차선이 완전히 사라진 구간과 임시트랙의 물리적 도로
+단절·회차 구간은 profile 계산에서 제외했으며, 시뮬 recorder도 완전 빈 canonical
+프레임을 저장하지 않는다. 200장 스모크 검증에서는 빈 후보 12장을 제외한 뒤
+저장된 빈 프레임이 0장임을 확인했다.
+
+생성 예시:
+
+```text
+datasets/il/drive/sim_baseline_s2026_01
+datasets/il/drive/sim_visual_light_s2027_01
+datasets/il/drive/sim_visual_dark_s2028_01
+datasets/il/drive/sim_sensor_s2029_01
+datasets/il/drive/sim_dynamics_s2030_01
+datasets/il/drive/sim_mixed_s2031_01
+```
+
+## 저장되는 환경 정보
+
+각 세션의 `metadata.json` 안 `run_manifest`에 다음 값이 들어갑니다.
+
+- preset과 seed
+- 원본 world SHA-256
+- 조명과 배경 RGB
+- 이동한 배경 객체와 pose 변화
+- 카메라 pose 및 영상 노이즈
+- LiDAR 거리 노이즈
+- 마찰·가속도 변화
+- 속도 gain과 조향·속도 지연
+- scenario event log 위치
+
+생성된 임시 world와 이벤트 로그는 아래에 있습니다.
+
+```text
+generated/domain_randomization/
+```
+
+## 수집 결과 확인
+
+```bash
+python3 - <<'PY'
+import csv
+from collections import Counter
+from pathlib import Path
+
+root = Path('datasets/il/drive')
+for session in sorted(root.glob('sim_*')):
+    csv_path = session / 'samples.csv'
+    if not csv_path.exists():
+        continue
+    rows = list(csv.DictReader(csv_path.open()))
+    labels = Counter(row['mission_label'] for row in rows)
+    print(session.name, len(rows), dict(labels))
+PY
+```
+
+기본 설정에서는 세션 전체의 약 35~40%가 `recovery`가 되는 것을 목표로
+합니다. 실제 비율은 카메라 저장률과 scenario 시점에 따라 달라집니다.
+
+## 재학습
+
+기존 데이터와 새 랜덤 세션을 모두 세션 단위로 다시 분할해 학습합니다.
+
+```bash
+ros2 run il_data_tools train_from_raw_dataset.py \
+  --profile drive \
+  --dataset-root "$PWD/datasets/il/drive" \
+  --processed-dir "$PWD/datasets/processed/drive_randomized" \
+  --model-output-dir "$PWD/models/il_policies/drive_randomized" \
+  --epochs 50 \
+  --batch-size 256 \
+  --num-workers 8 \
+  --device cuda \
+  --canonical-input \
+  --enable-flip \
+  --recovery-oversample-factor 1 \
+  --mark-final
+```
+
+validation과 test에는 학습에 사용하지 않은 seed 세션을 남겨 두는 것이
+중요합니다. 같은 세션의 연속 프레임을 train과 validation에 나누면 실제보다
+좋은 성능으로 보일 수 있습니다.

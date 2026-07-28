@@ -23,7 +23,7 @@
 1. 물리 비상 정지 담당자가 차량 옆에 있다.
 2. 처음에는 구동 바퀴를 바닥에서 띄운다.
 3. 룰베이스, 키보드 조종, 다른 자율주행 publisher를 모두 종료한다.
-4. `/xycar_motor` subscriber는 실차 모터 bridge 하나 이상이고, 자율주행
+4. `/xycar_motor` subscriber는 ROS2 `xycar_vesc_driver` 하나이고, 자율주행
    publisher는 아직 0개인지 확인한다.
 5. 카메라 또는 LiDAR를 끊었을 때 shadow speed가 0으로 바뀌는지 확인한다.
 
@@ -42,7 +42,8 @@ source /opt/ros/humble/setup.bash
 python3 -c "import torch; print(torch.__version__)" || \
   python3 -m pip install --user torch
 
-colcon build --packages-select il_data_tools --symlink-install
+colcon build --packages-up-to \
+  xycar_msgs xycar_vesc_driver il_data_tools --symlink-install
 source install/setup.bash
 export ROS_DOMAIN_ID=7
 ```
@@ -54,7 +55,8 @@ cd ~/kookmin_sim_to_real
 git switch simulation
 git pull --ff-only origin simulation
 source /opt/ros/humble/setup.bash
-colcon build --packages-select il_data_tools --symlink-install
+colcon build --packages-up-to \
+  xycar_msgs xycar_vesc_driver il_data_tools --symlink-install
 source install/setup.bash
 export ROS_DOMAIN_ID=7
 ```
@@ -71,8 +73,16 @@ sha256sum "$MODEL"
 
 ## 2. 실차 장치 실행 및 계약 확인
 
-차량에서 평소 사용하는 카메라, LiDAR, ROS1 VESC 컨테이너와
-ROS1-ROS2 dynamic bridge를 먼저 실행한다. 그 다음 이 저장소의 새 터미널에서:
+ROS1 VESC 컨테이너와 ROS1-ROS2 dynamic bridge는 종료한다. `/dev/ttyMOTOR`를
+점유하는 프로세스가 없는지 확인한 다음 ROS2 네이티브 드라이버를 출력 비활성
+상태로 실행한다.
+
+```bash
+ros2 launch xycar_vesc_driver xycar_vesc_driver.launch.py \
+  drive_enabled:=false
+```
+
+차량의 카메라와 LiDAR를 실행한 다음 새 터미널에서:
 
 ```bash
 cd ~/kookmin_sim_to_real
@@ -84,6 +94,8 @@ ros2 topic list -t | grep -E 'image|scan|xycar_motor'
 ros2 topic hz /image_raw
 ros2 topic hz /scan
 ros2 topic info /xycar_motor -v
+ros2 topic hz /vehicle/vesc_state
+ros2 topic echo /diagnostics
 ```
 
 BC 모델은 시뮬의 `/image_raw`로 학습했으므로 실차에서도 640x480 raw
@@ -163,6 +175,14 @@ ros2 topic echo /il/policy_debug
 shadow launch를 `Ctrl+C`로 완전히 종료한다. 차량 구동 바퀴를 띄우고 물리
 비상 정지를 준비한 뒤 터미널 1에서 다음을 실행한다.
 
+출력 비활성으로 실행했던 VESC 드라이버도 종료하고 별도 터미널에서 출력
+활성 상태로 다시 실행한다.
+
+```bash
+ros2 launch xycar_vesc_driver xycar_vesc_driver.launch.py \
+  drive_enabled:=true
+```
+
 ```bash
 cd ~/kookmin_sim_to_real
 source /opt/ros/humble/setup.bash
@@ -211,7 +231,7 @@ ros2 launch il_data_tools real_policy_inference.launch.py \
   min_speed_command:=3.0
 ```
 
-정상 종료는 실행 터미널에서 한 번의 `Ctrl+C`다. 프로세스 오류나 bridge
+정상 종료는 실행 터미널에서 한 번의 `Ctrl+C`다. 프로세스 오류나 직렬 통신
 단절에는 소프트웨어 정지만 믿지 말고 반드시 물리 비상 정지를 사용한다.
 
 ## 6. 절대 동시에 실행하지 않을 노드

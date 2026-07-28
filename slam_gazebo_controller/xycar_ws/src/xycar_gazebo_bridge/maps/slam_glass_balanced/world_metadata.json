@@ -1,0 +1,152 @@
+{
+  "world_name": "kookmin_xycar_track",
+  "map_model_name": "slam_map",
+  "vehicle_model_name": "xycar_ackermann",
+  "map_yaml": "slam_glass_balanced.yaml",
+  "map_image": "slam_glass_balanced.pgm",
+  "map_width_pixels": 450,
+  "map_height_pixels": 317,
+  "resolution_m": 0.05,
+  "map_width_m": 22.5,
+  "map_height_m": 15.850000000000001,
+  "transform": {
+    "offset_x": 0.0,
+    "offset_y": 0.0,
+    "yaw": 0.0,
+    "scale": 1.0
+  },
+  "wall_mode": "route",
+  "wall_elements": 378,
+  "road_half_width_m": 0.816,
+  "road_width_m": 1.632,
+  "road_geometry_reference": {
+    "full_paved_width_m": 1.632,
+    "white_line_inner_width_m": 0.8,
+    "white_line_center_spacing_m": 0.824,
+    "cone_corridor_width_m": 0.85,
+    "source": "scripts/generate_kookmin_track.py and hwj_cone_planner.py"
+  },
+  "wall_thickness_m": 0.08,
+  "wall_height_m": 0.8,
+  "glass_layout": "upper_right",
+  "glass_sections": [
+    {
+      "name": "glass_right",
+      "x": 14.07,
+      "y": 3.35,
+      "yaw": 1.5707963267948966,
+      "length": 6.7,
+      "thickness": 0.03,
+      "height": 0.9,
+      "opening_clearance": 0.5,
+      "yaw_deg": 90.0,
+      "lidar_collision": false,
+      "curb_height_m": 0.04
+    },
+    {
+      "name": "glass_upper_right",
+      "x": 10.4,
+      "y": 8.25,
+      "yaw": 0.0,
+      "length": 5.6,
+      "thickness": 0.03,
+      "height": 0.9,
+      "opening_clearance": 0.35,
+      "yaw_deg": 0.0,
+      "lidar_collision": false,
+      "curb_height_m": 0.04
+    }
+  ],
+  "cone_rule_zone": {
+    "name": "bottom_right_rule",
+    "start_s": 24.5,
+    "end_s": 33.1,
+    "spacing": 0.48,
+    "corridor_width": 0.85,
+    "road_width": 1.632,
+    "control_polygon": [
+      [
+        5.5,
+        -1.45
+      ],
+      [
+        13.9,
+        -1.45
+      ],
+      [
+        14.15,
+        1.95
+      ],
+      [
+        11.95,
+        1.95
+      ],
+      [
+        11.35,
+        0.75
+      ],
+      [
+        5.5,
+        0.75
+      ]
+    ],
+    "entry_gate": {
+      "x": 5.95,
+      "y": -0.16,
+      "yaw": 0.0,
+      "yaw_deg": 0.0
+    },
+    "exit_gate": {
+      "x": 13.04,
+      "y": 1.35,
+      "yaw": 1.5707963267948966,
+      "yaw_deg": 90.0
+    },
+    "slam_reference": [
+      [
+        5.5,
+        -0.16
+      ],
+      [
+        11.7,
+        -0.3
+      ]
+    ],
+    "phases": [
+      [
+        "straight_entry",
+        24.5,
+        26.0
+      ],
+      [
+        "winding",
+        26.0,
+        29.7
+      ],
+      [
+        "straight_exit",
+        29.7,
+        30.7
+      ],
+      [
+        "turn_curve",
+        30.7,
+        33.1
+      ]
+    ],
+    "cone_count": 36,
+    "control": "LiDAR cone rule; keep SLAM localization running"
+  },
+  "spawn_map": {
+    "x": 8.64926958348203,
+    "y": 7.420009550920498,
+    "yaw": -2.852326823557933
+  },
+  "spawn_world": {
+    "x": 8.64926958348203,
+    "y": 7.420009550920498,
+    "yaw": -2.852326823557933
+  },
+  "output_world": "../../worlds/slam_glass_balanced.sdf",
+  "output_texture": "slam_glass_balanced_texture.png"
+}

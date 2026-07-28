@@ -1,0 +1,3121 @@
+diff --git a/README.md b/README.md
+index 94b937f..e77b118 100644
+--- a/README.md
++++ b/README.md
+@@ -15,7 +15,7 @@
+   -> 단계별 실차 shadow/저속 검증         <- 다음
+ ```
+ 
+-> 기준일: 2026-07-23
++> 기준일: 2026-07-24
+ > 기준 브랜치: `simulation`
+ 
+ 2026-07-23 최종 중앙선 Stanley/Pure Pursuit 룰베이스와 평균 속도 명령 17
+@@ -43,6 +43,8 @@ LiDAR 없이 이전·현재 canonical 영상만 쓰는 TD3+BC 학습과 1차 Gaz
+ - CAD 중심선 보상, reset, transition recorder와 TD3+BC를 포함한 `xycar_rl`
+ - 고속 Actor/Critic의 이전·현재 canonical 2프레임 입력과 조향·속도 동시 출력
+ - Ryzen 5 실차용 YOLO11n-seg 256 경량 차선 인지와 camera-only shadow 통합 launch
++- 압축 카메라에서 canonical까지 한 프로세스로 처리하는 7 Hz 실차 저지연
++  LR-ASPP 경로와 단계별 p50/p95 측정 도구
+ 
+ ### 최신 모델
+ 
+@@ -162,6 +164,8 @@ git pull --ff-only origin simulation
+ | 실차 룰베이스만 실행 | [`real_vehicle_deployment.md`](docs/real_vehicle_deployment.md) |
+ | 고속 TD3+BC 학습·단계별 실차 shadow | [`high_speed_rl_20260717.md`](docs/high_speed_rl_20260717.md) |
+ | 완주 우선 lap-time RL·병렬 Gazebo 수집 | [`lap_time_rl_20260723.md`](docs/lap_time_rl_20260723.md) |
++| 2026-07-24 실차 곡선 이탈 분석·수정·Copilot 인수인계 | [`real_curve_fix_handoff_20260724.md`](docs/real_curve_fix_handoff_20260724.md) |
++| 2026-07-24 실차 인지·정책 지연 최소화 실행 및 Codex 인수인계 | [`real_low_latency_handoff_20260724.md`](docs/real_low_latency_handoff_20260724.md) |
+ | ASUS에서 새 YOLO 차선 인지 검증 | [`real_vehicle_yolo_lane_20260720.md`](docs/real_vehicle_yolo_lane_20260720.md) |
+ | YOLO11n 256 경량 모델의 정확도·속도 비교 | [`2026-07-21_yolo11n_256_ultralight.md`](docs/2026-07-21_yolo11n_256_ultralight.md) |
+ | YOLO26n 256 재학습·실차 후보 비교 | [`2026-07-21_yolo26n_256_experiment.md`](docs/2026-07-21_yolo26n_256_experiment.md) |
+diff --git a/xycar_ws/src/lane_seg_control/README.md b/xycar_ws/src/lane_seg_control/README.md
+index af60c20..10128f4 100644
+--- a/xycar_ws/src/lane_seg_control/README.md
++++ b/xycar_ws/src/lane_seg_control/README.md
+@@ -7,15 +7,18 @@ model is not part of the active driving path.
+ Pipeline:
+ 
+ ```text
+-/wide_camera/rect/image_raw
++/wide_camera_mjpeg/image_raw/compressed
++  -> decode + rectify only the newest selected 7 Hz frame
+   -> LR-ASPP MobileNetV3-Small (RGB 256x144)
+-  -> /lane_seg/source_image (the exact processed frame)
+-  -> /lane_seg/white_boundary_mask
+-  -> /lane_seg/yellow_centerline_mask
+-  -> calibrated BEV (640x660, 1.4m x 1.5m)
++  -> in-process white/yellow masks
++  -> in-process calibrated BEV (640x660, 1.4m x 1.5m)
+   -> /perception/canonical_road_image (256x144 bgr8)
+ ```
+ 
++The real-car low-latency path does not serialize three intermediate images,
++run an approximate-time synchronizer, or warp a color BEV. The legacy
++two-node adapter remains available for pixel-equivalence checks.
++
+ Canonical-only conversion keeps the calibrated `640x480` BEV unchanged and
+ extends its canvas to `640x660`. The additional rows retain accepted near-field
+ segmentation masks that the same homography projects below `y=479`. The full
+@@ -36,10 +39,10 @@ colcon build --packages-up-to lane_seg_control --symlink-install
+ source install/setup.bash
+ ```
+ 
+-Run after the real rectified camera is publishing:
++Run after the real MJPEG camera is publishing:
+ 
+ ```bash
+-ros2 launch lane_seg_control lane_seg_lraspp_canonical_only.launch.py
++ros2 launch lane_seg_control lane_seg_lraspp_low_latency_real.launch.py
+ ```
+ 
+ Use the Gazebo-matched camera and BEV profile in simulation:
+@@ -58,8 +61,11 @@ remain unchanged.
+ The packaged TorchScript semantic-segmentation model keeps the same mask, BEV,
+ and canonical topic contract on the vehicle and in Gazebo:
+ 
++The generic launch also defaults to the direct in-process canonical path:
++
+ ```bash
+-ros2 launch lane_seg_control lane_seg_lraspp_canonical_only.launch.py
++ros2 launch lane_seg_control lane_seg_lraspp_canonical_only.launch.py \
++  image_topic:=/wide_camera/rect/image_raw
+ ```
+ 
+ It consumes RGB ImageNet-normalized `256x144` input and maps output classes as
+@@ -95,9 +101,13 @@ debug topics in RViz:
+ rviz2 -d "$(ros2 pkg prefix --share xycar_rule_drive)/rviz/real_yolo_camera_canonical.rviz"
+ ```
+ 
+-For throttled rosbag reprocessing, set `pipeline_qos_depth:=10` so the source,
+-white, and yellow messages for each recorded frame remain synchronized. The
+-default stays at `1` to prioritize fresh frames during live driving.
++For a legacy adapter comparison, use
++`direct_canonical_enabled:=false publish_intermediate_topics:=true`.
++The live default keeps queue depth 1 to prioritize the newest frame.
++
++`/lane_seg/diagnostics` contains model, total callback, decode/rectify,
++canonical, source-age, replaced-input, and stale-input timings. Use
++`scripts/measure_live_pipeline_latency.py` for a 30-second p50/p95 report.
+ 
+ Export 10 Hz side-by-side montages directly from a compressed-camera rosbag:
+ 
+diff --git a/xycar_ws/src/lane_seg_control/lane_seg_control/canonical_adapter_node.py b/xycar_ws/src/lane_seg_control/lane_seg_control/canonical_adapter_node.py
+index 903b15d..72458ce 100644
+--- a/xycar_ws/src/lane_seg_control/lane_seg_control/canonical_adapter_node.py
++++ b/xycar_ws/src/lane_seg_control/lane_seg_control/canonical_adapter_node.py
+@@ -16,10 +16,13 @@ from sensor_msgs.msg import Image
+ 
+ from xycar_perception.canonical_road import (
+     CanonicalRoadStages,
+-    make_canonical_road_image_from_masks,
++    _fixed_width_mask,
++    _metric_crop,
+ )
+ 
+ from lane_seg_control.white_lane_fitter import (
++    WhiteLaneFitResult,
++    YellowCenterlineReference,
+     compose_fitted_canonical,
+     fit_white_lane_boundaries,
+     fit_yellow_centerline_reference,
+@@ -36,6 +39,42 @@ class BevGeometry:
+     height: int
+ 
+ 
++@dataclass(frozen=True)
++class CanonicalRenderConfig:
++    lateral_m_per_px: float
++    forward_m_per_px: float
++    lateral_range_m: float
++    forward_range_m: float
++    output_width: int
++    output_height: int
++    background_gray: int
++    line_width_px: int
++    white_fit_enabled: bool
++    white_fit_window_count: int
++    white_fit_margin_px: int
++    white_fit_min_pixels: int
++    white_fit_min_centers: int
++    white_fit_min_span_px: int
++    white_fit_residual_px: float
++    white_fit_line_width_px: int
++    yellow_divider_enabled: bool
++    yellow_divider_min_pixels: int
++    yellow_divider_residual_px: float
++    yellow_divider_line_width_px: int
++    yellow_normalize_enabled: bool
++    yellow_normalize_line_width_px: int
++    yellow_normalize_min_area_px: int
++    yellow_normalize_smoothing_rows: int
++
++
++@dataclass(frozen=True)
++class CanonicalRenderResult:
++    stages: CanonicalRoadStages
++    raw_stages: CanonicalRoadStages
++    white_fit: WhiteLaneFitResult | None
++    yellow_reference: YellowCenterlineReference | None
++
++
+ def build_bev_geometry(
+     image_width: int,
+     image_height: int,
+@@ -71,19 +110,17 @@ def build_bev_geometry(
+     )
+ 
+ 
+-def warp_semantic_masks(
+-    image: np.ndarray,
+-    white_mask: np.ndarray,
+-    yellow_mask: np.ndarray,
++def build_bev_valid_mask(
++    input_shape: tuple[int, int],
+     geometry: BevGeometry,
+     *,
+     valid_lateral_margin_px: int,
+     valid_erode_px: int,
+-    clip_to_source_polygon: bool = True,
+-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
++    clip_to_source_polygon: bool,
++) -> np.ndarray:
+     output_size = (geometry.width, geometry.height)
+     if clip_to_source_polygon:
+-        source_valid = np.zeros(image.shape[:2], dtype=np.uint8)
++        source_valid = np.zeros(input_shape, dtype=np.uint8)
+         cv2.fillConvexPoly(
+             source_valid,
+             np.rint(geometry.source_points).astype(np.int32),
+@@ -111,15 +148,41 @@ def warp_semantic_masks(
+     if erode > 0:
+         size = erode * 2 + 1
+         valid = cv2.erode(valid, np.ones((size, size), dtype=np.uint8))
++    return valid
+ 
+-    bev_image = cv2.warpPerspective(
+-        image,
+-        geometry.matrix,
+-        output_size,
+-        flags=cv2.INTER_LINEAR,
+-        borderMode=cv2.BORDER_CONSTANT,
+-        borderValue=(70, 70, 70),
+-    )
++
++def warp_semantic_masks_only(
++    white_mask: np.ndarray,
++    yellow_mask: np.ndarray,
++    geometry: BevGeometry,
++    *,
++    valid_lateral_margin_px: int,
++    valid_erode_px: int,
++    clip_to_source_polygon: bool = True,
++    precomputed_valid: np.ndarray | None = None,
++) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
++    if white_mask.shape != yellow_mask.shape:
++        raise ValueError(
++            f"semantic mask dimensions differ: {white_mask.shape} "
++            f"!= {yellow_mask.shape}"
++        )
++    output_size = (geometry.width, geometry.height)
++    if precomputed_valid is None:
++        valid = build_bev_valid_mask(
++            white_mask.shape,
++            geometry,
++            valid_lateral_margin_px=valid_lateral_margin_px,
++            valid_erode_px=valid_erode_px,
++            clip_to_source_polygon=clip_to_source_polygon,
++        )
++    else:
++        valid = precomputed_valid
++        expected_shape = (geometry.height, geometry.width)
++        if valid.shape != expected_shape:
++            raise ValueError(
++                f"precomputed valid mask has shape {valid.shape}, "
++                f"expected {expected_shape}"
++            )
+     bev_white = cv2.warpPerspective(
+         (white_mask > 0).astype(np.uint8) * 255,
+         geometry.matrix,
+@@ -136,11 +199,181 @@ def warp_semantic_masks(
+         borderMode=cv2.BORDER_CONSTANT,
+         borderValue=0,
+     )
+-    bev_white = cv2.bitwise_and(bev_white, valid)
+-    bev_yellow = cv2.bitwise_and(bev_yellow, valid)
++    return (
++        cv2.bitwise_and(bev_white, valid),
++        cv2.bitwise_and(bev_yellow, valid),
++        valid,
++    )
++
++
++def warp_semantic_masks(
++    image: np.ndarray,
++    white_mask: np.ndarray,
++    yellow_mask: np.ndarray,
++    geometry: BevGeometry,
++    *,
++    valid_lateral_margin_px: int,
++    valid_erode_px: int,
++    clip_to_source_polygon: bool = True,
++) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
++    output_size = (geometry.width, geometry.height)
++    bev_white, bev_yellow, valid = warp_semantic_masks_only(
++        white_mask,
++        yellow_mask,
++        geometry,
++        valid_lateral_margin_px=valid_lateral_margin_px,
++        valid_erode_px=valid_erode_px,
++        clip_to_source_polygon=clip_to_source_polygon,
++    )
++
++    bev_image = cv2.warpPerspective(
++        image,
++        geometry.matrix,
++        output_size,
++        flags=cv2.INTER_LINEAR,
++        borderMode=cv2.BORDER_CONSTANT,
++        borderValue=(70, 70, 70),
++    )
+     return bev_image, bev_white, bev_yellow, valid
+ 
+ 
++def render_canonical_from_bev_masks(
++    bev_white: np.ndarray,
++    bev_yellow: np.ndarray,
++    valid: np.ndarray,
++    config: CanonicalRenderConfig,
++) -> CanonicalRenderResult:
++    metric_white = _metric_crop(
++        (bev_white > 0).astype(np.uint8) * 255,
++        lateral_m_per_px=config.lateral_m_per_px,
++        forward_m_per_px=config.forward_m_per_px,
++        lateral_range_m=config.lateral_range_m,
++        forward_range_m=config.forward_range_m,
++    )
++    metric_yellow = _metric_crop(
++        (bev_yellow > 0).astype(np.uint8) * 255,
++        lateral_m_per_px=config.lateral_m_per_px,
++        forward_m_per_px=config.forward_m_per_px,
++        lateral_range_m=config.lateral_range_m,
++        forward_range_m=config.forward_range_m,
++    )
++    metric_valid = _metric_crop(
++        (valid > 0).astype(np.uint8) * 255,
++        lateral_m_per_px=config.lateral_m_per_px,
++        forward_m_per_px=config.forward_m_per_px,
++        lateral_range_m=config.lateral_range_m,
++        forward_range_m=config.forward_range_m,
++    )
++    metric_white[metric_yellow > 0] = 0
++    metric_white = cv2.bitwise_and(metric_white, metric_valid)
++    metric_yellow = cv2.bitwise_and(metric_yellow, metric_valid)
++    close_kernel = np.ones((3, 3), dtype=np.uint8)
++    metric_white = cv2.morphologyEx(
++        metric_white,
++        cv2.MORPH_CLOSE,
++        close_kernel,
++    )
++    metric_yellow = cv2.morphologyEx(
++        metric_yellow,
++        cv2.MORPH_CLOSE,
++        close_kernel,
++    )
++    output_size = (config.output_width, config.output_height)
++    white_mask = cv2.resize(
++        metric_white,
++        output_size,
++        interpolation=cv2.INTER_NEAREST,
++    )
++    yellow_mask = cv2.resize(
++        metric_yellow,
++        output_size,
++        interpolation=cv2.INTER_NEAREST,
++    )
++    output_valid = cv2.resize(
++        metric_valid,
++        output_size,
++        interpolation=cv2.INTER_NEAREST,
++    )
++    pre_geometry_white = white_mask.copy()
++    pre_geometry_yellow = yellow_mask.copy()
++    white_mask = _fixed_width_mask(white_mask, config.line_width_px)
++    yellow_mask = _fixed_width_mask(yellow_mask, config.line_width_px)
++    white_mask = cv2.bitwise_and(white_mask, output_valid)
++    yellow_mask = cv2.bitwise_and(yellow_mask, output_valid)
++    white_mask[yellow_mask > 0] = 0
++    canonical = np.full(
++        (config.output_height, config.output_width, 3),
++        int(np.clip(config.background_gray, 0, 255)),
++        dtype=np.uint8,
++    )
++    canonical[white_mask > 0] = (255, 255, 255)
++    canonical[yellow_mask > 0] = (0, 220, 255)
++    stages = CanonicalRoadStages(
++        road_image=canonical,
++        white_mask=white_mask,
++        yellow_mask=yellow_mask,
++        pre_geometry_white_mask=pre_geometry_white,
++        pre_geometry_yellow_mask=pre_geometry_yellow,
++        post_geometry_white_mask=pre_geometry_white.copy(),
++        post_geometry_yellow_mask=pre_geometry_yellow.copy(),
++        valid_mask=output_valid,
++    )
++
++    raw_stages = stages
++    white_fit = None
++    yellow_reference = None
++    if config.white_fit_enabled:
++        if config.yellow_divider_enabled:
++            yellow_reference = fit_yellow_centerline_reference(
++                raw_stages.yellow_mask,
++                min_pixels=config.yellow_divider_min_pixels,
++                residual_threshold_px=config.yellow_divider_residual_px,
++                line_width_px=config.yellow_divider_line_width_px,
++            )
++        divider = (
++            yellow_reference.x_by_y
++            if yellow_reference is not None and yellow_reference.valid
++            else None
++        )
++        white_fit = fit_white_lane_boundaries(
++            raw_stages.white_mask,
++            window_count=config.white_fit_window_count,
++            window_margin_px=config.white_fit_margin_px,
++            min_pixels_per_window=config.white_fit_min_pixels,
++            min_centers=config.white_fit_min_centers,
++            min_span_px=config.white_fit_min_span_px,
++            residual_threshold_px=config.white_fit_residual_px,
++            line_width_px=config.white_fit_line_width_px,
++            divider_x_by_y=divider,
++        )
++        output_yellow = raw_stages.yellow_mask
++        if config.yellow_normalize_enabled:
++            output_yellow = normalize_yellow_fragments(
++                output_yellow,
++                line_width_px=config.yellow_normalize_line_width_px,
++                min_component_area_px=config.yellow_normalize_min_area_px,
++                smoothing_window_rows=config.yellow_normalize_smoothing_rows,
++            )
++        fitted_road, fitted_white = compose_fitted_canonical(
++            white_fit.mask,
++            output_yellow,
++            raw_stages.valid_mask,
++            background_gray=config.background_gray,
++        )
++        stages = replace(
++            raw_stages,
++            road_image=fitted_road,
++            white_mask=fitted_white,
++            yellow_mask=output_yellow,
++        )
++    return CanonicalRenderResult(
++        stages=stages,
++        raw_stages=raw_stages,
++        white_fit=white_fit,
++        yellow_reference=yellow_reference,
++    )
++
++
+ class CanonicalAdapterNode(Node):
+     """Preserve the canonical image contract while replacing lane semantics."""
+ 
+@@ -230,6 +463,7 @@ class CanonicalAdapterNode(Node):
+         self.debug_rate_hz = float(self.get_parameter("debug_rate_hz").value)
+         self.last_debug_bucket: int | None = None
+         self.last_canonical_fit_debug_bucket: int | None = None
++        self.render_config = self.make_render_config()
+ 
+         output_qos = QoSProfile(
+             history=HistoryPolicy.KEEP_LAST,
+@@ -319,6 +553,88 @@ class CanonicalAdapterNode(Node):
+     def parameter_float(self, name: str) -> float:
+         return float(self.get_parameter(name).value)
+ 
++    def make_render_config(self) -> CanonicalRenderConfig:
++        return CanonicalRenderConfig(
++            lateral_m_per_px=self.parameter_float("lateral_m_per_px"),
++            forward_m_per_px=self.parameter_float("forward_m_per_px"),
++            lateral_range_m=self.parameter_float(
++                "canonical_lateral_range_m"
++            ),
++            forward_range_m=self.parameter_float(
++                "canonical_forward_range_m"
++            ),
++            output_width=int(self.get_parameter("canonical_width").value),
++            output_height=int(self.get_parameter("canonical_height").value),
++            background_gray=int(
++                self.get_parameter("canonical_background_gray").value
++            ),
++            line_width_px=int(
++                self.get_parameter("canonical_line_width_px").value
++            ),
++            white_fit_enabled=bool(
++                self.get_parameter("canonical_white_fit_enabled").value
++            ),
++            white_fit_window_count=int(
++                self.get_parameter("canonical_white_fit_window_count").value
++            ),
++            white_fit_margin_px=int(
++                self.get_parameter("canonical_white_fit_margin_px").value
++            ),
++            white_fit_min_pixels=int(
++                self.get_parameter("canonical_white_fit_min_pixels").value
++            ),
++            white_fit_min_centers=int(
++                self.get_parameter("canonical_white_fit_min_centers").value
++            ),
++            white_fit_min_span_px=int(
++                self.get_parameter("canonical_white_fit_min_span_px").value
++            ),
++            white_fit_residual_px=self.parameter_float(
++                "canonical_white_fit_residual_px"
++            ),
++            white_fit_line_width_px=int(
++                self.get_parameter(
++                    "canonical_white_fit_line_width_px"
++                ).value
++            ),
++            yellow_divider_enabled=bool(
++                self.get_parameter("canonical_yellow_divider_enabled").value
++            ),
++            yellow_divider_min_pixels=int(
++                self.get_parameter(
++                    "canonical_yellow_divider_min_pixels"
++                ).value
++            ),
++            yellow_divider_residual_px=self.parameter_float(
++                "canonical_yellow_divider_residual_px"
++            ),
++            yellow_divider_line_width_px=int(
++                self.get_parameter(
++                    "canonical_yellow_divider_line_width_px"
++                ).value
++            ),
++            yellow_normalize_enabled=bool(
++                self.get_parameter(
++                    "canonical_yellow_normalize_enabled"
++                ).value
++            ),
++            yellow_normalize_line_width_px=int(
++                self.get_parameter(
++                    "canonical_yellow_normalize_line_width_px"
++                ).value
++            ),
++            yellow_normalize_min_area_px=int(
++                self.get_parameter(
++                    "canonical_yellow_normalize_min_area_px"
++                ).value
++            ),
++            yellow_normalize_smoothing_rows=int(
++                self.get_parameter(
++                    "canonical_yellow_normalize_smoothing_rows"
++                ).value
++            ),
++        )
++
+     def ensure_geometry(self, width: int, height: int) -> BevGeometry:
+         if self.geometry is not None and self.geometry_input_size == (width, height):
+             return self.geometry
+@@ -394,124 +710,16 @@ class CanonicalAdapterNode(Node):
+                     self.get_parameter("bev_clip_to_source_polygon").value
+                 ),
+             )
+-        stages = make_canonical_road_image_from_masks(
++        result = render_canonical_from_bev_masks(
+             bev_white,
+             bev_yellow,
+-            valid_mask=valid,
+-            lateral_m_per_px=self.parameter_float("lateral_m_per_px"),
+-            forward_m_per_px=self.parameter_float("forward_m_per_px"),
+-            lateral_range_m=self.parameter_float("canonical_lateral_range_m"),
+-            forward_range_m=self.parameter_float("canonical_forward_range_m"),
+-            output_width=int(self.get_parameter("canonical_width").value),
+-            output_height=int(self.get_parameter("canonical_height").value),
+-            background_gray=int(
+-                self.get_parameter("canonical_background_gray").value
+-            ),
+-            line_width_px=int(
+-                self.get_parameter("canonical_line_width_px").value
+-            ),
+-            min_component_area_px=1,
+-            white_max_component_thickness_px=0.0,
+-            yellow_max_component_thickness_px=0.0,
+-            geometry_filter_enabled=False,
+-            preserve_white_mask=True,
+-            top_ignore_m=0.0,
+-            bottom_ignore_m=0.0,
+-            return_stages=True,
+-        )
+-        if not isinstance(stages, CanonicalRoadStages):
+-            raise RuntimeError("canonical stage output was not requested")
+-
+-        raw_stages = stages
+-        white_fit = None
+-        yellow_reference = None
+-        if bool(self.get_parameter("canonical_white_fit_enabled").value):
+-            if bool(
+-                self.get_parameter("canonical_yellow_divider_enabled").value
+-            ):
+-                yellow_reference = fit_yellow_centerline_reference(
+-                    raw_stages.yellow_mask,
+-                    min_pixels=int(
+-                        self.get_parameter(
+-                            "canonical_yellow_divider_min_pixels"
+-                        ).value
+-                    ),
+-                    residual_threshold_px=self.parameter_float(
+-                        "canonical_yellow_divider_residual_px"
+-                    ),
+-                    line_width_px=int(
+-                        self.get_parameter(
+-                            "canonical_yellow_divider_line_width_px"
+-                        ).value
+-                    ),
+-                )
+-            divider = (
+-                yellow_reference.x_by_y
+-                if yellow_reference is not None and yellow_reference.valid
+-                else None
+-            )
+-            white_fit = fit_white_lane_boundaries(
+-                raw_stages.white_mask,
+-                window_count=int(
+-                    self.get_parameter("canonical_white_fit_window_count").value
+-                ),
+-                window_margin_px=int(
+-                    self.get_parameter("canonical_white_fit_margin_px").value
+-                ),
+-                min_pixels_per_window=int(
+-                    self.get_parameter("canonical_white_fit_min_pixels").value
+-                ),
+-                min_centers=int(
+-                    self.get_parameter("canonical_white_fit_min_centers").value
+-                ),
+-                min_span_px=int(
+-                    self.get_parameter("canonical_white_fit_min_span_px").value
+-                ),
+-                residual_threshold_px=self.parameter_float(
+-                    "canonical_white_fit_residual_px"
+-                ),
+-                line_width_px=int(
+-                    self.get_parameter("canonical_white_fit_line_width_px").value
+-                ),
+-                divider_x_by_y=divider,
+-            )
+-            # The full-height line is an internal left/right divider only.
+-            output_yellow = raw_stages.yellow_mask
+-            if bool(
+-                self.get_parameter("canonical_yellow_normalize_enabled").value
+-            ):
+-                output_yellow = normalize_yellow_fragments(
+-                    output_yellow,
+-                    line_width_px=int(
+-                        self.get_parameter(
+-                            "canonical_yellow_normalize_line_width_px"
+-                        ).value
+-                    ),
+-                    min_component_area_px=int(
+-                        self.get_parameter(
+-                            "canonical_yellow_normalize_min_area_px"
+-                        ).value
+-                    ),
+-                    smoothing_window_rows=int(
+-                        self.get_parameter(
+-                            "canonical_yellow_normalize_smoothing_rows"
+-                        ).value
+-                    ),
+-                )
+-            fitted_road, fitted_white = compose_fitted_canonical(
+-                white_fit.mask,
+-                output_yellow,
+-                raw_stages.valid_mask,
+-                background_gray=int(
+-                    self.get_parameter("canonical_background_gray").value
+-                ),
+-            )
+-            stages = replace(
+-                raw_stages,
+-                road_image=fitted_road,
+-                white_mask=fitted_white,
+-                yellow_mask=output_yellow,
+-            )
++            valid,
++            self.render_config,
++        )
++        stages = result.stages
++        raw_stages = result.raw_stages
++        white_fit = result.white_fit
++        yellow_reference = result.yellow_reference
+ 
+         header = image_message.header
+         header.frame_id = self.base_frame_id
+diff --git a/xycar_ws/src/lane_seg_control/lane_seg_control/lraspp_inference_node.py b/xycar_ws/src/lane_seg_control/lane_seg_control/lraspp_inference_node.py
+index 2fdd23a..0b7c08f 100644
+--- a/xycar_ws/src/lane_seg_control/lane_seg_control/lraspp_inference_node.py
++++ b/xycar_ws/src/lane_seg_control/lane_seg_control/lraspp_inference_node.py
+@@ -6,6 +6,7 @@ from __future__ import annotations
+ import time
+ import threading
+ from pathlib import Path
++from typing import TypeAlias
+ 
+ import cv2
+ import numpy as np
+@@ -16,12 +17,22 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+ from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
+ from rclpy.node import Node
+ from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+-from sensor_msgs.msg import Image
+-from std_msgs.msg import Float32MultiArray
++from sensor_msgs.msg import CompressedImage, Image
++from std_msgs.msg import Float32MultiArray, Header
++
++from lane_seg_control.camera_input import CameraRectifier, decode_compressed_bgr
++from lane_seg_control.canonical_adapter_node import (
++    BevGeometry,
++    CanonicalRenderConfig,
++    build_bev_geometry,
++    render_canonical_from_bev_masks,
++    warp_semantic_masks_only,
++)
+ 
+ 
+ IMAGENET_MEAN = np.asarray((0.485, 0.456, 0.406), dtype=np.float32)
+ IMAGENET_STD = np.asarray((0.229, 0.224, 0.225), dtype=np.float32)
++CameraMessage: TypeAlias = Image | CompressedImage
+ 
+ 
+ def prepare_model_input(
+@@ -85,6 +96,11 @@ class LrasppInferenceNode(Node):
+             ),
+         )
+         self.declare_parameter("image_topic", "/wide_camera/rect/image_raw")
++        self.declare_parameter("use_compressed_image", False)
++        self.declare_parameter("enable_rectify", False)
++        self.declare_parameter("camera_yaml", "")
++        self.declare_parameter("rect_balance", 0.3)
++        self.declare_parameter("max_input_age_sec", 0.0)
+         self.declare_parameter("processed_image_topic", "/lane_seg/source_image")
+         self.declare_parameter(
+             "white_mask_topic", "/lane_seg/white_boundary_mask"
+@@ -109,6 +125,63 @@ class LrasppInferenceNode(Node):
+         self.declare_parameter("debug_rate_hz", 1.0)
+         self.declare_parameter("max_output_rate_hz", 0.0)
+         self.declare_parameter("output_native_resolution", True)
++        self.declare_parameter("publish_intermediate_topics", True)
++        self.declare_parameter("diagnostics_component_counts_enabled", False)
++        self.declare_parameter("direct_canonical_enabled", False)
++        self.declare_parameter(
++            "canonical_topic", "/perception/canonical_road_image"
++        )
++        self.declare_parameter(
++            "canonical_white_topic", "/perception/canonical_white_mask"
++        )
++        self.declare_parameter(
++            "canonical_yellow_topic", "/perception/canonical_yellow_mask"
++        )
++        self.declare_parameter(
++            "canonical_valid_topic", "/perception/canonical_valid_mask"
++        )
++        self.declare_parameter("base_frame_id", "base_footprint")
++        self.declare_parameter("src_tl_x_ratio", 472.0 / 1280.0)
++        self.declare_parameter("src_tl_y_ratio", 494.0 / 1024.0)
++        self.declare_parameter("src_tr_x_ratio", 906.0 / 1280.0)
++        self.declare_parameter("src_tr_y_ratio", 486.0 / 1024.0)
++        self.declare_parameter("src_br_x_ratio", 1272.0 / 1280.0)
++        self.declare_parameter("src_br_y_ratio", 612.0 / 1024.0)
++        self.declare_parameter("src_bl_x_ratio", 46.0 / 1280.0)
++        self.declare_parameter("src_bl_y_ratio", 622.0 / 1024.0)
++        self.declare_parameter("dst_left_ratio", 80.0 / 640.0)
++        self.declare_parameter("dst_right_ratio", 560.0 / 640.0)
++        self.declare_parameter("dst_top_y_ratio", 0.0)
++        self.declare_parameter("dst_bottom_y_ratio", 479.0 / 660.0)
++        self.declare_parameter("bev_width", 640)
++        self.declare_parameter("bev_height", 660)
++        self.declare_parameter("bev_valid_lateral_margin_px", 0)
++        self.declare_parameter("bev_valid_erode_px", 0)
++        self.declare_parameter("bev_clip_to_source_polygon", False)
++        self.declare_parameter("lateral_m_per_px", 1.4 / 640.0)
++        self.declare_parameter("forward_m_per_px", 1.5 / 660.0)
++        self.declare_parameter("canonical_width", 256)
++        self.declare_parameter("canonical_height", 144)
++        self.declare_parameter("canonical_lateral_range_m", 1.4)
++        self.declare_parameter("canonical_forward_range_m", 1.5)
++        self.declare_parameter("canonical_background_gray", 36)
++        self.declare_parameter("canonical_line_width_px", 5)
++        self.declare_parameter("canonical_white_fit_enabled", True)
++        self.declare_parameter("canonical_white_fit_window_count", 9)
++        self.declare_parameter("canonical_white_fit_margin_px", 24)
++        self.declare_parameter("canonical_white_fit_min_pixels", 4)
++        self.declare_parameter("canonical_white_fit_min_centers", 2)
++        self.declare_parameter("canonical_white_fit_min_span_px", 8)
++        self.declare_parameter("canonical_white_fit_residual_px", 6.0)
++        self.declare_parameter("canonical_white_fit_line_width_px", 5)
++        self.declare_parameter("canonical_yellow_divider_enabled", True)
++        self.declare_parameter("canonical_yellow_divider_min_pixels", 3)
++        self.declare_parameter("canonical_yellow_divider_residual_px", 6.0)
++        self.declare_parameter("canonical_yellow_divider_line_width_px", 5)
++        self.declare_parameter("canonical_yellow_normalize_enabled", False)
++        self.declare_parameter("canonical_yellow_normalize_line_width_px", 5)
++        self.declare_parameter("canonical_yellow_normalize_min_area_px", 3)
++        self.declare_parameter("canonical_yellow_normalize_smoothing_rows", 5)
+ 
+         self.bridge = CvBridge()
+         self.input_width = int(self.get_parameter("input_width").value)
+@@ -128,6 +201,39 @@ class LrasppInferenceNode(Node):
+         self.output_native_resolution = bool(
+             self.get_parameter("output_native_resolution").value
+         )
++        self.use_compressed_image = bool(
++            self.get_parameter("use_compressed_image").value
++        )
++        self.enable_rectify = bool(
++            self.get_parameter("enable_rectify").value
++        )
++        self.max_input_age_sec = max(
++            0.0, float(self.get_parameter("max_input_age_sec").value)
++        )
++        self.publish_intermediate_topics = bool(
++            self.get_parameter("publish_intermediate_topics").value
++        )
++        self.diagnostics_component_counts_enabled = bool(
++            self.get_parameter(
++                "diagnostics_component_counts_enabled"
++            ).value
++        )
++        self.direct_canonical_enabled = bool(
++            self.get_parameter("direct_canonical_enabled").value
++        )
++        if not self.direct_canonical_enabled:
++            self.publish_intermediate_topics = True
++        self.base_frame_id = str(self.get_parameter("base_frame_id").value)
++        self.rectifier: CameraRectifier | None = None
++        if self.enable_rectify:
++            self.rectifier = CameraRectifier(
++                str(self.get_parameter("camera_yaml").value),
++                float(self.get_parameter("rect_balance").value),
++            )
++        self.geometry: BevGeometry | None = None
++        self.geometry_input_size: tuple[int, int] | None = None
++        self.bev_valid_mask: np.ndarray | None = None
++        self.render_config = self.make_render_config()
+ 
+         import torch
+ 
+@@ -204,10 +310,36 @@ class LrasppInferenceNode(Node):
+         self.diagnostics_pub = self.create_publisher(
+             Float32MultiArray,
+             str(self.get_parameter("diagnostics_topic").value),
+-            10,
++            output_qos,
+         )
++        self.canonical_pub = None
++        self.canonical_white_pub = None
++        self.canonical_yellow_pub = None
++        self.canonical_valid_pub = None
++        if self.direct_canonical_enabled:
++            self.canonical_pub = self.create_publisher(
++                Image,
++                str(self.get_parameter("canonical_topic").value),
++                output_qos,
++            )
++            self.canonical_white_pub = self.create_publisher(
++                Image,
++                str(self.get_parameter("canonical_white_topic").value),
++                output_qos,
++            )
++            self.canonical_yellow_pub = self.create_publisher(
++                Image,
++                str(self.get_parameter("canonical_yellow_topic").value),
++                output_qos,
++            )
++            self.canonical_valid_pub = self.create_publisher(
++                Image,
++                str(self.get_parameter("canonical_valid_topic").value),
++                output_qos,
++            )
++        message_type = CompressedImage if self.use_compressed_image else Image
+         self.image_sub = self.create_subscription(
+-            Image,
++            message_type,
+             str(self.get_parameter("image_topic").value),
+             self.on_image,
+             input_qos,
+@@ -216,12 +348,15 @@ class LrasppInferenceNode(Node):
+ 
+         self.last_log_time = time.monotonic()
+         self.last_debug_bucket: int | None = None
+-        self.latest_image: Image | None = None
++        self.latest_image: CameraMessage | None = None
+         self.last_processed_stamp_ns: int | None = None
+         self.received_image_count = 0
++        self.stale_input_count = 0
++        self.replaced_input_count = 0
+         self.scheduler_tick_count = 0
+         self.scheduler_stop = threading.Event()
+         self.scheduler_thread: threading.Thread | None = None
++        self.context.on_shutdown(self.scheduler_stop.set)
+         if self.max_output_rate_hz > 0.0:
+             self.scheduler_thread = threading.Thread(
+                 target=self.run_output_scheduler,
+@@ -236,12 +371,166 @@ class LrasppInferenceNode(Node):
+             f"thresholds={self.white_confidence:.2f}/{self.yellow_confidence:.2f}, "
+             f"threads=torch:{cpu_threads},opencv:{opencv_threads}, "
+             f"output={'native' if self.output_native_resolution else 'model'}, "
++            f"source={'compressed' if self.use_compressed_image else 'raw'}, "
++            f"rectify={self.enable_rectify}, direct_canonical="
++            f"{self.direct_canonical_enabled}, "
+             f"scheduler={'latest-frame timer' if self.max_output_rate_hz > 0.0 else 'input'}, "
+             f"rate_limit={self.max_output_rate_hz:.1f}Hz"
+         )
+ 
+-    def on_image(self, message: Image) -> None:
++    def parameter_float(self, name: str) -> float:
++        return float(self.get_parameter(name).value)
++
++    def make_render_config(self) -> CanonicalRenderConfig:
++        return CanonicalRenderConfig(
++            lateral_m_per_px=self.parameter_float("lateral_m_per_px"),
++            forward_m_per_px=self.parameter_float("forward_m_per_px"),
++            lateral_range_m=self.parameter_float(
++                "canonical_lateral_range_m"
++            ),
++            forward_range_m=self.parameter_float(
++                "canonical_forward_range_m"
++            ),
++            output_width=int(self.get_parameter("canonical_width").value),
++            output_height=int(self.get_parameter("canonical_height").value),
++            background_gray=int(
++                self.get_parameter("canonical_background_gray").value
++            ),
++            line_width_px=int(
++                self.get_parameter("canonical_line_width_px").value
++            ),
++            white_fit_enabled=bool(
++                self.get_parameter("canonical_white_fit_enabled").value
++            ),
++            white_fit_window_count=int(
++                self.get_parameter("canonical_white_fit_window_count").value
++            ),
++            white_fit_margin_px=int(
++                self.get_parameter("canonical_white_fit_margin_px").value
++            ),
++            white_fit_min_pixels=int(
++                self.get_parameter("canonical_white_fit_min_pixels").value
++            ),
++            white_fit_min_centers=int(
++                self.get_parameter("canonical_white_fit_min_centers").value
++            ),
++            white_fit_min_span_px=int(
++                self.get_parameter("canonical_white_fit_min_span_px").value
++            ),
++            white_fit_residual_px=self.parameter_float(
++                "canonical_white_fit_residual_px"
++            ),
++            white_fit_line_width_px=int(
++                self.get_parameter(
++                    "canonical_white_fit_line_width_px"
++                ).value
++            ),
++            yellow_divider_enabled=bool(
++                self.get_parameter("canonical_yellow_divider_enabled").value
++            ),
++            yellow_divider_min_pixels=int(
++                self.get_parameter(
++                    "canonical_yellow_divider_min_pixels"
++                ).value
++            ),
++            yellow_divider_residual_px=self.parameter_float(
++                "canonical_yellow_divider_residual_px"
++            ),
++            yellow_divider_line_width_px=int(
++                self.get_parameter(
++                    "canonical_yellow_divider_line_width_px"
++                ).value
++            ),
++            yellow_normalize_enabled=bool(
++                self.get_parameter(
++                    "canonical_yellow_normalize_enabled"
++                ).value
++            ),
++            yellow_normalize_line_width_px=int(
++                self.get_parameter(
++                    "canonical_yellow_normalize_line_width_px"
++                ).value
++            ),
++            yellow_normalize_min_area_px=int(
++                self.get_parameter(
++                    "canonical_yellow_normalize_min_area_px"
++                ).value
++            ),
++            yellow_normalize_smoothing_rows=int(
++                self.get_parameter(
++                    "canonical_yellow_normalize_smoothing_rows"
++                ).value
++            ),
++        )
++
++    def ensure_geometry(self, width: int, height: int) -> BevGeometry:
++        if self.geometry is not None and self.geometry_input_size == (
++            width,
++            height,
++        ):
++            return self.geometry
++        source = (
++            self.parameter_float("src_tl_x_ratio"),
++            self.parameter_float("src_tl_y_ratio"),
++            self.parameter_float("src_tr_x_ratio"),
++            self.parameter_float("src_tr_y_ratio"),
++            self.parameter_float("src_br_x_ratio"),
++            self.parameter_float("src_br_y_ratio"),
++            self.parameter_float("src_bl_x_ratio"),
++            self.parameter_float("src_bl_y_ratio"),
++        )
++        destination = (
++            self.parameter_float("dst_left_ratio"),
++            self.parameter_float("dst_right_ratio"),
++            self.parameter_float("dst_top_y_ratio"),
++            self.parameter_float("dst_bottom_y_ratio"),
++        )
++        self.geometry = build_bev_geometry(
++            width,
++            height,
++            source_ratios=source,
++            destination_ratios=destination,
++            bev_width=int(self.get_parameter("bev_width").value),
++            bev_height=int(self.get_parameter("bev_height").value),
++        )
++        self.geometry_input_size = (width, height)
++        self.bev_valid_mask = None
++        return self.geometry
++
++    @staticmethod
++    def message_stamp_ns(message: CameraMessage) -> int:
++        return (
++            int(message.header.stamp.sec) * 1_000_000_000
++            + int(message.header.stamp.nanosec)
++        )
++
++    def input_age_sec(self, stamp_ns: int) -> float:
++        if stamp_ns <= 0:
++            return 0.0
++        delta_ns = self.get_clock().now().nanoseconds - stamp_ns
++        if delta_ns < 0 or delta_ns >= 60_000_000_000:
++            return 0.0
++        return delta_ns / 1.0e9
++
++    def decode_frame(self, message: CameraMessage) -> np.ndarray:
++        if isinstance(message, CompressedImage):
++            frame = decode_compressed_bgr(message.data)
++            if frame is None:
++                raise ValueError("compressed camera payload is empty or invalid")
++        else:
++            frame = self.bridge.imgmsg_to_cv2(
++                message, desired_encoding="bgr8"
++            )
++        if self.rectifier is not None:
++            frame = self.rectifier.rectify(frame)
++        return frame
++
++    def on_image(self, message: CameraMessage) -> None:
+         self.received_image_count += 1
++        if self.latest_image is not None:
++            latest_stamp = self.message_stamp_ns(self.latest_image)
++            if latest_stamp != self.last_processed_stamp_ns:
++                self.replaced_input_count += 1
+         self.latest_image = message
+         if self.max_output_rate_hz <= 0.0:
+             self.process_image(message)
+@@ -250,10 +539,7 @@ class LrasppInferenceNode(Node):
+         message = self.latest_image
+         if message is None:
+             return
+-        stamp_ns = (
+-            int(message.header.stamp.sec) * 1_000_000_000
+-            + int(message.header.stamp.nanosec)
+-        )
++        stamp_ns = self.message_stamp_ns(message)
+         if self.last_processed_stamp_ns == stamp_ns:
+             return
+         if (
+@@ -271,29 +557,66 @@ class LrasppInferenceNode(Node):
+             if self.scheduler_stop.wait(wait_sec):
+                 break
+             self.scheduler_tick_count += 1
+-            self.on_output_timer()
++            try:
++                self.on_output_timer()
++            except Exception:
++                if (
++                    self.scheduler_stop.is_set()
++                    or not rclpy.ok(context=self.context)
++                ):
++                    break
++                raise
+             deadline += period
+             if deadline < time.monotonic() - period:
+                 deadline = time.monotonic() + period
+ 
+     def destroy_node(self):
+         self.scheduler_stop.set()
+-        if self.scheduler_thread is not None:
++        if (
++            self.scheduler_thread is not None
++            and self.scheduler_thread is not threading.current_thread()
++        ):
+             self.scheduler_thread.join(timeout=2.0)
+         return super().destroy_node()
+ 
+-    def process_image(self, message: Image) -> None:
++    @staticmethod
++    def output_header(message: CameraMessage, frame_id: str) -> Header:
++        header = Header()
++        header.stamp = message.header.stamp
++        header.frame_id = frame_id
++        return header
++
++    def publish_image(
++        self,
++        publisher,
++        frame: np.ndarray,
++        encoding: str,
++        header: Header,
++    ) -> None:
++        output = self.bridge.cv2_to_imgmsg(frame, encoding=encoding)
++        output.header = header
++        publisher.publish(output)
++
++    def process_image(self, message: CameraMessage) -> None:
+         callback_started = time.perf_counter()
+-        stamp_ns = (
+-            int(message.header.stamp.sec) * 1_000_000_000
+-            + int(message.header.stamp.nanosec)
+-        )
++        stamp_ns = self.message_stamp_ns(message)
++        input_age_sec = self.input_age_sec(stamp_ns)
++        if (
++            self.max_input_age_sec > 0.0
++            and input_age_sec > self.max_input_age_sec
++        ):
++            self.stale_input_count += 1
++            self.last_processed_stamp_ns = stamp_ns
++            return
++        self.last_processed_stamp_ns = stamp_ns
+ 
++        decode_started = time.perf_counter()
+         try:
+-            frame = self.bridge.imgmsg_to_cv2(message, desired_encoding="bgr8")
++            frame = self.decode_frame(message)
+         except Exception as exc:
+             self.get_logger().error(f"camera conversion failed: {exc}")
+             return
++        decode_ms = (time.perf_counter() - decode_started) * 1000.0
+ 
+         started = time.perf_counter()
+         model_input = prepare_model_input(
+@@ -315,6 +638,14 @@ class LrasppInferenceNode(Node):
+             white_confidence=self.white_confidence,
+             yellow_confidence=self.yellow_confidence,
+         )
++        debug_requested = (
++            self.debug_pub.get_subscription_count() > 0
++            or self.perception_debug_pub.get_subscription_count() > 0
++        )
++        source_requested = (
++            self.publish_intermediate_topics
++            and self.processed_image_pub.get_subscription_count() > 0
++        )
+         if self.output_native_resolution:
+             output_frame = frame
+             output_size = (frame.shape[1], frame.shape[0])
+@@ -325,27 +656,99 @@ class LrasppInferenceNode(Node):
+                 yellow_small, output_size, interpolation=cv2.INTER_NEAREST
+             )
+         else:
+-            output_frame = cv2.resize(
+-                frame,
+-                (self.input_width, self.input_height),
+-                interpolation=cv2.INTER_AREA,
+-            )
++            output_frame = None
++            if source_requested or debug_requested:
++                output_frame = cv2.resize(
++                    frame,
++                    (self.input_width, self.input_height),
++                    interpolation=cv2.INTER_AREA,
++                )
+             white = white_small
+             yellow = yellow_small
+         elapsed_ms = (time.perf_counter() - started) * 1000.0
+ 
+-        processed_message = self.bridge.cv2_to_imgmsg(
+-            output_frame, encoding="bgr8"
+-        )
+-        white_message = self.bridge.cv2_to_imgmsg(white, encoding="mono8")
+-        yellow_message = self.bridge.cv2_to_imgmsg(yellow, encoding="mono8")
+-        processed_message.header = message.header
+-        white_message.header = message.header
+-        yellow_message.header = message.header
+-        self.processed_image_pub.publish(processed_message)
+-        self.white_pub.publish(white_message)
+-        self.yellow_pub.publish(yellow_message)
+-        self.last_processed_stamp_ns = stamp_ns
++        canonical_ms = 0.0
++        if self.direct_canonical_enabled:
++            canonical_started = time.perf_counter()
++            geometry = self.ensure_geometry(white.shape[1], white.shape[0])
++            bev_white, bev_yellow, valid = warp_semantic_masks_only(
++                white,
++                yellow,
++                geometry,
++                valid_lateral_margin_px=int(
++                    self.get_parameter(
++                        "bev_valid_lateral_margin_px"
++                    ).value
++                ),
++                valid_erode_px=int(
++                    self.get_parameter("bev_valid_erode_px").value
++                ),
++                clip_to_source_polygon=bool(
++                    self.get_parameter(
++                        "bev_clip_to_source_polygon"
++                    ).value
++                ),
++                precomputed_valid=self.bev_valid_mask,
++            )
++            if self.bev_valid_mask is None:
++                self.bev_valid_mask = valid
++            result = render_canonical_from_bev_masks(
++                bev_white,
++                bev_yellow,
++                valid,
++                self.render_config,
++            )
++            canonical_header = self.output_header(
++                message,
++                self.base_frame_id,
++            )
++            self.publish_image(
++                self.canonical_pub,
++                result.stages.road_image,
++                "bgr8",
++                canonical_header,
++            )
++            for publisher, image in (
++                (self.canonical_white_pub, result.stages.white_mask),
++                (self.canonical_yellow_pub, result.stages.yellow_mask),
++                (self.canonical_valid_pub, result.stages.valid_mask),
++            ):
++                if publisher.get_subscription_count() > 0:
++                    self.publish_image(
++                        publisher,
++                        image,
++                        "mono8",
++                        canonical_header,
++                    )
++            canonical_ms = (
++                time.perf_counter() - canonical_started
++            ) * 1000.0
++
++        camera_header = self.output_header(message, message.header.frame_id)
++        if self.publish_intermediate_topics:
++            if self.processed_image_pub.get_subscription_count() > 0:
++                if output_frame is None:
++                    raise RuntimeError("processed output frame was not prepared")
++                self.publish_image(
++                    self.processed_image_pub,
++                    output_frame,
++                    "bgr8",
++                    camera_header,
++                )
++            if self.white_pub.get_subscription_count() > 0:
++                self.publish_image(
++                    self.white_pub,
++                    white,
++                    "mono8",
++                    camera_header,
++                )
++            if self.yellow_pub.get_subscription_count() > 0:
++                self.publish_image(
++                    self.yellow_pub,
++                    yellow,
++                    "mono8",
++                    camera_header,
++                )
+ 
+         debug_bucket = (
+             int(stamp_ns * self.debug_rate_hz / 1_000_000_000)
+@@ -353,9 +756,10 @@ class LrasppInferenceNode(Node):
+             else None
+         )
+         if (
+-            self.debug_pub.get_subscription_count() > 0
+-            or self.perception_debug_pub.get_subscription_count() > 0
++            debug_requested
+         ) and debug_bucket is not None and debug_bucket != self.last_debug_bucket:
++            if output_frame is None:
++                raise RuntimeError("debug output frame was not prepared")
+             overlay = np.zeros_like(output_frame)
+             overlay[white > 0] = (255, 255, 255)
+             overlay[yellow > 0] = (0, 220, 255)
+@@ -376,35 +780,51 @@ class LrasppInferenceNode(Node):
+                 cv2.LINE_AA,
+             )
+             debug_message = self.bridge.cv2_to_imgmsg(debug, encoding="bgr8")
+-            debug_message.header = message.header
++            debug_message.header = camera_header
+             self.debug_pub.publish(debug_message)
+             self.perception_debug_pub.publish(debug_message)
+             self.last_debug_bucket = debug_bucket
+ 
+-        white_components = max(0, cv2.connectedComponents(white_small)[0] - 1)
+-        yellow_components = max(0, cv2.connectedComponents(yellow_small)[0] - 1)
++        white_components = -1
++        yellow_components = -1
++        if self.diagnostics_component_counts_enabled:
++            white_components = max(
++                0, cv2.connectedComponents(white_small)[0] - 1
++            )
++            yellow_components = max(
++                0, cv2.connectedComponents(yellow_small)[0] - 1
++            )
+         callback_elapsed_ms = (
+             time.perf_counter() - callback_started
+         ) * 1000.0
+         small_area = float(max(1, white_small.size))
+-        diagnostics = Float32MultiArray()
+-        diagnostics.data = [
+-            float(elapsed_ms),
+-            float(1000.0 / elapsed_ms if elapsed_ms > 0.0 else 0.0),
+-            float(white_components),
+-            float(yellow_components),
+-            float(np.count_nonzero(white_small) / small_area),
+-            float(np.count_nonzero(yellow_small) / small_area),
+-            float(callback_elapsed_ms),
+-            float(self.received_image_count),
+-            float(self.scheduler_tick_count),
+-        ]
+-        self.diagnostics_pub.publish(diagnostics)
++        if self.diagnostics_pub.get_subscription_count() > 0:
++            diagnostics = Float32MultiArray()
++            diagnostics.data = [
++                float(elapsed_ms),
++                float(1000.0 / elapsed_ms if elapsed_ms > 0.0 else 0.0),
++                float(white_components),
++                float(yellow_components),
++                float(np.count_nonzero(white_small) / small_area),
++                float(np.count_nonzero(yellow_small) / small_area),
++                float(callback_elapsed_ms),
++                float(self.received_image_count),
++                float(self.scheduler_tick_count),
++                float(decode_ms),
++                float(canonical_ms),
++                float(input_age_sec * 1000.0),
++                float(self.replaced_input_count),
++                float(self.stale_input_count),
++            ]
++            self.diagnostics_pub.publish(diagnostics)
+ 
+         now = time.monotonic()
+         if now - self.last_log_time >= 5.0:
+             self.get_logger().info(
+                 f"LR-ASPP lane segmentation: {elapsed_ms:.1f}ms, "
++                f"decode_rect={decode_ms:.1f}ms, canonical="
++                f"{canonical_ms:.1f}ms, total={callback_elapsed_ms:.1f}ms, "
++                f"source_age={input_age_sec * 1000.0:.1f}ms, "
+                 f"white_px={np.count_nonzero(white_small)}, "
+                 f"yellow_px={np.count_nonzero(yellow_small)}"
+             )
+@@ -421,10 +841,16 @@ def main() -> None:
+     except (KeyboardInterrupt, ExternalShutdownException):
+         pass
+     finally:
+-        executor.shutdown()
+-        node.destroy_node()
++        try:
++            executor.shutdown()
++            node.destroy_node()
++        except (KeyboardInterrupt, ExternalShutdownException):
++            pass
+         if rclpy.ok():
+-            rclpy.shutdown()
++            try:
++                rclpy.shutdown()
++            except (KeyboardInterrupt, ExternalShutdownException):
++                pass
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/xycar_ws/src/lane_seg_control/launch/lane_seg_lraspp_canonical_only.launch.py b/xycar_ws/src/lane_seg_control/launch/lane_seg_lraspp_canonical_only.launch.py
+index 9de4239..bf60b4b 100644
+--- a/xycar_ws/src/lane_seg_control/launch/lane_seg_lraspp_canonical_only.launch.py
++++ b/xycar_ws/src/lane_seg_control/launch/lane_seg_lraspp_canonical_only.launch.py
+@@ -1,257 +1,257 @@
+ from launch import LaunchDescription
+ from launch.actions import DeclareLaunchArgument
++from launch.conditions import UnlessCondition
+ from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+ from launch_ros.actions import Node
+ from launch_ros.parameter_descriptions import ParameterValue
+ from launch_ros.substitutions import FindPackageShare
+ 
+ 
++def _as_bool(name):
++    return ParameterValue(LaunchConfiguration(name), value_type=bool)
++
++
++def _as_float(name):
++    return ParameterValue(LaunchConfiguration(name), value_type=float)
++
++
++def _as_int(name):
++    return ParameterValue(LaunchConfiguration(name), value_type=int)
++
++
+ def generate_launch_description():
+     image_topic = LaunchConfiguration("image_topic")
++    direct_canonical = LaunchConfiguration("direct_canonical_enabled")
+     processed_image_topic = "/lane_seg/source_image"
+     white_topic = "/lane_seg/white_boundary_mask"
+     yellow_topic = "/lane_seg/yellow_centerline_mask"
+ 
+-    return LaunchDescription(
+-        [
+-            DeclareLaunchArgument(
+-                "model_path",
+-                default_value=PathJoinSubstitution(
+-                    [
+-                        FindPackageShare("lane_seg_control"),
+-                        "models",
+-                        "kookmin_lane_lraspp_mbv3s_256x144.pt",
+-                    ]
+-                ),
+-            ),
+-            DeclareLaunchArgument(
+-                "image_topic", default_value="/wide_camera/rect/image_raw"
+-            ),
+-            DeclareLaunchArgument("white_confidence", default_value="0.50"),
+-            DeclareLaunchArgument("yellow_confidence", default_value="0.50"),
+-            DeclareLaunchArgument("cpu_threads", default_value="4"),
+-            DeclareLaunchArgument("opencv_threads", default_value="1"),
+-            DeclareLaunchArgument("pipeline_qos_depth", default_value="1"),
+-            DeclareLaunchArgument("debug_rate_hz", default_value="1.0"),
+-            DeclareLaunchArgument("max_output_rate_hz", default_value="7.0"),
+-            DeclareLaunchArgument(
+-                "output_native_resolution", default_value="false"
+-            ),
+-            DeclareLaunchArgument(
+-                "dst_left_ratio", default_value=str(80.0 / 640.0)
+-            ),
+-            DeclareLaunchArgument(
+-                "dst_right_ratio", default_value=str(560.0 / 640.0)
+-            ),
+-            DeclareLaunchArgument(
+-                "canonical_white_fit_enabled", default_value="true"
+-            ),
+-            DeclareLaunchArgument(
+-                "canonical_white_fit_window_count", default_value="9"
+-            ),
+-            DeclareLaunchArgument(
+-                "canonical_white_fit_margin_px", default_value="24"
+-            ),
+-            DeclareLaunchArgument(
+-                "canonical_white_fit_min_pixels", default_value="4"
+-            ),
+-            DeclareLaunchArgument(
+-                "canonical_white_fit_min_centers", default_value="2"
+-            ),
+-            DeclareLaunchArgument(
+-                "canonical_white_fit_min_span_px", default_value="8"
+-            ),
+-            DeclareLaunchArgument(
+-                "canonical_white_fit_residual_px", default_value="6.0"
+-            ),
+-            DeclareLaunchArgument(
+-                "canonical_white_fit_line_width_px", default_value="5"
+-            ),
+-            DeclareLaunchArgument(
+-                "canonical_yellow_divider_enabled", default_value="true"
+-            ),
+-            DeclareLaunchArgument(
+-                "canonical_yellow_divider_min_pixels", default_value="3"
+-            ),
+-            DeclareLaunchArgument(
+-                "canonical_yellow_divider_residual_px", default_value="6.0"
+-            ),
+-            DeclareLaunchArgument(
+-                "canonical_yellow_divider_line_width_px", default_value="5"
+-            ),
+-            DeclareLaunchArgument(
+-                "canonical_yellow_normalize_enabled", default_value="false"
+-            ),
+-            DeclareLaunchArgument(
+-                "canonical_yellow_normalize_line_width_px", default_value="5"
+-            ),
+-            Node(
+-                package="lane_seg_control",
+-                executable="lane_seg_lraspp_inference_node",
+-                name="lane_seg_lraspp_inference",
+-                output="screen",
+-                additional_env={
+-                    "OMP_NUM_THREADS": "4",
+-                    "OMP_WAIT_POLICY": "PASSIVE",
+-                    "MKL_NUM_THREADS": "4",
+-                    "OPENBLAS_NUM_THREADS": "1",
+-                },
+-                parameters=[
+-                    {
+-                        "model_path": LaunchConfiguration("model_path"),
+-                        "image_topic": image_topic,
+-                        "processed_image_topic": processed_image_topic,
+-                        "white_mask_topic": white_topic,
+-                        "yellow_mask_topic": yellow_topic,
+-                        "input_width": 256,
+-                        "input_height": 144,
+-                        "white_class_id": 1,
+-                        "yellow_class_id": 2,
+-                        "white_confidence": ParameterValue(
+-                            LaunchConfiguration("white_confidence"), value_type=float
+-                        ),
+-                        "yellow_confidence": ParameterValue(
+-                            LaunchConfiguration("yellow_confidence"), value_type=float
+-                        ),
+-                        "cpu_threads": ParameterValue(
+-                            LaunchConfiguration("cpu_threads"), value_type=int
+-                        ),
+-                        "opencv_threads": ParameterValue(
+-                            LaunchConfiguration("opencv_threads"), value_type=int
+-                        ),
+-                        "output_qos_depth": ParameterValue(
+-                            LaunchConfiguration("pipeline_qos_depth"), value_type=int
+-                        ),
+-                        "debug_rate_hz": ParameterValue(
+-                            LaunchConfiguration("debug_rate_hz"), value_type=float
+-                        ),
+-                        "max_output_rate_hz": ParameterValue(
+-                            LaunchConfiguration("max_output_rate_hz"),
+-                            value_type=float,
+-                        ),
+-                        "output_native_resolution": ParameterValue(
+-                            LaunchConfiguration("output_native_resolution"),
+-                            value_type=bool,
+-                        ),
+-                    }
+-                ],
++    geometry_parameters = {
++        "src_tl_x_ratio": 472.0 / 1280.0,
++        "src_tl_y_ratio": 494.0 / 1024.0,
++        "src_tr_x_ratio": 906.0 / 1280.0,
++        "src_tr_y_ratio": 486.0 / 1024.0,
++        "src_br_x_ratio": 1272.0 / 1280.0,
++        "src_br_y_ratio": 612.0 / 1024.0,
++        "src_bl_x_ratio": 46.0 / 1280.0,
++        "src_bl_y_ratio": 622.0 / 1024.0,
++        "dst_left_ratio": _as_float("dst_left_ratio"),
++        "dst_right_ratio": _as_float("dst_right_ratio"),
++        "dst_top_y_ratio": 0.0,
++        "dst_bottom_y_ratio": 479.0 / 660.0,
++        "bev_width": 640,
++        "bev_height": 660,
++        "bev_valid_lateral_margin_px": 0,
++        "bev_valid_erode_px": 0,
++        "bev_clip_to_source_polygon": False,
++        "lateral_m_per_px": 1.4 / 640.0,
++        "forward_m_per_px": 1.5 / 660.0,
++        "canonical_width": 256,
++        "canonical_height": 144,
++        "canonical_lateral_range_m": 1.4,
++        "canonical_forward_range_m": 1.5,
++        "canonical_white_fit_enabled": _as_bool(
++            "canonical_white_fit_enabled"
++        ),
++        "canonical_white_fit_window_count": _as_int(
++            "canonical_white_fit_window_count"
++        ),
++        "canonical_white_fit_margin_px": _as_int(
++            "canonical_white_fit_margin_px"
++        ),
++        "canonical_white_fit_min_pixels": _as_int(
++            "canonical_white_fit_min_pixels"
++        ),
++        "canonical_white_fit_min_centers": _as_int(
++            "canonical_white_fit_min_centers"
++        ),
++        "canonical_white_fit_min_span_px": _as_int(
++            "canonical_white_fit_min_span_px"
++        ),
++        "canonical_white_fit_residual_px": _as_float(
++            "canonical_white_fit_residual_px"
++        ),
++        "canonical_white_fit_line_width_px": _as_int(
++            "canonical_white_fit_line_width_px"
++        ),
++        "canonical_yellow_divider_enabled": _as_bool(
++            "canonical_yellow_divider_enabled"
++        ),
++        "canonical_yellow_divider_min_pixels": _as_int(
++            "canonical_yellow_divider_min_pixels"
++        ),
++        "canonical_yellow_divider_residual_px": _as_float(
++            "canonical_yellow_divider_residual_px"
++        ),
++        "canonical_yellow_divider_line_width_px": _as_int(
++            "canonical_yellow_divider_line_width_px"
++        ),
++        "canonical_yellow_normalize_enabled": _as_bool(
++            "canonical_yellow_normalize_enabled"
++        ),
++        "canonical_yellow_normalize_line_width_px": _as_int(
++            "canonical_yellow_normalize_line_width_px"
++        ),
++    }
++
++    arguments = [
++        DeclareLaunchArgument(
++            "model_path",
++            default_value=PathJoinSubstitution(
++                [
++                    FindPackageShare("lane_seg_control"),
++                    "models",
++                    "kookmin_lane_lraspp_mbv3s_256x144.pt",
++                ]
+             ),
+-            Node(
+-                package="lane_seg_control",
+-                executable="lane_seg_canonical_adapter",
+-                name="lane_seg_canonical_adapter",
+-                output="screen",
+-                parameters=[
+-                    {
+-                        "image_topic": processed_image_topic,
+-                        "white_mask_topic": white_topic,
+-                        "yellow_mask_topic": yellow_topic,
+-                        "input_is_bev": False,
+-                        "src_tl_x_ratio": 472.0 / 1280.0,
+-                        "src_tl_y_ratio": 494.0 / 1024.0,
+-                        "src_tr_x_ratio": 906.0 / 1280.0,
+-                        "src_tr_y_ratio": 486.0 / 1024.0,
+-                        "src_br_x_ratio": 1272.0 / 1280.0,
+-                        "src_br_y_ratio": 612.0 / 1024.0,
+-                        "src_bl_x_ratio": 46.0 / 1280.0,
+-                        "src_bl_y_ratio": 622.0 / 1024.0,
+-                        "dst_left_ratio": ParameterValue(
+-                            LaunchConfiguration("dst_left_ratio"), value_type=float
+-                        ),
+-                        "dst_right_ratio": ParameterValue(
+-                            LaunchConfiguration("dst_right_ratio"), value_type=float
+-                        ),
+-                        "dst_top_y_ratio": 0.0,
+-                        "dst_bottom_y_ratio": 479.0 / 660.0,
+-                        "bev_width": 640,
+-                        "bev_height": 660,
+-                        "bev_valid_lateral_margin_px": 0,
+-                        "bev_valid_erode_px": 0,
+-                        "bev_clip_to_source_polygon": False,
+-                        "lateral_m_per_px": 1.4 / 640.0,
+-                        "forward_m_per_px": 1.5 / 660.0,
+-                        "canonical_lateral_range_m": 1.4,
+-                        "canonical_forward_range_m": 1.5,
+-                        "canonical_white_fit_enabled": ParameterValue(
+-                            LaunchConfiguration("canonical_white_fit_enabled"),
+-                            value_type=bool,
+-                        ),
+-                        "canonical_white_fit_window_count": ParameterValue(
+-                            LaunchConfiguration(
+-                                "canonical_white_fit_window_count"
+-                            ),
+-                            value_type=int,
+-                        ),
+-                        "canonical_white_fit_margin_px": ParameterValue(
+-                            LaunchConfiguration("canonical_white_fit_margin_px"),
+-                            value_type=int,
+-                        ),
+-                        "canonical_white_fit_min_pixels": ParameterValue(
+-                            LaunchConfiguration("canonical_white_fit_min_pixels"),
+-                            value_type=int,
+-                        ),
+-                        "canonical_white_fit_min_centers": ParameterValue(
+-                            LaunchConfiguration("canonical_white_fit_min_centers"),
+-                            value_type=int,
+-                        ),
+-                        "canonical_white_fit_min_span_px": ParameterValue(
+-                            LaunchConfiguration("canonical_white_fit_min_span_px"),
+-                            value_type=int,
+-                        ),
+-                        "canonical_white_fit_residual_px": ParameterValue(
+-                            LaunchConfiguration("canonical_white_fit_residual_px"),
+-                            value_type=float,
+-                        ),
+-                        "canonical_white_fit_line_width_px": ParameterValue(
+-                            LaunchConfiguration(
+-                                "canonical_white_fit_line_width_px"
+-                            ),
+-                            value_type=int,
+-                        ),
+-                        "canonical_yellow_divider_enabled": ParameterValue(
+-                            LaunchConfiguration(
+-                                "canonical_yellow_divider_enabled"
+-                            ),
+-                            value_type=bool,
+-                        ),
+-                        "canonical_yellow_divider_min_pixels": ParameterValue(
+-                            LaunchConfiguration(
+-                                "canonical_yellow_divider_min_pixels"
+-                            ),
+-                            value_type=int,
+-                        ),
+-                        "canonical_yellow_divider_residual_px": ParameterValue(
+-                            LaunchConfiguration(
+-                                "canonical_yellow_divider_residual_px"
+-                            ),
+-                            value_type=float,
+-                        ),
+-                        "canonical_yellow_divider_line_width_px": ParameterValue(
+-                            LaunchConfiguration(
+-                                "canonical_yellow_divider_line_width_px"
+-                            ),
+-                            value_type=int,
+-                        ),
+-                        "canonical_yellow_normalize_enabled": ParameterValue(
+-                            LaunchConfiguration(
+-                                "canonical_yellow_normalize_enabled"
+-                            ),
+-                            value_type=bool,
+-                        ),
+-                        "canonical_yellow_normalize_line_width_px": ParameterValue(
+-                            LaunchConfiguration(
+-                                "canonical_yellow_normalize_line_width_px"
+-                            ),
+-                            value_type=int,
+-                        ),
+-                        "sync_qos_depth": ParameterValue(
+-                            LaunchConfiguration("pipeline_qos_depth"), value_type=int
+-                        ),
+-                        "debug_rate_hz": ParameterValue(
+-                            LaunchConfiguration("debug_rate_hz"), value_type=float
+-                        ),
+-                    }
+-                ],
++        ),
++        DeclareLaunchArgument(
++            "image_topic", default_value="/wide_camera/rect/image_raw"
++        ),
++        DeclareLaunchArgument("use_compressed_image", default_value="false"),
++        DeclareLaunchArgument("enable_rectify", default_value="false"),
++        DeclareLaunchArgument(
++            "camera_yaml",
++            default_value=PathJoinSubstitution(
++                [
++                    FindPackageShare("xycar_perception"),
++                    "config",
++                    "wide_camera_fisheye_1280x1024_20260708.yaml",
++                ]
+             ),
+-        ]
++        ),
++        DeclareLaunchArgument("rect_balance", default_value="0.3"),
++        DeclareLaunchArgument("max_input_age_sec", default_value="0.35"),
++        DeclareLaunchArgument(
++            "direct_canonical_enabled", default_value="true"
++        ),
++        DeclareLaunchArgument(
++            "publish_intermediate_topics", default_value="false"
++        ),
++        DeclareLaunchArgument("white_confidence", default_value="0.50"),
++        DeclareLaunchArgument("yellow_confidence", default_value="0.50"),
++        DeclareLaunchArgument("cpu_threads", default_value="4"),
++        DeclareLaunchArgument("opencv_threads", default_value="1"),
++        DeclareLaunchArgument("pipeline_qos_depth", default_value="1"),
++        DeclareLaunchArgument("debug_rate_hz", default_value="1.0"),
++        DeclareLaunchArgument("max_output_rate_hz", default_value="7.0"),
++        DeclareLaunchArgument(
++            "output_native_resolution", default_value="false"
++        ),
++        DeclareLaunchArgument(
++            "dst_left_ratio", default_value=str(80.0 / 640.0)
++        ),
++        DeclareLaunchArgument(
++            "dst_right_ratio", default_value=str(560.0 / 640.0)
++        ),
++        DeclareLaunchArgument(
++            "canonical_white_fit_enabled", default_value="true"
++        ),
++        DeclareLaunchArgument(
++            "canonical_white_fit_window_count", default_value="9"
++        ),
++        DeclareLaunchArgument(
++            "canonical_white_fit_margin_px", default_value="24"
++        ),
++        DeclareLaunchArgument(
++            "canonical_white_fit_min_pixels", default_value="4"
++        ),
++        DeclareLaunchArgument(
++            "canonical_white_fit_min_centers", default_value="2"
++        ),
++        DeclareLaunchArgument(
++            "canonical_white_fit_min_span_px", default_value="8"
++        ),
++        DeclareLaunchArgument(
++            "canonical_white_fit_residual_px", default_value="6.0"
++        ),
++        DeclareLaunchArgument(
++            "canonical_white_fit_line_width_px", default_value="5"
++        ),
++        DeclareLaunchArgument(
++            "canonical_yellow_divider_enabled", default_value="true"
++        ),
++        DeclareLaunchArgument(
++            "canonical_yellow_divider_min_pixels", default_value="3"
++        ),
++        DeclareLaunchArgument(
++            "canonical_yellow_divider_residual_px", default_value="6.0"
++        ),
++        DeclareLaunchArgument(
++            "canonical_yellow_divider_line_width_px", default_value="5"
++        ),
++        DeclareLaunchArgument(
++            "canonical_yellow_normalize_enabled", default_value="false"
++        ),
++        DeclareLaunchArgument(
++            "canonical_yellow_normalize_line_width_px", default_value="5"
++        ),
++    ]
++
++    inference = Node(
++        package="lane_seg_control",
++        executable="lane_seg_lraspp_inference_node",
++        name="lane_seg_lraspp_inference",
++        output="screen",
++        additional_env={
++            "OMP_NUM_THREADS": LaunchConfiguration("cpu_threads"),
++            "OMP_WAIT_POLICY": "PASSIVE",
++            "MKL_NUM_THREADS": LaunchConfiguration("cpu_threads"),
++            "OPENBLAS_NUM_THREADS": "1",
++        },
++        parameters=[
++            {
++                "model_path": LaunchConfiguration("model_path"),
++                "image_topic": image_topic,
++                "use_compressed_image": _as_bool("use_compressed_image"),
++                "enable_rectify": _as_bool("enable_rectify"),
++                "camera_yaml": LaunchConfiguration("camera_yaml"),
++                "rect_balance": _as_float("rect_balance"),
++                "max_input_age_sec": _as_float("max_input_age_sec"),
++                "processed_image_topic": processed_image_topic,
++                "white_mask_topic": white_topic,
++                "yellow_mask_topic": yellow_topic,
++                "input_width": 256,
++                "input_height": 144,
++                "white_class_id": 1,
++                "yellow_class_id": 2,
++                "white_confidence": _as_float("white_confidence"),
++                "yellow_confidence": _as_float("yellow_confidence"),
++                "cpu_threads": _as_int("cpu_threads"),
++                "opencv_threads": _as_int("opencv_threads"),
++                "output_qos_depth": _as_int("pipeline_qos_depth"),
++                "debug_rate_hz": _as_float("debug_rate_hz"),
++                "max_output_rate_hz": _as_float("max_output_rate_hz"),
++                "output_native_resolution": _as_bool(
++                    "output_native_resolution"
++                ),
++                "direct_canonical_enabled": _as_bool(
++                    "direct_canonical_enabled"
++                ),
++                "publish_intermediate_topics": _as_bool(
++                    "publish_intermediate_topics"
++                ),
++                **geometry_parameters,
++            }
++        ],
++    )
++
++    adapter = Node(
++        package="lane_seg_control",
++        executable="lane_seg_canonical_adapter",
++        name="lane_seg_canonical_adapter",
++        output="screen",
++        condition=UnlessCondition(direct_canonical),
++        parameters=[
++            {
++                "image_topic": processed_image_topic,
++                "white_mask_topic": white_topic,
++                "yellow_mask_topic": yellow_topic,
++                "input_is_bev": False,
++                "sync_qos_depth": _as_int("pipeline_qos_depth"),
++                "debug_rate_hz": _as_float("debug_rate_hz"),
++                **geometry_parameters,
++            }
++        ],
+     )
++    return LaunchDescription([*arguments, inference, adapter])
+diff --git a/xycar_ws/src/lane_seg_control/test/test_lane_seg_integration.py b/xycar_ws/src/lane_seg_control/test/test_lane_seg_integration.py
+index 7bcc75d..93dc73e 100644
+--- a/xycar_ws/src/lane_seg_control/test/test_lane_seg_integration.py
++++ b/xycar_ws/src/lane_seg_control/test/test_lane_seg_integration.py
+@@ -1,4 +1,5 @@
+ import unittest
++from pathlib import Path
+ 
+ import cv2
+ import numpy as np
+@@ -7,9 +8,17 @@ from lane_seg_control.bag_montage_exporter import (
+     make_montage,
+     nearest_motor_command,
+ )
++from lane_seg_control.camera_input import (
++    CameraRectifier,
++    decode_compressed_bgr,
++    scale_camera_matrix,
++)
+ from lane_seg_control.canonical_adapter_node import (
++    CanonicalRenderConfig,
+     build_bev_geometry,
++    render_canonical_from_bev_masks,
+     warp_semantic_masks,
++    warp_semantic_masks_only,
+ )
+ from lane_seg_control.lane_seg_inference_node import (
+     class_roles,
+@@ -30,6 +39,198 @@ from xycar_perception.canonical_road import make_canonical_road_image_from_masks
+ 
+ 
+ class LaneSegIntegrationTest(unittest.TestCase):
++    def test_compressed_decode_and_camera_matrix_scaling(self):
++        frame = np.zeros((48, 64, 3), dtype=np.uint8)
++        frame[:, :32] = (10, 90, 180)
++        ok, encoded = cv2.imencode(".jpg", frame)
++        self.assertTrue(ok)
++        decoded = decode_compressed_bgr(encoded.tobytes())
++        self.assertIsNotNone(decoded)
++        self.assertEqual(decoded.shape, frame.shape)
++
++        matrix = np.asarray(
++            [[400.0, 0.0, 320.0], [0.0, 420.0, 240.0], [0.0, 0.0, 1.0]]
++        )
++        scaled = scale_camera_matrix(matrix, (640, 480), (320, 240))
++        np.testing.assert_allclose(
++            scaled,
++            np.asarray(
++                [
++                    [200.0, 0.0, 160.0],
++                    [0.0, 210.0, 120.0],
++                    [0.0, 0.0, 1.0],
++                ]
++            ),
++        )
++
++    def test_camera_rectifier_reuses_cached_maps(self):
++        calibration = (
++            Path(__file__).resolve().parents[2]
++            / "xycar_perception"
++            / "config"
++            / "wide_camera_fisheye_1280x1024_20260708.yaml"
++        )
++        rectifier = CameraRectifier(calibration, 0.3)
++        frame = np.zeros((96, 128, 3), dtype=np.uint8)
++        first = rectifier.rectify(frame)
++        first_map = rectifier.map1
++        second = rectifier.rectify(frame)
++        self.assertEqual(first.shape, frame.shape)
++        self.assertIs(first_map, rectifier.map1)
++        np.testing.assert_array_equal(first, second)
++
++    def test_direct_mask_warp_is_pixel_identical_to_adapter_warp(self):
++        height, width = 144, 256
++        image = np.full((height, width, 3), 48, dtype=np.uint8)
++        white = np.zeros((height, width), dtype=np.uint8)
++        yellow = np.zeros_like(white)
++        cv2.line(white, (32, 140), (78, 62), 255, 5)
++        cv2.line(white, (224, 140), (180, 62), 255, 5)
++        cv2.line(yellow, (126, 140), (130, 82), 255, 5)
++        geometry = build_bev_geometry(
++            width,
++            height,
++            source_ratios=(
++                472.0 / 1280.0,
++                494.0 / 1024.0,
++                906.0 / 1280.0,
++                486.0 / 1024.0,
++                1272.0 / 1280.0,
++                612.0 / 1024.0,
++                46.0 / 1280.0,
++                622.0 / 1024.0,
++            ),
++            destination_ratios=(
++                80.0 / 640.0,
++                560.0 / 640.0,
++                0.0,
++                479.0 / 660.0,
++            ),
++            bev_width=640,
++            bev_height=660,
++        )
++        _, legacy_white, legacy_yellow, legacy_valid = warp_semantic_masks(
++            image,
++            white,
++            yellow,
++            geometry,
++            valid_lateral_margin_px=0,
++            valid_erode_px=0,
++            clip_to_source_polygon=False,
++        )
++        direct_white, direct_yellow, direct_valid = (
++            warp_semantic_masks_only(
++                white,
++                yellow,
++                geometry,
++                valid_lateral_margin_px=0,
++                valid_erode_px=0,
++                clip_to_source_polygon=False,
++            )
++        )
++        np.testing.assert_array_equal(direct_white, legacy_white)
++        np.testing.assert_array_equal(direct_yellow, legacy_yellow)
++        np.testing.assert_array_equal(direct_valid, legacy_valid)
++
++    def test_direct_canonical_render_is_pixel_identical_to_legacy_steps(self):
++        white = np.zeros((660, 640), dtype=np.uint8)
++        yellow = np.zeros_like(white)
++        valid = np.full_like(white, 255)
++        cv2.line(white, (90, 650), (205, 80), 255, 12)
++        cv2.line(white, (550, 650), (430, 80), 255, 12)
++        cv2.line(yellow, (315, 650), (320, 500), 255, 9)
++        cv2.line(yellow, (321, 420), (327, 270), 255, 9)
++        config = CanonicalRenderConfig(
++            lateral_m_per_px=1.4 / 640.0,
++            forward_m_per_px=1.5 / 660.0,
++            lateral_range_m=1.4,
++            forward_range_m=1.5,
++            output_width=256,
++            output_height=144,
++            background_gray=36,
++            line_width_px=5,
++            white_fit_enabled=True,
++            white_fit_window_count=9,
++            white_fit_margin_px=24,
++            white_fit_min_pixels=4,
++            white_fit_min_centers=2,
++            white_fit_min_span_px=8,
++            white_fit_residual_px=6.0,
++            white_fit_line_width_px=5,
++            yellow_divider_enabled=True,
++            yellow_divider_min_pixels=3,
++            yellow_divider_residual_px=6.0,
++            yellow_divider_line_width_px=5,
++            yellow_normalize_enabled=False,
++            yellow_normalize_line_width_px=5,
++            yellow_normalize_min_area_px=3,
++            yellow_normalize_smoothing_rows=5,
++        )
++
++        direct = render_canonical_from_bev_masks(
++            white,
++            yellow,
++            valid,
++            config,
++        )
++        raw = make_canonical_road_image_from_masks(
++            white,
++            yellow,
++            valid_mask=valid,
++            lateral_m_per_px=config.lateral_m_per_px,
++            forward_m_per_px=config.forward_m_per_px,
++            lateral_range_m=config.lateral_range_m,
++            forward_range_m=config.forward_range_m,
++            output_width=config.output_width,
++            output_height=config.output_height,
++            background_gray=config.background_gray,
++            line_width_px=config.line_width_px,
++            min_component_area_px=1,
++            white_max_component_thickness_px=0.0,
++            yellow_max_component_thickness_px=0.0,
++            geometry_filter_enabled=False,
++            preserve_white_mask=True,
++            top_ignore_m=0.0,
++            bottom_ignore_m=0.0,
++            return_stages=True,
++        )
++        reference = fit_yellow_centerline_reference(
++            raw.yellow_mask,
++            min_pixels=config.yellow_divider_min_pixels,
++            residual_threshold_px=config.yellow_divider_residual_px,
++            line_width_px=config.yellow_divider_line_width_px,
++        )
++        fitted = fit_white_lane_boundaries(
++            raw.white_mask,
++            window_count=config.white_fit_window_count,
++            window_margin_px=config.white_fit_margin_px,
++            min_pixels_per_window=config.white_fit_min_pixels,
++            min_centers=config.white_fit_min_centers,
++            min_span_px=config.white_fit_min_span_px,
++            residual_threshold_px=config.white_fit_residual_px,
++            line_width_px=config.white_fit_line_width_px,
++            divider_x_by_y=reference.x_by_y,
++        )
++        legacy_road, legacy_white = compose_fitted_canonical(
++            fitted.mask,
++            raw.yellow_mask,
++            raw.valid_mask,
++            background_gray=config.background_gray,
++        )
++        np.testing.assert_array_equal(direct.stages.road_image, legacy_road)
++        np.testing.assert_array_equal(
++            direct.stages.white_mask,
++            legacy_white,
++        )
++        np.testing.assert_array_equal(
++            direct.stages.yellow_mask,
++            raw.yellow_mask,
++        )
++        np.testing.assert_array_equal(
++            direct.stages.valid_mask,
++            raw.valid_mask,
++        )
++
+     def test_yellow_normalizer_preserves_dash_gaps_and_width(self):
+         yellow = np.zeros((144, 256), dtype=np.uint8)
+         cv2.line(yellow, (124, 12), (132, 54), 255, 13)
+diff --git a/xycar_ws/src/xycar_device/xycar_imu/launch/xycar_imu.launch.py b/xycar_ws/src/xycar_device/xycar_imu/launch/xycar_imu.launch.py
+index 066d7fb..497c9b4 100644
+--- a/xycar_ws/src/xycar_device/xycar_imu/launch/xycar_imu.launch.py
++++ b/xycar_ws/src/xycar_device/xycar_imu/launch/xycar_imu.launch.py
+@@ -7,7 +7,7 @@ from launch_ros.actions import Node
+ def generate_launch_description():
+ 
+     config_path = os.path.join(
+-        get_package_share_directory("xycar_imu"), "config", "imu.yaml"
++        get_package_share_directory("xycar_imu"), "config", "xycar_imu.yaml"
+     )
+         
+     imu_node = Node(
+@@ -16,4 +16,3 @@ def generate_launch_description():
+     )
+ 
+     return LaunchDescription([imu_node])
+-
+diff --git a/xycar_ws/src/xycar_device/xycar_imu/launch/xycar_imu_viewer.launch.py b/xycar_ws/src/xycar_device/xycar_imu/launch/xycar_imu_viewer.launch.py
+index 15102ea..7bb89ca 100755
+--- a/xycar_ws/src/xycar_device/xycar_imu/launch/xycar_imu_viewer.launch.py
++++ b/xycar_ws/src/xycar_device/xycar_imu/launch/xycar_imu_viewer.launch.py
+@@ -18,7 +18,7 @@ tf_node = Node(
+ def generate_launch_description():
+ 
+     config_path = os.path.join(
+-        get_package_share_directory("xycar_imu"), "config", "imu.yaml"
++        get_package_share_directory("xycar_imu"), "config", "xycar_imu.yaml"
+     )
+         
+     rviz_path = os.path.join(os.getenv("HOME"), "xycar_ws", "src", "xycar_device", "xycar_imu", "rviz", "view_imu.rviz")
+@@ -34,4 +34,3 @@ def generate_launch_description():
+     )
+ 
+     return LaunchDescription([imu_node, tf_node, rviz_node])
+-
+diff --git a/xycar_ws/src/xycar_device/xycar_lidar/CMakeLists.txt b/xycar_ws/src/xycar_device/xycar_lidar/CMakeLists.txt
+index 4f92a03..a37a832 100644
+--- a/xycar_ws/src/xycar_device/xycar_lidar/CMakeLists.txt
++++ b/xycar_ws/src/xycar_device/xycar_lidar/CMakeLists.txt
+@@ -78,7 +78,7 @@ install(TARGETS
+     ${PROJECT_NAME}_node ${PROJECT_NAME}_client
+     DESTINATION lib/${PROJECT_NAME})
+ 
+-install(DIRECTORY launch params startup config
++install(DIRECTORY launch params startup
+     DESTINATION share/${PROJECT_NAME})
+ 
+ if(BUILD_TESTING)
+@@ -87,4 +87,3 @@ if(BUILD_TESTING)
+ endif()
+ 
+ ament_package()
+-
+diff --git a/xycar_ws/src/xycar_device/xycar_msgs/CMakeLists.txt b/xycar_ws/src/xycar_device/xycar_msgs/CMakeLists.txt
+index a7a8d51..7d1e838 100644
+--- a/xycar_ws/src/xycar_device/xycar_msgs/CMakeLists.txt
++++ b/xycar_ws/src/xycar_device/xycar_msgs/CMakeLists.txt
+@@ -17,7 +17,9 @@ find_package(sensor_msgs REQUIRED)
+ 
+ rosidl_generate_interfaces(${PROJECT_NAME}
+   "msg/XycarMotor.msg"
++  "msg/XycarSystemTelemetry.msg"
+   "msg/XycarUltrasonic.msg"
++  "msg/XycarVescState.msg"
+   DEPENDENCIES std_msgs sensor_msgs
+ )
+ 
+diff --git a/xycar_ws/src/xycar_final_drive/launch/final_real_stack.launch.py b/xycar_ws/src/xycar_final_drive/launch/final_real_stack.launch.py
+index 5bead30..cbdbd29 100644
+--- a/xycar_ws/src/xycar_final_drive/launch/final_real_stack.launch.py
++++ b/xycar_ws/src/xycar_final_drive/launch/final_real_stack.launch.py
+@@ -19,12 +19,14 @@ def generate_launch_description():
+     drive_enabled = LaunchConfiguration("drive_enabled")
+     start_perception = LaunchConfiguration("start_perception")
+     device = LaunchConfiguration("device")
++    perception_cpu_threads = LaunchConfiguration("perception_cpu_threads")
++    policy_cpu_threads = LaunchConfiguration("policy_cpu_threads")
+ 
+     perception_launch = PathJoinSubstitution(
+         [
+             FindPackageShare("lane_seg_control"),
+             "launch",
+-            "lane_seg_lraspp_canonical_only.launch.py",
++            "lane_seg_lraspp_low_latency_real.launch.py",
+         ]
+     )
+     rule_launch = PathJoinSubstitution(
+@@ -52,9 +54,16 @@ def generate_launch_description():
+             DeclareLaunchArgument("drive_enabled", default_value="false"),
+             DeclareLaunchArgument("start_perception", default_value="true"),
+             DeclareLaunchArgument("device", default_value="cpu"),
++            DeclareLaunchArgument(
++                "perception_cpu_threads", default_value="4"
++            ),
++            DeclareLaunchArgument("policy_cpu_threads", default_value="4"),
+             IncludeLaunchDescription(
+                 PythonLaunchDescriptionSource(perception_launch),
+                 condition=IfCondition(start_perception),
++                launch_arguments={
++                    "cpu_threads": perception_cpu_threads,
++                }.items(),
+             ),
+             IncludeLaunchDescription(
+                 PythonLaunchDescriptionSource(rule_launch),
+@@ -69,6 +78,7 @@ def generate_launch_description():
+                 launch_arguments={
+                     "drive_enabled": drive_enabled,
+                     "device": device,
++                    "policy_cpu_threads": policy_cpu_threads,
+                 }.items(),
+             ),
+         ]
+diff --git a/xycar_ws/src/xycar_rl/README.md b/xycar_ws/src/xycar_rl/README.md
+index 22a4619..e9855f5 100644
+--- a/xycar_ws/src/xycar_rl/README.md
++++ b/xycar_ws/src/xycar_rl/README.md
+@@ -203,13 +203,20 @@ ros2 launch xycar_rl real_shadow.launch.py \
+   policy_kind:=camera_speed_bc \
+   checkpoint_path:=$PWD/models/rl/camera_speed_compact_temporal2_lead1_dagger_iter2_46k_20260717/camera_speed_bc_best.pth \
+   min_speed_command:=4.0 max_speed_command:=12.0 \
+-  drive_enabled:=false deployment_speed_cap:=4.0 \
++  drive_enabled:=false deployment_speed_cap:=10.0 \
++  max_inference_rate_hz:=0.0 \
+   lidar_safety_enabled:=false steering_gain:=1.0 device:=cpu
+ ```
+ 
+-Increase `deployment_speed_cap` only after shadow output and each closed-course
+-gate pass. The selected experimental policy may request up to `12`, but the
+-launch default keeps the first real-car run capped at `4`.
++The real-car launch default limits `deployment_speed_cap` to `10`. Keep this
++cap for model comparisons; `0.0` disables the additional cap.
++
++The real canonical source is already limited to about 7 Hz. Keep
++`max_inference_rate_hz:=0.0` so the policy processes each source frame instead
++of applying a second 7 Hz gate. The 2026-07-24 real run produced only 4.47 Hz
++when both rates were set to 7 Hz. See
++`docs/real_curve_fix_handoff_20260724.md` for the measured timing, the dedicated
++lap-time model launch, and the speed 4/6/8 validation gates.
+ 
+ ## 2026-07-16 validation status
+ 
+@@ -222,8 +229,8 @@ launch default keeps the first real-car run capped at `4`.
+   experimental simulation cap, not a real-car approval.
+ - The reward-trained TD3+BC candidates were less repeatable (at most 1/3 in the
+   same gate), so they remain experiment artifacts rather than deployment defaults.
+-- Real-car first run remains shadow-only with `deployment_speed_cap=4`. Raise it
+-  one command at a time only after repeated closed-course passes.
++- Real-car model runs use `deployment_speed_cap=10` unless an explicit lower
++  cap is required for a test.
+ 
+ See `docs/reinforcement_learning_roadmap.md` for gates and safety rules.
+ 
+diff --git a/xycar_ws/src/xycar_rl/launch/final_uncapped_avg17_real.launch.py b/xycar_ws/src/xycar_rl/launch/final_uncapped_avg17_real.launch.py
+index cd6e372..a9ed9ea 100644
+--- a/xycar_ws/src/xycar_rl/launch/final_uncapped_avg17_real.launch.py
++++ b/xycar_ws/src/xycar_rl/launch/final_uncapped_avg17_real.launch.py
+@@ -19,6 +19,15 @@ def generate_launch_description():
+         [
+             DeclareLaunchArgument("drive_enabled", default_value="false"),
+             DeclareLaunchArgument("device", default_value="cpu"),
++            DeclareLaunchArgument("policy_cpu_threads", default_value="4"),
++            DeclareLaunchArgument(
++                "deployment_speed_cap",
++                default_value="10.0",
++            ),
++            DeclareLaunchArgument(
++                "target_lateral_offset_m",
++                default_value="0.10",
++            ),
+             DeclareLaunchArgument(
+                 "checkpoint_path",
+                 default_value=checkpoint,
+@@ -34,15 +43,28 @@ def generate_launch_description():
+                     "checkpoint_path": LaunchConfiguration("checkpoint_path"),
+                     "drive_enabled": LaunchConfiguration("drive_enabled"),
+                     "device": LaunchConfiguration("device"),
++                    "policy_cpu_threads": LaunchConfiguration(
++                        "policy_cpu_threads"
++                    ),
+                     "image_topic": "/perception/canonical_road_image",
++                    "target_lateral_offset_m": LaunchConfiguration(
++                        "target_lateral_offset_m"
++                    ),
+                     "min_speed_command": "4.0",
+                     "max_speed_command": "24.0",
+-                    "deployment_speed_cap": "0.0",
++                    "deployment_speed_cap": LaunchConfiguration(
++                        "deployment_speed_cap"
++                    ),
+                     "lidar_safety_enabled": "false",
+                     "adaptive_steering_enabled": "false",
+                     "steering_temporal_alpha": "1.0",
+                     "speed_temporal_alpha": "1.0",
+-                    "max_inference_rate_hz": "7.0",
++                    # Canonical input is already limited to about 7 Hz. A
++                    # second 7 Hz gate drops jittered frames and produced only
++                    # 4.47 Hz on the 2026-07-24 real-car run.
++                    "max_inference_rate_hz": "0.0",
++                    "max_image_age_sec": "0.30",
++                    "max_temporal_frame_gap_sec": "0.25",
+                     "preview_steering_enabled": "false",
+                 }.items(),
+             ),
+diff --git a/xycar_ws/src/xycar_rl/launch/real_shadow.launch.py b/xycar_ws/src/xycar_rl/launch/real_shadow.launch.py
+index 123e3c5..e68f0b7 100644
+--- a/xycar_ws/src/xycar_rl/launch/real_shadow.launch.py
++++ b/xycar_ws/src/xycar_rl/launch/real_shadow.launch.py
+@@ -16,6 +16,7 @@ def generate_launch_description():
+     speed_command = LaunchConfiguration("speed_command")
+     min_speed_command = LaunchConfiguration("min_speed_command")
+     max_speed_command = LaunchConfiguration("max_speed_command")
++    target_lateral_offset_m = LaunchConfiguration("target_lateral_offset_m")
+     deployment_speed_cap = LaunchConfiguration("deployment_speed_cap")
+     speed_temporal_alpha = LaunchConfiguration("speed_temporal_alpha")
+     max_inference_rate_hz = LaunchConfiguration("max_inference_rate_hz")
+@@ -42,16 +43,37 @@ def generate_launch_description():
+             DeclareLaunchArgument("speed_command", default_value="3.0"),
+             DeclareLaunchArgument("min_speed_command", default_value="4.0"),
+             DeclareLaunchArgument("max_speed_command", default_value="24.0"),
++            DeclareLaunchArgument(
++                "target_lateral_offset_m",
++                default_value="0.10",
++                description=(
++                    "Desired vehicle lateral offset in metres; positive is left."
++                ),
++            ),
+             DeclareLaunchArgument(
+                 "deployment_speed_cap",
+-                default_value="0.0",
++                default_value="10.0",
+                 description=(
+                     "Positive values clip learned speed; zero disables the "
+                     "additional deployment cap."
+                 ),
+             ),
+             DeclareLaunchArgument("speed_temporal_alpha", default_value="0.35"),
+-            DeclareLaunchArgument("max_inference_rate_hz", default_value="15.0"),
++            DeclareLaunchArgument(
++                "max_inference_rate_hz",
++                default_value="0.0",
++                description=(
++                    "Zero processes every canonical frame. Use a positive value "
++                    "only when the source is faster than the policy can handle."
++                ),
++            ),
++            DeclareLaunchArgument(
++                "inference_rate_slack_sec", default_value="0.04"
++            ),
++            DeclareLaunchArgument("max_image_age_sec", default_value="0.30"),
++            DeclareLaunchArgument(
++                "max_temporal_frame_gap_sec", default_value="0.25"
++            ),
+             DeclareLaunchArgument("lidar_safety_enabled", default_value="false"),
+             DeclareLaunchArgument("steering_gain", default_value="1.0"),
+             DeclareLaunchArgument("steering_output_sign", default_value="1.0"),
+@@ -72,11 +94,25 @@ def generate_launch_description():
+             DeclareLaunchArgument("preview_steering_enabled", default_value="false"),
+             DeclareLaunchArgument("preview_steering_blend", default_value="0.35"),
+             DeclareLaunchArgument("device", default_value="cpu"),
++            DeclareLaunchArgument("policy_cpu_threads", default_value="4"),
++            DeclareLaunchArgument(
++                "policy_opencv_threads", default_value="1"
++            ),
+             Node(
+                 package="xycar_rl",
+                 executable="rl_policy_inference",
+                 name="rl_policy_inference",
+                 output="screen",
++                additional_env={
++                    "OMP_NUM_THREADS": LaunchConfiguration(
++                        "policy_cpu_threads"
++                    ),
++                    "OMP_WAIT_POLICY": "PASSIVE",
++                    "MKL_NUM_THREADS": LaunchConfiguration(
++                        "policy_cpu_threads"
++                    ),
++                    "OPENBLAS_NUM_THREADS": "1",
++                },
+                 parameters=[
+                     {
+                         "use_sim_time": False,
+@@ -99,6 +135,9 @@ def generate_launch_description():
+                         "max_speed_command": ParameterValue(
+                             max_speed_command, value_type=float
+                         ),
++                        "target_lateral_offset_m": ParameterValue(
++                            target_lateral_offset_m, value_type=float
++                        ),
+                         "deployment_speed_cap": ParameterValue(
+                             deployment_speed_cap, value_type=float
+                         ),
+@@ -108,6 +147,18 @@ def generate_launch_description():
+                         "max_inference_rate_hz": ParameterValue(
+                             max_inference_rate_hz, value_type=float
+                         ),
++                        "inference_rate_slack_sec": ParameterValue(
++                            LaunchConfiguration("inference_rate_slack_sec"),
++                            value_type=float,
++                        ),
++                        "max_image_age_sec": ParameterValue(
++                            LaunchConfiguration("max_image_age_sec"),
++                            value_type=float,
++                        ),
++                        "max_temporal_frame_gap_sec": ParameterValue(
++                            LaunchConfiguration("max_temporal_frame_gap_sec"),
++                            value_type=float,
++                        ),
+                         "lidar_safety_enabled": ParameterValue(
+                             LaunchConfiguration("lidar_safety_enabled"),
+                             value_type=bool,
+@@ -168,6 +219,14 @@ def generate_launch_description():
+                             value_type=float,
+                         ),
+                         "device": device,
++                        "policy_cpu_threads": ParameterValue(
++                            LaunchConfiguration("policy_cpu_threads"),
++                            value_type=int,
++                        ),
++                        "policy_opencv_threads": ParameterValue(
++                            LaunchConfiguration("policy_opencv_threads"),
++                            value_type=int,
++                        ),
+                     }
+                 ],
+             ),
+diff --git a/xycar_ws/src/xycar_rl/launch/real_yolo_camera_speed_shadow.launch.py b/xycar_ws/src/xycar_rl/launch/real_yolo_camera_speed_shadow.launch.py
+index ccbacde..5d5002b 100644
+--- a/xycar_ws/src/xycar_rl/launch/real_yolo_camera_speed_shadow.launch.py
++++ b/xycar_ws/src/xycar_rl/launch/real_yolo_camera_speed_shadow.launch.py
+@@ -40,7 +40,7 @@ def generate_launch_description():
+             DeclareLaunchArgument("yolo_cpu_threads", default_value="4"),
+             DeclareLaunchArgument("lane_rate_hz", default_value="15.0"),
+             DeclareLaunchArgument("drive_enabled", default_value="false"),
+-            DeclareLaunchArgument("deployment_speed_cap", default_value="3.0"),
++            DeclareLaunchArgument("deployment_speed_cap", default_value="10.0"),
+             DeclareLaunchArgument("steering_output_sign", default_value="1.0"),
+             IncludeLaunchDescription(
+                 PythonLaunchDescriptionSource(perception_launch),
+diff --git a/xycar_ws/src/xycar_rl/test/test_runtime_safety.py b/xycar_ws/src/xycar_rl/test/test_runtime_safety.py
+index 6dff3b8..7750c47 100644
+--- a/xycar_ws/src/xycar_rl/test/test_runtime_safety.py
++++ b/xycar_ws/src/xycar_rl/test/test_runtime_safety.py
+@@ -1,9 +1,11 @@
+ import math
+ import unittest
+ 
++import numpy as np
+ from sensor_msgs.msg import LaserScan
+ 
+ from xycar_rl.policy_runtime_node import front_obstacle_distance
++from xycar_rl.policy_runtime_node import shift_canonical_image_for_target
+ 
+ 
+ class RuntimeSafetyTest(unittest.TestCase):
+@@ -17,6 +19,33 @@ class RuntimeSafetyTest(unittest.TestCase):
+         distance = front_obstacle_distance(scan, math.radians(25.0))
+         self.assertAlmostEqual(distance, 1.2)
+ 
++    def test_positive_target_offset_shifts_canonical_features_left(self):
++        image = np.full((3, 14, 3), 36, dtype=np.uint8)
++        image[:, 7, :] = 255
++
++        shifted = shift_canonical_image_for_target(
++            image,
++            target_lateral_offset_m=0.10,
++            lateral_range_m=1.4,
++            background_gray=36,
++        )
++
++        self.assertTrue(np.all(shifted[:, 6, :] == 255))
++        self.assertTrue(np.all(shifted[:, -1, :] == 36))
++
++    def test_zero_target_offset_preserves_canonical_image(self):
++        image = np.arange(42, dtype=np.uint8).reshape(3, 14)
++
++        shifted = shift_canonical_image_for_target(
++            image,
++            target_lateral_offset_m=0.0,
++            lateral_range_m=1.4,
++            background_gray=36,
++        )
++
++        np.testing.assert_array_equal(shifted, image)
++        self.assertIsNot(shifted, image)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/xycar_ws/src/xycar_rl/xycar_rl/policy_runtime_node.py b/xycar_ws/src/xycar_rl/xycar_rl/policy_runtime_node.py
+index 847f8c2..5390217 100644
+--- a/xycar_ws/src/xycar_rl/xycar_rl/policy_runtime_node.py
++++ b/xycar_ws/src/xycar_rl/xycar_rl/policy_runtime_node.py
+@@ -5,11 +5,12 @@ from pathlib import Path
+ import threading
+ import time
+ 
++import cv2
+ import numpy as np
+ import rclpy
+ from cv_bridge import CvBridge
+ from rclpy.node import Node
+-from rclpy.qos import qos_profile_sensor_data
++from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+ from sensor_msgs.msg import Image, LaserScan
+ from std_msgs.msg import Float32MultiArray, String
+ import torch
+@@ -64,6 +65,82 @@ def apply_optional_speed_cap(
+     return min(learned, cap) if cap > 0.0 else learned
+ 
+ 
++def shift_canonical_image_for_target(
++    image_bgr: np.ndarray,
++    target_lateral_offset_m: float,
++    lateral_range_m: float,
++    background_gray: int,
++) -> np.ndarray:
++    """Shift canonical features so positive offset targets vehicle-left."""
++    image = np.asarray(image_bgr)
++    if image.ndim not in (2, 3) or image.shape[1] <= 0:
++        raise ValueError("canonical image must have a non-empty width")
++    lateral_range = float(lateral_range_m)
++    if lateral_range <= 0.0:
++        raise ValueError("canonical lateral range must be positive")
++
++    # A left-shifted road makes the policy steer left until the real road
++    # appears equally far right, placing the vehicle at the requested offset.
++    pixel_shift = int(
++        round(
++            -float(target_lateral_offset_m)
++            * float(image.shape[1])
++            / lateral_range
++        )
++    )
++    if pixel_shift == 0:
++        return image.copy()
++
++    fill = int(np.clip(background_gray, 0, 255))
++    shifted = np.full_like(image, fill)
++    width = int(image.shape[1])
++    if abs(pixel_shift) >= width:
++        return shifted
++    if pixel_shift > 0:
++        shifted[:, pixel_shift:] = image[:, : width - pixel_shift]
++    else:
++        shift_left = -pixel_shift
++        shifted[:, : width - shift_left] = image[:, shift_left:]
++    return shifted
++
++
++def inference_frame_due(
++    now_sec: float,
++    last_sec: float,
++    maximum_rate_hz: float,
++    slack_sec: float,
++) -> bool:
++    """Return true when a frame should run; a non-positive rate is source-driven."""
++    if maximum_rate_hz <= 0.0 or last_sec <= 0.0:
++        return True
++    minimum_interval = max(
++        0.0,
++        1.0 / maximum_rate_hz - max(0.0, slack_sec),
++    )
++    return now_sec - last_sec >= minimum_interval
++
++
++def temporal_pair_requires_reset(
++    current_stamp_ns: int,
++    previous_stamp_ns: int,
++    maximum_gap_sec: float,
++) -> bool:
++    if current_stamp_ns <= 0 or previous_stamp_ns <= 0:
++        return False
++    gap_sec = (current_stamp_ns - previous_stamp_ns) / 1.0e9
++    return gap_sec <= 0.0 or (
++        maximum_gap_sec > 0.0 and gap_sec > maximum_gap_sec
++    )
++
++
++def latest_sensor_qos() -> QoSProfile:
++    return QoSProfile(
++        history=HistoryPolicy.KEEP_LAST,
++        depth=1,
++        reliability=ReliabilityPolicy.BEST_EFFORT,
++    )
++
++
+ class RLPolicyRuntimeNode(Node):
+     def __init__(self) -> None:
+         super().__init__("rl_policy_inference")
+@@ -72,6 +149,19 @@ class RLPolicyRuntimeNode(Node):
+         if device_name == "auto":
+             device_name = "cuda" if torch.cuda.is_available() else "cpu"
+         self.device = torch.device(device_name)
++        policy_cpu_threads = max(
++            1, int(self.get_parameter("policy_cpu_threads").value)
++        )
++        policy_opencv_threads = max(
++            1, int(self.get_parameter("policy_opencv_threads").value)
++        )
++        if self.device.type == "cpu":
++            torch.set_num_threads(policy_cpu_threads)
++            try:
++                torch.set_num_interop_threads(1)
++            except RuntimeError:
++                pass
++        cv2.setNumThreads(policy_opencv_threads)
+         checkpoint = Path(
+             str(self.get_parameter("checkpoint_path").value)
+         ).expanduser().resolve()
+@@ -179,8 +269,18 @@ class RLPolicyRuntimeNode(Node):
+         self.sensor_timeout_sec = float(
+             self.get_parameter("sensor_timeout_sec").value
+         )
+-        self.inference_period_sec = 1.0 / max(
+-            0.1, float(self.get_parameter("max_inference_rate_hz").value)
++        self.max_inference_rate_hz = float(
++            self.get_parameter("max_inference_rate_hz").value
++        )
++        self.inference_rate_slack_sec = max(
++            0.0, float(self.get_parameter("inference_rate_slack_sec").value)
++        )
++        self.max_image_age_sec = max(
++            0.0, float(self.get_parameter("max_image_age_sec").value)
++        )
++        self.max_temporal_frame_gap_sec = max(
++            0.0,
++            float(self.get_parameter("max_temporal_frame_gap_sec").value),
+         )
+         self.stop_distance_m = float(
+             self.get_parameter("lidar_stop_distance_m").value
+@@ -193,29 +293,52 @@ class RLPolicyRuntimeNode(Node):
+         )
+         self.input_width = int(self.get_parameter("input_width").value)
+         self.input_height = int(self.get_parameter("input_height").value)
++        self.target_lateral_offset_m = float(
++            self.get_parameter("target_lateral_offset_m").value
++        )
++        self.canonical_lateral_range_m = float(
++            self.get_parameter("canonical_lateral_range_m").value
++        )
++        self.canonical_background_gray = int(
++            self.get_parameter("canonical_background_gray").value
++        )
+         self.lidar_points = int(self.get_parameter("lidar_points").value)
+         self.latest_scan: tuple[int, np.ndarray, float] | None = None
+         self.latest_scan_wall_sec = 0.0
+         self.last_inference_wall_sec = 0.0
++        self.last_processed_image_stamp_ns = 0
++        self.rate_limited_frame_count = 0
++        self.stale_frame_count = 0
+         self.last_steering_command = 0.0
+         self.last_speed_command = self.min_speed_command
+         self.last_valid_output_wall_sec = 0.0
+         self.lock = threading.Lock()
+ 
+         motor_topic = str(self.get_parameter("motor_topic").value)
+-        self.motor_pub = self.create_publisher(Float32MultiArray, motor_topic, 10)
++        command_qos = QoSProfile(
++            history=HistoryPolicy.KEEP_LAST,
++            depth=1,
++            reliability=ReliabilityPolicy.RELIABLE,
++        )
++        self.motor_pub = self.create_publisher(
++            Float32MultiArray,
++            motor_topic,
++            command_qos,
++        )
+         self.shadow_pub = self.create_publisher(
+             Float32MultiArray,
+             str(self.get_parameter("shadow_topic").value),
+-            10,
++            command_qos,
+         )
+         self.debug_pub = self.create_publisher(
+             Float32MultiArray,
+             str(self.get_parameter("debug_topic").value),
+-            10,
++            command_qos,
+         )
+         self.status_pub = self.create_publisher(
+-            String, str(self.get_parameter("status_topic").value), 10
++            String,
++            str(self.get_parameter("status_topic").value),
++            command_qos,
+         )
+         self.debug_image_pub = self.create_publisher(
+             Image, str(self.get_parameter("debug_image_topic").value), 2
+@@ -225,18 +348,20 @@ class RLPolicyRuntimeNode(Node):
+                 LaserScan,
+                 str(self.get_parameter("scan_topic").value),
+                 self._on_scan,
+-                qos_profile_sensor_data,
++                latest_sensor_qos(),
+             )
+         self.create_subscription(
+             Image,
+             str(self.get_parameter("image_topic").value),
+             self._on_image,
+-            qos_profile_sensor_data,
++            latest_sensor_qos(),
+         )
+         self.create_timer(0.05, self._safety_timer)
+         mode = "DRIVE" if self.drive_enabled else "SHADOW"
+         self.get_logger().info(
+-            f"RL policy ready in {mode} mode: {checkpoint}, device={self.device}"
++            f"RL policy ready in {mode} mode: {checkpoint}, "
++            f"device={self.device}, threads=torch:{policy_cpu_threads},"
++            f"opencv:{policy_opencv_threads}"
+         )
+ 
+     def _declare_parameters(self) -> None:
+@@ -252,6 +377,8 @@ class RLPolicyRuntimeNode(Node):
+         self.declare_parameter("checkpoint_path", str(default_bc))
+         self.declare_parameter("residual_base_checkpoint", "")
+         self.declare_parameter("device", "cpu")
++        self.declare_parameter("policy_cpu_threads", 4)
++        self.declare_parameter("policy_opencv_threads", 1)
+         self.declare_parameter("image_topic", "/perception/canonical_road_image")
+         self.declare_parameter("scan_topic", "/scan")
+         self.declare_parameter("motor_topic", "/xycar_motor")
+@@ -263,7 +390,7 @@ class RLPolicyRuntimeNode(Node):
+         self.declare_parameter("speed_command", 3.0)
+         self.declare_parameter("min_speed_command", 4.0)
+         self.declare_parameter("max_speed_command", 24.0)
+-        self.declare_parameter("deployment_speed_cap", 0.0)
++        self.declare_parameter("deployment_speed_cap", 10.0)
+         self.declare_parameter("speed_temporal_alpha", 0.35)
+         self.declare_parameter("max_steering_command", 42.0)
+         self.declare_parameter("steering_gain", 1.0)
+@@ -283,11 +410,17 @@ class RLPolicyRuntimeNode(Node):
+         self.declare_parameter("sync_tolerance_sec", 0.08)
+         self.declare_parameter("sensor_timeout_sec", 0.50)
+         self.declare_parameter("max_inference_rate_hz", 15.0)
++        self.declare_parameter("inference_rate_slack_sec", 0.04)
++        self.declare_parameter("max_image_age_sec", 0.30)
++        self.declare_parameter("max_temporal_frame_gap_sec", 0.25)
+         self.declare_parameter("lidar_safety_enabled", False)
+         self.declare_parameter("lidar_stop_distance_m", 0.25)
+         self.declare_parameter("lidar_front_half_angle_deg", 20.0)
+         self.declare_parameter("input_width", 160)
+         self.declare_parameter("input_height", 90)
++        self.declare_parameter("target_lateral_offset_m", 0.0)
++        self.declare_parameter("canonical_lateral_range_m", 1.4)
++        self.declare_parameter("canonical_background_gray", 36)
+         self.declare_parameter("lidar_points", 360)
+ 
+     def _on_scan(self, msg: LaserScan) -> None:
+@@ -307,13 +440,38 @@ class RLPolicyRuntimeNode(Node):
+ 
+     def _on_image(self, msg: Image) -> None:
+         now_wall = time.monotonic()
+-        if now_wall - self.last_inference_wall_sec < self.inference_period_sec:
++        if not inference_frame_due(
++            now_wall,
++            self.last_inference_wall_sec,
++            self.max_inference_rate_hz,
++            self.inference_rate_slack_sec,
++        ):
++            self.rate_limited_frame_count += 1
+             return
+         with self.lock:
+             scan = self.latest_scan
+         if not self.camera_speed_policy and scan is None:
+             return
+         image_stamp = message_stamp_ns(msg)
++        now_ros_ns = self.get_clock().now().nanoseconds
++        image_age_sec = (
++            (now_ros_ns - image_stamp) / 1.0e9
++            if image_stamp > 0 and now_ros_ns >= image_stamp
++            else -1.0
++        )
++        if (
++            self.max_image_age_sec > 0.0
++            and 0.0 <= image_age_sec < 60.0
++            and image_age_sec > self.max_image_age_sec
++        ):
++            self.stale_frame_count += 1
++            return
++        if self.camera_speed_policy and temporal_pair_requires_reset(
++            image_stamp,
++            self.last_processed_image_stamp_ns,
++            self.max_temporal_frame_gap_sec,
++        ):
++            self.policy.reset()
+         if scan is None:
+             scan_stamp = 0
+             lidar = None
+@@ -325,6 +483,12 @@ class RLPolicyRuntimeNode(Node):
+                     return
+         started = time.perf_counter()
+         image_bgr = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
++        image_bgr = shift_canonical_image_for_target(
++            image_bgr,
++            self.target_lateral_offset_m,
++            self.canonical_lateral_range_m,
++            self.canonical_background_gray,
++        )
+         image = preprocess_bgr_image(
+             image_bgr, self.input_width, self.input_height
+         )
+@@ -384,12 +548,13 @@ class RLPolicyRuntimeNode(Node):
+         self.last_steering_command = angle
+         self.last_speed_command = speed
+         self.last_inference_wall_sec = now_wall
++        self.last_processed_image_stamp_ns = image_stamp
+         self.last_valid_output_wall_sec = now_wall
+         inference_ms = (time.perf_counter() - started) * 1000.0
+         sensor_age_ms = 0.0
+-        now_ros_ns = self.get_clock().now().nanoseconds
+-        if image_stamp > 0 and now_ros_ns >= image_stamp:
+-            delta_ns = now_ros_ns - image_stamp
++        publish_ros_ns = self.get_clock().now().nanoseconds
++        if image_stamp > 0 and publish_ros_ns >= image_stamp:
++            delta_ns = publish_ros_ns - image_stamp
+             sensor_age_ms = delta_ns / 1.0e6 if delta_ns < 60_000_000_000 else -1.0
+         self._publish_command(angle, speed)
+         debug = Float32MultiArray()
+@@ -405,16 +570,19 @@ class RLPolicyRuntimeNode(Node):
+             preview_value,
+             preview_confidence,
+             preview_curve_hint,
++            float(self.rate_limited_frame_count),
++            float(self.stale_frame_count),
+         ]
+         self.debug_pub.publish(debug)
+         status = String()
+         status.data = "obstacle_stop" if obstacle_stop else "running"
+         self.status_pub.publish(status)
+-        debug_image = self.bridge.cv2_to_imgmsg(
+-            model_input_to_bgr(image), encoding="bgr8"
+-        )
+-        debug_image.header = msg.header
+-        self.debug_image_pub.publish(debug_image)
++        if self.debug_image_pub.get_subscription_count() > 0:
++            debug_image = self.bridge.cv2_to_imgmsg(
++                model_input_to_bgr(image), encoding="bgr8"
++            )
++            debug_image.header = msg.header
++            self.debug_image_pub.publish(debug_image)
+ 
+     def _publish_command(self, angle: float, speed: float) -> None:
+         message = Float32MultiArray()
+@@ -436,6 +604,9 @@ class RLPolicyRuntimeNode(Node):
+             or now - self.last_valid_output_wall_sec > self.sensor_timeout_sec
+         )
+         if sensor_stale:
++            if self.camera_speed_policy:
++                self.policy.reset()
++            self.last_processed_image_stamp_ns = 0
+             self.steering_stabilizer.reset()
+             self.preview_steering.reset()
+             self.last_steering_command = 0.0
+@@ -459,6 +630,9 @@ def main(args=None) -> None:
+     except KeyboardInterrupt:
+         pass
+     finally:
+-        node.destroy_node()
++        try:
++            node.destroy_node()
++        except KeyboardInterrupt:
++            pass
+         if rclpy.ok():
+             rclpy.shutdown()
+diff --git a/xycar_ws/src/xycar_rule_drive/config/canonical_stanley_pursuit.yaml b/xycar_ws/src/xycar_rule_drive/config/canonical_stanley_pursuit.yaml
+index 787601a..72699e1 100644
+--- a/xycar_ws/src/xycar_rule_drive/config/canonical_stanley_pursuit.yaml
++++ b/xycar_ws/src/xycar_rule_drive/config/canonical_stanley_pursuit.yaml
+@@ -26,6 +26,9 @@ canonical_stanley_pursuit_driver:
+     # Follow the yellow centerline with a 10 cm right calibration that places
+     # the observed vehicle body over the line. White fallback uses this target.
+     target_right_offset_m: 0.10
++    # Move the completed target path 10 cm left from the calibrated baseline.
++    # Positive values are vehicle-left; negative values are vehicle-right.
++    target_lateral_offset_m: 0.10
+     # A yellow dash can leave the camera during a tight turn. While the outer
+     # white boundary remains visible, reconstruct the yellow centerline from
+     # the measured 40 cm yellow-to-white distance.
+@@ -44,6 +47,7 @@ canonical_stanley_pursuit_driver:
+     # Use the observed yellow centerline wherever it exists.
+     yellow_fusion_weight: 1.0
+     short_yellow_fusion_weight: 1.0
++    extend_fused_path_to_white: false
+     target_path_previous_weight: 0.10
+     temporal_path_ego_compensation_enabled: false
+ 
+diff --git a/xycar_ws/src/xycar_rule_drive/launch/canonical_stanley_pursuit.launch.py b/xycar_ws/src/xycar_rule_drive/launch/canonical_stanley_pursuit.launch.py
+index fdda4ad..d0283cc 100644
+--- a/xycar_ws/src/xycar_rule_drive/launch/canonical_stanley_pursuit.launch.py
++++ b/xycar_ws/src/xycar_rule_drive/launch/canonical_stanley_pursuit.launch.py
+@@ -19,6 +19,10 @@ def generate_launch_description():
+             DeclareLaunchArgument("config_file", default_value=config_file),
+             DeclareLaunchArgument("use_sim_time", default_value="true"),
+             DeclareLaunchArgument("drive_enabled", default_value="true"),
++            DeclareLaunchArgument(
++                "target_lateral_offset_m",
++                default_value="0.10",
++            ),
+             Node(
+                 package="xycar_rule_drive",
+                 executable="canonical_stanley_pursuit_driver",
+@@ -34,6 +38,10 @@ def generate_launch_description():
+                             LaunchConfiguration("drive_enabled"),
+                             value_type=bool,
+                         ),
++                        "target_lateral_offset_m": ParameterValue(
++                            LaunchConfiguration("target_lateral_offset_m"),
++                            value_type=float,
++                        ),
+                     },
+                 ],
+                 output="screen",
+diff --git a/xycar_ws/src/xycar_rule_drive/launch/canonical_stanley_pursuit_real.launch.py b/xycar_ws/src/xycar_rule_drive/launch/canonical_stanley_pursuit_real.launch.py
+index 5d446a1..cfecf80 100644
+--- a/xycar_ws/src/xycar_rule_drive/launch/canonical_stanley_pursuit_real.launch.py
++++ b/xycar_ws/src/xycar_rule_drive/launch/canonical_stanley_pursuit_real.launch.py
+@@ -1,29 +1,80 @@
+ from launch import LaunchDescription
+-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+-from launch.launch_description_sources import PythonLaunchDescriptionSource
++from launch.actions import DeclareLaunchArgument
+ from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
++from launch_ros.actions import Node
++from launch_ros.parameter_descriptions import ParameterValue
+ from launch_ros.substitutions import FindPackageShare
+ 
+ 
+ def generate_launch_description():
+     package_share = FindPackageShare("xycar_rule_drive")
++    base_config = PathJoinSubstitution(
++        [
++            package_share,
++            "config",
++            "canonical_stanley_pursuit.yaml",
++        ]
++    )
++    real_config = PathJoinSubstitution(
++        [
++            package_share,
++            "config",
++            "canonical_stanley_pursuit_real.yaml",
++        ]
++    )
+     return LaunchDescription(
+         [
+             DeclareLaunchArgument("drive_enabled", default_value="false"),
+-            IncludeLaunchDescription(
+-                PythonLaunchDescriptionSource(
+-                    PathJoinSubstitution(
+-                        [
+-                            package_share,
+-                            "launch",
+-                            "canonical_stanley_pursuit.launch.py",
+-                        ]
+-                    )
+-                ),
+-                launch_arguments={
+-                    "use_sim_time": "false",
+-                    "drive_enabled": LaunchConfiguration("drive_enabled"),
+-                }.items(),
++            DeclareLaunchArgument(
++                "target_lateral_offset_m",
++                default_value="0.10",
++            ),
++            DeclareLaunchArgument(
++                "cruise_speed_command",
++                default_value="8.0",
++            ),
++            DeclareLaunchArgument(
++                "minimum_speed_command",
++                default_value="6.0",
++            ),
++            DeclareLaunchArgument(
++                "control_latency_preview_sec",
++                default_value="0.30",
++            ),
++            Node(
++                package="xycar_rule_drive",
++                executable="canonical_stanley_pursuit_driver",
++                name="canonical_stanley_pursuit_driver",
++                parameters=[
++                    base_config,
++                    real_config,
++                    {
++                        "use_sim_time": False,
++                        "drive_enabled": ParameterValue(
++                            LaunchConfiguration("drive_enabled"),
++                            value_type=bool,
++                        ),
++                        "target_lateral_offset_m": ParameterValue(
++                            LaunchConfiguration("target_lateral_offset_m"),
++                            value_type=float,
++                        ),
++                        "cruise_speed_command": ParameterValue(
++                            LaunchConfiguration("cruise_speed_command"),
++                            value_type=float,
++                        ),
++                        "minimum_speed_command": ParameterValue(
++                            LaunchConfiguration("minimum_speed_command"),
++                            value_type=float,
++                        ),
++                        "control_latency_preview_sec": ParameterValue(
++                            LaunchConfiguration(
++                                "control_latency_preview_sec"
++                            ),
++                            value_type=float,
++                        ),
++                    },
++                ],
++                output="screen",
+             ),
+         ]
+     )
+diff --git a/xycar_ws/src/xycar_rule_drive/test/test_canonical_stanley_pursuit.py b/xycar_ws/src/xycar_rule_drive/test/test_canonical_stanley_pursuit.py
+index 38370b4..0db1229 100644
+--- a/xycar_ws/src/xycar_rule_drive/test/test_canonical_stanley_pursuit.py
++++ b/xycar_ws/src/xycar_rule_drive/test/test_canonical_stanley_pursuit.py
+@@ -19,6 +19,7 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
+     lead_compensated_steering_command,
+     offset_path_left,
+     offset_path_right,
++    offset_target_path_lateral,
+     outer_white_is_consistent,
+     path_heading_change_per_m,
+     predict_path_in_delayed_vehicle_frame,
+@@ -665,6 +666,17 @@ class CanonicalStanleyPursuitTest(unittest.TestCase):
+         np.testing.assert_allclose(target[:, 0], outer_white[:, 0])
+         np.testing.assert_allclose(target[:, 1], -0.06)
+ 
++    def test_positive_target_lateral_offset_moves_path_left(self):
++        baseline = np.asarray(
++            [[0.05, -0.10], [0.50, 0.00], [1.00, 0.20]],
++            dtype=np.float64,
++        )
++
++        target = offset_target_path_lateral(baseline, 0.10)
++
++        np.testing.assert_allclose(target[:, 0], baseline[:, 0])
++        np.testing.assert_allclose(target[:, 1], baseline[:, 1] + 0.10)
++
+     def test_white_fallback_reconstructs_yellow_centerline_target(self):
+         outer_white = np.asarray(
+             [[0.05, -0.40], [0.50, -0.40], [1.00, -0.40]],
+diff --git a/xycar_ws/src/xycar_rule_drive/xycar_rule_drive/canonical_stanley_pursuit_driver.py b/xycar_ws/src/xycar_rule_drive/xycar_rule_drive/canonical_stanley_pursuit_driver.py
+index 5cea39d..bd7b794 100644
+--- a/xycar_ws/src/xycar_rule_drive/xycar_rule_drive/canonical_stanley_pursuit_driver.py
++++ b/xycar_ws/src/xycar_rule_drive/xycar_rule_drive/canonical_stanley_pursuit_driver.py
+@@ -9,7 +9,6 @@ import time
+ 
+ import cv2
+ from cv_bridge import CvBridge
+-from geometry_msgs.msg import Point
+ from geometry_msgs.msg import TwistStamped
+ from kaiev26_msgs.msg import Centerline
+ import numpy as np
+@@ -337,6 +336,19 @@ def offset_path_left(path: np.ndarray, left_offset_m: float) -> np.ndarray:
+     return result
+ 
+ 
++def offset_target_path_lateral(
++    path: np.ndarray,
++    target_lateral_offset_m: float,
++) -> np.ndarray:
++    """Shift a completed target path; positive is vehicle-left."""
++    points = np.asarray(path, dtype=np.float64)
++    if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] != 2:
++        return np.empty((0, 2), dtype=np.float64)
++    result = points.copy()
++    result[:, 1] += float(target_lateral_offset_m)
++    return result
++
++
+ def white_boundary_to_target_offset(
+     lane_half_width_m: float,
+     target_right_offset_m: float,
+@@ -1036,6 +1048,7 @@ class CanonicalStanleyPursuitDriver(Node):
+         self.declare_parameter("path_previous_weight", 0.10)
+         self.declare_parameter("min_lane_pixels", 8)
+         self.declare_parameter("target_right_offset_m", 0.10)
++        self.declare_parameter("target_lateral_offset_m", 0.0)
+         self.declare_parameter("white_fallback_enabled", True)
+         self.declare_parameter("lane_half_width_m", 0.20)
+         self.declare_parameter("white_fallback_max_gap_m", 0.25)
+@@ -1048,6 +1061,7 @@ class CanonicalStanleyPursuitDriver(Node):
+         self.declare_parameter("white_fallback_span_advantage_m", 0.15)
+         self.declare_parameter("yellow_fusion_weight", 1.0)
+         self.declare_parameter("short_yellow_fusion_weight", 1.0)
++        self.declare_parameter("extend_fused_path_to_white", False)
+         self.declare_parameter("target_path_previous_weight", 0.10)
+         self.declare_parameter("temporal_path_ego_compensation_enabled", False)
+         self.declare_parameter("wheel_base_m", 0.32)
+@@ -1377,22 +1391,28 @@ class CanonicalStanleyPursuitDriver(Node):
+             self.latest_white_path = white_connected.points
+ 
+         yellow_target = (
+-            offset_path_right(
+-                yellow_connected.points,
+-                float(self.get_parameter("target_right_offset_m").value),
++            offset_target_path_lateral(
++                offset_path_right(
++                    yellow_connected.points,
++                    float(self.get_parameter("target_right_offset_m").value),
++                ),
++                float(self.get_parameter("target_lateral_offset_m").value),
+             )
+             if yellow_connected is not None
+             else None
+         )
+         white_target = (
+-            offset_path_left(
+-                white_connected.points,
+-                white_boundary_to_target_offset(
+-                    float(self.get_parameter("lane_half_width_m").value),
+-                    float(
+-                        self.get_parameter("target_right_offset_m").value
++            offset_target_path_lateral(
++                offset_path_left(
++                    white_connected.points,
++                    white_boundary_to_target_offset(
++                        float(self.get_parameter("lane_half_width_m").value),
++                        float(
++                            self.get_parameter("target_right_offset_m").value
++                        ),
+                     ),
+                 ),
++                float(self.get_parameter("target_lateral_offset_m").value),
+             )
+             if white_connected is not None
+             else None
+@@ -1417,7 +1437,11 @@ class CanonicalStanleyPursuitDriver(Node):
+                 point_count=int(
+                     self.get_parameter("path_point_count").value
+                 ),
+-                extend_to_union=False,
++                extend_to_union=bool(
++                    self.get_parameter(
++                        "extend_fused_path_to_white"
++                    ).value
++                ),
+             )
+             connected = yellow_connected
+             path_source = "fused"

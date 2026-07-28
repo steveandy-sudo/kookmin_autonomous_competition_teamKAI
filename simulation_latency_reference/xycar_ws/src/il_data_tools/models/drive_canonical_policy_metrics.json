@@ -1,0 +1,932 @@
+{
+  "collection": {
+    "canonical_artifact_events": 28712,
+    "canonical_artifact_modes": {
+      "real_visibility": 20
+    },
+    "discarded_bad_data_preroll": 1019,
+    "label_counts": {
+      "general_drive": 60348,
+      "recovery": 39652
+    },
+    "real_reference_profile": "/home/as/xycar_kookmin_gazebo_track/xycar_ws/src/il_data_tools/config/real_reference_profile_20260715.json",
+    "recovery_ratio": 0.39652,
+    "rejected_sessions": [
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s20260714_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s20260714_02",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s20260714_03",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s20260714_04",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s20260714_05",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s2026071500_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s20260720_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s20990001_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_drive_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_dynamics_s2026071504_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_dynamics_s20260718_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_mixed_s2026071505_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_mixed_s20260719_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_sensor_s2026071503_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_sensor_s20260717_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_sensor_s20260723_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_dark_s2026071502_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_dark_s20260716_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_dark_s20260722_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_light_s2026071501_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_light_s20260715_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_light_s20260721_01"
+    ],
+    "session_rows": {
+      "sim_canonical_baseline_s2026071524_01": 5000,
+      "sim_canonical_baseline_s2026071530_01": 5000,
+      "sim_canonical_baseline_s2026071536_01": 5000,
+      "sim_canonical_baseline_s2026071542_01": 5000,
+      "sim_canonical_dynamics_s2026071528_01": 5000,
+      "sim_canonical_dynamics_s2026071534_01": 5000,
+      "sim_canonical_dynamics_s2026071540_01": 5000,
+      "sim_canonical_mixed_s2026071529_01": 5000,
+      "sim_canonical_mixed_s2026071535_01": 5000,
+      "sim_canonical_mixed_s2026071541_01": 5000,
+      "sim_canonical_sensor_s2026071527_01": 5000,
+      "sim_canonical_sensor_s2026071533_01": 5000,
+      "sim_canonical_sensor_s2026071539_01": 5000,
+      "sim_canonical_visual_dark_s2026071526_01": 5000,
+      "sim_canonical_visual_dark_s2026071532_01": 5000,
+      "sim_canonical_visual_dark_s2026071538_01": 5000,
+      "sim_canonical_visual_light_s2026071525_01": 5000,
+      "sim_canonical_visual_light_s2026071531_01": 5000,
+      "sim_canonical_visual_light_s2026071537_01": 5000,
+      "sim_canonical_visual_light_s2026071543_01": 5000
+    },
+    "sessions": [
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s2026071524_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s2026071530_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s2026071536_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s2026071542_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_dynamics_s2026071528_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_dynamics_s2026071534_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_dynamics_s2026071540_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_mixed_s2026071529_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_mixed_s2026071535_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_mixed_s2026071541_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_sensor_s2026071527_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_sensor_s2026071533_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_sensor_s2026071539_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_dark_s2026071526_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_dark_s2026071532_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_dark_s2026071538_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_light_s2026071525_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_light_s2026071531_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_light_s2026071537_01",
+      "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_light_s2026071543_01"
+    ],
+    "stopped_rows": 0,
+    "total_rows": 100000,
+    "training_dataset": {
+      "derived_visibility_sessions": [
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_baseline_s20260714_05_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_baseline_s20260720_01_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_dynamics_s20260718_01_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_mixed_s20260719_01_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_sensor_s20260717_01_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_sensor_s20260723_01_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_visual_dark_s20260716_01_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_visual_dark_s20260722_01_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_visual_light_s20260715_01_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_visual_light_s20260721_01_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_baseline_s20260714_05_real_visibility_v2",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_baseline_s20260720_01_real_visibility_v2",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_dynamics_s20260718_01_real_visibility_v2",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_mixed_s20260719_01_real_visibility_v2",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_sensor_s20260717_01_real_visibility_v2",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_sensor_s20260723_01_real_visibility_v2",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_visual_dark_s20260716_01_real_visibility_v2",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_visual_dark_s20260722_01_real_visibility_v2",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_visual_light_s20260715_01_real_visibility_v2",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_visual_light_s20260721_01_real_visibility_v2"
+      ],
+      "included_clean_sources": [
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s20260714_05",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s20260720_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_dynamics_s20260718_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_mixed_s20260719_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_sensor_s20260717_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_sensor_s20260723_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_dark_s20260716_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_dark_s20260722_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_light_s20260715_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_light_s20260721_01"
+      ],
+      "new_sessions": [
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s2026071524_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s2026071530_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s2026071536_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s2026071542_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_dynamics_s2026071528_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_dynamics_s2026071534_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_dynamics_s2026071540_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_mixed_s2026071529_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_mixed_s2026071535_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_mixed_s2026071541_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_sensor_s2026071527_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_sensor_s2026071533_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_sensor_s2026071539_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_dark_s2026071526_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_dark_s2026071532_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_dark_s2026071538_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_light_s2026071525_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_light_s2026071531_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_light_s2026071537_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_light_s2026071543_01"
+      ],
+      "raw_rows_before_split": 199898,
+      "source_trajectory_rows": 150000,
+      "split_leakage_guard": "derived variants preserve source session_id so all views of one drive remain in the same train/val/test split",
+      "training_sessions": [
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s2026071524_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s2026071530_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s2026071536_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_baseline_s2026071542_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_dynamics_s2026071528_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_dynamics_s2026071534_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_dynamics_s2026071540_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_mixed_s2026071529_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_mixed_s2026071535_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_mixed_s2026071541_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_sensor_s2026071527_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_sensor_s2026071533_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_sensor_s2026071539_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_dark_s2026071526_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_dark_s2026071532_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_dark_s2026071538_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_light_s2026071525_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_light_s2026071531_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_light_s2026071537_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/drive/sim_canonical_visual_light_s2026071543_01",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_baseline_s20260714_05_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_baseline_s20260720_01_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_dynamics_s20260718_01_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_mixed_s20260719_01_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_sensor_s20260717_01_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_sensor_s20260723_01_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_visual_dark_s20260716_01_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_visual_dark_s20260722_01_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_visual_light_s20260715_01_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_visual_light_s20260721_01_real_visibility_v1",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_baseline_s20260714_05_real_visibility_v2",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_baseline_s20260720_01_real_visibility_v2",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_dynamics_s20260718_01_real_visibility_v2",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_mixed_s20260719_01_real_visibility_v2",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_sensor_s20260717_01_real_visibility_v2",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_sensor_s20260723_01_real_visibility_v2",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_visual_dark_s20260716_01_real_visibility_v2",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_visual_dark_s20260722_01_real_visibility_v2",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_visual_light_s20260715_01_real_visibility_v2",
+        "/home/as/xycar_kookmin_gazebo_track/datasets/il_canonical/derived/drive/sim_canonical_visual_light_s20260721_01_real_visibility_v2"
+      ]
+    }
+  },
+  "generated_at": "2026-07-16T03:58:43.476484+09:00",
+  "model_sha256": "8da35fa8a56904f9970679da0af68d938f60848991af3abf9a37027d9195b58b",
+  "test": {
+    "canonical_input": true,
+    "csv": "/home/as/xycar_kookmin_gazebo_track/datasets/processed/drive_canonical_real_reference_200k_20260715/test.csv",
+    "label_wise_mae": {
+      "general_drive": 1.6382179064021674,
+      "recovery": 2.2719976713212326
+    },
+    "max_error_deg": 57.20120072364807,
+    "model": "/home/as/xycar_kookmin_gazebo_track/models/il_policies/drive_canonical_real_reference_200k_20260715/drive_policy_scripted.pt",
+    "model_size_mb": 43.28934669494629,
+    "model_type": "resnet18_lidar",
+    "phase_bin_mae": {},
+    "rows": 15000,
+    "session_wise_mae": {
+      "sim_canonical_dynamics_s2026071528_01": 1.6323827360278118,
+      "sim_canonical_dynamics_s2026071540_01": 1.7428800062481968,
+      "sim_canonical_mixed_s2026071541_01": 2.3020815460340964
+    },
+    "speed_bin_mae": {
+      "fast": 0.0,
+      "medium": 1.8924480961033685,
+      "stopped_or_slow": 0.0
+    },
+    "steering_bin_mae": {
+      "center": 1.4081667201969394,
+      "left": 2.4758255249056833,
+      "left_hard": 0.0,
+      "right": 2.9946739081814497,
+      "right_hard": 0.0
+    },
+    "use_lidar": true,
+    "use_phase": false,
+    "val_mae_deg": 1.8924480961033685,
+    "val_rmse_deg": 2.9347271333955045
+  },
+  "training": {
+    "best_epoch": 33,
+    "best_val_loss": 0.0008772178579121828,
+    "history": [
+      {
+        "epoch": 1,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 2.664751101510417,
+          "left": 3.9169015039522863,
+          "left_hard": 0.0,
+          "right": 3.812918640301397,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0031930360135958742,
+        "val_loss": 0.0021051010735332965,
+        "val_mae_deg": 3.1047274761273638,
+        "val_max_error_deg": 59.7989559173584,
+        "val_rmse_deg": 4.877913598576759
+      },
+      {
+        "epoch": 2,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 2.1017574047552077,
+          "left": 2.578435799386208,
+          "left_hard": 0.0,
+          "right": 3.49584988924554,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0018914131309500511,
+        "val_loss": 0.0013608004193753004,
+        "val_mae_deg": 2.467158460879373,
+        "val_max_error_deg": 60.64019799232483,
+        "val_rmse_deg": 3.891913990213227
+      },
+      {
+        "epoch": 3,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 2.8514782427437697,
+          "left": 4.349688952938053,
+          "left_hard": 0.0,
+          "right": 3.80729748962307,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0015953402559526681,
+        "val_loss": 0.001785750949382782,
+        "val_mae_deg": 3.2914772453723344,
+        "val_max_error_deg": 54.83628213405609,
+        "val_rmse_deg": 4.54446105357544
+      },
+      {
+        "epoch": 4,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 2.0107710152455254,
+          "left": 3.497858811599898,
+          "left_hard": 0.0,
+          "right": 3.2979674231778016,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.001486117132192987,
+        "val_loss": 0.0013463467989116907,
+        "val_mae_deg": 2.5174996834662395,
+        "val_max_error_deg": 60.39741635322571,
+        "val_rmse_deg": 3.877640509641974
+      },
+      {
+        "epoch": 5,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.9091079748723918,
+          "left": 2.2368275601031056,
+          "left_hard": 0.0,
+          "right": 2.9993494872609063,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0013813418360964429,
+        "val_loss": 0.00107618420496583,
+        "val_mae_deg": 2.1875785625454047,
+        "val_max_error_deg": 59.77451205253601,
+        "val_rmse_deg": 3.4979949978653107
+      },
+      {
+        "epoch": 6,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.8131702740420825,
+          "left": 2.7431686205855663,
+          "left_hard": 0.0,
+          "right": 3.1806543247941548,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0012769809464981724,
+        "val_loss": 0.0010702539313584567,
+        "val_mae_deg": 2.2463932082910194,
+        "val_max_error_deg": 52.461979538202286,
+        "val_rmse_deg": 3.463191589338354
+      },
+      {
+        "epoch": 7,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.8146453512505927,
+          "left": 2.607856724120481,
+          "left_hard": 0.0,
+          "right": 3.419519765819878,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.001252053083223461,
+        "val_loss": 0.001258005348406732,
+        "val_mae_deg": 2.2748353197452253,
+        "val_max_error_deg": 61.53799444437027,
+        "val_rmse_deg": 3.690098575223445
+      },
+      {
+        "epoch": 8,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.7653677809321635,
+          "left": 2.780480068445082,
+          "left_hard": 0.0,
+          "right": 3.309869362001723,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.001181147945694776,
+        "val_loss": 0.001099491898342967,
+        "val_mae_deg": 2.248965120402563,
+        "val_max_error_deg": 44.53253000974655,
+        "val_rmse_deg": 3.472762385632325
+      },
+      {
+        "epoch": 9,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.8527613320442573,
+          "left": 3.133930088390799,
+          "left_hard": 0.0,
+          "right": 3.2316650305735037,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0010888989698986564,
+        "val_loss": 0.0011634537067264318,
+        "val_mae_deg": 2.3451476632391586,
+        "val_max_error_deg": 57.96867907047272,
+        "val_rmse_deg": 3.5796519909560955
+      },
+      {
+        "epoch": 10,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.7129026504511207,
+          "left": 2.0534478012224806,
+          "left_hard": 0.0,
+          "right": 3.0602677141152306,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0010298904359927505,
+        "val_loss": 0.0009374171882867813,
+        "val_mae_deg": 2.046620923754126,
+        "val_max_error_deg": 47.445935755968094,
+        "val_rmse_deg": 3.2623734135958347
+      },
+      {
+        "epoch": 11,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.6499067928710016,
+          "left": 2.4857217887664067,
+          "left_hard": 0.0,
+          "right": 3.0190258868519626,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0009723697305686971,
+        "val_loss": 0.0009953931860625744,
+        "val_mae_deg": 2.0682336970923463,
+        "val_max_error_deg": 63.24669569730759,
+        "val_rmse_deg": 3.308581953027644
+      },
+      {
+        "epoch": 12,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.8881443130532258,
+          "left": 3.4146923066866823,
+          "left_hard": 0.0,
+          "right": 3.108045989350277,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0009244563444321741,
+        "val_loss": 0.001600634529814124,
+        "val_mae_deg": 2.387339117681668,
+        "val_max_error_deg": 66.07290506362915,
+        "val_rmse_deg": 4.016690128621158
+      },
+      {
+        "epoch": 13,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.5567278553435564,
+          "left": 2.589432672990437,
+          "left_hard": 0.0,
+          "right": 2.893793881756868,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0009471716117548602,
+        "val_loss": 0.0009204588200896978,
+        "val_mae_deg": 2.000273113860212,
+        "val_max_error_deg": 55.713289976119995,
+        "val_rmse_deg": 3.1934778851636385
+      },
+      {
+        "epoch": 14,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.527218251272877,
+          "left": 2.3289942695205768,
+          "left_hard": 0.0,
+          "right": 3.305347037653176,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0008457439864848764,
+        "val_loss": 0.0009931053072214126,
+        "val_mae_deg": 2.024622555247888,
+        "val_max_error_deg": 60.28451472520828,
+        "val_rmse_deg": 3.2866146019730875
+      },
+      {
+        "epoch": 15,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.5001112173671602,
+          "left": 3.04467515166348,
+          "left_hard": 0.0,
+          "right": 3.2568336955795867,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0007990500085793565,
+        "val_loss": 0.0010518365409225225,
+        "val_mae_deg": 2.1132346422339197,
+        "val_max_error_deg": 57.630957663059235,
+        "val_rmse_deg": 3.3510270445638475
+      },
+      {
+        "epoch": 16,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.6483007821924704,
+          "left": 3.9898751423027727,
+          "left_hard": 0.0,
+          "right": 3.625834503839769,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0008277650742853375,
+        "val_loss": 0.001278773069754243,
+        "val_mae_deg": 2.436004408576973,
+        "val_max_error_deg": 66.02154672145844,
+        "val_rmse_deg": 3.6974880401706263
+      },
+      {
+        "epoch": 17,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.563337906930934,
+          "left": 2.468132859864596,
+          "left_hard": 0.0,
+          "right": 3.3997801833919374,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0008121958920393675,
+        "val_loss": 0.0010914773527532816,
+        "val_mae_deg": 2.0894647533400894,
+        "val_max_error_deg": 58.62258821725845,
+        "val_rmse_deg": 3.390494602261441
+      },
+      {
+        "epoch": 18,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.4045090958954394,
+          "left": 2.536648754088044,
+          "left_hard": 0.0,
+          "right": 3.2485400370065016,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0006616827899180048,
+        "val_loss": 0.000934992379695177,
+        "val_mae_deg": 1.9689782842298609,
+        "val_max_error_deg": 59.195417165756226,
+        "val_rmse_deg": 3.17738928470522
+      },
+      {
+        "epoch": 19,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.4102641803175306,
+          "left": 3.253092538087501,
+          "left_hard": 0.0,
+          "right": 3.2996417248416225,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0005987919568764088,
+        "val_loss": 0.0010044753404334188,
+        "val_mae_deg": 2.0990649433944055,
+        "val_max_error_deg": 59.717774391174316,
+        "val_rmse_deg": 3.287541416650329
+      },
+      {
+        "epoch": 20,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.4368840951902513,
+          "left": 2.6216462239266085,
+          "left_hard": 0.0,
+          "right": 3.124445955795047,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0005720772047234722,
+        "val_loss": 0.0009273179700598121,
+        "val_mae_deg": 1.9775071622864289,
+        "val_max_error_deg": 57.19296187162399,
+        "val_rmse_deg": 3.162759170467624
+      },
+      {
+        "epoch": 21,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.4807595919353684,
+          "left": 2.9423201051893337,
+          "left_hard": 0.0,
+          "right": 3.4340193595807476,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0005387361242376565,
+        "val_loss": 0.0010209414780139924,
+        "val_mae_deg": 2.121101124903262,
+        "val_max_error_deg": 60.786959528923035,
+        "val_rmse_deg": 3.3277423432029836
+      },
+      {
+        "epoch": 22,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.4036419534595677,
+          "left": 2.2657836902270545,
+          "left_hard": 0.0,
+          "right": 3.0939529499946956,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0004743600381393415,
+        "val_loss": 0.0008822297951206565,
+        "val_mae_deg": 1.892649693465173,
+        "val_max_error_deg": 58.318910002708435,
+        "val_rmse_deg": 3.0927667848575413
+      },
+      {
+        "epoch": 23,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.3992045962115505,
+          "left": 2.6797537418612074,
+          "left_hard": 0.0,
+          "right": 2.9300822388665386,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.00044917804187790886,
+        "val_loss": 0.000877375517040491,
+        "val_mae_deg": 1.922918917021434,
+        "val_max_error_deg": 57.920123636722565,
+        "val_rmse_deg": 3.0943366002676123
+      },
+      {
+        "epoch": 24,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.4001902026704547,
+          "left": 2.6992256234657637,
+          "left_hard": 0.0,
+          "right": 3.4299120095754816,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.00043479683132150376,
+        "val_loss": 0.0009527342397719622,
+        "val_mae_deg": 2.0300556516520554,
+        "val_max_error_deg": 54.80782836675644,
+        "val_rmse_deg": 3.2015417763711267
+      },
+      {
+        "epoch": 25,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.3933160183906343,
+          "left": 2.5830611121341285,
+          "left_hard": 0.0,
+          "right": 3.244339556359403,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.00042733259569888854,
+        "val_loss": 0.0009034278299659491,
+        "val_mae_deg": 1.968548954955586,
+        "val_max_error_deg": 51.22579336166382,
+        "val_rmse_deg": 3.1317102515211084
+      },
+      {
+        "epoch": 26,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.3882802898966897,
+          "left": 2.5856015648134343,
+          "left_hard": 0.0,
+          "right": 2.9201876066762025,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0003992230931588341,
+        "val_loss": 0.0008814124725759029,
+        "val_mae_deg": 1.8987454392244763,
+        "val_max_error_deg": 56.14384859800339,
+        "val_rmse_deg": 3.0904860976124504
+      },
+      {
+        "epoch": 27,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.4258865232808677,
+          "left": 2.815411879063528,
+          "left_hard": 0.0,
+          "right": 2.8690644292313086,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0003902284228553962,
+        "val_loss": 0.0009187675461173058,
+        "val_mae_deg": 1.9490914405292643,
+        "val_max_error_deg": 58.62387865781784,
+        "val_rmse_deg": 3.144515054629273
+      },
+      {
+        "epoch": 28,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.3482765484652277,
+          "left": 2.5869160651918817,
+          "left_hard": 0.0,
+          "right": 3.383116189766913,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0003547417057166683,
+        "val_loss": 0.0009456055885180831,
+        "val_mae_deg": 1.9694313281169524,
+        "val_max_error_deg": 58.03499221801758,
+        "val_rmse_deg": 3.1737497283101486
+      },
+      {
+        "epoch": 29,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.3668975364015141,
+          "left": 2.5780046955319595,
+          "left_hard": 0.0,
+          "right": 3.0714227744770852,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.00034580228704747854,
+        "val_loss": 0.0008995095454156399,
+        "val_mae_deg": 1.9152899386248918,
+        "val_max_error_deg": 55.65534085035324,
+        "val_rmse_deg": 3.108667208849578
+      },
+      {
+        "epoch": 30,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.3755582754685896,
+          "left": 2.7628728854174867,
+          "left_hard": 0.0,
+          "right": 3.118691995075221,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.00032968388517760493,
+        "val_loss": 0.0009194877909496427,
+        "val_mae_deg": 1.960436466842475,
+        "val_max_error_deg": 55.208711326122284,
+        "val_rmse_deg": 3.1422439880876136
+      },
+      {
+        "epoch": 31,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.375813236721614,
+          "left": 2.7191384683666864,
+          "left_hard": 0.0,
+          "right": 2.9009866962349853,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.00032161535704761985,
+        "val_loss": 0.0008886406391859055,
+        "val_mae_deg": 1.9085019643675696,
+        "val_max_error_deg": 55.42962700128555,
+        "val_rmse_deg": 3.0940231226063997
+      },
+      {
+        "epoch": 32,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.3436215230296904,
+          "left": 2.577894669504033,
+          "left_hard": 0.0,
+          "right": 3.129265270992119,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.00030667985295348445,
+        "val_loss": 0.0009008605053648352,
+        "val_mae_deg": 1.9125363315505455,
+        "val_max_error_deg": 54.569342732429504,
+        "val_rmse_deg": 3.103861928283934
+      },
+      {
+        "epoch": 33,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.3786019574663757,
+          "left": 2.4927792802936697,
+          "left_hard": 0.0,
+          "right": 3.055638876136544,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0003005593969593975,
+        "val_loss": 0.0008772178579121828,
+        "val_mae_deg": 1.9056313742146813,
+        "val_max_error_deg": 55.68326413631439,
+        "val_rmse_deg": 3.077892388342275
+      },
+      {
+        "epoch": 34,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.3867259781650525,
+          "left": 2.7209570167145016,
+          "left_hard": 0.0,
+          "right": 3.0303759579195475,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.000293071363501747,
+        "val_loss": 0.0008993889709934592,
+        "val_mae_deg": 1.9424446644636555,
+        "val_max_error_deg": 56.72360062599182,
+        "val_rmse_deg": 3.1139442637651182
+      },
+      {
+        "epoch": 35,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.3547842249809523,
+          "left": 2.6289863357611196,
+          "left_hard": 0.0,
+          "right": 3.106965058450758,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.00028844903657388826,
+        "val_loss": 0.0008914656095206738,
+        "val_mae_deg": 1.9232374127612002,
+        "val_max_error_deg": 53.36964875459671,
+        "val_rmse_deg": 3.0958560031935756
+      },
+      {
+        "epoch": 36,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.3734629477718907,
+          "left": 2.5593471293621213,
+          "left_hard": 0.0,
+          "right": 3.0665843942107154,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0002848154624403381,
+        "val_loss": 0.0008807009501382709,
+        "val_mae_deg": 1.9154172292676594,
+        "val_max_error_deg": 53.55898588895798,
+        "val_rmse_deg": 3.0843534361810896
+      },
+      {
+        "epoch": 37,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.361811852698391,
+          "left": 2.601878625877674,
+          "left_hard": 0.0,
+          "right": 3.0200233020976444,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0002907586211992276,
+        "val_loss": 0.000886335994489491,
+        "val_mae_deg": 1.9053107809959056,
+        "val_max_error_deg": 53.923043608665466,
+        "val_rmse_deg": 3.0841944940909687
+      },
+      {
+        "epoch": 38,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.367437256496459,
+          "left": 2.6546845892573803,
+          "left_hard": 0.0,
+          "right": 3.0776774288718975,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0002738971045738165,
+        "val_loss": 0.0008956696281209588,
+        "val_mae_deg": 1.9293271802177787,
+        "val_max_error_deg": 53.34583818912506,
+        "val_rmse_deg": 3.103186248924208
+      },
+      {
+        "epoch": 39,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.3666795876335176,
+          "left": 2.691586918414929,
+          "left_hard": 0.0,
+          "right": 3.0882230490568587,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.00027276838806129425,
+        "val_loss": 0.0009016676614060998,
+        "val_mae_deg": 1.9369985362097577,
+        "val_max_error_deg": 52.297551184892654,
+        "val_rmse_deg": 3.1092722014636727
+      },
+      {
+        "epoch": 40,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.37180655754819,
+          "left": 2.6373492165179306,
+          "left_hard": 0.0,
+          "right": 3.0891857231558233,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0002665397545886682,
+        "val_loss": 0.0008966985110193492,
+        "val_mae_deg": 1.931662094084204,
+        "val_max_error_deg": 52.49338895082474,
+        "val_rmse_deg": 3.103857724181952
+      },
+      {
+        "epoch": 41,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.3826540729461485,
+          "left": 2.6293202632983466,
+          "left_hard": 0.0,
+          "right": 3.06754575151053,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0002656767227863172,
+        "val_loss": 0.0008926538994535804,
+        "val_mae_deg": 1.9327379283627306,
+        "val_max_error_deg": 51.67018994688988,
+        "val_rmse_deg": 3.101859482474821
+      },
+      {
+        "epoch": 42,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.3682804402494408,
+          "left": 2.66763403061691,
+          "left_hard": 0.0,
+          "right": 3.056099164597798,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0002580507890375805,
+        "val_loss": 0.0008954535741358996,
+        "val_mae_deg": 1.9274917956866193,
+        "val_max_error_deg": 52.25788205862045,
+        "val_rmse_deg": 3.1026968915381814
+      },
+      {
+        "epoch": 43,
+        "phase_bin_mae": {},
+        "steering_bin_mae": {
+          "center": 1.3728164868342059,
+          "left": 2.7289257218148646,
+          "left_hard": 0.0,
+          "right": 3.0987647040729094,
+          "right_hard": 0.0
+        },
+        "train_loss": 0.0002616491001956497,
+        "val_loss": 0.0009055618334561586,
+        "val_mae_deg": 1.9490932469172912,
+        "val_max_error_deg": 51.546526700258255,
+        "val_rmse_deg": 3.1194385907544726
+      }
+    ],
+    "model_type": "resnet18_lidar",
+    "policy_name": "drive",
+    "steering_bin_mae": {
+      "center": 1.3786019574663757,
+      "left": 2.4927792802936697,
+      "left_hard": 0.0,
+      "right": 3.055638876136544,
+      "right_hard": 0.0
+    },
+    "val_loss": 0.0008772178579121828,
+    "val_mae_deg": 1.9056313742146813,
+    "val_max_error_deg": 55.68326413631439,
+    "val_rmse_deg": 3.077892388342275
+  }
+}

@@ -1,0 +1,433 @@
+diff --git a/xycar_ws/src/xycar_device/xycar_imu/launch/xycar_imu.launch.py b/xycar_ws/src/xycar_device/xycar_imu/launch/xycar_imu.launch.py
+index 066d7fb..497c9b4 100644
+--- a/xycar_ws/src/xycar_device/xycar_imu/launch/xycar_imu.launch.py
++++ b/xycar_ws/src/xycar_device/xycar_imu/launch/xycar_imu.launch.py
+@@ -7,7 +7,7 @@ from launch_ros.actions import Node
+ def generate_launch_description():
+ 
+     config_path = os.path.join(
+-        get_package_share_directory("xycar_imu"), "config", "imu.yaml"
++        get_package_share_directory("xycar_imu"), "config", "xycar_imu.yaml"
+     )
+         
+     imu_node = Node(
+@@ -16,4 +16,3 @@ def generate_launch_description():
+     )
+ 
+     return LaunchDescription([imu_node])
+-
+diff --git a/xycar_ws/src/xycar_device/xycar_imu/launch/xycar_imu_viewer.launch.py b/xycar_ws/src/xycar_device/xycar_imu/launch/xycar_imu_viewer.launch.py
+index 15102ea..7bb89ca 100755
+--- a/xycar_ws/src/xycar_device/xycar_imu/launch/xycar_imu_viewer.launch.py
++++ b/xycar_ws/src/xycar_device/xycar_imu/launch/xycar_imu_viewer.launch.py
+@@ -18,7 +18,7 @@ tf_node = Node(
+ def generate_launch_description():
+ 
+     config_path = os.path.join(
+-        get_package_share_directory("xycar_imu"), "config", "imu.yaml"
++        get_package_share_directory("xycar_imu"), "config", "xycar_imu.yaml"
+     )
+         
+     rviz_path = os.path.join(os.getenv("HOME"), "xycar_ws", "src", "xycar_device", "xycar_imu", "rviz", "view_imu.rviz")
+@@ -34,4 +34,3 @@ def generate_launch_description():
+     )
+ 
+     return LaunchDescription([imu_node, tf_node, rviz_node])
+-
+diff --git a/xycar_ws/src/xycar_device/xycar_lidar/CMakeLists.txt b/xycar_ws/src/xycar_device/xycar_lidar/CMakeLists.txt
+index 4f92a03..a37a832 100644
+--- a/xycar_ws/src/xycar_device/xycar_lidar/CMakeLists.txt
++++ b/xycar_ws/src/xycar_device/xycar_lidar/CMakeLists.txt
+@@ -78,7 +78,7 @@ install(TARGETS
+     ${PROJECT_NAME}_node ${PROJECT_NAME}_client
+     DESTINATION lib/${PROJECT_NAME})
+ 
+-install(DIRECTORY launch params startup config
++install(DIRECTORY launch params startup
+     DESTINATION share/${PROJECT_NAME})
+ 
+ if(BUILD_TESTING)
+@@ -87,4 +87,3 @@ if(BUILD_TESTING)
+ endif()
+ 
+ ament_package()
+-
+diff --git a/xycar_ws/src/xycar_device/xycar_msgs/CMakeLists.txt b/xycar_ws/src/xycar_device/xycar_msgs/CMakeLists.txt
+index a7a8d51..7d1e838 100644
+--- a/xycar_ws/src/xycar_device/xycar_msgs/CMakeLists.txt
++++ b/xycar_ws/src/xycar_device/xycar_msgs/CMakeLists.txt
+@@ -17,7 +17,9 @@ find_package(sensor_msgs REQUIRED)
+ 
+ rosidl_generate_interfaces(${PROJECT_NAME}
+   "msg/XycarMotor.msg"
++  "msg/XycarSystemTelemetry.msg"
+   "msg/XycarUltrasonic.msg"
++  "msg/XycarVescState.msg"
+   DEPENDENCIES std_msgs sensor_msgs
+ )
+ 
+diff --git a/xycar_ws/src/xycar_rl/launch/final_uncapped_avg17_real.launch.py b/xycar_ws/src/xycar_rl/launch/final_uncapped_avg17_real.launch.py
+index cd6e372..2821cb7 100644
+--- a/xycar_ws/src/xycar_rl/launch/final_uncapped_avg17_real.launch.py
++++ b/xycar_ws/src/xycar_rl/launch/final_uncapped_avg17_real.launch.py
+@@ -19,6 +19,10 @@ def generate_launch_description():
+         [
+             DeclareLaunchArgument("drive_enabled", default_value="false"),
+             DeclareLaunchArgument("device", default_value="cpu"),
++            DeclareLaunchArgument(
++                "target_lateral_offset_m",
++                default_value="0.10",
++            ),
+             DeclareLaunchArgument(
+                 "checkpoint_path",
+                 default_value=checkpoint,
+@@ -35,6 +39,9 @@ def generate_launch_description():
+                     "drive_enabled": LaunchConfiguration("drive_enabled"),
+                     "device": LaunchConfiguration("device"),
+                     "image_topic": "/perception/canonical_road_image",
++                    "target_lateral_offset_m": LaunchConfiguration(
++                        "target_lateral_offset_m"
++                    ),
+                     "min_speed_command": "4.0",
+                     "max_speed_command": "24.0",
+                     "deployment_speed_cap": "0.0",
+diff --git a/xycar_ws/src/xycar_rl/launch/real_shadow.launch.py b/xycar_ws/src/xycar_rl/launch/real_shadow.launch.py
+index 123e3c5..10fb31f 100644
+--- a/xycar_ws/src/xycar_rl/launch/real_shadow.launch.py
++++ b/xycar_ws/src/xycar_rl/launch/real_shadow.launch.py
+@@ -16,6 +16,7 @@ def generate_launch_description():
+     speed_command = LaunchConfiguration("speed_command")
+     min_speed_command = LaunchConfiguration("min_speed_command")
+     max_speed_command = LaunchConfiguration("max_speed_command")
++    target_lateral_offset_m = LaunchConfiguration("target_lateral_offset_m")
+     deployment_speed_cap = LaunchConfiguration("deployment_speed_cap")
+     speed_temporal_alpha = LaunchConfiguration("speed_temporal_alpha")
+     max_inference_rate_hz = LaunchConfiguration("max_inference_rate_hz")
+@@ -42,6 +43,13 @@ def generate_launch_description():
+             DeclareLaunchArgument("speed_command", default_value="3.0"),
+             DeclareLaunchArgument("min_speed_command", default_value="4.0"),
+             DeclareLaunchArgument("max_speed_command", default_value="24.0"),
++            DeclareLaunchArgument(
++                "target_lateral_offset_m",
++                default_value="0.10",
++                description=(
++                    "Desired vehicle lateral offset in metres; positive is left."
++                ),
++            ),
+             DeclareLaunchArgument(
+                 "deployment_speed_cap",
+                 default_value="0.0",
+@@ -99,6 +107,9 @@ def generate_launch_description():
+                         "max_speed_command": ParameterValue(
+                             max_speed_command, value_type=float
+                         ),
++                        "target_lateral_offset_m": ParameterValue(
++                            target_lateral_offset_m, value_type=float
++                        ),
+                         "deployment_speed_cap": ParameterValue(
+                             deployment_speed_cap, value_type=float
+                         ),
+diff --git a/xycar_ws/src/xycar_rl/test/test_runtime_safety.py b/xycar_ws/src/xycar_rl/test/test_runtime_safety.py
+index 6dff3b8..7750c47 100644
+--- a/xycar_ws/src/xycar_rl/test/test_runtime_safety.py
++++ b/xycar_ws/src/xycar_rl/test/test_runtime_safety.py
+@@ -1,9 +1,11 @@
+ import math
+ import unittest
+ 
++import numpy as np
+ from sensor_msgs.msg import LaserScan
+ 
+ from xycar_rl.policy_runtime_node import front_obstacle_distance
++from xycar_rl.policy_runtime_node import shift_canonical_image_for_target
+ 
+ 
+ class RuntimeSafetyTest(unittest.TestCase):
+@@ -17,6 +19,33 @@ class RuntimeSafetyTest(unittest.TestCase):
+         distance = front_obstacle_distance(scan, math.radians(25.0))
+         self.assertAlmostEqual(distance, 1.2)
+ 
++    def test_positive_target_offset_shifts_canonical_features_left(self):
++        image = np.full((3, 14, 3), 36, dtype=np.uint8)
++        image[:, 7, :] = 255
++
++        shifted = shift_canonical_image_for_target(
++            image,
++            target_lateral_offset_m=0.10,
++            lateral_range_m=1.4,
++            background_gray=36,
++        )
++
++        self.assertTrue(np.all(shifted[:, 6, :] == 255))
++        self.assertTrue(np.all(shifted[:, -1, :] == 36))
++
++    def test_zero_target_offset_preserves_canonical_image(self):
++        image = np.arange(42, dtype=np.uint8).reshape(3, 14)
++
++        shifted = shift_canonical_image_for_target(
++            image,
++            target_lateral_offset_m=0.0,
++            lateral_range_m=1.4,
++            background_gray=36,
++        )
++
++        np.testing.assert_array_equal(shifted, image)
++        self.assertIsNot(shifted, image)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/xycar_ws/src/xycar_rl/xycar_rl/policy_runtime_node.py b/xycar_ws/src/xycar_rl/xycar_rl/policy_runtime_node.py
+index 847f8c2..8584194 100644
+--- a/xycar_ws/src/xycar_rl/xycar_rl/policy_runtime_node.py
++++ b/xycar_ws/src/xycar_rl/xycar_rl/policy_runtime_node.py
+@@ -64,6 +64,45 @@ def apply_optional_speed_cap(
+     return min(learned, cap) if cap > 0.0 else learned
+ 
+ 
++def shift_canonical_image_for_target(
++    image_bgr: np.ndarray,
++    target_lateral_offset_m: float,
++    lateral_range_m: float,
++    background_gray: int,
++) -> np.ndarray:
++    """Shift canonical features so positive offset targets vehicle-left."""
++    image = np.asarray(image_bgr)
++    if image.ndim not in (2, 3) or image.shape[1] <= 0:
++        raise ValueError("canonical image must have a non-empty width")
++    lateral_range = float(lateral_range_m)
++    if lateral_range <= 0.0:
++        raise ValueError("canonical lateral range must be positive")
++
++    # A left-shifted road makes the policy steer left until the real road
++    # appears equally far right, placing the vehicle at the requested offset.
++    pixel_shift = int(
++        round(
++            -float(target_lateral_offset_m)
++            * float(image.shape[1])
++            / lateral_range
++        )
++    )
++    if pixel_shift == 0:
++        return image.copy()
++
++    fill = int(np.clip(background_gray, 0, 255))
++    shifted = np.full_like(image, fill)
++    width = int(image.shape[1])
++    if abs(pixel_shift) >= width:
++        return shifted
++    if pixel_shift > 0:
++        shifted[:, pixel_shift:] = image[:, : width - pixel_shift]
++    else:
++        shift_left = -pixel_shift
++        shifted[:, : width - shift_left] = image[:, shift_left:]
++    return shifted
++
++
+ class RLPolicyRuntimeNode(Node):
+     def __init__(self) -> None:
+         super().__init__("rl_policy_inference")
+@@ -193,6 +232,15 @@ class RLPolicyRuntimeNode(Node):
+         )
+         self.input_width = int(self.get_parameter("input_width").value)
+         self.input_height = int(self.get_parameter("input_height").value)
++        self.target_lateral_offset_m = float(
++            self.get_parameter("target_lateral_offset_m").value
++        )
++        self.canonical_lateral_range_m = float(
++            self.get_parameter("canonical_lateral_range_m").value
++        )
++        self.canonical_background_gray = int(
++            self.get_parameter("canonical_background_gray").value
++        )
+         self.lidar_points = int(self.get_parameter("lidar_points").value)
+         self.latest_scan: tuple[int, np.ndarray, float] | None = None
+         self.latest_scan_wall_sec = 0.0
+@@ -288,6 +336,9 @@ class RLPolicyRuntimeNode(Node):
+         self.declare_parameter("lidar_front_half_angle_deg", 20.0)
+         self.declare_parameter("input_width", 160)
+         self.declare_parameter("input_height", 90)
++        self.declare_parameter("target_lateral_offset_m", 0.0)
++        self.declare_parameter("canonical_lateral_range_m", 1.4)
++        self.declare_parameter("canonical_background_gray", 36)
+         self.declare_parameter("lidar_points", 360)
+ 
+     def _on_scan(self, msg: LaserScan) -> None:
+@@ -325,6 +376,12 @@ class RLPolicyRuntimeNode(Node):
+                     return
+         started = time.perf_counter()
+         image_bgr = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
++        image_bgr = shift_canonical_image_for_target(
++            image_bgr,
++            self.target_lateral_offset_m,
++            self.canonical_lateral_range_m,
++            self.canonical_background_gray,
++        )
+         image = preprocess_bgr_image(
+             image_bgr, self.input_width, self.input_height
+         )
+diff --git a/xycar_ws/src/xycar_rule_drive/config/canonical_stanley_pursuit.yaml b/xycar_ws/src/xycar_rule_drive/config/canonical_stanley_pursuit.yaml
+index 787601a..157c45e 100644
+--- a/xycar_ws/src/xycar_rule_drive/config/canonical_stanley_pursuit.yaml
++++ b/xycar_ws/src/xycar_rule_drive/config/canonical_stanley_pursuit.yaml
+@@ -26,6 +26,9 @@ canonical_stanley_pursuit_driver:
+     # Follow the yellow centerline with a 10 cm right calibration that places
+     # the observed vehicle body over the line. White fallback uses this target.
+     target_right_offset_m: 0.10
++    # Move the completed target path 10 cm left from the calibrated baseline.
++    # Positive values are vehicle-left; negative values are vehicle-right.
++    target_lateral_offset_m: 0.10
+     # A yellow dash can leave the camera during a tight turn. While the outer
+     # white boundary remains visible, reconstruct the yellow centerline from
+     # the measured 40 cm yellow-to-white distance.
+diff --git a/xycar_ws/src/xycar_rule_drive/launch/canonical_stanley_pursuit.launch.py b/xycar_ws/src/xycar_rule_drive/launch/canonical_stanley_pursuit.launch.py
+index fdda4ad..d0283cc 100644
+--- a/xycar_ws/src/xycar_rule_drive/launch/canonical_stanley_pursuit.launch.py
++++ b/xycar_ws/src/xycar_rule_drive/launch/canonical_stanley_pursuit.launch.py
+@@ -19,6 +19,10 @@ def generate_launch_description():
+             DeclareLaunchArgument("config_file", default_value=config_file),
+             DeclareLaunchArgument("use_sim_time", default_value="true"),
+             DeclareLaunchArgument("drive_enabled", default_value="true"),
++            DeclareLaunchArgument(
++                "target_lateral_offset_m",
++                default_value="0.10",
++            ),
+             Node(
+                 package="xycar_rule_drive",
+                 executable="canonical_stanley_pursuit_driver",
+@@ -34,6 +38,10 @@ def generate_launch_description():
+                             LaunchConfiguration("drive_enabled"),
+                             value_type=bool,
+                         ),
++                        "target_lateral_offset_m": ParameterValue(
++                            LaunchConfiguration("target_lateral_offset_m"),
++                            value_type=float,
++                        ),
+                     },
+                 ],
+                 output="screen",
+diff --git a/xycar_ws/src/xycar_rule_drive/launch/canonical_stanley_pursuit_real.launch.py b/xycar_ws/src/xycar_rule_drive/launch/canonical_stanley_pursuit_real.launch.py
+index 5d446a1..78c5d5a 100644
+--- a/xycar_ws/src/xycar_rule_drive/launch/canonical_stanley_pursuit_real.launch.py
++++ b/xycar_ws/src/xycar_rule_drive/launch/canonical_stanley_pursuit_real.launch.py
+@@ -10,6 +10,10 @@ def generate_launch_description():
+     return LaunchDescription(
+         [
+             DeclareLaunchArgument("drive_enabled", default_value="false"),
++            DeclareLaunchArgument(
++                "target_lateral_offset_m",
++                default_value="0.10",
++            ),
+             IncludeLaunchDescription(
+                 PythonLaunchDescriptionSource(
+                     PathJoinSubstitution(
+@@ -23,6 +27,9 @@ def generate_launch_description():
+                 launch_arguments={
+                     "use_sim_time": "false",
+                     "drive_enabled": LaunchConfiguration("drive_enabled"),
++                    "target_lateral_offset_m": LaunchConfiguration(
++                        "target_lateral_offset_m"
++                    ),
+                 }.items(),
+             ),
+         ]
+diff --git a/xycar_ws/src/xycar_rule_drive/test/test_canonical_stanley_pursuit.py b/xycar_ws/src/xycar_rule_drive/test/test_canonical_stanley_pursuit.py
+index 38370b4..0db1229 100644
+--- a/xycar_ws/src/xycar_rule_drive/test/test_canonical_stanley_pursuit.py
++++ b/xycar_ws/src/xycar_rule_drive/test/test_canonical_stanley_pursuit.py
+@@ -19,6 +19,7 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
+     lead_compensated_steering_command,
+     offset_path_left,
+     offset_path_right,
++    offset_target_path_lateral,
+     outer_white_is_consistent,
+     path_heading_change_per_m,
+     predict_path_in_delayed_vehicle_frame,
+@@ -665,6 +666,17 @@ class CanonicalStanleyPursuitTest(unittest.TestCase):
+         np.testing.assert_allclose(target[:, 0], outer_white[:, 0])
+         np.testing.assert_allclose(target[:, 1], -0.06)
+ 
++    def test_positive_target_lateral_offset_moves_path_left(self):
++        baseline = np.asarray(
++            [[0.05, -0.10], [0.50, 0.00], [1.00, 0.20]],
++            dtype=np.float64,
++        )
++
++        target = offset_target_path_lateral(baseline, 0.10)
++
++        np.testing.assert_allclose(target[:, 0], baseline[:, 0])
++        np.testing.assert_allclose(target[:, 1], baseline[:, 1] + 0.10)
++
+     def test_white_fallback_reconstructs_yellow_centerline_target(self):
+         outer_white = np.asarray(
+             [[0.05, -0.40], [0.50, -0.40], [1.00, -0.40]],
+diff --git a/xycar_ws/src/xycar_rule_drive/xycar_rule_drive/canonical_stanley_pursuit_driver.py b/xycar_ws/src/xycar_rule_drive/xycar_rule_drive/canonical_stanley_pursuit_driver.py
+index 5cea39d..135950e 100644
+--- a/xycar_ws/src/xycar_rule_drive/xycar_rule_drive/canonical_stanley_pursuit_driver.py
++++ b/xycar_ws/src/xycar_rule_drive/xycar_rule_drive/canonical_stanley_pursuit_driver.py
+@@ -337,6 +337,19 @@ def offset_path_left(path: np.ndarray, left_offset_m: float) -> np.ndarray:
+     return result
+ 
+ 
++def offset_target_path_lateral(
++    path: np.ndarray,
++    target_lateral_offset_m: float,
++) -> np.ndarray:
++    """Shift a completed target path; positive is vehicle-left."""
++    points = np.asarray(path, dtype=np.float64)
++    if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] != 2:
++        return np.empty((0, 2), dtype=np.float64)
++    result = points.copy()
++    result[:, 1] += float(target_lateral_offset_m)
++    return result
++
++
+ def white_boundary_to_target_offset(
+     lane_half_width_m: float,
+     target_right_offset_m: float,
+@@ -1036,6 +1049,7 @@ class CanonicalStanleyPursuitDriver(Node):
+         self.declare_parameter("path_previous_weight", 0.10)
+         self.declare_parameter("min_lane_pixels", 8)
+         self.declare_parameter("target_right_offset_m", 0.10)
++        self.declare_parameter("target_lateral_offset_m", 0.0)
+         self.declare_parameter("white_fallback_enabled", True)
+         self.declare_parameter("lane_half_width_m", 0.20)
+         self.declare_parameter("white_fallback_max_gap_m", 0.25)
+@@ -1377,22 +1391,28 @@ class CanonicalStanleyPursuitDriver(Node):
+             self.latest_white_path = white_connected.points
+ 
+         yellow_target = (
+-            offset_path_right(
+-                yellow_connected.points,
+-                float(self.get_parameter("target_right_offset_m").value),
++            offset_target_path_lateral(
++                offset_path_right(
++                    yellow_connected.points,
++                    float(self.get_parameter("target_right_offset_m").value),
++                ),
++                float(self.get_parameter("target_lateral_offset_m").value),
+             )
+             if yellow_connected is not None
+             else None
+         )
+         white_target = (
+-            offset_path_left(
+-                white_connected.points,
+-                white_boundary_to_target_offset(
+-                    float(self.get_parameter("lane_half_width_m").value),
+-                    float(
+-                        self.get_parameter("target_right_offset_m").value
++            offset_target_path_lateral(
++                offset_path_left(
++                    white_connected.points,
++                    white_boundary_to_target_offset(
++                        float(self.get_parameter("lane_half_width_m").value),
++                        float(
++                            self.get_parameter("target_right_offset_m").value
++                        ),
+                     ),
+                 ),
++                float(self.get_parameter("target_lateral_offset_m").value),
+             )
+             if white_connected is not None
+             else None

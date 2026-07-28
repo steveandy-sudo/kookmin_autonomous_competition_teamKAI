@@ -38,6 +38,7 @@ def generate_launch_description():
             DeclareLaunchArgument("yolo_confidence", default_value="0.25"),
             DeclareLaunchArgument("yolo_image_size", default_value="512"),
             DeclareLaunchArgument("yolo_cpu_threads", default_value="4"),
+            DeclareLaunchArgument("yolo_priority_mode", default_value="true"),
             DeclareLaunchArgument("lane_rate_hz", default_value="15.0"),
             DeclareLaunchArgument("drive_enabled", default_value="false"),
             DeclareLaunchArgument("deployment_speed_cap", default_value="3.0"),
@@ -53,6 +54,9 @@ def generate_launch_description():
                     "yolo_confidence": LaunchConfiguration("yolo_confidence"),
                     "yolo_image_size": LaunchConfiguration("yolo_image_size"),
                     "yolo_cpu_threads": LaunchConfiguration("yolo_cpu_threads"),
+                    "yolo_priority_mode": LaunchConfiguration(
+                        "yolo_priority_mode"
+                    ),
                     "publish_rate_limit_hz": LaunchConfiguration("lane_rate_hz"),
                 }.items(),
             ),

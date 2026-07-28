@@ -1,0 +1,145 @@
+Panels:
+  - Class: rviz_common/Displays
+    Help Height: 70
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /YOLO Lane Detection1
+        - /BEV Before Canonical1
+        - /Canonical White Fit Debug1
+        - /Model Camera1
+        - /Canonical Model Input1
+      Splitter Ratio: 0.5
+    Tree Height: 125
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: YOLO Lane Detection
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /perception/yolo_debug_image
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: BEV Before Canonical
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /perception/debug_image
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Canonical White Fit Debug
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /perception/canonical_white_fit_debug
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: false
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Model Camera
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /perception/rectified_camera_image
+      Value: false
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Canonical Model Input
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /perception/canonical_road_image
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 34; 36; 40
+    Fixed Frame: base_footprint
+    Frame Rate: 5
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+      Hide Inactive Objects: true
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 4.214784145355225
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05000000074505806
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.009999999776482582
+      Pitch: 0.800000011920929
+      Target Frame: base_footprint
+      Value: Orbit (rviz)
+      Yaw: 0
+    Saved: ~
+Window Geometry:
+  Canonical White Fit Debug:
+    collapsed: false
+  Canonical Model Input:
+    collapsed: false
+  BEV Before Canonical:
+    collapsed: false
+  Displays:
+    collapsed: false
+  Height: 820
+  Hide Left Dock: false
+  Hide Right Dock: false
+  Model Camera:
+    collapsed: false
+  QMainWindow State: 000000ff00000000fd00000001000000000000036c000002dafc0200000004fb000000260059004f004c004f0020004c0061006e006500200044006500740065006300740069006f006e010000003d0000016a0000002800fffffffb00000018004d006f00640065006c002000430061006d0065007200610000000132000000f00000002800fffffffb0000002a00430061006e006f006e006900630061006c0020004d006f00640065006c00200049006e00700075007401000001ad0000016a0000002800fffffffb000000100044006900730070006c006100790073000000021700000100000000c900ffffff0000018e000002da00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Width: 1280
+  X: 115
+  Y: 72
+  YOLO Lane Detection:
+    collapsed: false

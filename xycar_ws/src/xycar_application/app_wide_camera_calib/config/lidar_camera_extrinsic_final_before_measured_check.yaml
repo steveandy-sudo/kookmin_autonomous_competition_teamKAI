@@ -1,0 +1,31 @@
+description: 'manual initial extrinsic: laser_frame to wide_camera_optical_frame'
+lidar_frame: laser_frame
+camera_frame: wide_camera_optical_frame
+camera_position_in_laser_frame_m:
+  x_forward: -0.07
+  y_left: 0.0
+  z_up: -0.15
+correction_rotation_deg_in_camera_optical:
+  roll: 0.0
+  pitch: -1.0
+  yaw: 0.0
+T_camera_lidar:
+  R_row_major:
+  - -0.01745240643728351
+  - -0.9998476951563913
+  - 0.0
+  - 0.0
+  - 0.0
+  - -1.0
+  - 0.9998476951563913
+  - -0.01745240643728351
+  - 0.0
+  t_xyz:
+  - -0.0012216684506098459
+  - -0.15
+  - 0.06998933866094739
+scan_filter:
+  min_range_m: 0.8
+  max_range_m: 2.2
+  angle_min_deg: 10.0
+  angle_max_deg: 55.0

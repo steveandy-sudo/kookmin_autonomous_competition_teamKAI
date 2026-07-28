@@ -1,0 +1,36 @@
+xycar_dynamics_test_runner:
+  ros__parameters:
+    motor_topic: /xycar_motor
+    imu_topic: /imu
+    odom_topic: /odom
+    use_odom: false
+
+    # Keep true until the car is on a stand or in a clear test area.
+    dry_run: true
+    command_rate_hz: 20.0
+    output_dir: ~/xycar_dynamics_logs
+
+    # speed_step, steer_step, turn_radius, or all
+    test_name: speed_step
+
+    warmup_sec: 2.0
+    settle_sec: 1.5
+    hold_sec: 3.0
+    stop_sec: 2.0
+
+    # Xycar command units. They are strings so launch CLI overrides are simple.
+    speed_commands: "5,10,15,20"
+    angle_commands: "10,-10,20,-20,30,-30,40,-40"
+    turn_angle_commands: "20,-20,30,-30,40,-40"
+    steer_step_speed_cmd: 6.0
+    turn_speed_cmd: 8.0
+
+    # Current real-car estimate. Analyzer will refine this from logs.
+    speed_gain_mps_per_cmd: 0.08
+    wheelbase_m: 0.32
+
+    min_response_eval_sec: 0.10
+    accel_threshold_mps2: 0.35
+    yaw_rate_threshold_rad_s: 0.08
+    odom_speed_threshold_mps: 0.05
+    sensor_timeout_sec: 0.50

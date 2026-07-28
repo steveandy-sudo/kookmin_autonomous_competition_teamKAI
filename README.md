@@ -271,6 +271,7 @@ ros2 launch xycar_perception real_yolo_canonical_from_raw_asus.launch.py
 
 ```bash
 ros2 launch xycar_rl real_yolo_camera_speed_shadow.launch.py \
+  yolo_priority_mode:=true \
   drive_enabled:=false deployment_speed_cap:=3.0
 
 ros2 topic echo /rl/policy_motor_shadow

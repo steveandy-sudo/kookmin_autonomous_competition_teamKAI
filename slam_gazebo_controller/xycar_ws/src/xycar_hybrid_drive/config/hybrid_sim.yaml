@@ -1,0 +1,15 @@
+xycar_hybrid_drive:
+  ros__parameters:
+    use_sim_time: true
+    hybrid_device: auto
+    hybrid_policy_cpu_threads: 4
+    hybrid_opencv_threads: 1
+    hybrid_model_speed_cap: 8.0
+    hybrid_cone_speed_cap: 9.5
+    cruise_speed_command: 8.0
+    minimum_speed_command: 6.0
+    lane_loss_speed_command: 4.0
+    hybrid_curve_entry_curvature_per_m: 0.16
+    hybrid_curve_exit_curvature_per_m: 0.10
+    hybrid_curve_entry_frames: 1
+    hybrid_curve_exit_frames: 3

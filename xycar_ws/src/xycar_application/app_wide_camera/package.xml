@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>app_wide_camera</name>
+  <version>0.0.1</version>
+  <description>Xycar wide camera capture, rectification, and rosbag-ready image publisher</description>
+
+  <maintainer email="kai@example.com">kai</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

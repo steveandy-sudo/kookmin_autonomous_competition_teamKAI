@@ -31,6 +31,7 @@ def generate_launch_description():
     yolo_iou = LaunchConfiguration("yolo_iou")
     yolo_image_size = LaunchConfiguration("yolo_image_size")
     yolo_cpu_threads = LaunchConfiguration("yolo_cpu_threads")
+    yolo_priority_mode = LaunchConfiguration("yolo_priority_mode")
     publish_rate_limit_hz = LaunchConfiguration("publish_rate_limit_hz")
     src_tl_x_ratio = LaunchConfiguration("src_tl_x_ratio")
     src_tr_x_ratio = LaunchConfiguration("src_tr_x_ratio")
@@ -101,6 +102,7 @@ def generate_launch_description():
             DeclareLaunchArgument("yolo_iou", default_value="0.50"),
             DeclareLaunchArgument("yolo_image_size", default_value="640"),
             DeclareLaunchArgument("yolo_cpu_threads", default_value="0"),
+            DeclareLaunchArgument("yolo_priority_mode", default_value="false"),
             DeclareLaunchArgument(
                 "publish_rate_limit_hz", default_value="0.0"
             ),
@@ -210,6 +212,9 @@ def generate_launch_description():
                         ),
                         "yolo_cpu_threads": ParameterValue(
                             yolo_cpu_threads, value_type=int
+                        ),
+                        "yolo_priority_mode": ParameterValue(
+                            yolo_priority_mode, value_type=bool
                         ),
                         "publish_rate_limit_hz": ParameterValue(
                             publish_rate_limit_hz, value_type=float

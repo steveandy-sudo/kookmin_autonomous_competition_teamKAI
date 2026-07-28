@@ -1,0 +1,836 @@
+{
+  "profiles": 4,
+  "ranking": [
+    {
+      "completed_laps": 1,
+      "cross_track_error_m": {
+        "maximum_abs": 0.2133001685142517,
+        "mean_abs": 0.08807789731142517,
+        "p95_abs": 0.19150719046592712
+      },
+      "final_context_5hz": [
+        {
+          "cross_track_error_m": 0.211,
+          "elapsed_sec": 26.05,
+          "heading_error_rad": 0.0524,
+          "measured_speed_mps": 0.7385,
+          "path_curvature_per_m": 0.0275,
+          "path_index": 222,
+          "speed_command": 11.686,
+          "steering_command": 6.464
+        },
+        {
+          "cross_track_error_m": 0.2133,
+          "elapsed_sec": 26.25,
+          "heading_error_rad": 0.0372,
+          "measured_speed_mps": 0.8474,
+          "path_curvature_per_m": 0.0206,
+          "path_index": 224,
+          "speed_command": 13.273,
+          "steering_command": 5.299
+        },
+        {
+          "cross_track_error_m": 0.2112,
+          "elapsed_sec": 26.451,
+          "heading_error_rad": 0.0332,
+          "measured_speed_mps": 0.9532,
+          "path_curvature_per_m": 0.0156,
+          "path_index": 226,
+          "speed_command": 14.759,
+          "steering_command": 3.965
+        },
+        {
+          "cross_track_error_m": 0.2029,
+          "elapsed_sec": 26.651,
+          "heading_error_rad": 0.0391,
+          "measured_speed_mps": 1.0694,
+          "path_curvature_per_m": 0.0104,
+          "path_index": 228,
+          "speed_command": 16.303,
+          "steering_command": 2.414
+        },
+        {
+          "cross_track_error_m": 0.1886,
+          "elapsed_sec": 26.851,
+          "heading_error_rad": 0.0515,
+          "measured_speed_mps": 1.1918,
+          "path_curvature_per_m": 0.008,
+          "path_index": 230,
+          "speed_command": 17.981,
+          "steering_command": 0.732
+        },
+        {
+          "cross_track_error_m": 0.1679,
+          "elapsed_sec": 27.05,
+          "heading_error_rad": 0.0661,
+          "measured_speed_mps": 1.312,
+          "path_curvature_per_m": 0.0057,
+          "path_index": 233,
+          "speed_command": 20.47,
+          "steering_command": -1.866
+        },
+        {
+          "cross_track_error_m": 0.1473,
+          "elapsed_sec": 27.251,
+          "heading_error_rad": 0.0687,
+          "measured_speed_mps": 1.4581,
+          "path_curvature_per_m": 0.0045,
+          "path_index": 236,
+          "speed_command": 22.97,
+          "steering_command": -3.467
+        },
+        {
+          "cross_track_error_m": 0.1266,
+          "elapsed_sec": 27.452,
+          "heading_error_rad": 0.0678,
+          "measured_speed_mps": 1.6389,
+          "path_curvature_per_m": 0.0041,
+          "path_index": 239,
+          "speed_command": 25.499,
+          "steering_command": -3.695
+        },
+        {
+          "cross_track_error_m": 0.1053,
+          "elapsed_sec": 27.651,
+          "heading_error_rad": 0.0625,
+          "measured_speed_mps": 1.822,
+          "path_curvature_per_m": 0.0047,
+          "path_index": 242,
+          "speed_command": 28.094,
+          "steering_command": -3.027
+        },
+        {
+          "cross_track_error_m": 0.0873,
+          "elapsed_sec": 27.851,
+          "heading_error_rad": 0.0539,
+          "measured_speed_mps": 2.0181,
+          "path_curvature_per_m": 0.0077,
+          "path_index": 246,
+          "speed_command": 29.252,
+          "steering_command": -2.013
+        },
+        {
+          "cross_track_error_m": 0.073,
+          "elapsed_sec": 28.051,
+          "heading_error_rad": 0.0435,
+          "measured_speed_mps": 2.2394,
+          "path_curvature_per_m": 0.013,
+          "path_index": 250,
+          "speed_command": 26.297,
+          "steering_command": -1.287
+        },
+        {
+          "cross_track_error_m": 0.0627,
+          "elapsed_sec": 28.25,
+          "heading_error_rad": 0.0375,
+          "measured_speed_mps": 2.2412,
+          "path_curvature_per_m": 0.0261,
+          "path_index": 255,
+          "speed_command": 21.193,
+          "steering_command": -1.983
+        },
+        {
+          "cross_track_error_m": 0.0563,
+          "elapsed_sec": 28.453,
+          "heading_error_rad": 0.034,
+          "measured_speed_mps": 1.9422,
+          "path_curvature_per_m": 0.1462,
+          "path_index": 259,
+          "speed_command": 17.199,
+          "steering_command": -9.462
+        },
+        {
+          "cross_track_error_m": 0.0535,
+          "elapsed_sec": 28.653,
+          "heading_error_rad": 0.0643,
+          "measured_speed_mps": 1.5765,
+          "path_curvature_per_m": 0.2864,
+          "path_index": 263,
+          "speed_command": 14.169,
+          "steering_command": -15.432
+        },
+        {
+          "cross_track_error_m": 0.0489,
+          "elapsed_sec": 28.851,
+          "heading_error_rad": 0.1107,
+          "measured_speed_mps": 1.2395,
+          "path_curvature_per_m": 0.089,
+          "path_index": 266,
+          "speed_command": 13.975,
+          "steering_command": -11.723
+        }
+      ],
+      "first_path_index": 0,
+      "gz_partition": "xycar_profile_70175_163",
+      "heading_error_rad": {
+        "maximum_abs": 0.5233489274978638,
+        "p95_abs": 0.39020055532455444
+      },
+      "lap_time_sec": 28.999999999999996,
+      "last_path_index": 0,
+      "maximum_path_index": 267,
+      "measured_speed_mps": {
+        "maximum": 2.5216519832611084,
+        "mean": 0.8385415061500417,
+        "p95": 2.018073320388794
+      },
+      "path_points": 268,
+      "profile": "validation_fb_smooth15",
+      "profile_parameters": {
+        "cruise_speed_command": 40.0,
+        "curvature_feedforward_gain": 0.5,
+        "maximum_lateral_accel_mps2": 0.35,
+        "minimum_speed_command": 5.0,
+        "name": "validation_fb_smooth15",
+        "path_smoothing_anchor_weight": 0.15,
+        "path_smoothing_data_weight": 0.008,
+        "path_smoothing_iterations": 1000,
+        "path_smoothing_maximum_deviation_m": 0.15,
+        "path_smoothing_weight": 0.4,
+        "speed_alignment_cross_track_hard_m": 0.6,
+        "speed_alignment_heading_hard_rad": 1.2,
+        "speed_planner_mode": "forward_backward",
+        "speed_profile_braking_preview_sec": 0.3,
+        "speed_profile_max_accel_mps2": 1.2,
+        "speed_profile_max_decel_mps2": 1.8
+      },
+      "reason": "lap_complete",
+      "ros_domain_id": 163,
+      "speed_command": {
+        "maximum": 33.015018463134766,
+        "mean": 10.8601449598749,
+        "p95": 26.17161750793457
+      },
+      "steering_command": {
+        "large_straight_reversal_events": [],
+        "large_straight_reversals": 0,
+        "maximum_abs": 41.999752044677734,
+        "p95_abs": 41.94985580444336
+      },
+      "success": true,
+      "tracking_duration_sec": 28.999999999999996,
+      "tracking_samples": 581,
+      "wall_time_sec": 40.04825602099936
+    },
+    {
+      "completed_laps": 1,
+      "cross_track_error_m": {
+        "maximum_abs": 0.2154192477464676,
+        "mean_abs": 0.07182833080657962,
+        "p95_abs": 0.1897694319486618
+      },
+      "final_context_5hz": [
+        {
+          "cross_track_error_m": 0.2123,
+          "elapsed_sec": 27.855,
+          "heading_error_rad": 0.0271,
+          "measured_speed_mps": 0.7397,
+          "path_curvature_per_m": 0.0103,
+          "path_index": 222,
+          "speed_command": 11.93,
+          "steering_command": 7.343
+        },
+        {
+          "cross_track_error_m": 0.2154,
+          "elapsed_sec": 28.052,
+          "heading_error_rad": 0.0138,
+          "measured_speed_mps": 0.8566,
+          "path_curvature_per_m": 0.0064,
+          "path_index": 224,
+          "speed_command": 13.482,
+          "steering_command": 5.935
+        },
+        {
+          "cross_track_error_m": 0.2136,
+          "elapsed_sec": 28.25,
+          "heading_error_rad": 0.0142,
+          "measured_speed_mps": 0.9523,
+          "path_curvature_per_m": 0.004,
+          "path_index": 226,
+          "speed_command": 14.948,
+          "steering_command": 4.334
+        },
+        {
+          "cross_track_error_m": 0.2055,
+          "elapsed_sec": 28.453,
+          "heading_error_rad": 0.025,
+          "measured_speed_mps": 1.058,
+          "path_curvature_per_m": 0.0019,
+          "path_index": 228,
+          "speed_command": 16.473,
+          "steering_command": 2.476
+        },
+        {
+          "cross_track_error_m": 0.1891,
+          "elapsed_sec": 28.65,
+          "heading_error_rad": 0.0444,
+          "measured_speed_mps": 1.1717,
+          "path_curvature_per_m": 0.001,
+          "path_index": 230,
+          "speed_command": 18.212,
+          "steering_command": 0.369
+        },
+        {
+          "cross_track_error_m": 0.1692,
+          "elapsed_sec": 28.847,
+          "heading_error_rad": 0.0584,
+          "measured_speed_mps": 1.2948,
+          "path_curvature_per_m": 0.0005,
+          "path_index": 233,
+          "speed_command": 20.669,
+          "steering_command": -2.519
+        },
+        {
+          "cross_track_error_m": 0.1498,
+          "elapsed_sec": 29.05,
+          "heading_error_rad": 0.0634,
+          "measured_speed_mps": 1.4462,
+          "path_curvature_per_m": 0.0003,
+          "path_index": 235,
+          "speed_command": 22.551,
+          "steering_command": -4.087
+        },
+        {
+          "cross_track_error_m": 0.1286,
+          "elapsed_sec": 29.25,
+          "heading_error_rad": 0.0643,
+          "measured_speed_mps": 1.6166,
+          "path_curvature_per_m": 0.0003,
+          "path_index": 238,
+          "speed_command": 25.105,
+          "steering_command": -4.226
+        },
+        {
+          "cross_track_error_m": 0.107,
+          "elapsed_sec": 29.451,
+          "heading_error_rad": 0.0598,
+          "measured_speed_mps": 1.7962,
+          "path_curvature_per_m": 0.0004,
+          "path_index": 242,
+          "speed_command": 28.254,
+          "steering_command": -3.163
+        },
+        {
+          "cross_track_error_m": 0.0899,
+          "elapsed_sec": 29.65,
+          "heading_error_rad": 0.0515,
+          "measured_speed_mps": 1.9985,
+          "path_curvature_per_m": 0.0009,
+          "path_index": 245,
+          "speed_command": 30.677,
+          "steering_command": -1.732
+        },
+        {
+          "cross_track_error_m": 0.0752,
+          "elapsed_sec": 29.85,
+          "heading_error_rad": 0.0401,
+          "measured_speed_mps": 2.2295,
+          "path_curvature_per_m": 0.0035,
+          "path_index": 250,
+          "speed_command": 26.768,
+          "steering_command": -0.469
+        },
+        {
+          "cross_track_error_m": 0.0619,
+          "elapsed_sec": 30.05,
+          "heading_error_rad": 0.0348,
+          "measured_speed_mps": 2.2846,
+          "path_curvature_per_m": 0.0092,
+          "path_index": 254,
+          "speed_command": 23.095,
+          "steering_command": -0.278
+        },
+        {
+          "cross_track_error_m": 0.05,
+          "elapsed_sec": 30.25,
+          "heading_error_rad": 0.0343,
+          "measured_speed_mps": 2.0685,
+          "path_curvature_per_m": 0.1249,
+          "path_index": 259,
+          "speed_command": 16.602,
+          "steering_command": -4.849
+        },
+        {
+          "cross_track_error_m": 0.0438,
+          "elapsed_sec": 30.449,
+          "heading_error_rad": 0.0654,
+          "measured_speed_mps": 1.7354,
+          "path_curvature_per_m": 0.2486,
+          "path_index": 262,
+          "speed_command": 15.172,
+          "steering_command": -15.377
+        },
+        {
+          "cross_track_error_m": 0.0342,
+          "elapsed_sec": 30.65,
+          "heading_error_rad": 0.1068,
+          "measured_speed_mps": 1.3354,
+          "path_curvature_per_m": 0.048,
+          "path_index": 266,
+          "speed_command": 14.928,
+          "steering_command": -12.496
+        }
+      ],
+      "first_path_index": 0,
+      "gz_partition": "xycar_profile_70175_162",
+      "heading_error_rad": {
+        "maximum_abs": 0.5590407252311707,
+        "p95_abs": 0.45520082116127014
+      },
+      "lap_time_sec": 30.802,
+      "last_path_index": 0,
+      "maximum_path_index": 267,
+      "measured_speed_mps": {
+        "maximum": 2.4356942176818848,
+        "mean": 0.8093830057853045,
+        "p95": 1.9552991390228271
+      },
+      "path_points": 268,
+      "profile": "validation_fb_unsmoothed",
+      "profile_parameters": {
+        "cruise_speed_command": 40.0,
+        "maximum_lateral_accel_mps2": 0.35,
+        "minimum_speed_command": 5.0,
+        "name": "validation_fb_unsmoothed",
+        "speed_alignment_cross_track_hard_m": 0.6,
+        "speed_alignment_heading_hard_rad": 1.2,
+        "speed_planner_mode": "forward_backward",
+        "speed_profile_braking_preview_sec": 0.3,
+        "speed_profile_max_accel_mps2": 1.2,
+        "speed_profile_max_decel_mps2": 1.8
+      },
+      "reason": "lap_complete",
+      "ros_domain_id": 162,
+      "speed_command": {
+        "maximum": 32.07566833496094,
+        "mean": 10.510634423075079,
+        "p95": 24.81415557861328
+      },
+      "steering_command": {
+        "large_straight_reversal_events": [],
+        "large_straight_reversals": 0,
+        "maximum_abs": 42.0,
+        "p95_abs": 41.99998474121094
+      },
+      "success": true,
+      "tracking_duration_sec": 30.802,
+      "tracking_samples": 617,
+      "wall_time_sec": 41.71821672600072
+    },
+    {
+      "completed_laps": 1,
+      "cross_track_error_m": {
+        "maximum_abs": 0.2679537534713745,
+        "mean_abs": 0.0838347712100985,
+        "p95_abs": 0.22367137670516968
+      },
+      "final_context_5hz": [
+        {
+          "cross_track_error_m": 0.1611,
+          "elapsed_sec": 29.549,
+          "heading_error_rad": 0.0912,
+          "measured_speed_mps": 0.8286,
+          "path_curvature_per_m": 0.0003,
+          "path_index": 237,
+          "speed_command": 11.442,
+          "steering_command": -3.246
+        },
+        {
+          "cross_track_error_m": 0.1447,
+          "elapsed_sec": 29.754,
+          "heading_error_rad": 0.0935,
+          "measured_speed_mps": 0.8708,
+          "path_curvature_per_m": 0.0003,
+          "path_index": 238,
+          "speed_command": 11.969,
+          "steering_command": -3.449
+        },
+        {
+          "cross_track_error_m": 0.127,
+          "elapsed_sec": 29.955,
+          "heading_error_rad": 0.0934,
+          "measured_speed_mps": 0.9176,
+          "path_curvature_per_m": 0.0003,
+          "path_index": 240,
+          "speed_command": 12.534,
+          "steering_command": -3.443
+        },
+        {
+          "cross_track_error_m": 0.1113,
+          "elapsed_sec": 30.144,
+          "heading_error_rad": 0.0912,
+          "measured_speed_mps": 0.9575,
+          "path_curvature_per_m": 0.0003,
+          "path_index": 242,
+          "speed_command": 13.037,
+          "steering_command": -3.28
+        },
+        {
+          "cross_track_error_m": 0.0949,
+          "elapsed_sec": 30.352,
+          "heading_error_rad": 0.0869,
+          "measured_speed_mps": 1.0021,
+          "path_curvature_per_m": 0.0005,
+          "path_index": 244,
+          "speed_command": 13.559,
+          "steering_command": -2.989
+        },
+        {
+          "cross_track_error_m": 0.0794,
+          "elapsed_sec": 30.555,
+          "heading_error_rad": 0.081,
+          "measured_speed_mps": 1.0499,
+          "path_curvature_per_m": 0.0009,
+          "path_index": 246,
+          "speed_command": 14.053,
+          "steering_command": -2.586
+        },
+        {
+          "cross_track_error_m": 0.0652,
+          "elapsed_sec": 30.75,
+          "heading_error_rad": 0.0738,
+          "measured_speed_mps": 1.0856,
+          "path_curvature_per_m": 0.0014,
+          "path_index": 248,
+          "speed_command": 14.501,
+          "steering_command": -2.187
+        },
+        {
+          "cross_track_error_m": 0.0529,
+          "elapsed_sec": 30.949,
+          "heading_error_rad": 0.0662,
+          "measured_speed_mps": 1.1248,
+          "path_curvature_per_m": 0.0022,
+          "path_index": 250,
+          "speed_command": 14.886,
+          "steering_command": -1.776
+        },
+        {
+          "cross_track_error_m": 0.0418,
+          "elapsed_sec": 31.145,
+          "heading_error_rad": 0.0584,
+          "measured_speed_mps": 1.1612,
+          "path_curvature_per_m": 0.0035,
+          "path_index": 253,
+          "speed_command": 14.965,
+          "steering_command": -1.476
+        },
+        {
+          "cross_track_error_m": 0.032,
+          "elapsed_sec": 31.349,
+          "heading_error_rad": 0.0523,
+          "measured_speed_mps": 1.1894,
+          "path_curvature_per_m": 0.0072,
+          "path_index": 255,
+          "speed_command": 14.928,
+          "steering_command": -1.4
+        },
+        {
+          "cross_track_error_m": 0.0233,
+          "elapsed_sec": 31.549,
+          "heading_error_rad": 0.0463,
+          "measured_speed_mps": 1.2,
+          "path_curvature_per_m": 0.0117,
+          "path_index": 257,
+          "speed_command": 14.883,
+          "steering_command": -1.636
+        },
+        {
+          "cross_track_error_m": 0.0163,
+          "elapsed_sec": 31.75,
+          "heading_error_rad": 0.0421,
+          "measured_speed_mps": 1.2012,
+          "path_curvature_per_m": 0.1249,
+          "path_index": 260,
+          "speed_command": 13.751,
+          "steering_command": -4.512
+        },
+        {
+          "cross_track_error_m": 0.0109,
+          "elapsed_sec": 31.949,
+          "heading_error_rad": 0.0525,
+          "measured_speed_mps": 1.1974,
+          "path_curvature_per_m": 0.3461,
+          "path_index": 262,
+          "speed_command": 11.539,
+          "steering_command": -14.789
+        },
+        {
+          "cross_track_error_m": 0.01,
+          "elapsed_sec": 32.149,
+          "heading_error_rad": 0.0764,
+          "measured_speed_mps": 1.0712,
+          "path_curvature_per_m": 0.147,
+          "path_index": 264,
+          "speed_command": 13.53,
+          "steering_command": -14.721
+        },
+        {
+          "cross_track_error_m": 0.0068,
+          "elapsed_sec": 32.349,
+          "heading_error_rad": 0.0931,
+          "measured_speed_mps": 1.0064,
+          "path_curvature_per_m": 0.048,
+          "path_index": 266,
+          "speed_command": 14.253,
+          "steering_command": -7.735
+        }
+      ],
+      "first_path_index": 0,
+      "gz_partition": "xycar_profile_70175_160",
+      "heading_error_rad": {
+        "maximum_abs": 0.5390998125076294,
+        "p95_abs": 0.45683571696281433
+      },
+      "lap_time_sec": 32.499,
+      "last_path_index": 0,
+      "maximum_path_index": 267,
+      "measured_speed_mps": {
+        "maximum": 1.2016520500183105,
+        "mean": 0.7771302390093994,
+        "p95": 1.182234764099121
+      },
+      "path_points": 268,
+      "profile": "validation_local_c15",
+      "profile_parameters": {
+        "cruise_speed_command": 15.0,
+        "maximum_lateral_accel_mps2": 2.0,
+        "minimum_speed_command": 7.0,
+        "name": "validation_local_c15",
+        "speed_planner_mode": "local"
+      },
+      "reason": "lap_complete",
+      "ros_domain_id": 160,
+      "speed_command": {
+        "maximum": 14.972185134887695,
+        "mean": 9.993146808466054,
+        "p95": 14.7813081741333
+      },
+      "steering_command": {
+        "large_straight_reversal_events": [],
+        "large_straight_reversals": 0,
+        "maximum_abs": 42.0,
+        "p95_abs": 42.0
+      },
+      "success": true,
+      "tracking_duration_sec": 32.499,
+      "tracking_samples": 651,
+      "wall_time_sec": 43.686483058000704
+    },
+    {
+      "completed_laps": 1,
+      "cross_track_error_m": {
+        "maximum_abs": 0.35654789209365845,
+        "mean_abs": 0.1410746614553728,
+        "p95_abs": 0.3256033658981323
+      },
+      "final_context_5hz": [
+        {
+          "cross_track_error_m": 0.2152,
+          "elapsed_sec": 27.605,
+          "heading_error_rad": 0.0567,
+          "measured_speed_mps": 0.8382,
+          "path_curvature_per_m": 0.0015,
+          "path_index": 229,
+          "speed_command": 11.739,
+          "steering_command": 0.935
+        },
+        {
+          "cross_track_error_m": 0.2001,
+          "elapsed_sec": 27.803,
+          "heading_error_rad": 0.068,
+          "measured_speed_mps": 0.8811,
+          "path_curvature_per_m": 0.0012,
+          "path_index": 231,
+          "speed_command": 12.587,
+          "steering_command": -0.645
+        },
+        {
+          "cross_track_error_m": 0.1837,
+          "elapsed_sec": 28.005,
+          "heading_error_rad": 0.0755,
+          "measured_speed_mps": 0.9397,
+          "path_curvature_per_m": 0.0008,
+          "path_index": 233,
+          "speed_command": 13.504,
+          "steering_command": -1.988
+        },
+        {
+          "cross_track_error_m": 0.1652,
+          "elapsed_sec": 28.203,
+          "heading_error_rad": 0.0811,
+          "measured_speed_mps": 1.0068,
+          "path_curvature_per_m": 0.0004,
+          "path_index": 235,
+          "speed_command": 14.542,
+          "steering_command": -2.95
+        },
+        {
+          "cross_track_error_m": 0.1461,
+          "elapsed_sec": 28.403,
+          "heading_error_rad": 0.0839,
+          "measured_speed_mps": 1.0839,
+          "path_curvature_per_m": 0.0003,
+          "path_index": 237,
+          "speed_command": 15.617,
+          "steering_command": -3.373
+        },
+        {
+          "cross_track_error_m": 0.126,
+          "elapsed_sec": 28.604,
+          "heading_error_rad": 0.0838,
+          "measured_speed_mps": 1.1652,
+          "path_curvature_per_m": 0.0003,
+          "path_index": 239,
+          "speed_command": 16.742,
+          "steering_command": -3.426
+        },
+        {
+          "cross_track_error_m": 0.1071,
+          "elapsed_sec": 28.804,
+          "heading_error_rad": 0.0808,
+          "measured_speed_mps": 1.2492,
+          "path_curvature_per_m": 0.0003,
+          "path_index": 241,
+          "speed_command": 17.798,
+          "steering_command": -3.113
+        },
+        {
+          "cross_track_error_m": 0.089,
+          "elapsed_sec": 29.003,
+          "heading_error_rad": 0.0754,
+          "measured_speed_mps": 1.3376,
+          "path_curvature_per_m": 0.0006,
+          "path_index": 244,
+          "speed_command": 18.807,
+          "steering_command": -2.529
+        },
+        {
+          "cross_track_error_m": 0.0719,
+          "elapsed_sec": 29.203,
+          "heading_error_rad": 0.0679,
+          "measured_speed_mps": 1.4222,
+          "path_curvature_per_m": 0.0011,
+          "path_index": 247,
+          "speed_command": 19.755,
+          "steering_command": -1.908
+        },
+        {
+          "cross_track_error_m": 0.057,
+          "elapsed_sec": 29.403,
+          "heading_error_rad": 0.0595,
+          "measured_speed_mps": 1.5041,
+          "path_curvature_per_m": 0.0022,
+          "path_index": 249,
+          "speed_command": 20.571,
+          "steering_command": -1.279
+        },
+        {
+          "cross_track_error_m": 0.0435,
+          "elapsed_sec": 29.604,
+          "heading_error_rad": 0.0516,
+          "measured_speed_mps": 1.5806,
+          "path_curvature_per_m": 0.0045,
+          "path_index": 253,
+          "speed_command": 20.922,
+          "steering_command": -0.951
+        },
+        {
+          "cross_track_error_m": 0.0313,
+          "elapsed_sec": 29.804,
+          "heading_error_rad": 0.0457,
+          "measured_speed_mps": 1.6438,
+          "path_curvature_per_m": 0.0092,
+          "path_index": 256,
+          "speed_command": 20.839,
+          "steering_command": -1.114
+        },
+        {
+          "cross_track_error_m": 0.0207,
+          "elapsed_sec": 30.003,
+          "heading_error_rad": 0.0409,
+          "measured_speed_mps": 1.6707,
+          "path_curvature_per_m": 0.0188,
+          "path_index": 259,
+          "speed_command": 20.67,
+          "steering_command": -2.141
+        },
+        {
+          "cross_track_error_m": 0.0132,
+          "elapsed_sec": 30.204,
+          "heading_error_rad": 0.0696,
+          "measured_speed_mps": 1.6709,
+          "path_curvature_per_m": 0.2486,
+          "path_index": 262,
+          "speed_command": 16.393,
+          "steering_command": -16.544
+        },
+        {
+          "cross_track_error_m": 0.0025,
+          "elapsed_sec": 30.403,
+          "heading_error_rad": 0.1121,
+          "measured_speed_mps": 1.4296,
+          "path_curvature_per_m": 0.048,
+          "path_index": 266,
+          "speed_command": 19.019,
+          "steering_command": -13.493
+        }
+      ],
+      "first_path_index": 0,
+      "gz_partition": "xycar_profile_70175_161",
+      "heading_error_rad": {
+        "maximum_abs": 0.7156681418418884,
+        "p95_abs": 0.5719860792160034
+      },
+      "lap_time_sec": 30.552999999999997,
+      "last_path_index": 0,
+      "maximum_path_index": 267,
+      "measured_speed_mps": {
+        "maximum": 1.6739119291305542,
+        "mean": 0.8614228700525036,
+        "p95": 1.5430716276168823
+      },
+      "path_points": 268,
+      "profile": "validation_local_c21",
+      "profile_parameters": {
+        "cruise_speed_command": 21.0,
+        "maximum_lateral_accel_mps2": 2.0,
+        "minimum_speed_command": 7.0,
+        "name": "validation_local_c21",
+        "speed_planner_mode": "local"
+      },
+      "reason": "lap_complete",
+      "ros_domain_id": 161,
+      "speed_command": {
+        "maximum": 20.945392608642578,
+        "mean": 11.161154574818081,
+        "p95": 19.819705963134766
+      },
+      "steering_command": {
+        "large_straight_reversal_events": [
+          {
+            "cross_track_error_m": -0.031,
+            "from_command": -12.325,
+            "path_index": 24,
+            "to_command": 13.096
+          },
+          {
+            "cross_track_error_m": 0.0705,
+            "from_command": -14.679,
+            "path_index": 85,
+            "to_command": 12.573
+          }
+        ],
+        "large_straight_reversals": 2,
+        "maximum_abs": 42.0,
+        "p95_abs": 42.0
+      },
+      "success": true,
+      "tracking_duration_sec": 30.552999999999997,
+      "tracking_samples": 612,
+      "wall_time_sec": 41.97772857200016
+    }
+  ],
+  "target_mean_speed_command": 17.0,
+  "workers": 4
+}

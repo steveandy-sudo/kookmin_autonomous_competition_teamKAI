@@ -1,0 +1,79 @@
+{
+  "frames": 1133,
+  "duration_sec": 72.247,
+  "average_hz": 15.669,
+  "detection": {
+    "both_white": {
+      "frames": 169,
+      "percent": 14.92
+    },
+    "one_white": {
+      "frames": 844,
+      "percent": 74.49
+    },
+    "no_white": {
+      "frames": 120,
+      "percent": 10.59
+    },
+    "yellow": {
+      "frames": 692,
+      "percent": 61.08
+    },
+    "all_three": {
+      "frames": 148,
+      "percent": 13.06
+    }
+  },
+  "yellow_component_histogram": {
+    "0": 437,
+    "1": 595,
+    "2": 20,
+    "3": 9,
+    "4": 8,
+    "5": 17,
+    "6": 10,
+    "7": 9,
+    "8": 9,
+    "9": 5,
+    "10": 2,
+    "11": 2,
+    "12": 4,
+    "13": 1,
+    "14": 4,
+    "16": 1
+  },
+  "geometry": {
+    "frames_with_white_spacing": 169,
+    "white_spacing_m_median": 0.5113,
+    "white_spacing_m_p10": 0.4621,
+    "white_spacing_m_p90": 0.648,
+    "yellow_center_offset_m_median": 0.2499,
+    "yellow_center_offset_abs_m_p90": 0.3131
+  },
+  "longest_missing_runs": {
+    "white_pair": {
+      "frames": 87,
+      "duration_sec": 5.252,
+      "start_sec": 6.173,
+      "end_sec": 11.425
+    },
+    "any_white": {
+      "frames": 23,
+      "duration_sec": 1.422,
+      "start_sec": 22.378,
+      "end_sec": 23.799
+    },
+    "yellow": {
+      "frames": 57,
+      "duration_sec": 3.452,
+      "start_sec": 38.183,
+      "end_sec": 41.635
+    }
+  },
+  "bag": "/home/as/Downloads/track_run_02_extract/track_run_02_20260715_143636",
+  "canonical_contract": {
+    "width_px": 256,
+    "height_px": 144,
+    "width_m": 1.4
+  }
+}

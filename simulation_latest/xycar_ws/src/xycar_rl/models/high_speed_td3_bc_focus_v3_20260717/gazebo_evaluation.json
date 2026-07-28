@@ -1,0 +1,71 @@
+{
+  "date": "2026-07-17",
+  "selected_checkpoint": "camera_speed_td3_bc_epoch_042.pth",
+  "selected_simulation_speed_cap": 7.0,
+  "real_shadow_initial_speed_cap": 4.0,
+  "fixed_start_progress_fraction": 0.0,
+  "seeds": [20260724, 20260725, 20260726, 20260727, 20260728],
+  "cap_7": [
+    {
+      "seed": 20260724,
+      "reason": "lap_complete",
+      "steps": 655,
+      "progress_m": 24.64,
+      "mean_speed_command": 6.97,
+      "max_cross_track_error_m": 0.202,
+      "large_oscillation_events": 0
+    },
+    {
+      "seed": 20260725,
+      "reason": "lap_complete",
+      "steps": 688,
+      "progress_m": 24.69,
+      "mean_speed_command": 6.96,
+      "max_cross_track_error_m": 0.182,
+      "large_oscillation_events": 0
+    },
+    {
+      "seed": 20260726,
+      "reason": "lap_complete",
+      "steps": 662,
+      "progress_m": 24.70,
+      "mean_speed_command": 6.95,
+      "max_cross_track_error_m": 0.159,
+      "large_oscillation_events": 1,
+      "large_oscillation_steps": 9
+    },
+    {
+      "seed": 20260727,
+      "reason": "lap_complete",
+      "steps": 662,
+      "progress_m": 24.70,
+      "mean_speed_command": 6.95,
+      "max_cross_track_error_m": 0.172,
+      "large_oscillation_events": 0
+    },
+    {
+      "seed": 20260728,
+      "reason": "lap_complete",
+      "steps": 688,
+      "progress_m": 24.62,
+      "mean_speed_command": 6.94,
+      "max_cross_track_error_m": 0.141,
+      "large_oscillation_events": 0
+    }
+  ],
+  "rejected_speed_gates": [
+    {
+      "speed_cap": 7.25,
+      "successes_before_stop": 1,
+      "trials_before_stop": 2,
+      "failure_seed": 20260725,
+      "failure_reason": "off_track"
+    },
+    {
+      "speed_cap": 8.0,
+      "successes": 1,
+      "trials": 5,
+      "failure_reason": "off_track"
+    }
+  ]
+}

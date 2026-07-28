@@ -1,0 +1,20 @@
+[
+  {
+    "checkpoint": "camera_speed_td3_bc_epoch_051.pth",
+    "epoch": 51,
+    "planned_simulation_speed_cap": 7.5,
+    "gazebo_status": "approved_5_of_5",
+    "suggested_shadow_speed_cap": 4.0,
+    "validation_speed_mse": 0.10076052869106647,
+    "validation_steering_mse": 0.034023070429408
+  },
+  {
+    "checkpoint": "camera_speed_td3_bc_epoch_054.pth",
+    "epoch": 54,
+    "planned_simulation_speed_cap": 7.5,
+    "gazebo_status": "rejected_4_of_5",
+    "suggested_shadow_speed_cap": 4.0,
+    "validation_speed_mse": 0.09920206396665143,
+    "validation_steering_mse": 0.03414084742502519
+  }
+]

@@ -25,6 +25,7 @@ def generate_launch_description():
         "yolo_confidence": LaunchConfiguration("yolo_confidence"),
         "yolo_image_size": LaunchConfiguration("yolo_image_size"),
         "yolo_cpu_threads": LaunchConfiguration("yolo_cpu_threads"),
+        "yolo_priority_mode": LaunchConfiguration("yolo_priority_mode"),
         "publish_rate_limit_hz": LaunchConfiguration(
             "publish_rate_limit_hz"
         ),
@@ -51,6 +52,14 @@ def generate_launch_description():
             DeclareLaunchArgument("yolo_confidence", default_value="0.25"),
             DeclareLaunchArgument("yolo_image_size", default_value="512"),
             DeclareLaunchArgument("yolo_cpu_threads", default_value="4"),
+            DeclareLaunchArgument(
+                "yolo_priority_mode",
+                default_value="true",
+                description=(
+                    "Use YOLO class masks as the authoritative lane source, "
+                    "then apply strict canonical geometry and temporal tracking."
+                ),
+            ),
             DeclareLaunchArgument(
                 "publish_rate_limit_hz",
                 default_value="15.0",

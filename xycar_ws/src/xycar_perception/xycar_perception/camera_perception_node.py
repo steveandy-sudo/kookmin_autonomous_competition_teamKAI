@@ -101,6 +101,7 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("yolo_white_class_id", 0)
         self.declare_parameter("yolo_yellow_class_id", 1)
         self.declare_parameter("yolo_cpu_threads", 0)
+        self.declare_parameter("yolo_priority_mode", False)
         self.declare_parameter(
             "yolo_debug_image_topic", "/perception/yolo_debug_image"
         )
@@ -256,6 +257,14 @@ class CameraPerceptionNode(Node):
             raise ValueError(
                 "lane_segmentation_backend must be either color or yolo"
             )
+        self.yolo_priority_mode = bool(
+            self.get_parameter("yolo_priority_mode").value
+        )
+        if self.yolo_priority_mode and self.lane_segmentation_backend != "yolo":
+            self.get_logger().warning(
+                "yolo_priority_mode ignored because lane_segmentation_backend is not yolo"
+            )
+            self.yolo_priority_mode = False
         self.base_frame_id = str(self.get_parameter("base_frame_id").value)
         self.source_name = str(self.get_parameter("source_name").value)
         self.publish_empty_optional_topics = bool(
@@ -608,7 +617,8 @@ class CameraPerceptionNode(Node):
                 f"classes={self.yolo_lane_segmenter.class_names}, "
                 f"device={self.yolo_lane_segmenter.device}, "
                 f"image_size={self.yolo_lane_segmenter.image_size}, "
-                f"cpu_threads={self.yolo_lane_segmenter.cpu_threads}"
+                f"cpu_threads={self.yolo_lane_segmenter.cpu_threads}, "
+                f"priority_mode={self.yolo_priority_mode}"
             )
 
         self.road_segments_pub = self.create_publisher(
@@ -933,6 +943,9 @@ class CameraPerceptionNode(Node):
 
         centerline = self.build_centerline(header, left_segment, right_segment, yellow_segment)
         self.draw_centerline_on_debug(debug, centerline, center_x, roi_top, roi_bottom)
+        yolo_priority = (
+            self.lane_segmentation_backend == "yolo" and self.yolo_priority_mode
+        )
         canonical_common = dict(
             valid_mask=valid_mask,
             lateral_m_per_px=self.lateral_m_per_px,
@@ -945,10 +958,14 @@ class CameraPerceptionNode(Node):
             line_width_px=self.canonical_line_width_px,
             min_component_area_px=self.canonical_min_component_area_px,
             white_max_component_thickness_px=(
-                self.canonical_white_max_component_thickness_px
+                0.0
+                if yolo_priority
+                else self.canonical_white_max_component_thickness_px
             ),
             yellow_max_component_thickness_px=(
-                self.canonical_yellow_max_component_thickness_px
+                0.0
+                if yolo_priority
+                else self.canonical_yellow_max_component_thickness_px
             ),
             geometry_filter_enabled=self.canonical_geometry_filter_enabled,
             white_min_line_span_px=self.canonical_white_min_line_span_px,

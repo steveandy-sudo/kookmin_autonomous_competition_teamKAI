@@ -1,0 +1,4814 @@
+<sdf version='1.10'>
+  <world name='kookmin_xycar_track'>
+    <gravity>0 0 -9.8000000000000007</gravity>
+    <magnetic_field>6.0000000000000002e-06 2.3e-05 -4.1999999999999998e-05</magnetic_field>
+    <atmosphere type='adiabatic'/>
+    <physics name='default_physics' default='true' type='ignored'>
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+    </physics>
+    <plugin name='gz::sim::systems::Physics' filename='gz-sim-physics-system'/>
+    <plugin name='gz::sim::systems::UserCommands' filename='gz-sim-user-commands-system'/>
+    <plugin name='gz::sim::systems::SceneBroadcaster' filename='gz-sim-scene-broadcaster-system'/>
+    <plugin name='gz::sim::systems::Sensors' filename='gz-sim-sensors-system'>
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <scene>
+      <ambient>0.75 0.75 0.75 1</ambient>
+      <background>0.819999993 0.839999974 0.860000014 1</background>
+      <shadows>false</shadows>
+    </scene>
+    <model name='kookmin_track'>
+      <static>true</static>
+      <pose>0 0 0 0 0 0</pose>
+      <link name='floor_base'>
+        <pose>0 0 -0.014999999999999999 0 0 0</pose>
+        <collision name='collision'>
+          <geometry>
+            <box>
+              <size>22.5 13.5 0.029999999999999999</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>50</mu>
+                <mu2>50</mu2>
+              </ode>
+              <bullet>
+                <friction>1</friction>
+                <rolling_friction>0.10000000000000001</rolling_friction>
+              </bullet>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>22.5 13.5 0.029999999999999999</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.611800015 0.615700006 0.592199981 1</ambient>
+            <diffuse>0.611800015 0.615700006 0.592199981 1</diffuse>
+          </material>
+        </visual>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <link name='track_texture_surface'>
+        <pose>0 0 0.0060000000000000001 0 0 0</pose>
+        <visual name='visual'>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>22.5 13.5</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_track_road.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_01'>
+      <static>true</static>
+      <pose>-5.0048627853393555 -0.46876698732376099 0.014000000432133675 0 0 0</pose>
+      <link name='white_line_cad_01_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.13 3.1200000000000001</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_01.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_02'>
+      <static>true</static>
+      <pose>-4.1487832069396973 -0.43999999761581421 0.014200000092387199 0 0 0</pose>
+      <link name='white_line_cad_02_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.13 3.1200000000000001</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_02.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_03'>
+      <static>true</static>
+      <pose>-0.22653511166572571 -3.741569995880127 0.014399999752640724 0 0 0</pose>
+      <link name='white_line_cad_03_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>5.7400000000000002 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_03.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_04'>
+      <static>true</static>
+      <pose>-0.34999999403953552 -2.922374963760376 0.014600000344216824 0 0 0</pose>
+      <link name='white_line_cad_04_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>5.7400000000000002 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_04.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_05'>
+      <static>true</static>
+      <pose>-0.34999999999999998 2.0550000000000002 0.014800000000000001 0 0 0</pose>
+      <link name='white_line_cad_05_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>5.7800000000000002 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_05.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_06'>
+      <static>true</static>
+      <pose>-0.34999999999999998 2.8650000000000002 0.014999999999999999 0 0 0</pose>
+      <link name='white_line_cad_06_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>5.7800000000000002 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_06.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_07'>
+      <static>true</static>
+      <pose>2.8650000000000002 -2.3149999999999999 0.0152 0 0 0</pose>
+      <link name='white_line_cad_07_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.19 0.70999999999999996</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_07.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_08'>
+      <static>true</static>
+      <pose>2.645 -2.7749999999999999 0.0154 0 0 0</pose>
+      <link name='white_line_cad_08_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.51000000000000001 0.45000000000000001</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_08.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_09'>
+      <static>true</static>
+      <pose>3.0699999999999998 -3.2599999999999998 0.015599999999999999 0 0 0</pose>
+      <link name='white_line_cad_09_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>1.22 1.0600000000000001</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_09.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_10'>
+      <static>true</static>
+      <pose>3.6299999999999999 -2.3199999999999998 0.015800000000000002 0 0 0</pose>
+      <link name='white_line_cad_10_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.23999999999999999 1.28</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_10.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_11'>
+      <static>true</static>
+      <pose>3.5350000000000001 -1.645 0.016 0 0 0</pose>
+      <link name='white_line_cad_11_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.23000000000000001 0.31</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_11.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_12'>
+      <static>true</static>
+      <pose>2.8149999999999999 1.4450000000000001 0.016199999999999999 0 0 0</pose>
+      <link name='white_line_cad_12_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.19 0.70999999999999996</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_12.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_13'>
+      <static>true</static>
+      <pose>2.6000000000000001 0.97499999999999998 0.016400000000000001 0 0 0</pose>
+      <link name='white_line_cad_13_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.52000000000000002 0.46999999999999997</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_13.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_14'>
+      <static>true</static>
+      <pose>3.02 2.3999999999999999 0.0166 0 0 0</pose>
+      <link name='white_line_cad_14_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>1.22 1.0600000000000001</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_14.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_15'>
+      <static>true</static>
+      <pose>3.5800000000000001 1.45 0.016799999999999999 0 0 0</pose>
+      <link name='white_line_cad_15_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.23999999999999999 1.28</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_15.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_16'>
+      <static>true</static>
+      <pose>3.4849999999999999 0.78000000000000003 0.017000000000000001 0 0 0</pose>
+      <link name='white_line_cad_16_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.23000000000000001 0.32000000000000001</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_16.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_17'>
+      <static>true</static>
+      <pose>1.8999999999999999 -0.20499999999999999 0.0172 0 0 0</pose>
+      <link name='white_line_cad_17_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.29999999999999999 1.4299999999999999</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_17.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_18'>
+      <static>true</static>
+      <pose>-3.6585278511047363 1.5645300149917603 0.017400000244379044 0 0 0</pose>
+      <link name='white_line_cad_18_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>1.1399999999999999 1.1299999999999999</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_18.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_19'>
+      <static>true</static>
+      <pose>-4.0487060546875 1.9379400014877319 0.017599999904632568 0 0 0</pose>
+      <link name='white_line_cad_19_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>2.04 1.9299999999999999</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_19.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_20'>
+      <static>true</static>
+      <pose>-3.6142799854278564 -2.4223885536193848 0.017799999564886093 0 0 0</pose>
+      <link name='white_line_cad_20_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>1.1699999999999999 1.1299999999999999</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_20.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_21'>
+      <static>true</static>
+      <pose>-3.9988181591033936 -2.8690700531005859 0.017999999225139618 0 0 0</pose>
+      <link name='white_line_cad_21_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>2.1400000000000001 1.8999999999999999</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_21.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_22'>
+      <static>true</static>
+      <pose>2.8700000000000001 -2.165 0.018200000000000001 0 0 0</pose>
+      <link name='white_line_cad_22_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.17999999999999999 0.40999999999999998</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_22.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_23'>
+      <static>true</static>
+      <pose>2.2450000000000001 -1.3400000000000001 0.0184 0 0 0</pose>
+      <link name='white_line_cad_23_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.82999999999999996 0.95999999999999996</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_23.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_24'>
+      <static>true</static>
+      <pose>2.7200000000000002 -1.885 0.018599999999999998 0 0 0</pose>
+      <link name='white_line_cad_24_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.38 0.37</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_24.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_25'>
+      <static>true</static>
+      <pose>2.1949999999999998 0.625 0.018800000000000001 0 0 0</pose>
+      <link name='white_line_cad_25_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.55000000000000004 0.48999999999999999</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_25.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_26'>
+      <static>true</static>
+      <pose>2.7549999999999999 0.065000000000000002 0.019 0 0 0</pose>
+      <link name='white_line_cad_26_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.33000000000000002 0.28999999999999998</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_26.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_27'>
+      <static>true</static>
+      <pose>3.145 0.41499999999999998 0.019199999999999998 0 0 0</pose>
+      <link name='white_line_cad_27_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.70999999999999996 0.67000000000000004</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_27.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_28'>
+      <static>true</static>
+      <pose>2.6549999999999998 -0.42999999999999999 0.019400000000000001 0 0 0</pose>
+      <link name='white_line_cad_28_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.23000000000000001 0.93999999999999995</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_28.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_29'>
+      <static>true</static>
+      <pose>3.1949999999999998 -1.2749999999999999 0.019599999999999999 0 0 0</pose>
+      <link name='white_line_cad_29_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.70999999999999996 0.67000000000000004</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_29.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_30'>
+      <static>true</static>
+      <pose>2.7999999999999998 -0.90500000000000003 0.019800000000000002 0 0 0</pose>
+      <link name='white_line_cad_30_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.34000000000000002 0.33000000000000002</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_30.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='white_line_cad_31'>
+      <static>true</static>
+      <pose>2.6299999999999999 1.905 0.02 0 0 0</pose>
+      <link name='white_line_cad_31_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.44 0.45000000000000001</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>0.949000001 0.949000001 0.925499976 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_white_line_cad_31.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_001'>
+      <static>true</static>
+      <pose>-2.3050000000000002 2.4649999999999999 0.026499999999999999 0 0 0</pose>
+      <link name='yellow_centerline_dash_001_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.42999999999999999 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_001.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_002'>
+      <static>true</static>
+      <pose>-1.7050000000000001 2.4649999999999999 0.026700000000000002 0 0 0</pose>
+      <link name='yellow_centerline_dash_002_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.42999999999999999 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_002.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_003'>
+      <static>true</static>
+      <pose>-1.105 2.4649999999999999 0.0269 0 0 0</pose>
+      <link name='yellow_centerline_dash_003_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.42999999999999999 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_003.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_004'>
+      <static>true</static>
+      <pose>-0.505 2.4649999999999999 0.027099999999999999 0 0 0</pose>
+      <link name='yellow_centerline_dash_004_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.42999999999999999 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_004.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_005'>
+      <static>true</static>
+      <pose>0.105 2.4649999999999999 0.027300000000000001 0 0 0</pose>
+      <link name='yellow_centerline_dash_005_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.42999999999999999 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_005.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_006'>
+      <static>true</static>
+      <pose>0.70499999999999996 2.4649999999999999 0.0275 0 0 0</pose>
+      <link name='yellow_centerline_dash_006_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.42999999999999999 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_006.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_007'>
+      <static>true</static>
+      <pose>1.3049999999999999 2.4649999999999999 0.027699999999999999 0 0 0</pose>
+      <link name='yellow_centerline_dash_007_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.42999999999999999 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_007.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_008'>
+      <static>true</static>
+      <pose>1.8999999999999999 2.4649999999999999 0.027900000000000001 0 0 0</pose>
+      <link name='yellow_centerline_dash_008_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.44 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_008.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_009'>
+      <static>true</static>
+      <pose>-2.928236722946167 2.4549999237060547 0.028100000694394112 0 0 0</pose>
+      <link name='yellow_centerline_dash_009_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.42999999999999999 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_009.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_010'>
+      <static>true</static>
+      <pose>2.395 2.4449999999999998 0.028299999999999999 0 0 0</pose>
+      <link name='yellow_centerline_dash_010_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.42999999999999999 0.14999999999999999</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_010.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_011'>
+      <static>true</static>
+      <pose>-3.5250000953674316 2.4000000953674316 0.028500000014901161 0 0 0.22944573427692089</pose>
+      <link name='yellow_centerline_dash_011_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.37 0.16</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_011.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_012'>
+      <static>true</static>
+      <pose>2.9649999999999999 2.1899999999999999 0.0287 0 0 0</pose>
+      <link name='yellow_centerline_dash_012_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.33000000000000002 0.34000000000000002</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_012.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_013'>
+      <static>true</static>
+      <pose>-4.0350000000000001 2.165 0.028899999999999999 0 0 0</pose>
+      <link name='yellow_centerline_dash_013_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.37 0.31</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_013.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_014'>
+      <static>true</static>
+      <pose>-4.4100000000000001 1.71 0.029100000000000001 0 0 0</pose>
+      <link name='yellow_centerline_dash_014_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.26000000000000001 0.40000000000000002</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_014.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_015'>
+      <static>true</static>
+      <pose>3.1949999999999998 1.6499999999999999 0.0293 0 0 0</pose>
+      <link name='yellow_centerline_dash_015_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.17000000000000001 0.41999999999999998</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_015.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_016'>
+      <static>true</static>
+      <pose>-4.5549999999999997 1.135 0.029499999999999998 0 0 0</pose>
+      <link name='yellow_centerline_dash_016_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.17000000000000001 0.42999999999999999</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_016.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_017'>
+      <static>true</static>
+      <pose>3.1549999999999998 1.0649999999999999 0.029700000000000001 0 0 0</pose>
+      <link name='yellow_centerline_dash_017_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.20999999999999999 0.40999999999999998</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_017.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_018'>
+      <static>true</static>
+      <pose>2.8100000000000001 0.60499999999999998 0.029899999999999999 0 0 0</pose>
+      <link name='yellow_centerline_dash_018_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.35999999999999999 0.31</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_018.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_019'>
+      <static>true</static>
+      <pose>-4.5750000000000002 0.53000000000000003 0.030099999999999998 0 0 0</pose>
+      <link name='yellow_centerline_dash_019_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.13 0.41999999999999998</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_019.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_020'>
+      <static>true</static>
+      <pose>2.3650000000000002 0.215 0.030300000000000001 0 0 0</pose>
+      <link name='yellow_centerline_dash_020_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.28999999999999998 0.37</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_020.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_021'>
+      <static>true</static>
+      <pose>-4.5750000000000002 -0.070000000000000007 0.030499999999999999 0 0 0</pose>
+      <link name='yellow_centerline_dash_021_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.13 0.41999999999999998</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_021.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_022'>
+      <static>true</static>
+      <pose>2.2400000000000002 -0.35999999999999999 0.030700000000000002 0 0 0</pose>
+      <link name='yellow_centerline_dash_022_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.14000000000000001 0.41999999999999998</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_022.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_023'>
+      <static>true</static>
+      <pose>-4.5750000000000002 -0.67000000000000004 0.0309 0 0 0</pose>
+      <link name='yellow_centerline_dash_023_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.13 0.41999999999999998</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_023.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_024'>
+      <static>true</static>
+      <pose>2.335 -0.93999999999999995 0.031099999999999999 0 0 0</pose>
+      <link name='yellow_centerline_dash_024_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.23000000000000001 0.40000000000000002</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_024.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_025'>
+      <static>true</static>
+      <pose>-4.5750000000000002 -1.27 0.031300000000000001 0 0 0</pose>
+      <link name='yellow_centerline_dash_025_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.13 0.41999999999999998</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_025.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_026'>
+      <static>true</static>
+      <pose>2.7149999999999999 -1.375 0.0315 0 0 0</pose>
+      <link name='yellow_centerline_dash_026_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.39000000000000001 0.28999999999999998</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_026.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_027'>
+      <static>true</static>
+      <pose>3.1400000000000001 -1.79 0.031699999999999999 0 0 0</pose>
+      <link name='yellow_centerline_dash_027_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.28000000000000003 0.38</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_027.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_028'>
+      <static>true</static>
+      <pose>-4.5650000000000004 -1.865 0.031899999999999998 0 0 0</pose>
+      <link name='yellow_centerline_dash_028_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.14999999999999999 0.40999999999999998</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_028.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_029'>
+      <static>true</static>
+      <pose>3.2650000000000001 -2.3599999999999999 0.032099999999999997 0 0 0</pose>
+      <link name='yellow_centerline_dash_029_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.14999999999999999 0.41999999999999998</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_029.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_030'>
+      <static>true</static>
+      <pose>-4.4649999999999999 -2.4500000000000002 0.032300000000000002 0 0 0</pose>
+      <link name='yellow_centerline_dash_030_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.23000000000000001 0.40000000000000002</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_030.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_031'>
+      <static>true</static>
+      <pose>3.1150000000000002 -2.9300000000000002 0.032500000000000001 0 0 0</pose>
+      <link name='yellow_centerline_dash_031_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.27000000000000002 0.38</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_031.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_032'>
+      <static>true</static>
+      <pose>-4.1399999999999997 -2.9449999999999998 0.0327 0 0 0</pose>
+      <link name='yellow_centerline_dash_032_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.34000000000000002 0.33000000000000002</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_032.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_033'>
+      <static>true</static>
+      <pose>-3.6299999999999999 -3.2400000000000002 0.032899999999999999 0 0 0</pose>
+      <link name='yellow_centerline_dash_033_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.41999999999999998 0.22</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_033.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_034'>
+      <static>true</static>
+      <pose>2.7546629905700684 -3.2555220127105713 0.033100001513957977 0 0 0.42480900877644712</pose>
+      <link name='yellow_centerline_dash_034_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.39000000000000001 0.14999999999999999</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_034.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_035'>
+      <static>true</static>
+      <pose>-3.1150000000000002 -3.3050000000000002 0.033300000000000003 0 0 0</pose>
+      <link name='yellow_centerline_dash_035_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.42999999999999999 0.14999999999999999</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_035.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_036'>
+      <static>true</static>
+      <pose>-2.3050000000000002 -3.3149999999999999 0.033500000000000002 0 0 0</pose>
+      <link name='yellow_centerline_dash_036_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.42999999999999999 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_036.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_037'>
+      <static>true</static>
+      <pose>-1.7050000000000001 -3.3149999999999999 0.033700000000000001 0 0 0</pose>
+      <link name='yellow_centerline_dash_037_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.42999999999999999 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_037.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_038'>
+      <static>true</static>
+      <pose>-1.105 -3.3149999999999999 0.0339 0 0 0</pose>
+      <link name='yellow_centerline_dash_038_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.42999999999999999 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_038.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_039'>
+      <static>true</static>
+      <pose>-0.505 -3.3149999999999999 0.034099999999999998 0 0 0</pose>
+      <link name='yellow_centerline_dash_039_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.42999999999999999 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_039.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_040'>
+      <static>true</static>
+      <pose>0.105 -3.3149999999999999 0.034299999999999997 0 0 0</pose>
+      <link name='yellow_centerline_dash_040_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.42999999999999999 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_040.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_041'>
+      <static>true</static>
+      <pose>0.70499999999999996 -3.3149999999999999 0.034500000000000003 0 0 0</pose>
+      <link name='yellow_centerline_dash_041_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.42999999999999999 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_041.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_042'>
+      <static>true</static>
+      <pose>1.3049999999999999 -3.3149999999999999 0.034700000000000002 0 0 0</pose>
+      <link name='yellow_centerline_dash_042_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.42999999999999999 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_042.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_043'>
+      <static>true</static>
+      <pose>1.8999999999999999 -3.3149999999999999 0.0349 0 0 0</pose>
+      <link name='yellow_centerline_dash_043_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.44 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_043.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='yellow_centerline_dash_044'>
+      <static>true</static>
+      <pose>2.3149999999999999 -3.3250000000000002 0.035099999999999999 0 0 0</pose>
+      <link name='yellow_centerline_dash_044_surface'>
+        <visual name='visual'>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>0.42999999999999999 0.13</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <emissive>1 0.768599987 0.0471000001 1</emissive>
+            <pbr>
+              <metal>
+                <albedo_map>file://media/materials/textures/kookmin_yellow_centerline_dash_044.png</albedo_map>
+                <roughness>1</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_north_wall'>
+      <static>true</static>
+      <pose>0 6.7000000000000002 0.90000000000000002 0 0 0</pose>
+      <link name='north_wall'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>22.300000000000001 0.059999999999999998 1.7</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.862699986 0.870599985 0.83920002 1</ambient>
+            <diffuse>0.862699986 0.870599985 0.83920002 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_south_wall'>
+      <static>true</static>
+      <pose>0 -6.7000000000000002 0.90000000000000002 0 0 0</pose>
+      <link name='south_wall'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>22.300000000000001 0.059999999999999998 1.7</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.862699986 0.870599985 0.83920002 1</ambient>
+            <diffuse>0.862699986 0.870599985 0.83920002 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_east_wall'>
+      <static>true</static>
+      <pose>11.1 0 0.90000000000000002 0 0 0</pose>
+      <link name='east_wall'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>0.059999999999999998 13.199999999999999 1.7</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.862699986 0.870599985 0.83920002 1</ambient>
+            <diffuse>0.862699986 0.870599985 0.83920002 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_west_wall'>
+      <static>true</static>
+      <pose>-11.1 0 0.90000000000000002 0 0 0</pose>
+      <link name='west_wall'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>0.059999999999999998 13.199999999999999 1.7</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.862699986 0.870599985 0.83920002 1</ambient>
+            <diffuse>0.862699986 0.870599985 0.83920002 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_north_wood_band'>
+      <static>true</static>
+      <pose>0 6.6399999999999997 0.20000000000000001 0 0 0</pose>
+      <link name='north_wood_band'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>22.100000000000001 0.080000000000000002 0.40000000000000002</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.392199993 0.305900007 0.196099997 1</ambient>
+            <diffuse>0.392199993 0.305900007 0.196099997 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_south_wood_band'>
+      <static>true</static>
+      <pose>0 -6.6399999999999997 0.20000000000000001 0 0 0</pose>
+      <link name='south_wood_band'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>22.100000000000001 0.080000000000000002 0.40000000000000002</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.392199993 0.305900007 0.196099997 1</ambient>
+            <diffuse>0.392199993 0.305900007 0.196099997 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_locker_bank'>
+      <static>true</static>
+      <pose>7.4000000000000004 5.9500000000000002 0.69999999999999996 0 0 0</pose>
+      <link name='locker_bank'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>4 0.17999999999999999 1.1499999999999999</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.188199997 0.196099997 0.196099997 1</ambient>
+            <diffuse>0.188199997 0.196099997 0.196099997 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_black_display_stand'>
+      <static>true</static>
+      <pose>-7 4.9000000000000004 0.75 0 0 0</pose>
+      <link name='black_display_stand'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>1.3999999999999999 0.17999999999999999 1.1000000000000001</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.188199997 0.196099997 0.196099997 1</ambient>
+            <diffuse>0.188199997 0.196099997 0.196099997 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_orange_cone_reference'>
+      <static>true</static>
+      <pose>6.4000000000000004 -3.7000000000000002 0.17999999999999999 0 0 0</pose>
+      <link name='orange_cone_reference'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>0.17999999999999999 0.17999999999999999 0.35999999999999999</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.862699986 0.313699991 0.0940999985 1</ambient>
+            <diffuse>0.862699986 0.313699991 0.0940999985 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_table_top_0'>
+      <static>true</static>
+      <pose>-6.502993106842041 1 0.43000000715255737 0 0 0</pose>
+      <link name='table_top_0'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>1.3 0.62 0.059999999999999998</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.494100004 0.384299994 0.247099996 1</ambient>
+            <diffuse>0.494100004 0.384299994 0.247099996 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_chair_back_0'>
+      <static>true</static>
+      <pose>-5.4000000953674316 2.5379874706268311 0.41999998688697815 0 0 0</pose>
+      <link name='chair_back_0'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>0.55000000000000004 0.080000000000000002 0.52000000000000002</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.0940999985 0.0979999974 0.101999998 1</ambient>
+            <diffuse>0.0940999985 0.0979999974 0.101999998 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_chair_seat_0'>
+      <static>true</static>
+      <pose>-5.4000000953674316 3.247067928314209 0.25999999046325684 0 0 0</pose>
+      <link name='chair_seat_0'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>0.47999999999999998 0.40000000000000002 0.080000000000000002</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.0940999985 0.0979999974 0.101999998 1</ambient>
+            <diffuse>0.0940999985 0.0979999974 0.101999998 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_table_top_1'>
+      <static>true</static>
+      <pose>-2.8238728046417236 -0.33797898888587952 0.43000000715255737 0 0 0</pose>
+      <link name='table_top_1'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>1.3 0.62 0.059999999999999998</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.494100004 0.384299994 0.247099996 1</ambient>
+            <diffuse>0.494100004 0.384299994 0.247099996 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_chair_back_1'>
+      <static>true</static>
+      <pose>-3.6000000000000001 1.4299999999999999 0.41999999999999998 0 0 0</pose>
+      <link name='chair_back_1'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>0.55000000000000004 0.080000000000000002 0.52000000000000002</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.0940999985 0.0979999974 0.101999998 1</ambient>
+            <diffuse>0.0940999985 0.0979999974 0.101999998 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_chair_seat_1'>
+      <static>true</static>
+      <pose>-3.6000000000000001 1.3400000000000001 0.26000000000000001 0 0 0</pose>
+      <link name='chair_seat_1'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>0.47999999999999998 0.40000000000000002 0.080000000000000002</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.0940999985 0.0979999974 0.101999998 1</ambient>
+            <diffuse>0.0940999985 0.0979999974 0.101999998 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_table_top_2'>
+      <static>true</static>
+      <pose>-1.8 1 0.42999999999999999 0 0 0</pose>
+      <link name='table_top_2'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>1.3 0.62 0.059999999999999998</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.494100004 0.384299994 0.247099996 1</ambient>
+            <diffuse>0.494100004 0.384299994 0.247099996 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_chair_back_2'>
+      <static>true</static>
+      <pose>-1.8 1.4299999999999999 0.41999999999999998 0 0 0</pose>
+      <link name='chair_back_2'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>0.55000000000000004 0.080000000000000002 0.52000000000000002</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.0940999985 0.0979999974 0.101999998 1</ambient>
+            <diffuse>0.0940999985 0.0979999974 0.101999998 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_chair_seat_2'>
+      <static>true</static>
+      <pose>-1.8 1.3400000000000001 0.26000000000000001 0 0 0</pose>
+      <link name='chair_seat_2'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>0.47999999999999998 0.40000000000000002 0.080000000000000002</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.0940999985 0.0979999974 0.101999998 1</ambient>
+            <diffuse>0.0940999985 0.0979999974 0.101999998 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_table_top_3'>
+      <static>true</static>
+      <pose>0 1 0.42999999999999999 0 0 0</pose>
+      <link name='table_top_3'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>1.3 0.62 0.059999999999999998</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.494100004 0.384299994 0.247099996 1</ambient>
+            <diffuse>0.494100004 0.384299994 0.247099996 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_chair_back_3'>
+      <static>true</static>
+      <pose>0 1.4299999999999999 0.41999999999999998 0 0 0</pose>
+      <link name='chair_back_3'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>0.55000000000000004 0.080000000000000002 0.52000000000000002</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.0940999985 0.0979999974 0.101999998 1</ambient>
+            <diffuse>0.0940999985 0.0979999974 0.101999998 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_chair_seat_3'>
+      <static>true</static>
+      <pose>0 1.3400000000000001 0.26000000000000001 0 0 0</pose>
+      <link name='chair_seat_3'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>0.47999999999999998 0.40000000000000002 0.080000000000000002</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.0940999985 0.0979999974 0.101999998 1</ambient>
+            <diffuse>0.0940999985 0.0979999974 0.101999998 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_table_top_4'>
+      <static>true</static>
+      <pose>1.8 1 0.42999999999999999 0 0 0</pose>
+      <link name='table_top_4'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>1.3 0.62 0.059999999999999998</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.494100004 0.384299994 0.247099996 1</ambient>
+            <diffuse>0.494100004 0.384299994 0.247099996 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_chair_back_4'>
+      <static>true</static>
+      <pose>1.8 1.4299999999999999 0.41999999999999998 0 0 0</pose>
+      <link name='chair_back_4'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>0.55000000000000004 0.080000000000000002 0.52000000000000002</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.0940999985 0.0979999974 0.101999998 1</ambient>
+            <diffuse>0.0940999985 0.0979999974 0.101999998 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_chair_seat_4'>
+      <static>true</static>
+      <pose>1.8 1.3400000000000001 0.26000000000000001 0 0 0</pose>
+      <link name='chair_seat_4'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>0.47999999999999998 0.40000000000000002 0.080000000000000002</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.0940999985 0.0979999974 0.101999998 1</ambient>
+            <diffuse>0.0940999985 0.0979999974 0.101999998 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_ceiling_light_0'>
+      <static>true</static>
+      <pose>-8 0.5 2.1499999999999999 0 0 0.20000000000000009</pose>
+      <link name='ceiling_light_0'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>1.1000000000000001 0.055 0.035000000000000003</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.960799992 0.960799992 0.921599984 1</ambient>
+            <diffuse>0.960799992 0.960799992 0.921599984 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_ceiling_light_1'>
+      <static>true</static>
+      <pose>-5.7000000000000002 2.2000000000000002 2.1499999999999999 0 0 -0.14999999999999988</pose>
+      <link name='ceiling_light_1'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>1.1000000000000001 0.055 0.035000000000000003</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.960799992 0.960799992 0.921599984 1</ambient>
+            <diffuse>0.960799992 0.960799992 0.921599984 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_ceiling_light_2'>
+      <static>true</static>
+      <pose>-3.3999999999999999 3.8999999999999999 2.1499999999999999 0 0 0.20000000000000009</pose>
+      <link name='ceiling_light_2'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>1.1000000000000001 0.055 0.035000000000000003</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.960799992 0.960799992 0.921599984 1</ambient>
+            <diffuse>0.960799992 0.960799992 0.921599984 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_ceiling_light_3'>
+      <static>true</static>
+      <pose>-1.1000000000000001 0.5 2.1499999999999999 0 0 -0.14999999999999988</pose>
+      <link name='ceiling_light_3'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>1.1000000000000001 0.055 0.035000000000000003</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.960799992 0.960799992 0.921599984 1</ambient>
+            <diffuse>0.960799992 0.960799992 0.921599984 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_ceiling_light_4'>
+      <static>true</static>
+      <pose>1.2 2.2000000000000002 2.1499999999999999 0 0 0.20000000000000009</pose>
+      <link name='ceiling_light_4'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>1.1000000000000001 0.055 0.035000000000000003</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.960799992 0.960799992 0.921599984 1</ambient>
+            <diffuse>0.960799992 0.960799992 0.921599984 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_ceiling_light_5'>
+      <static>true</static>
+      <pose>3.5 3.8999999999999999 2.1499999999999999 0 0 -0.14999999999999988</pose>
+      <link name='ceiling_light_5'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>1.1000000000000001 0.055 0.035000000000000003</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.960799992 0.960799992 0.921599984 1</ambient>
+            <diffuse>0.960799992 0.960799992 0.921599984 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_ceiling_light_6'>
+      <static>true</static>
+      <pose>5.7999999999999998 0.5 2.1499999999999999 0 0 0.20000000000000009</pose>
+      <link name='ceiling_light_6'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>1.1000000000000001 0.055 0.035000000000000003</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.960799992 0.960799992 0.921599984 1</ambient>
+            <diffuse>0.960799992 0.960799992 0.921599984 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='room_ceiling_light_7'>
+      <static>true</static>
+      <pose>8.0999999999999996 2.2000000000000002 2.1499999999999999 0 0 -0.14999999999999988</pose>
+      <link name='ceiling_light_7'>
+        <visual name='visual'>
+          <geometry>
+            <box>
+              <size>1.1000000000000001 0.055 0.035000000000000003</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.960799992 0.960799992 0.921599984 1</ambient>
+            <diffuse>0.960799992 0.960799992 0.921599984 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='xycar_ackermann'>
+      <pose>-2.7000 2.2500 0.0500 0 0 0</pose>
+      <link name='chassis'>
+        <pose>0 0 0.13500000000000001 0 0 0</pose>
+        <inertial>
+          <mass>2.2000000000000002</mass>
+          <inertia>
+            <ixx>0.055</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>0.13</iyy>
+            <iyz>0</iyz>
+            <izz>0.16</izz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <collision name='collision'>
+          <geometry>
+            <box>
+              <size>0.55000000000000004 0.29999999999999999 0.12</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <visual name='body'>
+          <visibility_flags>2</visibility_flags>
+          <geometry>
+            <box>
+              <size>0.55000000000000004 0.29999999999999999 0.12</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.100000001 0.280000001 0.800000012 1</ambient>
+            <diffuse>0.100000001 0.280000001 0.800000012 1</diffuse>
+          </material>
+        </visual>
+        <visual name='mini_pc_body'>
+          <visibility_flags>2</visibility_flags>
+          <pose>-0.02 0 0.115 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.17000000000000001 0.13 0.070000000000000007</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.0199999996 0.0199999996 0.0199999996 1</ambient>
+            <diffuse>0.0199999996 0.0199999996 0.0199999996 1</diffuse>
+          </material>
+        </visual>
+        <visual name='lidar_body'>
+          <pose>0.22500000000000001 0 -0.012500000000000001 0 0 0</pose>
+          <geometry>
+            <cylinder>
+              <length>0.035000000000000003</length>
+              <radius>0.040000000000000001</radius>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.00999999978 0.00999999978 0.00999999978 1</ambient>
+            <diffuse>0.00999999978 0.00999999978 0.00999999978 1</diffuse>
+          </material>
+        </visual>
+        <sensor name='front_camera' type='camera'>
+          <pose>0.12 0 0.095 0 0.10000000000000001 0</pose>
+          <topic>/image_raw</topic>
+          <update_rate>30</update_rate>
+          <enable_metrics>false</enable_metrics>
+          <camera name='__default__'>
+            <pose>0 0 0 0 0 0</pose>
+            <horizontal_fov>1.7968</horizontal_fov>
+            <image>
+              <width>1280</width>
+              <height>1024</height>
+              <format>RGB_INT8</format>
+              <anti_aliasing>4</anti_aliasing>
+            </image>
+            <camera_info_topic>/camera_info</camera_info_topic>
+            <trigger_topic></trigger_topic>
+            <triggered>false</triggered>
+            <clip>
+              <near>0.029999999999999999</near>
+              <far>20</far>
+            </clip>
+            <save enabled='false'>
+              <path>__default__</path>
+            </save>
+            <visibility_mask>4294967293</visibility_mask>
+            <noise>
+              <type>none</type>
+              <mean>0</mean>
+              <stddev>0</stddev>
+            </noise>
+            <distortion>
+              <k1>0</k1>
+              <k2>0</k2>
+              <k3>0</k3>
+              <p1>0</p1>
+              <p2>0</p2>
+              <center>0.5 0.5</center>
+            </distortion>
+            <lens>
+              <type>equidistant</type>
+              <scale_to_hfov>true</scale_to_hfov>
+              <cutoff_angle>1.5707963267948966</cutoff_angle>
+              <env_texture_size>512</env_texture_size>
+            </lens>
+            <optical_frame_id></optical_frame_id>
+          </camera>
+        </sensor>
+        <sensor name='lidar' type='gpu_lidar'>
+          <pose>0.22500000000000001 0 0.0050000000000000001 0 0 0</pose>
+          <topic>/scan</topic>
+          <update_rate>10</update_rate>
+          <enable_metrics>false</enable_metrics>
+          <lidar>
+            <scan>
+              <horizontal>
+                <samples>505</samples>
+                <resolution>1</resolution>
+                <min_angle>-3.1415899999999999</min_angle>
+                <max_angle>3.1415899999999999</max_angle>
+              </horizontal>
+              <vertical>
+                <samples>1</samples>
+                <min_angle>0</min_angle>
+                <max_angle>0</max_angle>
+                <resolution>1</resolution>
+              </vertical>
+            </scan>
+            <range>
+              <min>0.10000000000000001</min>
+              <max>12</max>
+              <resolution>0.01</resolution>
+            </range>
+            <noise>
+              <type>none</type>
+              <mean>0</mean>
+              <stddev>0</stddev>
+            </noise>
+            <visibility_mask>4294967295</visibility_mask>
+          </lidar>
+        </sensor>
+        <enable_wind>false</enable_wind>
+      </link>
+      <link name='front_left_wheel_steering_link'>
+        <pose>0.16000000000000014 0.12000000000000011 0.059999999999999998 0 0 0</pose>
+        <inertial>
+          <mass>0.080000000000000002</mass>
+          <inertia>
+            <ixx>0.00020000000000000001</ixx>
+            <iyy>0.00020000000000000001</iyy>
+            <izz>0.00020000000000000001</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <link name='front_right_wheel_steering_link'>
+        <pose>0.16000000000000014 -0.12000000000000011 0.059999999999999998 0 0 0</pose>
+        <inertial>
+          <mass>0.080000000000000002</mass>
+          <inertia>
+            <ixx>0.00020000000000000001</ixx>
+            <iyy>0.00020000000000000001</iyy>
+            <izz>0.00020000000000000001</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <link name='front_left_wheel'>
+        <pose>0.16000000000000014 0.13250000000000028 0.059999999999999998 -1.5706999999999995 0 0</pose>
+        <inertial>
+          <mass>0.12</mass>
+          <inertia>
+            <ixx>0.00040000000000000002</ixx>
+            <iyy>0.00040000000000000002</iyy>
+            <izz>0.00025000000000000001</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <collision name='collision'>
+          <geometry>
+            <cylinder>
+              <length>0.035000000000000003</length>
+              <radius>0.059999999999999998</radius>
+            </cylinder>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <visual name='visual'>
+          <visibility_flags>2</visibility_flags>
+          <geometry>
+            <cylinder>
+              <length>0.035000000000000003</length>
+              <radius>0.059999999999999998</radius>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0299999993 0.0299999993 0.0299999993 1</ambient>
+            <diffuse>0.0299999993 0.0299999993 0.0299999993 1</diffuse>
+          </material>
+        </visual>
+        <enable_wind>false</enable_wind>
+      </link>
+      <link name='front_right_wheel'>
+        <pose>0.16000000000000014 -0.13250000000000028 0.059999999999999998 -1.5706999999999995 0 0</pose>
+        <inertial>
+          <mass>0.12</mass>
+          <inertia>
+            <ixx>0.00040000000000000002</ixx>
+            <iyy>0.00040000000000000002</iyy>
+            <izz>0.00025000000000000001</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <collision name='collision'>
+          <geometry>
+            <cylinder>
+              <length>0.035000000000000003</length>
+              <radius>0.059999999999999998</radius>
+            </cylinder>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <visual name='visual'>
+          <visibility_flags>2</visibility_flags>
+          <geometry>
+            <cylinder>
+              <length>0.035000000000000003</length>
+              <radius>0.059999999999999998</radius>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0299999993 0.0299999993 0.0299999993 1</ambient>
+            <diffuse>0.0299999993 0.0299999993 0.0299999993 1</diffuse>
+          </material>
+        </visual>
+        <enable_wind>false</enable_wind>
+      </link>
+      <link name='rear_left_wheel'>
+        <pose>-0.16000000000000014 0.13250000000000028 0.059999999999999998 -1.5706999999999995 0 0</pose>
+        <inertial>
+          <mass>0.12</mass>
+          <inertia>
+            <ixx>0.00040000000000000002</ixx>
+            <iyy>0.00040000000000000002</iyy>
+            <izz>0.00025000000000000001</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <collision name='collision'>
+          <geometry>
+            <cylinder>
+              <length>0.035000000000000003</length>
+              <radius>0.059999999999999998</radius>
+            </cylinder>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <visual name='visual'>
+          <visibility_flags>2</visibility_flags>
+          <geometry>
+            <cylinder>
+              <length>0.035000000000000003</length>
+              <radius>0.059999999999999998</radius>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0299999993 0.0299999993 0.0299999993 1</ambient>
+            <diffuse>0.0299999993 0.0299999993 0.0299999993 1</diffuse>
+          </material>
+        </visual>
+        <enable_wind>false</enable_wind>
+      </link>
+      <link name='rear_right_wheel'>
+        <pose>-0.16000000000000014 -0.13250000000000028 0.059999999999999998 -1.5706999999999995 0 0</pose>
+        <inertial>
+          <mass>0.12</mass>
+          <inertia>
+            <ixx>0.00040000000000000002</ixx>
+            <iyy>0.00040000000000000002</iyy>
+            <izz>0.00025000000000000001</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <collision name='collision'>
+          <geometry>
+            <cylinder>
+              <length>0.035000000000000003</length>
+              <radius>0.059999999999999998</radius>
+            </cylinder>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <visual name='visual'>
+          <visibility_flags>2</visibility_flags>
+          <geometry>
+            <cylinder>
+              <length>0.035000000000000003</length>
+              <radius>0.059999999999999998</radius>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0299999993 0.0299999993 0.0299999993 1</ambient>
+            <diffuse>0.0299999993 0.0299999993 0.0299999993 1</diffuse>
+          </material>
+        </visual>
+        <enable_wind>false</enable_wind>
+      </link>
+      <joint name='front_left_wheel_steering_joint' type='revolute'>
+        <parent>chassis</parent>
+        <child>front_left_wheel_steering_link</child>
+        <axis>
+          <xyz>0 0 1</xyz>
+          <limit>
+            <lower>-0.69999999999999996</lower>
+            <upper>0.69999999999999996</upper>
+            <effort>8</effort>
+            <velocity>2</velocity>
+            <stiffness>100000000</stiffness>
+            <dissipation>1</dissipation>
+          </limit>
+          <dynamics>
+            <spring_reference>0</spring_reference>
+            <spring_stiffness>0</spring_stiffness>
+            <damping>0</damping>
+            <friction>0</friction>
+          </dynamics>
+        </axis>
+        <pose>0 0 0 0 0 0</pose>
+      </joint>
+      <joint name='front_right_wheel_steering_joint' type='revolute'>
+        <parent>chassis</parent>
+        <child>front_right_wheel_steering_link</child>
+        <axis>
+          <xyz>0 0 1</xyz>
+          <limit>
+            <lower>-0.69999999999999996</lower>
+            <upper>0.69999999999999996</upper>
+            <effort>8</effort>
+            <velocity>2</velocity>
+            <stiffness>100000000</stiffness>
+            <dissipation>1</dissipation>
+          </limit>
+          <dynamics>
+            <spring_reference>0</spring_reference>
+            <spring_stiffness>0</spring_stiffness>
+            <damping>0</damping>
+            <friction>0</friction>
+          </dynamics>
+        </axis>
+        <pose>0 0 0 0 0 0</pose>
+      </joint>
+      <joint name='front_left_wheel_joint' type='revolute'>
+        <parent>front_left_wheel_steering_link</parent>
+        <child>front_left_wheel</child>
+        <axis>
+          <xyz>0 0 1</xyz>
+          <limit>
+            <lower>-1.7976900000000001e+308</lower>
+            <upper>1.7976900000000001e+308</upper>
+            <effort>inf</effort>
+            <velocity>inf</velocity>
+            <stiffness>100000000</stiffness>
+            <dissipation>1</dissipation>
+          </limit>
+          <dynamics>
+            <spring_reference>0</spring_reference>
+            <spring_stiffness>0</spring_stiffness>
+            <damping>0</damping>
+            <friction>0</friction>
+          </dynamics>
+        </axis>
+        <pose>0 -6.2450045135165055e-17 2.7755575615628914e-17 0 0 0</pose>
+      </joint>
+      <joint name='front_right_wheel_joint' type='revolute'>
+        <parent>front_right_wheel_steering_link</parent>
+        <child>front_right_wheel</child>
+        <axis>
+          <xyz>0 0 1</xyz>
+          <limit>
+            <lower>-1.7976900000000001e+308</lower>
+            <upper>1.7976900000000001e+308</upper>
+            <effort>inf</effort>
+            <velocity>inf</velocity>
+            <stiffness>100000000</stiffness>
+            <dissipation>1</dissipation>
+          </limit>
+          <dynamics>
+            <spring_reference>0</spring_reference>
+            <spring_stiffness>0</spring_stiffness>
+            <damping>0</damping>
+            <friction>0</friction>
+          </dynamics>
+        </axis>
+        <pose>0 2.0816681711721685e-17 -2.7755575615628914e-17 0 0 0</pose>
+      </joint>
+      <joint name='rear_left_wheel_joint' type='revolute'>
+        <parent>chassis</parent>
+        <child>rear_left_wheel</child>
+        <axis>
+          <xyz>0 0 1</xyz>
+          <limit>
+            <lower>-1.7976900000000001e+308</lower>
+            <upper>1.7976900000000001e+308</upper>
+            <effort>inf</effort>
+            <velocity>inf</velocity>
+            <stiffness>100000000</stiffness>
+            <dissipation>1</dissipation>
+          </limit>
+          <dynamics>
+            <spring_reference>0</spring_reference>
+            <spring_stiffness>0</spring_stiffness>
+            <damping>0</damping>
+            <friction>0</friction>
+          </dynamics>
+        </axis>
+        <pose>0 -6.2450045135165055e-17 2.7755575615628914e-17 0 0 0</pose>
+      </joint>
+      <joint name='rear_right_wheel_joint' type='revolute'>
+        <parent>chassis</parent>
+        <child>rear_right_wheel</child>
+        <axis>
+          <xyz>0 0 1</xyz>
+          <limit>
+            <lower>-1.7976900000000001e+308</lower>
+            <upper>1.7976900000000001e+308</upper>
+            <effort>inf</effort>
+            <velocity>inf</velocity>
+            <stiffness>100000000</stiffness>
+            <dissipation>1</dissipation>
+          </limit>
+          <dynamics>
+            <spring_reference>0</spring_reference>
+            <spring_stiffness>0</spring_stiffness>
+            <damping>0</damping>
+            <friction>0</friction>
+          </dynamics>
+        </axis>
+        <pose>0 2.0816681711721685e-17 -2.7755575615628914e-17 0 0 0</pose>
+      </joint>
+      <plugin name='gz::sim::systems::AckermannSteering' filename='gz-sim-ackermann-steering-system'>
+        <left_joint>front_left_wheel_joint</left_joint>
+        <left_joint>rear_left_wheel_joint</left_joint>
+        <right_joint>front_right_wheel_joint</right_joint>
+        <right_joint>rear_right_wheel_joint</right_joint>
+        <left_steering_joint>front_left_wheel_steering_joint</left_steering_joint>
+        <right_steering_joint>front_right_wheel_steering_joint</right_steering_joint>
+        <kingpin_width>0.240</kingpin_width>
+        <steering_limit>0.5600</steering_limit>
+        <wheel_base>0.32</wheel_base>
+        <wheel_separation>0.265</wheel_separation>
+        <wheel_radius>0.06</wheel_radius>
+        <min_velocity>-4.0000</min_velocity>
+        <max_velocity>8.0000</max_velocity>
+        <min_acceleration>-2</min_acceleration>
+        <max_acceleration>2</max_acceleration>
+      </plugin>
+      <static>false</static>
+      <self_collide>false</self_collide>
+    </model>
+    <light name='sun' type='directional'>
+      <pose>0 0 10 0 0 0</pose>
+      <cast_shadows>false</cast_shadows>
+      <intensity>1</intensity>
+      <direction>-0.45000000000000001 0.20000000000000001 -0.88</direction>
+      <diffuse>0.819999993 0.819999993 0.819999993 1</diffuse>
+      <specular>0.200000003 0.200000003 0.200000003 1</specular>
+      <attenuation>
+        <range>10</range>
+        <linear>1</linear>
+        <constant>1</constant>
+        <quadratic>0</quadratic>
+      </attenuation>
+      <spot>
+        <inner_angle>0</inner_angle>
+        <outer_angle>0</outer_angle>
+        <falloff>0</falloff>
+      </spot>
+    </light>
+  </world>
+</sdf>

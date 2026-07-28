@@ -16,9 +16,9 @@ defaults to shadow mode, where calculated commands are published only on
     `/wide_camera/rect/image_raw`; or
   - `sensor_msgs/msg/CompressedImage`, such as
     `/wide_camera_mjpeg/image_raw/compressed`
-- The existing ROS1 motor container and ROS1-ROS2 dynamic bridge
-- A motor subscriber accepting `std_msgs/msg/Float32MultiArray` as
-  `[angle_command, speed_command]`
+- The native ROS 2 `xycar_vesc_driver` package and exclusive access to
+  `/dev/ttyMOTOR`
+- `xycar_msgs/msg/XycarVescState` built in the same ROS 2 workspace
 - A physical emergency-stop method and enough clear floor space
 
 The lane controller does not require IMU data. Do not run
@@ -33,6 +33,8 @@ kaiev26_msgs
 xycar_perception
 xycar_rule_drive
 il_data_tools
+xycar_device/xycar_msgs
+xycar_device/xycar_vesc_driver
 ```
 
 Build and source them:
@@ -40,8 +42,9 @@ Build and source them:
 ```bash
 source /opt/ros/humble/setup.bash
 cd ~/xycar_ws
-colcon build --packages-up-to kaiev26_msgs xycar_perception xycar_rule_drive il_data_tools \
-  --symlink-install
+colcon build --packages-up-to \
+  xycar_msgs xycar_vesc_driver kaiev26_msgs xycar_perception \
+  xycar_rule_drive il_data_tools --symlink-install
 source install/setup.bash
 ```
 
@@ -53,20 +56,32 @@ export ROS_DOMAIN_ID=7
 
 ## 1. Identify the live interfaces
 
-Start the physical camera and the existing motor/bridge stack, then check:
+Stop the ROS 1 motor container and dynamic bridge. Confirm that no process owns
+the VESC port, then start the native driver with output disabled:
 
 ```bash
-ros2 topic list -t | grep -E 'image|xycar_motor'
+ros2 launch xycar_vesc_driver xycar_vesc_driver.launch.py \
+  drive_enabled:=false
+```
+
+Start the physical camera, then check:
+
+```bash
+ros2 topic list -t | grep -E 'image|xycar_motor|vesc_state'
 ros2 topic info /wide_camera/rect/image_raw -v
 ros2 topic info /wide_camera_mjpeg/image_raw/compressed -v
 ros2 topic info /xycar_motor -v
+ros2 topic hz /vehicle/vesc_state
+ros2 topic echo /diagnostics
 ```
 
 Required results:
 
 - exactly one intended camera topic is active;
 - its type is `Image` or `CompressedImage`;
-- `/xycar_motor` has the real motor bridge as a subscriber;
+- `/xycar_motor` has `xycar_vesc_driver` as its only motor subscriber;
+- VESC telemetry is close to 50 Hz with `fault_code=0`;
+- voltage is above the configured recovery threshold;
 - no other autonomous or keyboard node publishes motor commands.
 
 If the motor topic is namespaced, pass it explicitly, for example
@@ -120,6 +135,17 @@ Lift the drive wheels or otherwise secure the vehicle. Keep the launch in
 shadow mode and compare `/xycar_motor_shadow` with small manual motor tests.
 Confirm steering sign, steering center, motor direction, and that `Ctrl+C`
 causes a zero command before enabling autonomous output.
+
+Restart the native VESC driver with output explicitly enabled:
+
+```bash
+ros2 launch xycar_vesc_driver xycar_vesc_driver.launch.py \
+  drive_enabled:=true
+```
+
+Begin with zero-speed steering, followed by speed commands 1, 2, and 3. The
+native driver adds a command watchdog, acceleration slew limit, fresh-telemetry
+requirement, and low-voltage latch. Do not begin with speed 8 or 10.
 
 The launch can publish real steering while locking propulsion at zero:
 
@@ -186,8 +212,15 @@ xycar_rule_drive/config/lane_rule_driver_real.yaml
 - Stop the launch with one `Ctrl+C`; the driver publishes a zero command during
   normal shutdown.
 - If perception is missing or stale, the controller commands zero speed.
-- A process kill, ROS failure, bridge failure, or hardware fault still requires
-  the physical emergency stop and the real motor driver's own command timeout.
+- A process kill, ROS failure, serial failure, or hardware fault still requires
+  the physical emergency stop. The native driver also enforces its own command
+  and telemetry timeouts.
+- If undervoltage or another VESC fault latches motor output, remove the cause,
+  wait for `fault_code=0` and stable recovery voltage, then call:
+
+  ```bash
+  ros2 service call /vehicle/clear_motor_fault std_srvs/srv/Trigger '{}'
+  ```
 - Never run `keyboard_teleop`, another autonomous driver, and
   `real_lane_drive.launch.py drive_enabled:=true` at the same time.
 

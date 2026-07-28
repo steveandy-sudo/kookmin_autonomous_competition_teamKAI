@@ -23,6 +23,14 @@ rectification, BEV homography, and canonical normalization.
 The canonical contract is unchanged, so existing simulation-trained BC and
 TD3+BC policies do not need a new input shape.
 
+The YOLO launches enable `yolo_priority_mode` by default. In this mode the
+learned white/yellow class masks keep the measured BEV crop and canonical
+normalization. YOLO masks are the authoritative lane source, while canonical
+geometry checks and temporal tracking remain enabled to enforce coherent lane
+shape and width. Only the raw component-thickness rejection is bypassed because
+YOLO segmentation masks are naturally wider than color-threshold components.
+The standard color perception launch keeps its existing filtering behavior.
+
 ## Delivered Files
 
 - Model: `xycar_perception/models/kookmin_lane_yolo11n_512.pt`
@@ -122,6 +130,14 @@ For the normal already-rectified `sensor_msgs/Image` topic:
 
 ```bash
 ros2 launch xycar_perception real_yolo_canonical_asus.launch.py
+```
+
+To compare against the legacy thickness-limited YOLO path, explicitly disable
+priority mode in shadow only:
+
+```bash
+ros2 launch xycar_perception real_yolo_canonical_asus.launch.py \
+  yolo_priority_mode:=false
 ```
 
 For an unrectified compressed MJPEG source:
@@ -254,6 +270,7 @@ checkpoint. Its defaults are shadow-only and speed cap 3.
 
 ```bash
 ros2 launch xycar_rl real_yolo_camera_speed_shadow.launch.py \
+  yolo_priority_mode:=true \
   drive_enabled:=false deployment_speed_cap:=3.0
 ```
 

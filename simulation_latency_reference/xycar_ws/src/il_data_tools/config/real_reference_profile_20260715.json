@@ -1,0 +1,291 @@
+{
+  "aggregate_valid": {
+    "frames": 5757,
+    "steering": {
+      "abs_ge_35_ratio": 0.19491525423728814,
+      "abs_p90": 40.23660659790039,
+      "abs_p99": 41.99991226196289,
+      "left": 469,
+      "right": 309,
+      "samples": 826,
+      "straight": 48
+    },
+    "white_state_probabilities": {
+      "both": 0.4623936077818308,
+      "none": 0.025360430779920097,
+      "one": 0.5122459614382491
+    },
+    "yellow_visible_probability": 0.5713044988709397
+  },
+  "exclusion_policy": {
+    "note": "Lane-gap and turnaround intervals are excluded, not imitated.",
+    "padding_sec": 0.5,
+    "stopped_or_turnaround_min_sec": 0.5,
+    "sustained_blank_lane_min_sec": 0.6
+  },
+  "recommended_sim_visibility": {
+    "maximum_synthetic_blank_frames": 0,
+    "prevent_blank": true,
+    "white_both_probability": 0.4623936077818308,
+    "white_none_probability": 0.025360430779920097,
+    "white_one_probability": 0.5122459614382491,
+    "yellow_visible_probability": 0.5713044988709397
+  },
+  "schema_version": 1,
+  "sources": [
+    {
+      "all": {
+        "frames": 1802,
+        "steering": {
+          "abs_ge_35_ratio": null,
+          "abs_p90": null,
+          "abs_p99": null,
+          "left": 0,
+          "right": 0,
+          "samples": 0,
+          "straight": 0
+        },
+        "white_state_probabilities": {
+          "both": 0.18701442841287458,
+          "none": 0.04550499445061043,
+          "one": 0.767480577136515
+        },
+        "yellow_visible_probability": 0.525527192008879
+      },
+      "duration_sec": 72.484372964,
+      "invalid_frames": 312,
+      "invalid_intervals": [
+        {
+          "end_sec": 24.5,
+          "reason": "manual+sustained_blank_lane",
+          "start_sec": 18.5
+        },
+        {
+          "end_sec": 50.5,
+          "reason": "manual",
+          "start_sec": 45.5
+        },
+        {
+          "end_sec": 72.484372964,
+          "reason": "manual",
+          "start_sec": 71.5
+        }
+      ],
+      "source": "/home/as/xycar_kookmin_gazebo_track/datasets/real_bag_canonical/drive/real_track_run_02_temp_profile_final_20260715",
+      "source_type": "session",
+      "valid": {
+        "frames": 1490,
+        "steering": {
+          "abs_ge_35_ratio": null,
+          "abs_p90": null,
+          "abs_p99": null,
+          "left": 0,
+          "right": 0,
+          "samples": 0,
+          "straight": 0
+        },
+        "white_state_probabilities": {
+          "both": 0.1966442953020134,
+          "none": 0.022818791946308724,
+          "one": 0.7805369127516778
+        },
+        "yellow_visible_probability": 0.5590604026845638
+      }
+    },
+    {
+      "all": {
+        "frames": 3490,
+        "steering": {
+          "abs_ge_35_ratio": null,
+          "abs_p90": null,
+          "abs_p99": null,
+          "left": 0,
+          "right": 0,
+          "samples": 0,
+          "straight": 0
+        },
+        "white_state_probabilities": {
+          "both": 0.6277936962750716,
+          "none": 0.02492836676217765,
+          "one": 0.3472779369627507
+        },
+        "yellow_visible_probability": 0.5848137535816619
+      },
+      "duration_sec": 117.00281525000001,
+      "invalid_frames": 52,
+      "invalid_intervals": [
+        {
+          "end_sec": 56.497960411,
+          "reason": "sustained_blank_lane",
+          "start_sec": 54.727416968
+        }
+      ],
+      "source": "/home/as/xycar_kookmin_gazebo_track/datasets/profile_comparison/kookmin_competition_bag_unified_temp_profile_corridor_v2_20260715/competition_canonical",
+      "source_type": "image_dir",
+      "valid": {
+        "frames": 3438,
+        "steering": {
+          "abs_ge_35_ratio": null,
+          "abs_p90": null,
+          "abs_p99": null,
+          "left": 0,
+          "right": 0,
+          "samples": 0,
+          "straight": 0
+        },
+        "white_state_probabilities": {
+          "both": 0.6364165212332752,
+          "none": 0.016288539848749273,
+          "one": 0.3472949389179756
+        },
+        "yellow_visible_probability": 0.5927865037812682
+      }
+    },
+    {
+      "all": {
+        "frames": 327,
+        "steering": {
+          "abs_ge_35_ratio": 0.0764525993883792,
+          "abs_p90": 33.30560302734375,
+          "abs_p99": 39.64033073425293,
+          "left": 197,
+          "right": 100,
+          "samples": 327,
+          "straight": 30
+        },
+        "white_state_probabilities": {
+          "both": 0.10397553516819572,
+          "none": 0.13149847094801223,
+          "one": 0.764525993883792
+        },
+        "yellow_visible_probability": 0.23853211009174313
+      },
+      "duration_sec": 39.249773982,
+      "invalid_frames": 33,
+      "invalid_intervals": [
+        {
+          "end_sec": 20.375151337000002,
+          "reason": "sustained_blank_lane",
+          "start_sec": 18.656882590000002
+        },
+        {
+          "end_sec": 33.0025442,
+          "reason": "sustained_blank_lane",
+          "start_sec": 31.075080224
+        }
+      ],
+      "source": "/home/as/Downloads/canonical_50k_bags/canonical_50k_run_01_20260715_210652",
+      "source_type": "bag",
+      "valid": {
+        "frames": 294,
+        "steering": {
+          "abs_ge_35_ratio": 0.08503401360544217,
+          "abs_p90": 33.74626312255859,
+          "abs_p99": 39.6793786239624,
+          "left": 168,
+          "right": 96,
+          "samples": 294,
+          "straight": 30
+        },
+        "white_state_probabilities": {
+          "both": 0.11224489795918367,
+          "none": 0.0782312925170068,
+          "one": 0.8095238095238095
+        },
+        "yellow_visible_probability": 0.2653061224489796
+      }
+    },
+    {
+      "all": {
+        "frames": 251,
+        "steering": {
+          "abs_ge_35_ratio": 0.14,
+          "abs_p90": 37.864784240722656,
+          "abs_p99": 41.94425582885742,
+          "left": 160,
+          "right": 82,
+          "samples": 250,
+          "straight": 8
+        },
+        "white_state_probabilities": {
+          "both": 0.16733067729083664,
+          "none": 0.1394422310756972,
+          "one": 0.6932270916334662
+        },
+        "yellow_visible_probability": 0.4262948207171315
+      },
+      "duration_sec": 30.810922294,
+      "invalid_frames": 25,
+      "invalid_intervals": [
+        {
+          "end_sec": 18.765027614,
+          "reason": "sustained_blank_lane",
+          "start_sec": 16.130693093
+        }
+      ],
+      "source": "/home/as/Downloads/canonical_50k_bags/canonical_50k_run_01_20260715_210807",
+      "source_type": "bag",
+      "valid": {
+        "frames": 226,
+        "steering": {
+          "abs_ge_35_ratio": 0.15555555555555556,
+          "abs_p90": 38.74371490478515,
+          "abs_p99": 41.94425582885742,
+          "left": 137,
+          "right": 82,
+          "samples": 225,
+          "straight": 6
+        },
+        "white_state_probabilities": {
+          "both": 0.18584070796460178,
+          "none": 0.06637168141592921,
+          "one": 0.7477876106194691
+        },
+        "yellow_visible_probability": 0.47345132743362833
+      }
+    },
+    {
+      "all": {
+        "frames": 309,
+        "steering": {
+          "abs_ge_35_ratio": 0.3289902280130293,
+          "abs_p90": 41.97635955810547,
+          "abs_p99": 42.0,
+          "left": 164,
+          "right": 131,
+          "samples": 307,
+          "straight": 12
+        },
+        "white_state_probabilities": {
+          "both": 0.343042071197411,
+          "none": 0.05825242718446602,
+          "one": 0.598705501618123
+        },
+        "yellow_visible_probability": 0.7540453074433657
+      },
+      "duration_sec": 42.434993701,
+      "invalid_frames": 0,
+      "invalid_intervals": [],
+      "source": "/home/as/Downloads/canonical_50k_bags/canonical_50k_run_02_20260715_210927",
+      "source_type": "bag",
+      "valid": {
+        "frames": 309,
+        "steering": {
+          "abs_ge_35_ratio": 0.3289902280130293,
+          "abs_p90": 41.97635955810547,
+          "abs_p99": 42.0,
+          "left": 164,
+          "right": 131,
+          "samples": 307,
+          "straight": 12
+        },
+        "white_state_probabilities": {
+          "both": 0.343042071197411,
+          "none": 0.05825242718446602,
+          "one": 0.598705501618123
+        },
+        "yellow_visible_probability": 0.7540453074433657
+      }
+    }
+  ]
+}

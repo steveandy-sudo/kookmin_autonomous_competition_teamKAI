@@ -1,0 +1,20 @@
+[
+  {
+    "checkpoint": "camera_speed_td3_bc_epoch_054.pth",
+    "epoch": 54,
+    "planned_simulation_speed_cap": 8.0,
+    "gazebo_status": "offline_candidate_not_closed_loop_approved",
+    "suggested_shadow_speed_cap": 4.0,
+    "validation_speed_mse": 0.069211585260064,
+    "validation_steering_mse": 0.050033023059828756
+  },
+  {
+    "checkpoint": "camera_speed_td3_bc_epoch_057.pth",
+    "epoch": 57,
+    "planned_simulation_speed_cap": 8.0,
+    "gazebo_status": "rejected_off_track_seed_20260724_progress_18.90m",
+    "suggested_shadow_speed_cap": 4.0,
+    "validation_speed_mse": 0.06857189780224973,
+    "validation_steering_mse": 0.04956856688569957
+  }
+]
