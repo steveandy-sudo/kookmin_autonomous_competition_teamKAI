@@ -5,12 +5,107 @@ from xycar_map_nav.control_core import (
     DynamicAvoidanceConfig,
     DynamicVehicleRule,
     filtered_steering_command,
+    forward_backward_velocity_profile,
+    minimum_profile_value_ahead,
     nearest_path_index,
+    path_curvature_profile,
     pure_pursuit_command,
     rate_limited_speed_command,
     stanley_path_command,
     steering_command_for_curvature,
 )
+
+
+def test_profile_preview_applies_future_braking_without_early_accel():
+    points = [(float(index), 0.0) for index in range(5)]
+    values = [3.0, 3.0, 1.0, 2.0, 3.0]
+    assert math.isclose(
+        minimum_profile_value_ahead(
+            points,
+            values,
+            0,
+            2.0,
+            closed=False,
+        ),
+        1.0,
+    )
+    assert math.isclose(
+        minimum_profile_value_ahead(
+            points,
+            values,
+            2,
+            2.0,
+            closed=False,
+        ),
+        1.0,
+    )
+
+
+def test_forward_backward_profile_brakes_before_tight_curve():
+    points = [(float(index), 0.0) for index in range(7)]
+    profile = forward_backward_velocity_profile(
+        points,
+        [0.0, 0.0, 0.0, 4.0, 0.0, 0.0, 0.0],
+        closed=False,
+        maximum_speed_mps=3.0,
+        maximum_lateral_accel_mps2=1.0,
+        maximum_accel_mps2=0.5,
+        maximum_decel_mps2=1.0,
+    )
+    assert math.isclose(profile[3], 0.5)
+    assert profile[2] < profile[1] < profile[0]
+    assert profile[4] < profile[5] < profile[6]
+    for index in range(len(points) - 1):
+        assert (
+            profile[index + 1] ** 2 - profile[index] ** 2
+            <= 2.0 * 0.5 + 1.0e-9
+        )
+        assert (
+            profile[index] ** 2 - profile[index + 1] ** 2
+            <= 2.0 * 1.0 + 1.0e-9
+        )
+
+
+def test_forward_backward_profile_respects_closed_course_seam():
+    points = [
+        (1.0, 0.0),
+        (0.0, 1.0),
+        (-1.0, 0.0),
+        (0.0, -1.0),
+    ]
+    profile = forward_backward_velocity_profile(
+        points,
+        [4.0, 0.0, 0.0, 0.0],
+        closed=True,
+        maximum_speed_mps=3.0,
+        maximum_lateral_accel_mps2=1.0,
+        maximum_accel_mps2=0.5,
+        maximum_decel_mps2=0.5,
+    )
+    assert math.isclose(profile[0], 0.5)
+    seam_distance = math.sqrt(2.0)
+    assert (
+        profile[-1] ** 2 - profile[0] ** 2
+        <= 2.0 * 0.5 * seam_distance + 1.0e-9
+    )
+
+
+def test_curvature_smoothing_does_not_cancel_opposite_turns():
+    points = [
+        (-1.0, 0.0),
+        (-0.5, 0.5),
+        (0.0, 0.0),
+        (0.5, -0.5),
+        (1.0, 0.0),
+    ]
+    profile = path_curvature_profile(
+        points,
+        closed=False,
+        curvature_window_m=0.20,
+        smoothing_points=1,
+    )
+    assert len(profile) == len(points)
+    assert abs(profile[2]) > 0.0
 
 
 def test_pure_pursuit_and_calibrated_steering_sign():

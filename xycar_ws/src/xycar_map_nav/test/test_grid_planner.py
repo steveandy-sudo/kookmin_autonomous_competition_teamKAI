@@ -107,6 +107,36 @@ def test_path_smoothing_reduces_corner_and_stays_collision_free():
     )
 
 
+def test_path_smoothing_respects_maximum_deviation():
+    grid = MapGrid(
+        free=np.ones((80, 80), dtype=bool),
+        resolution=0.05,
+        origin_x=-2.0,
+        origin_y=-2.0,
+        origin_yaw=0.0,
+    )
+    points = (
+        [(index * 0.05, 0.0) for index in range(21)]
+        + [(1.0, index * 0.05) for index in range(1, 21)]
+    )
+    smoothed = smooth_path_points(
+        grid,
+        points,
+        closed=False,
+        data_weight=0.0,
+        smooth_weight=0.45,
+        iterations=300,
+        maximum_deviation_m=0.10,
+    )
+    assert max(
+        math.hypot(
+            smoothed[index][0] - points[index][0],
+            smoothed[index][1] - points[index][1],
+        )
+        for index in range(len(points))
+    ) <= 0.100001
+
+
 def test_route_smoothing_preserves_segment_labels():
     grid = make_grid()
     waypoints = [

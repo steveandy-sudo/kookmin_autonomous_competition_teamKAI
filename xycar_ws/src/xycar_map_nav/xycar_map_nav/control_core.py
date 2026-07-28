@@ -238,6 +238,152 @@ def _path_geometry(
     return heading, curvature
 
 
+def path_curvature_profile(
+    points: Sequence[Point],
+    *,
+    closed: bool,
+    curvature_window_m: float,
+    smoothing_points: int = 0,
+) -> tuple[float, ...]:
+    """Calculate a robust curvature profile along a global path."""
+    if len(points) < 3:
+        return tuple(0.0 for _ in points)
+    raw = [
+        _path_geometry(
+            points,
+            index,
+            heading_window_m=curvature_window_m,
+            curvature_window_m=curvature_window_m,
+            closed=closed,
+        )[1]
+        for index in range(len(points))
+    ]
+    radius = max(0, int(smoothing_points))
+    if radius == 0:
+        return tuple(raw)
+
+    smoothed = []
+    for index in range(len(raw)):
+        values = []
+        for offset in range(-radius, radius + 1):
+            candidate = index + offset
+            if closed:
+                candidate %= len(raw)
+            elif candidate < 0 or candidate >= len(raw):
+                continue
+            values.append(raw[candidate])
+        # RMS preserves high-curvature braking demand around inflections,
+        # where signed moving averages could incorrectly cancel to zero.
+        magnitude = math.sqrt(
+            sum(value * value for value in values) / len(values)
+        )
+        sign_source = raw[index]
+        if abs(sign_source) < 1.0e-9:
+            sign_source = sum(values)
+        smoothed.append(math.copysign(magnitude, sign_source or 1.0))
+    return tuple(smoothed)
+
+
+def forward_backward_velocity_profile(
+    points: Sequence[Point],
+    curvatures_per_m: Sequence[float],
+    *,
+    closed: bool,
+    maximum_speed_mps: float,
+    maximum_lateral_accel_mps2: float,
+    maximum_accel_mps2: float,
+    maximum_decel_mps2: float,
+) -> tuple[float, ...]:
+    """Build a curvature-limited velocity profile with accel/brake passes."""
+    if len(points) != len(curvatures_per_m):
+        raise ValueError("path and curvature profile lengths must match")
+    if not points:
+        return ()
+
+    maximum_speed = max(0.0, float(maximum_speed_mps))
+    lateral_accel = max(1.0e-3, float(maximum_lateral_accel_mps2))
+    acceleration = max(1.0e-3, float(maximum_accel_mps2))
+    deceleration = max(1.0e-3, float(maximum_decel_mps2))
+    velocities = [
+        min(
+            maximum_speed,
+            math.sqrt(lateral_accel / max(1.0e-6, abs(curvature))),
+        )
+        for curvature in curvatures_per_m
+    ]
+    count = len(points)
+    if count == 1:
+        return tuple(velocities)
+
+    segment_count = count if closed else count - 1
+    segment_lengths = [
+        max(
+            1.0e-4,
+            math.hypot(
+                points[(index + 1) % count][0] - points[index][0],
+                points[(index + 1) % count][1] - points[index][1],
+            ),
+        )
+        for index in range(segment_count)
+    ]
+
+    # Repeating both passes lets a braking or acceleration constraint
+    # propagate across the start/end seam of a closed course.
+    maximum_passes = max(2, count if closed else 2)
+    for _ in range(maximum_passes):
+        changed = False
+        for index in range(segment_count):
+            following = (index + 1) % count
+            reachable = math.sqrt(
+                velocities[index] ** 2
+                + 2.0 * acceleration * segment_lengths[index]
+            )
+            if velocities[following] > reachable:
+                velocities[following] = reachable
+                changed = True
+        for index in reversed(range(segment_count)):
+            following = (index + 1) % count
+            brakeable = math.sqrt(
+                velocities[following] ** 2
+                + 2.0 * deceleration * segment_lengths[index]
+            )
+            if velocities[index] > brakeable:
+                velocities[index] = brakeable
+                changed = True
+        if not changed:
+            break
+    return tuple(velocities)
+
+
+def minimum_profile_value_ahead(
+    points: Sequence[Point],
+    values: Sequence[float],
+    start_index: int,
+    distance_m: float,
+    *,
+    closed: bool,
+) -> float:
+    """Return the minimum profile value through a forward path interval."""
+    if len(points) != len(values) or not points:
+        raise ValueError("path and profile must have the same nonzero length")
+    index = int(start_index) % len(points)
+    minimum = float(values[index])
+    target_distance = max(0.0, float(distance_m))
+    travelled = 0.0
+    maximum_steps = len(points) if closed else len(points) - index - 1
+    for _ in range(maximum_steps):
+        if travelled >= target_distance:
+            break
+        following = (index + 1) % len(points)
+        travelled += math.hypot(
+            points[following][0] - points[index][0],
+            points[following][1] - points[index][1],
+        )
+        index = following
+        minimum = min(minimum, float(values[index]))
+    return minimum
+
+
 def stanley_path_command(
     points: Sequence[Point],
     nearest_index: int,

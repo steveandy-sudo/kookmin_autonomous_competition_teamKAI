@@ -36,6 +36,7 @@ def generate_launch_description():
     headless = LaunchConfiguration("headless")
     start_gui = LaunchConfiguration("start_coordinate_gui")
     enable_rviz = LaunchConfiguration("enable_rviz")
+    rviz_config = LaunchConfiguration("rviz_config")
 
     return LaunchDescription(
         [
@@ -57,6 +58,16 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "enable_rviz",
                 default_value="false",
+            ),
+            DeclareLaunchArgument(
+                "rviz_config",
+                default_value=PathJoinSubstitution(
+                    [
+                        package_share,
+                        "rviz",
+                        "xycar_gazebo_sensors.rviz",
+                    ]
+                ),
             ),
             SetEnvironmentVariable(
                 "GZ_SIM_RESOURCE_PATH",
@@ -89,6 +100,7 @@ def generate_launch_description():
                         launch_arguments={
                             "auto_start": "false",
                             "enable_rviz": enable_rviz,
+                            "rviz_config": rviz_config,
                             "enable_legacy_perception": "false",
                         }.items(),
                     )

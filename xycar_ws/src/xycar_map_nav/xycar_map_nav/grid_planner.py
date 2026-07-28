@@ -120,6 +120,7 @@ def load_map_grid(
     *,
     inflation_radius_m: float,
     unknown_is_occupied: bool = True,
+    ignore_occupancy: bool = False,
 ) -> MapGrid:
     yaml_path = Path(map_yaml).expanduser().resolve()
     data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
@@ -135,7 +136,9 @@ def load_map_grid(
     occupied_probability = normalized if negate else 1.0 - normalized
     occupied_threshold = float(data.get("occupied_thresh", 0.65))
     free_threshold = float(data.get("free_thresh", 0.25))
-    if unknown_is_occupied:
+    if ignore_occupancy:
+        blocked = np.zeros(image.shape, dtype=bool)
+    elif unknown_is_occupied:
         blocked = occupied_probability > free_threshold
     else:
         blocked = occupied_probability >= occupied_threshold
@@ -358,6 +361,7 @@ def smooth_path_points(
     iterations: int,
     anchor_indices: Sequence[int] = (),
     anchor_data_weight: float = 0.02,
+    maximum_deviation_m: float = -1.0,
 ) -> list[Point]:
     """Smooth a resampled path without crossing inflated occupied cells."""
     if len(points) < 3 or iterations <= 0 or smooth_weight <= 0.0:
@@ -367,6 +371,7 @@ def smooth_path_points(
     data_gain = max(0.0, float(data_weight))
     smooth_gain = max(0.0, float(smooth_weight))
     anchors = {int(index) % len(points) for index in anchor_indices}
+    maximum_deviation = float(maximum_deviation_m)
 
     for _ in range(int(iterations)):
         candidate = smoothed.copy()
@@ -384,6 +389,18 @@ def smooth_path_points(
             ) + smooth_gain * (
                 smoothed[before] + smoothed[after] - 2.0 * smoothed[index]
             )
+        if maximum_deviation >= 0.0:
+            displacement = candidate - original
+            distances = np.linalg.norm(displacement, axis=1)
+            outside = distances > maximum_deviation
+            if np.any(outside):
+                candidate[outside] = original[outside] + (
+                    displacement[outside]
+                    * (
+                        maximum_deviation
+                        / distances[outside, np.newaxis]
+                    )
+                )
 
         valid = True
         segment_count = len(candidate) if closed else len(candidate) - 1
@@ -423,6 +440,7 @@ def plan_waypoint_route(
     path_smoothing_weight: float = 0.45,
     path_smoothing_iterations: int = 2500,
     path_smoothing_anchor_weight: float = 0.02,
+    path_smoothing_maximum_deviation_m: float = -1.0,
     clearance_cost_weight: float = 3.0,
     clearance_cost_decay_m: float = 0.35,
 ) -> PlannedRoute:
@@ -494,6 +512,7 @@ def plan_waypoint_route(
             iterations=path_smoothing_iterations,
             anchor_indices=tuple(sorted(anchor_indices)),
             anchor_data_weight=path_smoothing_anchor_weight,
+            maximum_deviation_m=path_smoothing_maximum_deviation_m,
         )
         boundaries = [0]
         for segment_index in range(1, pair_count):

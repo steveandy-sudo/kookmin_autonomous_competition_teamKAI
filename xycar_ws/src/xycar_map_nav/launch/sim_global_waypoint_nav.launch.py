@@ -30,19 +30,11 @@ def generate_launch_description():
             "slam_glass_balanced.yaml",
         ]
     )
-    waypoints_yaml = PathJoinSubstitution(
+    default_waypoints_yaml = PathJoinSubstitution(
         [
             map_nav_share,
             "config",
             "slam_glass_balanced_global_test_waypoints.yaml",
-        ]
-    )
-    path_csv = PathJoinSubstitution(
-        [
-            gazebo_share,
-            "maps",
-            "slam_glass_balanced",
-            "one_lap_path.csv",
         ]
     )
     gazebo_odom_topic = "/model/xycar_ackermann/odometry"
@@ -51,6 +43,26 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("headless", default_value="false"),
             DeclareLaunchArgument("enable_rviz", default_value="true"),
+            DeclareLaunchArgument(
+                "waypoints_yaml",
+                default_value=default_waypoints_yaml,
+            ),
+            DeclareLaunchArgument(
+                "path_csv",
+                default_value="",
+                description=(
+                    "Optional explicit regression path. No CSV is selected "
+                    "implicitly."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "drive_enabled",
+                default_value="false",
+                description=(
+                    "Safety default: publish shadow commands until a route is "
+                    "explicitly selected."
+                ),
+            ),
             DeclareLaunchArgument(
                 "cruise_speed_command", default_value="7.0"
             ),
@@ -105,9 +117,14 @@ def generate_launch_description():
                             params_file,
                             {
                                 "map_yaml": map_yaml,
-                                "waypoints_yaml": waypoints_yaml,
-                                "path_csv": path_csv,
-                                "drive_enabled": True,
+                                "waypoints_yaml": LaunchConfiguration(
+                                    "waypoints_yaml"
+                                ),
+                                "path_csv": LaunchConfiguration("path_csv"),
+                                "drive_enabled": ParameterValue(
+                                    LaunchConfiguration("drive_enabled"),
+                                    value_type=bool,
+                                ),
                                 "use_sim_time": True,
                                 "odom_topic": gazebo_odom_topic,
                                 "cruise_speed_command": ParameterValue(

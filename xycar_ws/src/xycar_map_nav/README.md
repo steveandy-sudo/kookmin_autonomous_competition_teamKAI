@@ -117,6 +117,62 @@ ros2 service call /xycar_waypoint_nav/reload_route std_srvs/srv/Trigger {}
 순환 코스는 waypoint YAML의 `closed`를 `true`로 설정한다. 마지막 좌표가
 출발점 근처인데 `closed: false`이면 시작 직후 `ROUTE_COMPLETE`가 될 수 있다.
 
+### 기존 사용자 제작 Gazebo 트랙
+
+`worlds/kookmin_xycar_track_final.sdf`에서 새 경로를 직접 찍을 때는 저장된
+회귀시험 CSV를 사용하지 않는다. 저장 파일은
+`routes/kookmin_custom_user_waypoints.yaml`이며 첫 점은 차량 시작 위치,
+이후 점은 실제 주행 순서대로 찍는다. 곡선은 직선보다 촘촘하게 찍어야
+평활화된 경로가 차도 밖으로 지름길을 만들지 않는다.
+
+```bash
+cd ~/slam
+source /opt/ros/humble/setup.bash
+source xycar_ws/install/setup.bash
+
+ros2 launch xycar_map_nav sim_custom_track_waypoint_nav.launch.py \
+  project_root:=$PWD \
+  drive_enabled:=false
+```
+
+RViz 상단의 `Publish Point`를 선택하고 트랙 위를 클릭한다. 초록 구는
+waypoint, 선은 실제 Stanley 제어기가 받을 `/map_nav/global_path`다.
+이 모드에서는 `/xycar_motor` publisher를 만들지 않으므로 차량은 움직이지
+않는다. 점을 다 찍은 다음 전체 launch를 종료하고 다음처럼 명시적으로
+주행을 허용한다.
+
+```bash
+ros2 launch xycar_map_nav sim_custom_track_waypoint_nav.launch.py \
+  project_root:=$PWD \
+  drive_enabled:=true \
+  cruise_speed_command:=5.0 \
+  minimum_speed_command:=3.0
+```
+
+경로를 다시 만들려면 capture 모드에서 다음 서비스를 호출한다.
+
+```bash
+ros2 service call /xycar_waypoint_nav/undo_waypoint \
+  std_srvs/srv/Trigger {}
+ros2 service call /xycar_waypoint_nav/clear_waypoints \
+  std_srvs/srv/Trigger {}
+```
+
+오실레이션 시험은 주행 중 아래 세 토픽을 기록한다.
+
+```bash
+ros2 bag record -o analysis/custom_track_stanley \
+  /map_nav/debug /map_nav/control_mode /map_nav/global_path
+
+python3 xycar_ws/src/xycar_map_nav/scripts/analyze_waypoint_oscillation.py \
+  analysis/custom_track_stanley \
+  --output-json analysis/custom_track_stanley_summary.json
+```
+
+결과의 `steering_command.large_straight_reversals`는 직선에서 2초 안에
+`+12 -> -12` 또는 반대로 크게 바뀐 횟수다. 경로가 아직 비어 있거나 두 점
+미만이면 주행 명령을 내지 않는다.
+
 ## 검증 순서
 
 1. SLAM localization을 실행하고 TF가 끊기지 않는지 확인한다.
@@ -154,3 +210,8 @@ rosbag을 확인해야 한다.
 구현 원리, Gazebo 재현 명령, rosbag 분석법과 실차 중단 조건은
 [`docs/global_path_stanley_oscillation_20260728_KO.md`](../../../docs/global_path_stanley_oscillation_20260728_KO.md)에
 정리되어 있다.
+
+같은 문서의 `사용자 제작 트랙의 논문 기반 전역경로 개선` 절에는
+전진/후진 속도 프로파일, 구동 지연을 반영한 제동 미리보기, 제한형
+최소곡률 스무딩, 4개 Gazebo 병렬 탐색 방법과 2026-07-28 비교 결과가
+추가되어 있다.

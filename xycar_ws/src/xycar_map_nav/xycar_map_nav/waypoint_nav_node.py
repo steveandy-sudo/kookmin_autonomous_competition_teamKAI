@@ -35,7 +35,11 @@ from .control_core import (
     DynamicAvoidanceConfig,
     DynamicVehicleRule,
     filtered_steering_command,
+    forward_backward_velocity_profile,
+    minimum_profile_value_ahead,
     nearest_path_index,
+    path_curvature_profile,
+    pure_pursuit_command,
     rate_limited_speed_command,
     stanley_path_command,
     steering_command_for_curvature,
@@ -107,9 +111,13 @@ class WaypointNavNode(Node):
             unknown_is_occupied=bool(
                 self.get_parameter("unknown_is_occupied").value
             ),
+            ignore_occupancy=bool(
+                self.get_parameter("ignore_map_occupancy").value
+            ),
         )
         self.waypoints: list[RouteWaypoint] = []
         self.route: PlannedRoute | None = None
+        self.speed_profile_mps: tuple[float, ...] = ()
         self.current_path_index: int | None = None
         self.route_complete = False
 
@@ -169,6 +177,10 @@ class WaypointNavNode(Node):
         self.last_steering_command = 0.0
         self.last_speed_command = 0.0
         self.last_control_time = time.monotonic()
+        self.drive_start_time = self.last_control_time + max(
+            0.0,
+            float(self.get_parameter("drive_start_delay_sec").value),
+        )
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -275,8 +287,10 @@ class WaypointNavNode(Node):
         self.declare_parameter("base_frame_id", "base_footprint")
         self.declare_parameter("closed_route", True)
         self.declare_parameter("drive_enabled", False)
+        self.declare_parameter("drive_start_delay_sec", 0.0)
         self.declare_parameter("inflation_radius_m", 0.23)
         self.declare_parameter("unknown_is_occupied", True)
+        self.declare_parameter("ignore_map_occupancy", False)
         self.declare_parameter("waypoint_snap_radius_m", 0.45)
         self.declare_parameter("path_spacing_m", 0.10)
         self.declare_parameter("path_smoothing_enabled", True)
@@ -284,6 +298,9 @@ class WaypointNavNode(Node):
         self.declare_parameter("path_smoothing_weight", 0.45)
         self.declare_parameter("path_smoothing_iterations", 2500)
         self.declare_parameter("path_smoothing_anchor_weight", 0.02)
+        self.declare_parameter(
+            "path_smoothing_maximum_deviation_m", -1.0
+        )
         self.declare_parameter("csv_path_smoothing_enabled", True)
         self.declare_parameter("csv_path_smoothing_data_weight", 0.10)
         self.declare_parameter("csv_path_smoothing_weight", 0.40)
@@ -293,6 +310,19 @@ class WaypointNavNode(Node):
         self.declare_parameter("goal_tolerance_m", 0.25)
         self.declare_parameter("cruise_speed_command", 5.0)
         self.declare_parameter("minimum_speed_command", 3.0)
+        self.declare_parameter("fixed_speed_command", -1.0)
+        self.declare_parameter("speed_planner_mode", "local")
+        self.declare_parameter("speed_profile_max_accel_mps2", 0.80)
+        self.declare_parameter("speed_profile_max_decel_mps2", 1.40)
+        self.declare_parameter(
+            "speed_profile_curvature_window_m", 0.55
+        )
+        self.declare_parameter(
+            "speed_profile_curvature_smoothing_points", 2
+        )
+        self.declare_parameter(
+            "speed_profile_braking_preview_sec", 0.30
+        )
         self.declare_parameter("curve_slowdown_curvature_per_m", 0.8)
         self.declare_parameter("speed_gain_mps_per_command", 0.080612)
         self.declare_parameter("maximum_lateral_accel_mps2", 0.90)
@@ -324,6 +354,7 @@ class WaypointNavNode(Node):
         self.declare_parameter("path_heading_preview_m", 0.0)
         self.declare_parameter("path_curvature_window_m", 0.55)
         self.declare_parameter("path_curvature_preview_m", 0.10)
+        self.declare_parameter("speed_curvature_preview_m", -1.0)
         self.declare_parameter("maximum_steering_angle_rad", 0.62)
         self.declare_parameter("straight_curvature_threshold_per_m", 0.16)
         self.declare_parameter(
@@ -336,6 +367,11 @@ class WaypointNavNode(Node):
         self.declare_parameter("curve_steering_filter_sec", 0.04)
         self.declare_parameter("straight_yaw_rate_damping_sec", 0.45)
         self.declare_parameter("curve_yaw_rate_damping_sec", 0.12)
+        self.declare_parameter("curve_controller", "stanley")
+        self.declare_parameter("curve_pure_pursuit_lookahead_m", 0.30)
+        self.declare_parameter(
+            "curve_pure_pursuit_speed_preview_sec", 0.12
+        )
         self.declare_parameter("motor_topic", "/xycar_motor")
         self.declare_parameter(
             "shadow_motor_topic", "/map_nav/xycar_motor_shadow"
@@ -427,6 +463,7 @@ class WaypointNavNode(Node):
     def _replan(self) -> None:
         if len(self.waypoints) < 2:
             self.route = None
+            self.speed_profile_mps = ()
             self.current_path_index = None
             self._publish_route()
             return
@@ -473,6 +510,7 @@ class WaypointNavNode(Node):
             )
             self.current_path_index = None
             self.route_complete = False
+            self._rebuild_speed_profile()
             self._publish_route()
             return
         self.route = plan_waypoint_route(
@@ -500,6 +538,11 @@ class WaypointNavNode(Node):
             path_smoothing_anchor_weight=float(
                 self.get_parameter("path_smoothing_anchor_weight").value
             ),
+            path_smoothing_maximum_deviation_m=float(
+                self.get_parameter(
+                    "path_smoothing_maximum_deviation_m"
+                ).value
+            ),
             clearance_cost_weight=float(
                 self.get_parameter("clearance_cost_weight").value
             ),
@@ -509,7 +552,59 @@ class WaypointNavNode(Node):
         )
         self.current_path_index = None
         self.route_complete = False
+        self._rebuild_speed_profile()
         self._publish_route()
+
+    def _rebuild_speed_profile(self) -> None:
+        if self.route is None or not self.route.points:
+            self.speed_profile_mps = ()
+            return
+        speed_gain = max(
+            1.0e-3,
+            float(self.get_parameter("speed_gain_mps_per_command").value),
+        )
+        curvatures = path_curvature_profile(
+            self.route.points,
+            closed=self.closed_route,
+            curvature_window_m=float(
+                self.get_parameter(
+                    "speed_profile_curvature_window_m"
+                ).value
+            ),
+            smoothing_points=int(
+                self.get_parameter(
+                    "speed_profile_curvature_smoothing_points"
+                ).value
+            ),
+        )
+        self.speed_profile_mps = forward_backward_velocity_profile(
+            self.route.points,
+            curvatures,
+            closed=self.closed_route,
+            maximum_speed_mps=max(
+                0.0,
+                float(
+                    self.get_parameter("cruise_speed_command").value
+                ),
+            )
+            * speed_gain,
+            maximum_lateral_accel_mps2=float(
+                self.get_parameter("maximum_lateral_accel_mps2").value
+            ),
+            maximum_accel_mps2=float(
+                self.get_parameter("speed_profile_max_accel_mps2").value
+            ),
+            maximum_decel_mps2=float(
+                self.get_parameter("speed_profile_max_decel_mps2").value
+            ),
+        )
+        commands = [value / speed_gain for value in self.speed_profile_mps]
+        self.get_logger().info(
+            "forward/backward speed profile: "
+            f"min={min(commands):.2f}, "
+            f"mean={sum(commands) / len(commands):.2f}, "
+            f"max={max(commands):.2f}"
+        )
 
     def _publish_route(self) -> None:
         stamp = self.get_clock().now().to_msg()
@@ -739,6 +834,12 @@ class WaypointNavNode(Node):
             self._publish_command(0.0, 0.0, "WAIT_LOCALIZATION")
             self.get_logger().debug(f"TF unavailable: {exc}")
             return
+        if (
+            self.drive_enabled
+            and time.monotonic() < self.drive_start_time
+        ):
+            self._publish_command(0.0, 0.0, "WAIT_DRIVE_START")
+            return
 
         self.current_path_index = nearest_path_index(
             self.route.points,
@@ -909,6 +1010,43 @@ class WaypointNavNode(Node):
                 ),
                 **command_kwargs,
             )
+        tracking_steering_angle = command.steering_angle_rad
+        if (
+            not straight
+            and str(self.get_parameter("curve_controller").value)
+            == "pure_pursuit"
+        ):
+            curve_lookahead = max(
+                0.10,
+                float(
+                    self.get_parameter(
+                        "curve_pure_pursuit_lookahead_m"
+                    ).value
+                )
+                + measured_speed
+                * max(
+                    0.0,
+                    float(
+                        self.get_parameter(
+                            "curve_pure_pursuit_speed_preview_sec"
+                        ).value
+                    ),
+                ),
+            )
+            pursuit = pure_pursuit_command(
+                self.route.points,
+                self.current_path_index,
+                vehicle_x=vehicle_x,
+                vehicle_y=vehicle_y,
+                vehicle_yaw=vehicle_yaw,
+                lookahead_m=curve_lookahead,
+                lateral_offset_m=dynamic.lateral_offset_m,
+                closed=self.closed_route,
+            )
+            tracking_steering_angle = math.atan(
+                float(self.get_parameter("wheelbase_m").value)
+                * pursuit.curvature_per_m
+            )
         damping_parameter = (
             "straight_yaw_rate_damping_sec"
             if straight
@@ -917,7 +1055,7 @@ class WaypointNavNode(Node):
         desired_yaw_rate = (
             measured_speed * command.path_curvature_per_m
         )
-        damped_steering_angle = command.steering_angle_rad - float(
+        damped_steering_angle = tracking_steering_angle - float(
             self.get_parameter(damping_parameter).value
         ) * (self.latest_yaw_rate_radps - desired_yaw_rate)
         maximum_steering_angle = abs(
@@ -973,20 +1111,63 @@ class WaypointNavNode(Node):
                 ).value
             ),
         )
-        path_curvature = abs(command.path_curvature_per_m)
-        curve_ratio = min(1.0, path_curvature / slowdown)
-        speed = cruise + (minimum - cruise) * curve_ratio
-        maximum_lateral_accel = max(
-            0.05,
-            float(
-                self.get_parameter("maximum_lateral_accel_mps2").value
-            ),
-        )
-        if path_curvature > 1.0e-4:
-            lateral_speed_cap_mps = math.sqrt(
-                maximum_lateral_accel / path_curvature
+        speed_planner_mode = str(
+            self.get_parameter("speed_planner_mode").value
+        ).strip().lower()
+        if (
+            speed_planner_mode == "forward_backward"
+            and self.speed_profile_mps
+        ):
+            speed = minimum_profile_value_ahead(
+                self.route.points,
+                self.speed_profile_mps,
+                self.current_path_index,
+                measured_speed
+                * max(
+                    0.0,
+                    float(
+                        self.get_parameter(
+                            "speed_profile_braking_preview_sec"
+                        ).value
+                    ),
+                ),
+                closed=self.closed_route,
+            ) / speed_gain
+        else:
+            speed_path_curvature = command.path_curvature_per_m
+            speed_curvature_preview = float(
+                self.get_parameter("speed_curvature_preview_m").value
             )
-            speed = min(speed, lateral_speed_cap_mps / speed_gain)
+            if speed_curvature_preview >= 0.0:
+                speed_command_kwargs = dict(command_kwargs)
+                speed_command_kwargs["curvature_preview_m"] = (
+                    speed_curvature_preview
+                )
+                speed_preview_command = stanley_path_command(
+                    stanley_gain=0.0,
+                    stanley_softening_mps=1.0,
+                    heading_gain=0.0,
+                    **speed_command_kwargs,
+                )
+                speed_path_curvature = (
+                    speed_preview_command.path_curvature_per_m
+                )
+            path_curvature = abs(speed_path_curvature)
+            curve_ratio = min(1.0, path_curvature / slowdown)
+            speed = cruise + (minimum - cruise) * curve_ratio
+            maximum_lateral_accel = max(
+                0.05,
+                float(
+                    self.get_parameter(
+                        "maximum_lateral_accel_mps2"
+                    ).value
+                ),
+            )
+            if path_curvature > 1.0e-4:
+                lateral_speed_cap_mps = math.sqrt(
+                    maximum_lateral_accel / path_curvature
+                )
+                speed = min(speed, lateral_speed_cap_mps / speed_gain)
         speed = alignment_limited_speed_command(
             speed,
             minimum,
@@ -1030,6 +1211,11 @@ class WaypointNavNode(Node):
                 ).value
             ),
         )
+        fixed_speed = float(
+            self.get_parameter("fixed_speed_command").value
+        )
+        if fixed_speed >= 0.0:
+            speed = fixed_speed
         self.last_speed_command = speed
         mode = (
             f"DYNAMIC_VEHICLE_RULE_{dynamic.mode}"

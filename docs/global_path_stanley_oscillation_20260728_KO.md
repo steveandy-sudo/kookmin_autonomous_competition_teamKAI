@@ -163,3 +163,117 @@ ros2 launch xycar_map_nav real_waypoint_nav.launch.py \
 
 CTE가 `0.20 m`를 넘거나 큰 좌우 반전 진폭이 커지면 물리 비상정지로 즉시
 중단한다. Gazebo의 speed `10` 성공은 실차 speed `10` 자동 승인이 아니다.
+
+## 사용자 제작 트랙의 논문 기반 전역경로 개선
+
+2026-07-28에는 `worlds/kookmin_xycar_track_final.sdf`와 사용자가 RViz에서
+지정한 폐곡선 `routes/kookmin_custom_user_waypoints.yaml`을 대상으로 추가
+개선했다.
+
+연구 기준은 다음과 같다.
+
+- Stanford Stanley: front-axle CTE, 속도 의존 비선형 피드백, 조향 지연과
+  yaw damping을 함께 사용한다.
+  <https://robotics.stanford.edu/~dstavens/jfr06/thrun_etal_jfr06.pdf>
+- TUM minimum-curvature trajectory: 트랙 경계 안에서 곡률이 작은 경로를
+  만들고, 경로 전체에 대해 횡가속도 제한과 전진/후진 가감속 패스로 속도
+  프로파일을 계산한다.
+  <https://doi.org/10.1080/00423114.2019.1631455>
+- Stanford feedback-feedforward steering: 경로 곡률 feedforward와 추종
+  feedback을 분리해 고속 정상상태 오차와 안정성을 함께 다룬다.
+  <https://ddl.stanford.edu/publications/journal/design-feedback-feedforward-steering-controller-accurate-path-tracking-and>
+- ETH MPCC: 횡오차만 줄이는 대신 트랙 제약 안에서 진행률을 최대화한다.
+  온라인 최적화가 필요한 다음 단계의 기준이며 현재 경량 제어기에 바로
+  넣지는 않았다.
+  <https://old.control.ee.ethz.ch/publications/2014/4623.html>
+
+현재 코드에는 다음을 반영했다.
+
+1. 전역경로의 RMS 곡률 프로파일을 계산한다. S자 변곡점에서 좌·우 곡률의
+   부호가 평균으로 상쇄되어 감속이 사라지는 문제를 막는다.
+2. 각 점의 횡가속도 제한으로 최고속도를 구하고 전진 패스에서 가속 한계,
+   후진 패스에서 제동 한계를 적용한다. 폐곡선 시작/끝에도 제약이 전파될
+   때까지 반복한다.
+3. 실측 구동 지연을 고려해 `현재 속도 x braking_preview_sec`만큼 전방의
+   속도 프로파일 최솟값을 미리 사용한다. 이 보정 전에는 직선에서
+   `2.47 m/s`까지 오른 뒤 급곡선 진입 시 `2.28 m/s`가 남아 이탈했다.
+4. 원래 전역경로에서 지정 거리 이상 벗어나지 않는 제한형 스무딩을
+   적용한다. 현재 최선은 최대 허용 `0.15 m`, 실제 최대 이동 약
+   `0.087 m`다.
+5. 병렬 시험은 인스턴스마다 `ROS_DOMAIN_ID`, `GZ_PARTITION`,
+   `IGN_PARTITION`을 분리한다. 동일한 월드·노드·토픽 이름을 사용해도
+   결과가 섞이지 않는다.
+
+### 병렬 탐색 결과
+
+| 프로파일 | 완주 | 한 바퀴 | 평균 speed cmd | CTE 95% | 큰 직선 반전 |
+|---|---:|---:|---:|---:|---:|
+| 기존 안정 기준 `cruise=15` | 1 | `32.50 s` | `9.99` | `0.224 m` | 0 |
+| 단순 `cruise=21` | 1 | `30.55 s` | `11.16` | `0.326 m` | 2 |
+| 전진/후진 계획, 지연 보정 전 고속 | 0 | - | `11.27` | `0.352 m` | 0 |
+| 전진/후진 + 제동 미리보기 | 1 | `32.98 s` | `10.50` | `0.187 m` | 0 |
+| 최종 제한형 경로 + 속도 계획 | 1 | `29.00 s` | `10.86` | `0.192 m` | 0 |
+
+최종 프로파일은 기존 안정 기준보다 약 10.8% 빠르고 큰 직선 오실레이션은
+발생하지 않았다. 평균 speed command `17`은 아직 달성하지 못했다. 이
+트랙은 반경 약 `0.58 m` 수준의 연속 급곡선이 있고 조향 command가
+`42`에서 포화되므로, 최고속도만 높여 평균을 맞춘 후보는 모두 이탈했다.
+
+### 최종 프로파일 실행
+
+```bash
+cd ~/slam
+source /opt/ros/humble/setup.bash
+source xycar_ws/install/setup.bash
+
+ros2 launch xycar_map_nav sim_custom_track_waypoint_nav.launch.py \
+  project_root:=$PWD \
+  headless:=false \
+  enable_rviz:=true \
+  drive_enabled:=true \
+  drive_start_delay_sec:=3.0 \
+  reposition_vehicle:=true \
+  start_x:=-2.725 \
+  start_y:=2.4456 \
+  start_yaw_deg:=-173.257623 \
+  speed_planner_mode:=forward_backward \
+  cruise_speed_command:=40.0 \
+  minimum_speed_command:=5.0 \
+  maximum_lateral_accel_mps2:=0.35 \
+  speed_profile_max_accel_mps2:=1.2 \
+  speed_profile_max_decel_mps2:=1.8 \
+  speed_profile_braking_preview_sec:=0.30 \
+  speed_alignment_cross_track_hard_m:=0.60 \
+  speed_alignment_heading_hard_rad:=1.20 \
+  path_smoothing_data_weight:=0.008 \
+  path_smoothing_weight:=0.40 \
+  path_smoothing_iterations:=1000 \
+  path_smoothing_anchor_weight:=0.15 \
+  path_smoothing_maximum_deviation_m:=0.15 \
+  curvature_feedforward_gain:=0.50
+```
+
+### 병렬 재탐색
+
+```bash
+cd ~/slam
+source /opt/ros/humble/setup.bash
+source xycar_ws/install/setup.bash
+
+python3 scripts/parallel_waypoint_profile_search.py \
+  --project-root "$PWD" \
+  --workers 4 \
+  --domain-base 140 \
+  --timeout-sec 85 \
+  --profiles-json scripts/profile_sets/global_path_paper_stage6.json
+```
+
+결과는 실행 시각별
+`analysis/parallel_profile_search_YYYYMMDD_HHMMSS/summary.json`에 저장된다.
+현재 PC의 20 CPU thread와 30 GiB RAM에서는 headless Gazebo 4개가 안정적인
+출발점이었다.
+
+다음 성능 단계는 흰선·노란선 양쪽 경계를 경로 계획기에 제공해 단순
+`0.15 m` 원형 제한 대신 실제 차도 경계를 제약으로 쓰는 minimum-curvature
+QP를 만드는 것이다. 그 뒤에도 속도가 부족하면 MPCC로 진행률, contour
+error, 조향 변화율을 동시에 최적화한다.

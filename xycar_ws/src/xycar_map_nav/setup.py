@@ -48,8 +48,12 @@ setup(
             "imu_yaw_calibrator = xycar_map_nav.imu_yaw_calibrator:main",
             "odom_tf_republisher = "
             "xycar_map_nav.odom_tf_republisher:main",
+            "gazebo_pose_tf_republisher = "
+            "xycar_map_nav.gazebo_pose_tf_republisher:main",
             "occupancy_grid_to_cloud = "
             "xycar_map_nav.occupancy_grid_to_cloud:main",
+            "static_track_map_node = "
+            "xycar_map_nav.static_track_map_node:main",
             "scan_filter_node = xycar_map_nav.scan_filter_node:main",
             "vesc_imu_odom_node = xycar_map_nav.vesc_imu_odom_node:main",
             "waypoint_nav_node = xycar_map_nav.waypoint_nav_node:main",

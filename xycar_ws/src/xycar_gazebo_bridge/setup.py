@@ -41,6 +41,15 @@ setup(
             ),
             glob("maps/slam_glass_balanced/*"),
         ),
+        (
+            os.path.join(
+                "share",
+                package_name,
+                "maps",
+                "kookmin_custom_track",
+            ),
+            glob("maps/kookmin_custom_track/*"),
+        ),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
