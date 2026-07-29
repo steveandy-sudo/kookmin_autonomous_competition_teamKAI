@@ -175,17 +175,83 @@ ros2 launch xycar_map_nav real_waypoint_nav.launch.py \
 
 ## 제어권
 
-`controller_to_next`는 해당 체크포인트에서 다음 체크포인트까지의 제어
-방식을 뜻한다.
+기본 `mission_trigger_mode: semantic`에서는 전역경로가 항상 기본
+제어기다. 웨이포인트 위치만으로 임무를 미리 시작하지 않고, 카메라 의미
+검출과 같은 시각의 LiDAR 기하가 함께 확인된 경우에만 제어권을 바꾼다.
 
-- `global_path`: 전역경로 Stanley 추종
-- `cone_rule`: 전역 모터 명령을 멈추고 `xycar_hybrid_drive`의 라바콘
-  shadow 명령만 전달
-- `dynamic_vehicle_rule`: 전역경로를 기준으로 YOLO 차량 검출에 따라
-  미터 단위 좌우 오프셋을 적용
+```text
+카메라 -> my_rule_object_detection_node -> /my_rule/object_detections
+LiDAR  -> my_rule_cone_node             -> /my_rule/cone_clusters
+                                         /my_rule/cone_cmd
+SLAM   -> map -> slam_odom -> base_footprint
+                                         |
+                          xycar_waypoint_nav
+                 [상황 판단 + 전역경로 + 최종 선택]
+                                         |
+                              /xycar_motor (유일)
+```
+
+전환 우선순위는 다음과 같다.
+
+1. localization fault, 센서 timeout, 전방 비상정지
+2. 빨강·노랑 신호등 정지
+3. 동적 차량 회피
+4. 라바콘 주행
+5. 전역경로 주행
+
+기본 전환값:
+
+- 라바콘: YOLO `cone` 2프레임, LiDAR cone cluster가 `0.50 m` 이내,
+  `/my_rule/cone_cmd`가 모두 유효할 때 `CONE_RULE`
+- 동적 차량: YOLO `obstacle_vehicle` 또는 임시 `car` 2프레임과 해당
+  bounding box 각도 안의 LiDAR가 `2.40 m` 이내일 때
+  `DYNAMIC_VEHICLE_RULE`
+- 신호등: `red` 또는 `yellow` 2프레임이면 정지 latch, `green`
+  2프레임이면 해제
+- 차선 이탈 개입: 구현 자리는 있으나 `lane_intervention_enabled: false`
+  로 보류
+
+라바콘 검출이 끊겨도 즉시 전역경로로 돌아가지 않는다. 최소 1초 주행하고
+카메라와 LiDAR가 모두 사라진 상태가 0.7초 유지되어야 복귀한다. 동적 차량
+회피도 오프셋이 중앙으로 돌아온 뒤에만 전역경로 상태로 해제한다.
 
 최종 `/xycar_motor` 발행자는 이 노드 하나여야 한다. 라바콘용
-`xycar_hybrid_drive`는 반드시 `drive_enabled:=false`로 실행한다.
+`my_rule_cone_node`는 후보 명령만 발행하며 모터를 직접 발행하지 않는다.
+기존 `my_rule_drive_manager`는 중복 모터 권한을 피하려고 이 통합에서
+제외했다. 별도 lane driver와 keyboard teleop도 동시에 실행하지 않는다.
+
+SLAM localization과 카메라·LiDAR 드라이버가 실행된 상태에서 먼저 shadow로
+통합 stack을 확인한다.
+
+```bash
+cd ~/slam/xycar_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+MAP_DIR=$HOME/xycar_maps/map_20260728_143906
+ros2 launch xycar_map_nav semantic_hybrid_nav.launch.py \
+  map_yaml:=$MAP_DIR/map.yaml \
+  waypoints_yaml:=$MAP_DIR/waypoints_pure_pursuit.yaml \
+  drive_enabled:=false
+```
+
+다음 토픽에서 현재 선택과 이유를 확인한다.
+
+```bash
+ros2 topic echo /map_nav/control_mode
+ros2 topic echo /map_nav/mission_reason
+ros2 topic echo /map_nav/xycar_motor_shadow
+ros2 topic echo /my_rule/object_detections
+ros2 topic echo /my_rule/cone_clusters
+```
+
+shadow 검증과 바퀴를 든 시험을 통과한 뒤에만 `drive_enabled:=true`로
+바꾼다.
+
+기존 지도처럼 웨이포인트별 임무 구간을 유지해야 할 때만
+`mission_trigger_mode: route_segments`를 사용한다. 이 호환 모드에서
+`controller_to_next`는 해당 체크포인트부터 다음 체크포인트까지
+`global_path`, `cone_rule`, `dynamic_vehicle_rule` 중 하나를 뜻한다.
 
 ## RViz에서 좌표 찍기
 
@@ -214,9 +280,9 @@ ros2 service call /xycar_waypoint_nav/undo_waypoint std_srvs/srv/Trigger {}
 ros2 service call /xycar_waypoint_nav/clear_waypoints std_srvs/srv/Trigger {}
 ```
 
-좌표를 다 찍은 뒤 YAML에서 라바콘 진입점의 `controller_to_next`를
-`cone_rule`, 동적차량 구간 진입점부터 이탈점 전까지를
-`dynamic_vehicle_rule`로 바꾸고 다음 서비스로 다시 읽는다.
+상황 기반 모드에서는 좌표를 다 찍은 뒤 모든 `controller_to_next`를
+`global_path`로 두어도 된다. 기존 구간 기반 호환 모드만 라바콘 진입점의
+값을 `cone_rule`, 동적차량 구간을 `dynamic_vehicle_rule`로 바꾼다.
 
 ```bash
 ros2 service call /xycar_waypoint_nav/reload_route std_srvs/srv/Trigger {}
@@ -311,12 +377,16 @@ python3 xycar_ws/src/xycar_map_nav/scripts/analyze_waypoint_oscillation.py \
 3. 바퀴를 든 상태에서 `drive_enabled:=true`로 바꾸고 정지 명령과 조향
    방향을 확인한다.
 4. 빈 공간에서 속도 명령 `3`으로 전역경로만 시험한다.
-5. 정지 라바콘으로 `GLOBAL_PATH -> CONE_RULE -> GLOBAL_PATH`를 시험한다.
+5. `0.50 m` 경계 앞뒤의 정지 라바콘으로
+   `GLOBAL_PATH -> CONE_RULE -> GLOBAL_PATH`를 시험한다.
 6. 정지 차량 모형부터 시작해
    `GLOBAL_PATH -> DYNAMIC_VEHICLE_RULE -> GLOBAL_PATH`를 시험한다.
+7. 모터를 띄운 상태에서 빨강·노랑은 `[0, 0]`, 초록 확인 뒤에만
+   전역경로 명령이 복구되는지 시험한다.
 
 LiDAR 전방 `0.38 m` 이내 물체는 모드와 관계없이 `EMERGENCY_STOP`이다.
-동적차량 구간에서 YOLO count 토픽이 stale이면 주행하지 않고 정지한다.
+상황 기반 모드는 YOLO가 stale이면 새 임무에 진입하지 않으며, 이미 시작한
+임무는 각 상태의 안전한 이탈 조건을 거친다.
 
 ## 고속 오실레이션 억제
 

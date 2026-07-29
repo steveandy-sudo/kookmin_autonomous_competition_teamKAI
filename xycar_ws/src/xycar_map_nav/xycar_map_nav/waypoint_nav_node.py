@@ -9,7 +9,8 @@ from pathlib import Path
 import signal
 import time
 
-from geometry_msgs.msg import PointStamped, PoseStamped
+from geometry_msgs.msg import PointStamped, PoseArray, PoseStamped
+from my_rule_msgs.msg import ObjectDetectionArray
 from nav_msgs.msg import Odometry, Path as PathMessage
 import rclpy
 from rclpy.duration import Duration
@@ -57,6 +58,13 @@ from .localization_guard import (
     GuardResult,
     LocalizationJumpGuard,
     PlanarTransform,
+)
+from .mission_supervisor import (
+    camera_box_lidar_sector,
+    MissionMode,
+    MissionSupervisor,
+    MissionSupervisorConfig,
+    scan_sector_distance,
 )
 
 
@@ -172,11 +180,101 @@ class WaypointNavNode(Node):
         )
         self.dynamic_counts = (0, 0, 0, 0)
         self.dynamic_counts_time = 0.0
+        self.semantic_vehicle_count = 0
         self.cone_mode_active = False
         self.cone_command = (0.0, 0.0)
+        self.cone_command_confidence = 0.0
         self.cone_command_time = 0.0
+        self.latest_scan: LaserScan | None = None
         self.emergency_front_range_m = float("inf")
         self.scan_time = 0.0
+        self.mission_trigger_mode = str(
+            self.get_parameter("mission_trigger_mode").value
+        ).strip().lower()
+        if self.mission_trigger_mode not in {"semantic", "route_segments"}:
+            raise ValueError(
+                "mission_trigger_mode must be semantic or route_segments"
+            )
+        self.mission_supervisor = MissionSupervisor(
+            MissionSupervisorConfig(
+                semantic_timeout_sec=float(
+                    self.get_parameter("semantic_timeout_sec").value
+                ),
+                lidar_timeout_sec=float(
+                    self.get_parameter("mission_lidar_timeout_sec").value
+                ),
+                cone_camera_required_frames=int(
+                    self.get_parameter(
+                        "cone_camera_required_frames"
+                    ).value
+                ),
+                cone_camera_min_count=int(
+                    self.get_parameter("cone_camera_min_count").value
+                ),
+                cone_camera_min_confidence=float(
+                    self.get_parameter(
+                        "cone_camera_min_confidence"
+                    ).value
+                ),
+                cone_lidar_min_count=int(
+                    self.get_parameter("cone_lidar_min_count").value
+                ),
+                cone_entry_distance_m=float(
+                    self.get_parameter("cone_entry_distance_m").value
+                ),
+                cone_minimum_duration_sec=float(
+                    self.get_parameter(
+                        "cone_minimum_duration_sec"
+                    ).value
+                ),
+                cone_clear_hold_sec=float(
+                    self.get_parameter("cone_clear_hold_sec").value
+                ),
+                vehicle_camera_required_frames=int(
+                    self.get_parameter(
+                        "vehicle_camera_required_frames"
+                    ).value
+                ),
+                vehicle_camera_min_count=int(
+                    self.get_parameter("vehicle_camera_min_count").value
+                ),
+                vehicle_camera_min_confidence=float(
+                    self.get_parameter(
+                        "vehicle_camera_min_confidence"
+                    ).value
+                ),
+                vehicle_entry_distance_m=float(
+                    self.get_parameter(
+                        "vehicle_entry_distance_m"
+                    ).value
+                ),
+                vehicle_minimum_duration_sec=float(
+                    self.get_parameter(
+                        "vehicle_minimum_duration_sec"
+                    ).value
+                ),
+                vehicle_clear_hold_sec=float(
+                    self.get_parameter(
+                        "vehicle_clear_hold_sec"
+                    ).value
+                ),
+                traffic_required_frames=int(
+                    self.get_parameter(
+                        "traffic_required_frames"
+                    ).value
+                ),
+                traffic_control_enabled=bool(
+                    self.get_parameter(
+                        "traffic_control_enabled"
+                    ).value
+                ),
+                lane_intervention_enabled=bool(
+                    self.get_parameter(
+                        "lane_intervention_enabled"
+                    ).value
+                ),
+            )
+        )
         self.last_published_mode = ""
         self.latest_speed_mps = 0.0
         self.latest_yaw_rate_radps = 0.0
@@ -242,6 +340,11 @@ class WaypointNavNode(Node):
         )
         self.mode_pub = self.create_publisher(
             String, str(self.get_parameter("control_mode_topic").value), 10
+        )
+        self.mission_reason_pub = self.create_publisher(
+            String,
+            str(self.get_parameter("mission_reason_topic").value),
+            10,
         )
         self.debug_pub = self.create_publisher(
             Float32MultiArray,
@@ -315,6 +418,18 @@ class WaypointNavNode(Node):
             10,
         )
         self.create_subscription(
+            PoseArray,
+            str(self.get_parameter("cone_cluster_topic").value),
+            self._on_cone_clusters,
+            sensor_qos,
+        )
+        self.create_subscription(
+            ObjectDetectionArray,
+            str(self.get_parameter("object_detections_topic").value),
+            self._on_object_detections,
+            sensor_qos,
+        )
+        self.create_subscription(
             Bool,
             str(
                 self.get_parameter(
@@ -351,7 +466,8 @@ class WaypointNavNode(Node):
         self.get_logger().info(
             f"{mode}: {len(self.waypoints)} waypoints, "
             f"{len(self.route.points) if self.route else 0} path points; "
-            "authority=global/cone-rule/dynamic-vehicle-rule"
+            "authority=global/cone-rule/dynamic-vehicle-rule, "
+            f"mission_trigger={self.mission_trigger_mode}"
         )
 
     def _declare_parameters(self) -> None:
@@ -485,10 +601,63 @@ class WaypointNavNode(Node):
         self.declare_parameter(
             "control_mode_topic", "/map_nav/control_mode"
         )
+        self.declare_parameter(
+            "mission_reason_topic", "/map_nav/mission_reason"
+        )
         self.declare_parameter("debug_topic", "/map_nav/debug")
         self.declare_parameter("scan_topic", "/scan")
         self.declare_parameter("scan_required_for_drive", True)
         self.declare_parameter("clicked_point_topic", "/clicked_point")
+        self.declare_parameter("mission_trigger_mode", "semantic")
+        self.declare_parameter("semantic_timeout_sec", 0.75)
+        self.declare_parameter("mission_lidar_timeout_sec", 0.50)
+        self.declare_parameter(
+            "object_detections_topic", "/my_rule/object_detections"
+        )
+        self.declare_parameter(
+            "cone_cluster_topic", "/my_rule/cone_clusters"
+        )
+        self.declare_parameter("cone_class_names", ["cone"])
+        self.declare_parameter(
+            "vehicle_class_names", ["obstacle_vehicle", "car"]
+        )
+        self.declare_parameter(
+            "vehicle_camera_lidar_hfov_deg", 60.0
+        )
+        self.declare_parameter(
+            "vehicle_camera_lidar_padding_deg", 3.0
+        )
+        self.declare_parameter("object_lidar_min_points", 2)
+        self.declare_parameter("cone_camera_required_frames", 2)
+        self.declare_parameter("cone_camera_min_count", 1)
+        self.declare_parameter("cone_camera_min_confidence", 0.50)
+        self.declare_parameter("cone_lidar_min_count", 1)
+        self.declare_parameter("cone_entry_distance_m", 0.50)
+        self.declare_parameter("cone_minimum_duration_sec", 1.0)
+        self.declare_parameter("cone_clear_hold_sec", 0.70)
+        self.declare_parameter("cone_command_min_confidence", 0.30)
+        self.declare_parameter("cone_input_is_physical_angle", True)
+        self.declare_parameter(
+            "cone_steering_actual_deg",
+            [0.0, 4.0, 10.0, 16.0, 26.0],
+        )
+        self.declare_parameter(
+            "cone_steering_commands",
+            [0.0, 10.0, 20.0, 30.0, 42.0],
+        )
+        self.declare_parameter("vehicle_camera_required_frames", 2)
+        self.declare_parameter("vehicle_camera_min_count", 1)
+        self.declare_parameter("vehicle_camera_min_confidence", 0.45)
+        self.declare_parameter("vehicle_entry_distance_m", 2.40)
+        self.declare_parameter("vehicle_minimum_duration_sec", 0.50)
+        self.declare_parameter("vehicle_clear_hold_sec", 0.50)
+        self.declare_parameter("traffic_control_enabled", True)
+        self.declare_parameter("traffic_required_frames", 2)
+        self.declare_parameter("traffic_min_confidence", 0.50)
+        self.declare_parameter(
+            "traffic_signal_max_center_y_ratio", 0.55
+        )
+        self.declare_parameter("lane_intervention_enabled", False)
         self.declare_parameter(
             "dynamic_counts_topic", "/yolo_obstacle/stable_counts"
         )
@@ -504,7 +673,7 @@ class WaypointNavNode(Node):
         self.declare_parameter("dynamic_clear_reset_sec", 0.5)
         self.declare_parameter("cone_mode_topic", "/hybrid/mode")
         self.declare_parameter(
-            "cone_command_topic", "/xycar_motor_shadow"
+            "cone_command_topic", "/my_rule/cone_cmd"
         )
         self.declare_parameter("cone_command_timeout_sec", 0.35)
         self.declare_parameter("cone_speed_cap_command", 9.5)
@@ -759,6 +928,7 @@ class WaypointNavNode(Node):
         self.marker_pub.publish(markers)
 
     def _on_scan(self, message: LaserScan) -> None:
+        self.latest_scan = message
         half_angle = math.radians(
             float(
                 self.get_parameter("emergency_front_half_angle_deg").value
@@ -797,8 +967,211 @@ class WaypointNavNode(Node):
     def _on_cone_command(self, message: Float32MultiArray) -> None:
         if len(message.data) < 2:
             return
-        self.cone_command = (float(message.data[0]), float(message.data[1]))
+        angle = float(message.data[0])
+        if bool(
+            self.get_parameter("cone_input_is_physical_angle").value
+        ):
+            angle = self._cone_physical_to_motor_command(angle)
+        self.cone_command = (angle, float(message.data[1]))
+        self.cone_command_confidence = (
+            float(message.data[2]) if len(message.data) >= 3 else 1.0
+        )
         self.cone_command_time = time.monotonic()
+
+    def _on_cone_clusters(self, message: PoseArray) -> None:
+        distances = [
+            math.hypot(
+                float(pose.position.x),
+                float(pose.position.y),
+            )
+            for pose in message.poses
+            if (
+                float(pose.position.x) > 0.0
+                and math.isfinite(float(pose.position.x))
+                and math.isfinite(float(pose.position.y))
+            )
+        ]
+        self.mission_supervisor.observe_cone_lidar(
+            now_sec=time.monotonic(),
+            count=len(distances),
+            nearest_distance_m=min(distances, default=float("inf")),
+        )
+
+    def _on_object_detections(
+        self, message: ObjectDetectionArray
+    ) -> None:
+        now = time.monotonic()
+        width = max(0, int(message.image_width))
+        height = max(0, int(message.image_height))
+        cone_names = {
+            self._normalize_class_name(value)
+            for value in self.get_parameter("cone_class_names").value
+        }
+        vehicle_names = {
+            self._normalize_class_name(value)
+            for value in self.get_parameter("vehicle_class_names").value
+        }
+        traffic_threshold = float(
+            self.get_parameter("traffic_min_confidence").value
+        )
+        traffic_maximum_y = (
+            float(
+                self.get_parameter(
+                    "traffic_signal_max_center_y_ratio"
+                ).value
+            )
+            * height
+        )
+        cones = []
+        vehicles = []
+        signal_colors = set()
+        for detection in message.detections:
+            class_name = self._normalize_class_name(
+                detection.class_name
+            )
+            confidence = float(detection.confidence)
+            if class_name in cone_names:
+                cones.append(detection)
+            if class_name in vehicle_names:
+                vehicles.append(detection)
+            center_y = 0.5 * (
+                float(detection.ymin) + float(detection.ymax)
+            )
+            if (
+                class_name in {"red", "yellow", "green"}
+                and confidence >= traffic_threshold
+                and (height <= 0 or center_y <= traffic_maximum_y)
+            ):
+                signal_colors.add(class_name)
+
+        vehicle_distances = [
+            distance
+            for distance in (
+                self._scan_distance_for_detection(detection, width)
+                for detection in vehicles
+            )
+            if math.isfinite(distance)
+        ]
+        self.semantic_vehicle_count = len(vehicles)
+        if "red" in signal_colors:
+            traffic_color = "red"
+        elif "yellow" in signal_colors:
+            traffic_color = "yellow"
+        elif "green" in signal_colors:
+            traffic_color = "green"
+        else:
+            traffic_color = "unknown"
+        self.mission_supervisor.observe_objects(
+            now_sec=now,
+            cone_count=len(cones),
+            cone_max_confidence=max(
+                (float(item.confidence) for item in cones),
+                default=0.0,
+            ),
+            vehicle_count=len(vehicles),
+            vehicle_max_confidence=max(
+                (float(item.confidence) for item in vehicles),
+                default=0.0,
+            ),
+            vehicle_lidar_distance_m=min(
+                vehicle_distances,
+                default=float("inf"),
+            ),
+            traffic_color=traffic_color,
+        )
+
+    @staticmethod
+    def _normalize_class_name(value: str) -> str:
+        return (
+            str(value)
+            .strip()
+            .lower()
+            .replace("-", "_")
+            .replace(" ", "_")
+        )
+
+    def _scan_distance_for_detection(
+        self, detection, image_width: int
+    ) -> float:
+        scan = self.latest_scan
+        now = time.monotonic()
+        if (
+            scan is None
+            or image_width <= 0
+            or now - self.scan_time
+            > float(
+                self.get_parameter("mission_lidar_timeout_sec").value
+            )
+        ):
+            return float("inf")
+        minimum_angle, maximum_angle = camera_box_lidar_sector(
+            xmin=float(detection.xmin),
+            xmax=float(detection.xmax),
+            image_width=image_width,
+            horizontal_fov_deg=float(
+                self.get_parameter(
+                    "vehicle_camera_lidar_hfov_deg"
+                ).value
+            ),
+            padding_deg=float(
+                self.get_parameter(
+                    "vehicle_camera_lidar_padding_deg"
+                ).value
+            ),
+        )
+        minimum_points = max(
+            1, int(self.get_parameter("object_lidar_min_points").value)
+        )
+        return scan_sector_distance(
+            ranges=scan.ranges,
+            angle_min=float(scan.angle_min),
+            angle_increment=float(scan.angle_increment),
+            range_min=float(scan.range_min),
+            range_max=float(scan.range_max),
+            sector_min_angle=minimum_angle,
+            sector_max_angle=maximum_angle,
+            minimum_points=minimum_points,
+        )
+
+    def _cone_physical_to_motor_command(
+        self, physical_angle_deg: float
+    ) -> float:
+        actual = [
+            float(value)
+            for value in self.get_parameter(
+                "cone_steering_actual_deg"
+            ).value
+        ]
+        commands = [
+            float(value)
+            for value in self.get_parameter(
+                "cone_steering_commands"
+            ).value
+        ]
+        if len(actual) < 2 or len(actual) != len(commands):
+            raise ValueError(
+                "cone steering maps must have equal length >= 2"
+            )
+        magnitude = abs(float(physical_angle_deg))
+        if magnitude <= actual[0]:
+            mapped = commands[0]
+        elif magnitude >= actual[-1]:
+            mapped = commands[-1]
+        else:
+            mapped = commands[-1]
+            for index in range(1, len(actual)):
+                if magnitude <= actual[index]:
+                    ratio = (
+                        (magnitude - actual[index - 1])
+                        / (actual[index] - actual[index - 1])
+                    )
+                    mapped = (
+                        commands[index - 1]
+                        + ratio
+                        * (commands[index] - commands[index - 1])
+                    )
+                    break
+        return math.copysign(mapped, float(physical_angle_deg))
 
     def _on_route_localization_ready(self, message: Bool) -> None:
         was_ready = self.route_localization_ready
@@ -1151,14 +1524,41 @@ class WaypointNavNode(Node):
             return
 
         controller = self._active_controller(self.current_path_index)
-        if controller == "cone_rule":
-            fresh_cone = (
-                now - self.cone_command_time
-                <= float(
-                    self.get_parameter("cone_command_timeout_sec").value
-                )
+        fresh_cone = (
+            now - self.cone_command_time
+            <= float(
+                self.get_parameter("cone_command_timeout_sec").value
             )
-            if self.cone_mode_active and fresh_cone:
+            and self.cone_command_confidence
+            >= float(
+                self.get_parameter(
+                    "cone_command_min_confidence"
+                ).value
+            )
+        )
+        if self.mission_trigger_mode == "semantic":
+            decision = self.mission_supervisor.decide(
+                now_sec=now,
+                cone_command_ready=fresh_cone,
+                dynamic_rule_mode=self.dynamic_rule.mode,
+            )
+            self.mission_reason_pub.publish(
+                String(data=decision.reason)
+            )
+            if decision.mode == MissionMode.TRAFFIC_STOP:
+                self.dynamic_rule.reset()
+                self._publish_command(
+                    0.0,
+                    0.0,
+                    "TRAFFIC_STOP",
+                )
+                return
+            if decision.mode == MissionMode.CONE_RULE:
+                if not fresh_cone:
+                    self._publish_command(
+                        0.0, 0.0, "WAIT_CONE_COMMAND"
+                    )
+                    return
                 speed_cap = float(
                     self.get_parameter("cone_speed_cap_command").value
                 )
@@ -1167,11 +1567,41 @@ class WaypointNavNode(Node):
                     min(self.cone_command[1], speed_cap),
                     "CONE_RULE",
                 )
-            else:
-                self._publish_command(0.0, 0.0, "WAIT_CONE_RULE")
-            return
+                return
+            if decision.mode == MissionMode.LANE_INTERVENTION:
+                self.dynamic_rule.reset()
+                self._publish_command(
+                    0.0,
+                    0.0,
+                    "WAIT_LANE_INTERVENTION",
+                )
+                return
+            dynamic_armed = (
+                decision.mode == MissionMode.DYNAMIC_VEHICLE_RULE
+            )
+        else:
+            self.mission_reason_pub.publish(
+                String(data=f"route_segment_{controller}")
+            )
+            if controller == "cone_rule":
+                if self.cone_mode_active and fresh_cone:
+                    speed_cap = float(
+                        self.get_parameter(
+                            "cone_speed_cap_command"
+                        ).value
+                    )
+                    self._publish_command(
+                        self.cone_command[0],
+                        min(self.cone_command[1], speed_cap),
+                        "CONE_RULE",
+                    )
+                else:
+                    self._publish_command(
+                        0.0, 0.0, "WAIT_CONE_RULE"
+                    )
+                return
+            dynamic_armed = controller == "dynamic_vehicle_rule"
 
-        dynamic_armed = controller == "dynamic_vehicle_rule"
         counts_fresh = (
             now - self.dynamic_counts_time
             <= float(
@@ -1179,7 +1609,8 @@ class WaypointNavNode(Node):
             )
         )
         if (
-            dynamic_armed
+            self.mission_trigger_mode == "route_segments"
+            and dynamic_armed
             and bool(
                 self.get_parameter("dynamic_detector_required").value
             )
@@ -1187,7 +1618,11 @@ class WaypointNavNode(Node):
         ):
             self._publish_command(0.0, 0.0, "WAIT_DYNAMIC_DETECTOR")
             return
-        counts = self.dynamic_counts if counts_fresh else (0, 0, 0, 0)
+        counts = (
+            self.dynamic_counts
+            if counts_fresh
+            else (self.semantic_vehicle_count, 0, 0, 0)
+        )
         dynamic = self.dynamic_rule.update(
             now_sec=now,
             front_count=counts[0],

@@ -88,6 +88,7 @@ xycar_waypoint_nav:
     path_topic: /map_nav/global_path
     waypoint_marker_topic: /map_nav/waypoints
     control_mode_topic: /map_nav/control_mode
+    mission_reason_topic: /map_nav/mission_reason
     debug_topic: /map_nav/debug
 
     scan_topic: /scan
@@ -97,11 +98,57 @@ xycar_waypoint_nav:
     emergency_front_half_angle_deg: 15.0
     scan_timeout_sec: 0.50
 
-    # Existing YOLO detector contract:
-    # [front, left, right, behind] stable object counts.
+    # Global path is the normal controller. A mission override is accepted
+    # only when camera semantics and fresh LiDAR geometry agree.
+    mission_trigger_mode: semantic
+    semantic_timeout_sec: 0.75
+    mission_lidar_timeout_sec: 0.50
+    object_detections_topic: /my_rule/object_detections
+    vehicle_camera_lidar_hfov_deg: 60.0
+    vehicle_camera_lidar_padding_deg: 3.0
+    object_lidar_min_points: 2
+
+    # Camera cone + a clustered LiDAR cone at 0.50m enters the cone rule.
+    cone_class_names: [cone]
+    cone_camera_required_frames: 2
+    cone_camera_min_count: 1
+    cone_camera_min_confidence: 0.50
+    cone_cluster_topic: /my_rule/cone_clusters
+    cone_lidar_min_count: 1
+    cone_entry_distance_m: 0.50
+    cone_minimum_duration_sec: 1.0
+    cone_clear_hold_sec: 0.70
+    cone_command_topic: /my_rule/cone_cmd
+    cone_command_timeout_sec: 0.35
+    cone_command_min_confidence: 0.30
+    cone_speed_cap_command: 9.5
+    cone_input_is_physical_angle: true
+    cone_steering_actual_deg: [0.0, 4.0, 10.0, 16.0, 26.0]
+    cone_steering_commands: [0.0, 10.0, 20.0, 30.0, 42.0]
+
+    # Until an obstacle-only model is finalized, both repository vehicle
+    # labels are accepted. LiDAR distance still has to pass the entry gate.
+    vehicle_class_names: [obstacle_vehicle, car]
+    vehicle_camera_required_frames: 2
+    vehicle_camera_min_count: 1
+    vehicle_camera_min_confidence: 0.45
+    vehicle_entry_distance_m: 2.40
+    vehicle_minimum_duration_sec: 0.50
+    vehicle_clear_hold_sec: 0.50
+
+    # Red and yellow latch a stop after two detector frames. Only a confirmed
+    # green releases it. Lane-departure intervention remains postponed.
+    traffic_control_enabled: true
+    traffic_required_frames: 2
+    traffic_min_confidence: 0.50
+    traffic_signal_max_center_y_ratio: 0.55
+    lane_intervention_enabled: false
+
+    # Optional four-camera vehicle counts improve pass/return state changes.
+    # With only front-camera semantics, clear timeout returns to the path.
     dynamic_counts_topic: /yolo_obstacle/stable_counts
     dynamic_detector_timeout_sec: 0.60
-    dynamic_detector_required: true
+    dynamic_detector_required: false
     dynamic_right_offset_m: 0.28
     dynamic_left_offset_m: 0.28
     dynamic_offset_rate_mps: 0.35
@@ -110,13 +157,6 @@ xycar_waypoint_nav:
     dynamic_behind_passed_trigger: 1
     dynamic_behind_return_trigger: 2
     dynamic_clear_reset_sec: 0.50
-
-    # xycar_hybrid_drive must run with drive_enabled:=false. Its cone command
-    # is accepted only inside a cone_rule waypoint segment.
-    cone_mode_topic: /hybrid/mode
-    cone_command_topic: /xycar_motor_shadow
-    cone_command_timeout_sec: 0.35
-    cone_speed_cap_command: 9.5
 
     # Real steering calibration already used by canonical rule driving.
     steering_map_commands:

@@ -9,6 +9,10 @@
 > 새 장소에서 SLAM 지도를 만들고 실차 전역경로를 단계적으로 검증하는
 > 체크리스트: `docs/new_map_real_vehicle_test_KO.md`
 >
+> SLAM 전역경로를 기본으로 하고 YOLO+LiDAR가 함께 확인한 임무에서만
+> 라바콘·동적 차량·신호등 rule로 전환하는 통합 실행:
+> `xycar_ws/src/xycar_map_nav/README.md#제어권`
+>
 > 2026-07-24 ROS bag의 LiDAR/IMU 기반 command odom 보정 결과:
 > `data/odom_calibration/2026-07-24/README.md`
 
@@ -125,6 +129,30 @@ gate는 4/5 이하라 승인하지 않았습니다.
 5. 직선 2~3m와 완만한 곡선에서 가장 낮은 cap부터 저속 시험
 6. BC 기준선과 TD3+BC의 횡오차, 완주율, 평균 속도, 큰 오실레이션을 비교
 7. cap 8의 `18.90m` 실패 구간을 dual-action DAgger/RL 데이터로 추가 보강
+
+### 2026-07-29 SLAM 기본 주행과 임무 rule 통합
+
+`codex/slam-gazebo-controller`에서는 기존 `main`의 객체 YOLO와 실차 검증
+LiDAR 라바콘 제어기를 SLAM 전역경로 제어기에 연결했다. 정상 상태에서는
+항상 SLAM 전역경로 Stanley 제어를 사용한다.
+
+- YOLO cone + LiDAR cone cluster `<= 0.50m`: 라바콘 rule
+- YOLO vehicle + 같은 bounding box 방향 LiDAR `<= 2.40m`: 차량 회피 rule
+- 빨강 또는 노랑 2프레임: 정지, 초록 2프레임: 정지 해제
+- 차선 이탈 rule: 인터페이스만 두고 현재 기본 비활성화
+
+상황 판단, 전역경로 명령, rule 후보 선택은
+`xycar_waypoint_nav` 한 노드에서 끝난다. 따라서 최종
+`/xycar_motor` publisher도 이 노드 하나뿐이며, 가져온
+`my_rule_drive_manager`는 중복 권한을 피하려고 통합 대상에서 제외했다. 먼저
+`drive_enabled:=false`로 다음 통합 launch를 검증한다.
+
+```bash
+ros2 launch xycar_map_nav semantic_hybrid_nav.launch.py \
+  map_yaml:=$HOME/xycar_maps/map_20260728_143906/map.yaml \
+  waypoints_yaml:=$HOME/xycar_maps/map_20260728_143906/waypoints_pure_pursuit.yaml \
+  drive_enabled:=false
+```
 
 오프라인 MAE와 시뮬 주행 성공은 실차 완주를 보장하지 않습니다. 현재 단계의
 완료 기준은 `shadow -> 바퀴 공중 -> 직선 -> 단일 곡선 -> 전체 트랙` 시험을
