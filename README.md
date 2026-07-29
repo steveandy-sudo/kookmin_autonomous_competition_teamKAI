@@ -152,6 +152,10 @@ sleep으로 돌아가므로 저사양 실차에서 불필요한 CPU 사용을 �
 진행거리로 장애물을 완전히 통과한 뒤 중앙으로 복귀한다. 최종 모터 권한은
 계속 `xycar_waypoint_nav` 하나에만 있다.
 
+첫 직선에 빨간 충돌 박스를 동적으로 배치하는 Gazebo 회귀 시험도 추가했다.
+최종 트랙 월드는 바꾸지 않으며, 실행 방법과 2026-07-29 두 바퀴 연속 회피
+결과는 `xycar_ws/src/xycar_map_nav/README.md`에 기록했다.
+
 상황 판단, 전역경로 명령, rule 후보 선택은
 `xycar_waypoint_nav` 한 노드에서 끝난다. 따라서 최종
 `/xycar_motor` publisher도 이 노드 하나뿐이며, 가져온

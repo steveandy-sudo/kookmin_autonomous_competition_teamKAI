@@ -260,6 +260,53 @@ left_minus_right_clearance, mode_code, path_offset, remaining_clear_distance]`
 이다. `mode_code`는 `0=NORMAL`, `1=BYPASS_LEFT`, `-1=BYPASS_RIGHT`,
 `2=RETURN_CENTER`다.
 
+### Gazebo 고정 장애물 회귀 시험
+
+최종 트랙을 수정하지 않고 `worlds/route_obstacle_test.sdf`의 빨간 충돌
+박스를 첫 직선 경로에 동적으로 생성한다. 터미널 1에서 GUI와 주행을
+시작한다.
+
+```bash
+cd ~/slam
+source /opt/ros/humble/setup.bash
+source xycar_ws/install/setup.bash
+
+ros2 launch xycar_map_nav sim_custom_track_waypoint_nav.launch.py \
+  project_root:=$PWD \
+  headless:=false \
+  enable_rviz:=true \
+  drive_enabled:=true \
+  drive_start_delay_sec:=12.0 \
+  reposition_vehicle:=true \
+  cruise_speed_command:=5.0 \
+  minimum_speed_command:=3.0
+```
+
+12초의 출발 대기 중 터미널 2에서 장애물을 생성한다.
+
+```bash
+cd ~/slam
+gz service -s /world/kookmin_xycar_track/create \
+  --reqtype gz.msgs.EntityFactory \
+  --reptype gz.msgs.Boolean \
+  --timeout 5000 \
+  --req 'sdf_filename: "'"$PWD"'/worlds/route_obstacle_test.sdf",
+name: "route_test_obstacle", allow_renaming: false,
+pose: {position: {x: -3.55, y: 2.348, z: 0.12}}'
+```
+
+정상 결과는 다음 순서다.
+
+```text
+GLOBAL_PATH
+-> LIDAR_OBSTACLE_RULE_BYPASS_LEFT
+-> LIDAR_OBSTACLE_RULE_RETURN_CENTER
+-> GLOBAL_PATH
+```
+
+2026-07-29 시험에서는 두 바퀴 연속 충돌 없이 같은 전환을 확인했다. 회피
+중 속도 명령 상한은 `4.0`, 경로 오프셋은 최대 `0.28 m`였다.
+
 최종 `/xycar_motor` 발행자는 이 노드 하나여야 한다. 라바콘용
 `my_rule_cone_node`는 후보 명령만 발행하며 모터를 직접 발행하지 않는다.
 기존 `my_rule_drive_manager`는 중복 모터 권한을 피하려고 이 통합에서
