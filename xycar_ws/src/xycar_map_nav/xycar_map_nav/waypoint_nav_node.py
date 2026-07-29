@@ -59,6 +59,14 @@ from .localization_guard import (
     LocalizationJumpGuard,
     PlanarTransform,
 )
+from .lidar_obstacle import (
+    detect_path_obstacle,
+    LidarBypassConfig,
+    LidarBypassState,
+    LidarObstacleBypassRule,
+    LidarPathObstacle,
+    LidarPathObstacleConfig,
+)
 from .mission_supervisor import (
     camera_box_lidar_sector,
     MissionMode,
@@ -178,6 +186,126 @@ class WaypointNavNode(Node):
                 ),
             )
         )
+        self.lidar_obstacle_config = LidarPathObstacleConfig(
+            detect_distance_m=float(
+                self.get_parameter(
+                    "lidar_obstacle_detect_distance_m"
+                ).value
+            ),
+            minimum_distance_m=float(
+                self.get_parameter(
+                    "lidar_obstacle_minimum_distance_m"
+                ).value
+            ),
+            path_corridor_half_width_m=float(
+                self.get_parameter(
+                    "lidar_obstacle_path_half_width_m"
+                ).value
+            ),
+            minimum_cluster_points=int(
+                self.get_parameter(
+                    "lidar_obstacle_minimum_cluster_points"
+                ).value
+            ),
+            maximum_scan_index_gap=int(
+                self.get_parameter(
+                    "lidar_obstacle_maximum_scan_index_gap"
+                ).value
+            ),
+            maximum_cluster_gap_m=float(
+                self.get_parameter(
+                    "lidar_obstacle_maximum_cluster_gap_m"
+                ).value
+            ),
+            minimum_cluster_width_m=float(
+                self.get_parameter(
+                    "lidar_obstacle_minimum_cluster_width_m"
+                ).value
+            ),
+            maximum_cluster_width_m=float(
+                self.get_parameter(
+                    "lidar_obstacle_maximum_cluster_width_m"
+                ).value
+            ),
+            side_probe_inner_m=float(
+                self.get_parameter(
+                    "lidar_obstacle_side_probe_inner_m"
+                ).value
+            ),
+            side_probe_outer_m=float(
+                self.get_parameter(
+                    "lidar_obstacle_side_probe_outer_m"
+                ).value
+            ),
+            lidar_x_m=float(
+                self.get_parameter("lidar_obstacle_lidar_x_m").value
+            ),
+            lidar_y_m=float(
+                self.get_parameter("lidar_obstacle_lidar_y_m").value
+            ),
+            lidar_yaw_rad=math.radians(
+                float(
+                    self.get_parameter(
+                        "lidar_obstacle_lidar_yaw_deg"
+                    ).value
+                )
+            ),
+        )
+        self.lidar_obstacle_rule = LidarObstacleBypassRule(
+            LidarBypassConfig(
+                required_frames=int(
+                    self.get_parameter(
+                        "lidar_obstacle_required_frames"
+                    ).value
+                ),
+                left_offset_m=float(
+                    self.get_parameter(
+                        "lidar_obstacle_left_offset_m"
+                    ).value
+                ),
+                right_offset_m=float(
+                    self.get_parameter(
+                        "lidar_obstacle_right_offset_m"
+                    ).value
+                ),
+                offset_rate_mps=float(
+                    self.get_parameter(
+                        "lidar_obstacle_offset_rate_mps"
+                    ).value
+                ),
+                speed_limit_command=float(
+                    self.get_parameter(
+                        "lidar_obstacle_speed_limit_command"
+                    ).value
+                ),
+                estimated_obstacle_length_m=float(
+                    self.get_parameter(
+                        "lidar_obstacle_estimated_length_m"
+                    ).value
+                ),
+                post_obstacle_margin_m=float(
+                    self.get_parameter(
+                        "lidar_obstacle_post_margin_m"
+                    ).value
+                ),
+                clear_hold_sec=float(
+                    self.get_parameter(
+                        "lidar_obstacle_clear_hold_sec"
+                    ).value
+                ),
+                return_deadband_m=float(
+                    self.get_parameter(
+                        "lidar_obstacle_return_deadband_m"
+                    ).value
+                ),
+                centered_lateral_deadband_m=float(
+                    self.get_parameter(
+                        "lidar_obstacle_center_deadband_m"
+                    ).value
+                ),
+            )
+        )
+        self.latest_lidar_obstacle: LidarPathObstacle | None = None
         self.dynamic_counts = (0, 0, 0, 0)
         self.dynamic_counts_time = 0.0
         self.semantic_vehicle_count = 0
@@ -366,6 +494,15 @@ class WaypointNavNode(Node):
             str(self.get_parameter("debug_topic").value),
             10,
         )
+        self.lidar_obstacle_debug_pub = self.create_publisher(
+            Float32MultiArray,
+            str(
+                self.get_parameter(
+                    "lidar_obstacle_debug_topic"
+                ).value
+            ),
+            10,
+        )
         self.localization_guard_status_pub = self.create_publisher(
             String,
             str(
@@ -486,7 +623,8 @@ class WaypointNavNode(Node):
         self.get_logger().info(
             f"{mode}: {len(self.waypoints)} waypoints, "
             f"{len(self.route.points) if self.route else 0} path points; "
-            "authority=global/cone-rule/dynamic-vehicle-rule, "
+            "authority=global/cone-rule/dynamic-vehicle-rule/"
+            "lidar-obstacle-rule, "
             f"mission_trigger={self.mission_trigger_mode}"
         )
 
@@ -696,6 +834,68 @@ class WaypointNavNode(Node):
         self.declare_parameter("dynamic_behind_passed_trigger", 1)
         self.declare_parameter("dynamic_behind_return_trigger", 2)
         self.declare_parameter("dynamic_clear_reset_sec", 0.5)
+        self.declare_parameter("lidar_obstacle_fallback_enabled", True)
+        self.declare_parameter(
+            "lidar_obstacle_debug_topic",
+            "/map_nav/lidar_obstacle_debug",
+        )
+        self.declare_parameter(
+            "lidar_obstacle_detect_distance_m", 1.50
+        )
+        self.declare_parameter(
+            "lidar_obstacle_minimum_distance_m", 0.18
+        )
+        self.declare_parameter(
+            "lidar_obstacle_path_half_width_m", 0.18
+        )
+        self.declare_parameter(
+            "lidar_obstacle_minimum_cluster_points", 3
+        )
+        self.declare_parameter(
+            "lidar_obstacle_maximum_scan_index_gap", 2
+        )
+        self.declare_parameter(
+            "lidar_obstacle_maximum_cluster_gap_m", 0.16
+        )
+        self.declare_parameter(
+            "lidar_obstacle_minimum_cluster_width_m", 0.09
+        )
+        self.declare_parameter(
+            "lidar_obstacle_maximum_cluster_width_m", 0.70
+        )
+        self.declare_parameter(
+            "lidar_obstacle_side_probe_inner_m", 0.18
+        )
+        self.declare_parameter(
+            "lidar_obstacle_side_probe_outer_m", 0.55
+        )
+        self.declare_parameter("lidar_obstacle_lidar_x_m", 0.065)
+        self.declare_parameter("lidar_obstacle_lidar_y_m", 0.0)
+        self.declare_parameter("lidar_obstacle_lidar_yaw_deg", 0.0)
+        self.declare_parameter("lidar_obstacle_required_frames", 2)
+        self.declare_parameter("lidar_obstacle_left_offset_m", 0.28)
+        self.declare_parameter("lidar_obstacle_right_offset_m", 0.28)
+        self.declare_parameter(
+            "lidar_obstacle_offset_rate_mps", 0.45
+        )
+        self.declare_parameter(
+            "lidar_obstacle_speed_limit_command", 4.0
+        )
+        self.declare_parameter(
+            "lidar_obstacle_estimated_length_m", 0.35
+        )
+        self.declare_parameter(
+            "lidar_obstacle_post_margin_m", 0.45
+        )
+        self.declare_parameter(
+            "lidar_obstacle_clear_hold_sec", 0.25
+        )
+        self.declare_parameter(
+            "lidar_obstacle_return_deadband_m", 0.02
+        )
+        self.declare_parameter(
+            "lidar_obstacle_center_deadband_m", 0.04
+        )
         self.declare_parameter("cone_mode_topic", "/hybrid/mode")
         self.declare_parameter(
             "cone_command_topic", "/my_rule/cone_cmd"
@@ -1184,6 +1384,69 @@ class WaypointNavNode(Node):
             minimum_points=minimum_points,
         )
 
+    def _detect_lidar_path_obstacle(
+        self,
+        *,
+        vehicle_x: float,
+        vehicle_y: float,
+        vehicle_yaw: float,
+    ) -> LidarPathObstacle | None:
+        scan = self.latest_scan
+        if (
+            scan is None
+            or self.route is None
+            or self.current_path_index is None
+        ):
+            return None
+        return detect_path_obstacle(
+            ranges=scan.ranges,
+            angle_min=float(scan.angle_min),
+            angle_increment=float(scan.angle_increment),
+            range_min=float(scan.range_min),
+            range_max=float(scan.range_max),
+            route_points=self.route.points,
+            nearest_index=self.current_path_index,
+            vehicle_x=vehicle_x,
+            vehicle_y=vehicle_y,
+            vehicle_yaw=vehicle_yaw,
+            closed=self.closed_route,
+            config=self.lidar_obstacle_config,
+        )
+
+    def _publish_lidar_obstacle_debug(
+        self,
+        obstacle: LidarPathObstacle | None,
+        state: LidarBypassState,
+    ) -> None:
+        message = Float32MultiArray()
+        if obstacle is None:
+            values = [0.0] * 8
+        else:
+            values = [
+                1.0,
+                obstacle.distance_m,
+                obstacle.lateral_m,
+                obstacle.width_m,
+                float(obstacle.point_count),
+                obstacle.x_vehicle_m,
+                obstacle.y_vehicle_m,
+                obstacle.left_clearance_m
+                - obstacle.right_clearance_m,
+            ]
+        mode_codes = {
+            "NORMAL": 0.0,
+            "BYPASS_LEFT": 1.0,
+            "BYPASS_RIGHT": -1.0,
+            "RETURN_CENTER": 2.0,
+        }
+        message.data = [
+            *values,
+            mode_codes.get(state.mode, 99.0),
+            state.lateral_offset_m,
+            state.remaining_clear_distance_m,
+        ]
+        self.lidar_obstacle_debug_pub.publish(message)
+
     def _cone_physical_to_motor_command(
         self, physical_angle_deg: float
     ) -> float:
@@ -1574,6 +1837,43 @@ class WaypointNavNode(Node):
             self._publish_command(0.0, 0.0, "EMERGENCY_STOP")
             return
 
+        lidar_obstacle_enabled = (
+            self.mission_trigger_mode == "semantic"
+            and bool(
+                self.get_parameter(
+                    "lidar_obstacle_fallback_enabled"
+                ).value
+            )
+            and scan_fresh
+            and (
+                self.lidar_obstacle_rule.mode != "NORMAL"
+                or not self.mission_supervisor.cone_processing_requested(
+                    now
+                )
+            )
+        )
+        self.latest_lidar_obstacle = (
+            self._detect_lidar_path_obstacle(
+                vehicle_x=vehicle_x,
+                vehicle_y=vehicle_y,
+                vehicle_yaw=vehicle_yaw,
+            )
+            if lidar_obstacle_enabled
+            else None
+        )
+        lidar_obstacle = self.lidar_obstacle_rule.update(
+            now_sec=now,
+            observation=self.latest_lidar_obstacle,
+            path_index=self.current_path_index,
+            route_points=self.route.points,
+            closed=self.closed_route,
+            enabled=lidar_obstacle_enabled,
+        )
+        self._publish_lidar_obstacle_debug(
+            self.latest_lidar_obstacle,
+            lidar_obstacle,
+        )
+
         controller = self._active_controller(self.current_path_index)
         fresh_cone = (
             now - self.cone_command_time
@@ -1592,6 +1892,7 @@ class WaypointNavNode(Node):
                 now_sec=now,
                 cone_command_ready=fresh_cone,
                 dynamic_rule_mode=self.dynamic_rule.mode,
+                lidar_obstacle_rule_mode=lidar_obstacle.mode,
             )
             self.mission_reason_pub.publish(
                 String(data=decision.reason)
@@ -1605,6 +1906,7 @@ class WaypointNavNode(Node):
                 )
                 return
             if decision.mode == MissionMode.CONE_RULE:
+                self.lidar_obstacle_rule.reset()
                 if not fresh_cone:
                     self._publish_command(
                         0.0, 0.0, "WAIT_CONE_COMMAND"
@@ -1619,6 +1921,12 @@ class WaypointNavNode(Node):
                     "CONE_RULE",
                 )
                 return
+            if decision.mode == MissionMode.LIDAR_OBSTACLE_RULE:
+                self.dynamic_rule.reset()
+                dynamic_armed = False
+                lidar_obstacle_armed = True
+            else:
+                lidar_obstacle_armed = False
             if decision.mode == MissionMode.LANE_INTERVENTION:
                 self.dynamic_rule.reset()
                 self._publish_command(
@@ -1630,6 +1938,8 @@ class WaypointNavNode(Node):
             dynamic_armed = (
                 decision.mode == MissionMode.DYNAMIC_VEHICLE_RULE
             )
+            if dynamic_armed:
+                self.lidar_obstacle_rule.reset()
         else:
             self.mission_reason_pub.publish(
                 String(data=f"route_segment_{controller}")
@@ -1652,6 +1962,7 @@ class WaypointNavNode(Node):
                     )
                 return
             dynamic_armed = controller == "dynamic_vehicle_rule"
+            lidar_obstacle_armed = False
 
         counts_fresh = (
             now - self.dynamic_counts_time
@@ -1680,6 +1991,16 @@ class WaypointNavNode(Node):
             behind_count=counts[3],
             armed=dynamic_armed,
         )
+        active_lateral_offset = (
+            lidar_obstacle.lateral_offset_m
+            if lidar_obstacle_armed
+            else dynamic.lateral_offset_m
+        )
+        active_speed_limit = (
+            lidar_obstacle.speed_limit_command
+            if lidar_obstacle_armed
+            else dynamic.speed_limit_command
+        )
         odom_fresh = now - self.odom_time <= float(
             self.get_parameter("odom_timeout_sec").value
         )
@@ -1700,7 +2021,7 @@ class WaypointNavNode(Node):
             "vehicle_y": vehicle_y,
             "vehicle_yaw": vehicle_yaw,
             "speed_mps": measured_speed,
-            "lateral_offset_m": dynamic.lateral_offset_m,
+            "lateral_offset_m": active_lateral_offset,
             "closed": self.closed_route,
             "wheelbase_m": float(self.get_parameter("wheelbase_m").value),
             "front_axle_offset_m": float(
@@ -1793,7 +2114,7 @@ class WaypointNavNode(Node):
                 vehicle_y=vehicle_y,
                 vehicle_yaw=vehicle_yaw,
                 lookahead_m=curve_lookahead,
-                lateral_offset_m=dynamic.lateral_offset_m,
+                lateral_offset_m=active_lateral_offset,
                 closed=self.closed_route,
             )
             tracking_steering_angle = math.atan(
@@ -1947,8 +2268,8 @@ class WaypointNavNode(Node):
                 ).value
             ),
         )
-        if dynamic.speed_limit_command is not None:
-            speed = min(speed, dynamic.speed_limit_command)
+        if active_speed_limit is not None:
+            speed = min(speed, active_speed_limit)
         target_speed = speed
         speed = rate_limited_speed_command(
             target_speed,
@@ -1975,12 +2296,15 @@ class WaypointNavNode(Node):
         )
         if fixed_speed >= 0.0:
             speed = fixed_speed
+        if active_speed_limit is not None:
+            speed = min(speed, active_speed_limit)
         self.last_speed_command = speed
-        mode = (
-            f"DYNAMIC_VEHICLE_RULE_{dynamic.mode}"
-            if dynamic.mode != "NORMAL"
-            else "GLOBAL_PATH"
-        )
+        if lidar_obstacle_armed:
+            mode = f"LIDAR_OBSTACLE_RULE_{lidar_obstacle.mode}"
+        elif dynamic.mode != "NORMAL":
+            mode = f"DYNAMIC_VEHICLE_RULE_{dynamic.mode}"
+        else:
+            mode = "GLOBAL_PATH"
         self._publish_command(
             angle,
             speed,
@@ -1994,12 +2318,18 @@ class WaypointNavNode(Node):
                 float(command.heading_error_rad),
                 float(measured_speed),
                 1.0 if odom_fresh else 0.0,
-                float(dynamic.lateral_offset_m),
+                float(active_lateral_offset),
                 float(self.emergency_front_range_m),
                 float(counts[0]),
                 float(counts[3]),
                 float(damped_curvature),
                 float(self.latest_yaw_rate_radps),
+                (
+                    float(self.latest_lidar_obstacle.distance_m)
+                    if self.latest_lidar_obstacle is not None
+                    else float("inf")
+                ),
+                float(lidar_obstacle.remaining_clear_distance_m),
             ],
         )
 

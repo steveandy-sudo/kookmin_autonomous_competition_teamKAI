@@ -198,7 +198,8 @@ SLAM   -> map -> slam_odom -> base_footprint
 2. 빨강·노랑 신호등 정지
 3. 동적 차량 회피
 4. 라바콘 주행
-5. 전역경로 주행
+5. LiDAR 임시 장애물 회피
+6. 전역경로 주행
 
 기본 전환값:
 
@@ -207,6 +208,9 @@ SLAM   -> map -> slam_odom -> base_footprint
 - 동적 차량: YOLO `obstacle_vehicle` 또는 임시 `car` 2프레임과 해당
   bounding box 각도 안의 LiDAR가 `2.40 m` 이내일 때
   `DYNAMIC_VEHICLE_RULE`
+- 임시 일반 장애물: 객체 모델이 완성되기 전까지 전역경로의 차량 폭
+  구간 안에 있는 LiDAR 연속 점군을 2프레임 확인하면
+  `LIDAR_OBSTACLE_RULE`
 - 신호등: `red` 또는 `yellow` 2프레임이면 정지 latch, `green`
   2프레임이면 해제
 - 차선 이탈 개입: 구현 자리는 있으나 `lane_intervention_enabled: false`
@@ -222,6 +226,39 @@ SLAM   -> map -> slam_odom -> base_footprint
 LiDAR 클러스터링과 경로 생성을 수행한다. 카메라 검출이 잠깐 흔들려도
 1.5초 동안 처리를 유지하며, `CONE_RULE` 중에는 항상 켜져 있다. 임무가
 끝나면 구독과 경로 이력을 모두 정리하고 다시 sleep 상태로 돌아간다.
+
+### 임시 LiDAR 장애물 회피
+
+`gazebo_sitl`의 route-progress obstacle memory와 부드러운 우회 경로 개념을
+Xycar 크기로 축소했다. `/scan`의 모든 물체를 장애물로 취급하지 않고,
+현재 SLAM 전역경로를 차량 좌표로 변환한 다음 그 경로 중심에서 좌우
+`0.18 m` 안에 걸리는 점만 검사한다.
+
+- 감지 거리: `1.50 m`
+- 연속 LiDAR 점: 최소 3개
+- 점군 폭: `0.09~0.70 m`
+- 확인: 2프레임
+- 우회 오프셋: 장애물 반대편 `0.28 m`
+- 회피 속도 상한: Xycar command `4.0`
+- 장애물 뒤 여유: `0.45 m`
+
+장애물이 왼쪽에 있으면 오른쪽으로, 오른쪽에 있으면 왼쪽으로 피한다.
+중앙에 있으면 좌우 LiDAR 여유 공간이 더 큰 쪽을 선택한다. 장애물이
+조향 때문에 센서에서 잠깐 사라져도 곧바로 중앙으로 복귀하지 않는다.
+처음 검출한 전역경로 index부터 `장애물 거리 + 예상 길이 + 0.45 m`를
+통과할 때까지 우회 오프셋을 기억하고, 이후 오프셋을 서서히 0으로 만든다.
+
+이 기능은 객체 모델이 없는 동안의 임시 fallback이다. 작은 단일 노이즈와
+라바콘 크기 점군은 필터링하지만 LiDAR만으로 물체 종류를 완전히 구분할
+수는 없다. 장애물 YOLO가 준비되면
+`lidar_obstacle_fallback_enabled: false`로 끄고 카메라 class와 LiDAR
+거리를 함께 확인하는 엄격한 진입 조건으로 교체한다.
+
+`/map_nav/lidar_obstacle_debug` 배열 순서는
+`[valid, distance, lateral, width, point_count, x, y,
+left_minus_right_clearance, mode_code, path_offset, remaining_clear_distance]`
+이다. `mode_code`는 `0=NORMAL`, `1=BYPASS_LEFT`, `-1=BYPASS_RIGHT`,
+`2=RETURN_CENTER`다.
 
 최종 `/xycar_motor` 발행자는 이 노드 하나여야 한다. 라바콘용
 `my_rule_cone_node`는 후보 명령만 발행하며 모터를 직접 발행하지 않는다.
@@ -252,6 +289,7 @@ ros2 topic echo /map_nav/xycar_motor_shadow
 ros2 topic echo /my_rule/object_detections
 ros2 topic echo /my_rule/cone_processing_enabled
 ros2 topic echo /my_rule/cone_clusters
+ros2 topic echo /map_nav/lidar_obstacle_debug
 ```
 
 shadow 검증과 바퀴를 든 시험을 통과한 뒤에만 `drive_enabled:=true`로

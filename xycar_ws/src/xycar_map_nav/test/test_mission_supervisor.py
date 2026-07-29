@@ -174,6 +174,20 @@ def test_dynamic_vehicle_requires_camera_and_associated_lidar_range():
     assert decision.mode == MissionMode.DYNAMIC_VEHICLE_RULE
 
 
+def test_lidar_obstacle_rule_overrides_global_path_without_camera_model():
+    supervisor = MissionSupervisor(MissionSupervisorConfig())
+
+    decision = supervisor.decide(
+        now_sec=1.0,
+        cone_command_ready=False,
+        dynamic_rule_mode="NORMAL",
+        lidar_obstacle_rule_mode="BYPASS_LEFT",
+    )
+
+    assert decision.mode == MissionMode.LIDAR_OBSTACLE_RULE
+    assert decision.reason == "lidar_path_obstacle_bypass_left"
+
+
 def test_dynamic_override_waits_for_rule_to_return_normal():
     supervisor = MissionSupervisor(MissionSupervisorConfig())
     for now in (1.0, 1.1):

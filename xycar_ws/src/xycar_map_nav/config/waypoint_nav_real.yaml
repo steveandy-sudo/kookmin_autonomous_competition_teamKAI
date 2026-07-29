@@ -162,6 +162,35 @@ xycar_waypoint_nav:
     dynamic_behind_return_trigger: 2
     dynamic_clear_reset_sec: 0.50
 
+    # Temporary model-free obstacle fallback. It only accepts multi-ray LiDAR
+    # clusters intersecting the vehicle-width corridor around the global path.
+    # Disable this after obstacle YOLO + LiDAR association is validated.
+    lidar_obstacle_fallback_enabled: true
+    lidar_obstacle_debug_topic: /map_nav/lidar_obstacle_debug
+    lidar_obstacle_detect_distance_m: 1.50
+    lidar_obstacle_minimum_distance_m: 0.18
+    lidar_obstacle_path_half_width_m: 0.18
+    lidar_obstacle_minimum_cluster_points: 3
+    lidar_obstacle_maximum_scan_index_gap: 2
+    lidar_obstacle_maximum_cluster_gap_m: 0.16
+    lidar_obstacle_minimum_cluster_width_m: 0.09
+    lidar_obstacle_maximum_cluster_width_m: 0.70
+    lidar_obstacle_side_probe_inner_m: 0.18
+    lidar_obstacle_side_probe_outer_m: 0.55
+    lidar_obstacle_lidar_x_m: 0.065
+    lidar_obstacle_lidar_y_m: 0.0
+    lidar_obstacle_lidar_yaw_deg: 0.0
+    lidar_obstacle_required_frames: 2
+    lidar_obstacle_left_offset_m: 0.28
+    lidar_obstacle_right_offset_m: 0.28
+    lidar_obstacle_offset_rate_mps: 0.45
+    lidar_obstacle_speed_limit_command: 4.0
+    lidar_obstacle_estimated_length_m: 0.35
+    lidar_obstacle_post_margin_m: 0.45
+    lidar_obstacle_clear_hold_sec: 0.25
+    lidar_obstacle_return_deadband_m: 0.02
+    lidar_obstacle_center_deadband_m: 0.04
+
     # Real steering calibration already used by canonical rule driving.
     steering_map_commands:
       [-42.0, -40.0, -35.0, -30.0, -20.0, -10.0, 0.0,

@@ -67,6 +67,7 @@ class MissionMode(str, Enum):
     TRAFFIC_STOP = "TRAFFIC_STOP"
     DYNAMIC_VEHICLE_RULE = "DYNAMIC_VEHICLE_RULE"
     CONE_RULE = "CONE_RULE"
+    LIDAR_OBSTACLE_RULE = "LIDAR_OBSTACLE_RULE"
     LANE_INTERVENTION = "LANE_INTERVENTION"
 
 
@@ -235,6 +236,7 @@ class MissionSupervisor:
         now_sec: float,
         cone_command_ready: bool,
         dynamic_rule_mode: str,
+        lidar_obstacle_rule_mode: str = "NORMAL",
     ) -> MissionDecision:
         now = float(now_sec)
         if (
@@ -278,6 +280,13 @@ class MissionSupervisor:
                 else "cone_evidence_hysteresis"
             )
             return self._transition(MissionMode.CONE_RULE, now, reason)
+
+        if str(lidar_obstacle_rule_mode).upper() != "NORMAL":
+            return self._transition(
+                MissionMode.LIDAR_OBSTACLE_RULE,
+                now,
+                f"lidar_path_obstacle_{lidar_obstacle_rule_mode.lower()}",
+            )
 
         lane_fresh = (
             now - self.lane_risk_time
