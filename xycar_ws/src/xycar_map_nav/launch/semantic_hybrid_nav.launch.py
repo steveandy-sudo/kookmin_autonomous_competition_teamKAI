@@ -98,6 +98,10 @@ def generate_launch_description() -> LaunchDescription:
             ),
             {
                 "scan_topic": LaunchConfiguration("scan_topic"),
+                "processing_gate_enabled": ParameterValue(
+                    LaunchConfiguration("gate_cone_processing"),
+                    value_type=bool,
+                ),
                 "use_sim_time": ParameterValue(
                     LaunchConfiguration("use_sim_time"),
                     value_type=bool,
@@ -145,6 +149,9 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "start_cone_controller", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "gate_cone_processing", default_value="true"
             ),
             DeclareLaunchArgument(
                 "object_model_path",

@@ -181,8 +181,9 @@ ros2 launch xycar_map_nav real_waypoint_nav.launch.py \
 
 ```text
 카메라 -> my_rule_object_detection_node -> /my_rule/object_detections
-LiDAR  -> my_rule_cone_node             -> /my_rule/cone_clusters
-                                         /my_rule/cone_cmd
+                                      -> /my_rule/cone_processing_enabled
+LiDAR  -> my_rule_cone_node (평소 sleep) -> /my_rule/cone_clusters
+                                          /my_rule/cone_cmd
 SLAM   -> map -> slam_odom -> base_footprint
                                          |
                           xycar_waypoint_nav
@@ -215,6 +216,13 @@ SLAM   -> map -> slam_odom -> base_footprint
 카메라와 LiDAR가 모두 사라진 상태가 0.7초 유지되어야 복귀한다. 동적 차량
 회피도 오프셋이 중앙으로 돌아온 뒤에만 전역경로 상태로 해제한다.
 
+저사양 실차의 CPU를 아끼기 위해 `my_rule_cone_node`는 평소 `/scan`
+구독 자체를 제거한 sleep 상태다. YOLO가 신뢰도 기준을 넘는 `cone`을 처음
+검출하면 `/my_rule/cone_processing_enabled=true`가 발행되고 그때부터만
+LiDAR 클러스터링과 경로 생성을 수행한다. 카메라 검출이 잠깐 흔들려도
+1.5초 동안 처리를 유지하며, `CONE_RULE` 중에는 항상 켜져 있다. 임무가
+끝나면 구독과 경로 이력을 모두 정리하고 다시 sleep 상태로 돌아간다.
+
 최종 `/xycar_motor` 발행자는 이 노드 하나여야 한다. 라바콘용
 `my_rule_cone_node`는 후보 명령만 발행하며 모터를 직접 발행하지 않는다.
 기존 `my_rule_drive_manager`는 중복 모터 권한을 피하려고 이 통합에서
@@ -242,6 +250,7 @@ ros2 topic echo /map_nav/control_mode
 ros2 topic echo /map_nav/mission_reason
 ros2 topic echo /map_nav/xycar_motor_shadow
 ros2 topic echo /my_rule/object_detections
+ros2 topic echo /my_rule/cone_processing_enabled
 ros2 topic echo /my_rule/cone_clusters
 ```
 

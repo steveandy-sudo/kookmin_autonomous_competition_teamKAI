@@ -81,6 +81,7 @@ class MissionSupervisorConfig:
     cone_entry_distance_m: float = 0.50
     cone_minimum_duration_sec: float = 1.0
     cone_clear_hold_sec: float = 0.70
+    cone_processing_hold_sec: float = 1.50
     vehicle_camera_required_frames: int = 2
     vehicle_camera_min_count: int = 1
     vehicle_camera_min_confidence: float = 0.45
@@ -189,6 +190,14 @@ class MissionSupervisor:
         self.cone_lidar_time = float(now_sec)
         self.cone_lidar_count = max(0, int(count))
         self.cone_lidar_distance_m = float(nearest_distance_m)
+
+    def cone_processing_requested(self, now_sec: float) -> bool:
+        """Keep the expensive cone planner asleep until camera evidence exists."""
+        camera_recent = (
+            float(now_sec) - self.cone_camera_time
+            <= self.config.cone_processing_hold_sec
+        )
+        return self.mode == MissionMode.CONE_RULE or camera_recent
 
     def observe_lane_risk(self, *, now_sec: float, risky: bool) -> None:
         self.lane_risk = bool(risky)

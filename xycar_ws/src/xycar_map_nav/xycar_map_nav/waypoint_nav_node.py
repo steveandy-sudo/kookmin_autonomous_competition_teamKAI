@@ -230,6 +230,11 @@ class WaypointNavNode(Node):
                 cone_clear_hold_sec=float(
                     self.get_parameter("cone_clear_hold_sec").value
                 ),
+                cone_processing_hold_sec=float(
+                    self.get_parameter(
+                        "cone_processing_hold_sec"
+                    ).value
+                ),
                 vehicle_camera_required_frames=int(
                     self.get_parameter(
                         "vehicle_camera_required_frames"
@@ -345,6 +350,16 @@ class WaypointNavNode(Node):
             String,
             str(self.get_parameter("mission_reason_topic").value),
             10,
+        )
+        self.cone_processing_enabled = False
+        self.cone_processing_pub = self.create_publisher(
+            Bool,
+            str(
+                self.get_parameter(
+                    "cone_processing_enabled_topic"
+                ).value
+            ),
+            transient_qos,
         )
         self.debug_pub = self.create_publisher(
             Float32MultiArray,
@@ -462,6 +477,11 @@ class WaypointNavNode(Node):
             1.0 / rate,
             self._control_step,
         )
+        self.cone_processing_timer = self.create_timer(
+            0.10,
+            self._update_cone_processing_gate,
+        )
+        self._publish_cone_processing_enabled(False, force=True)
         mode = "DRIVE" if self.drive_enabled else "SHADOW"
         self.get_logger().info(
             f"{mode}: {len(self.waypoints)} waypoints, "
@@ -635,6 +655,11 @@ class WaypointNavNode(Node):
         self.declare_parameter("cone_entry_distance_m", 0.50)
         self.declare_parameter("cone_minimum_duration_sec", 1.0)
         self.declare_parameter("cone_clear_hold_sec", 0.70)
+        self.declare_parameter("cone_processing_hold_sec", 1.50)
+        self.declare_parameter(
+            "cone_processing_enabled_topic",
+            "/my_rule/cone_processing_enabled",
+        )
         self.declare_parameter("cone_command_min_confidence", 0.30)
         self.declare_parameter("cone_input_is_physical_angle", True)
         self.declare_parameter(
@@ -1079,6 +1104,32 @@ class WaypointNavNode(Node):
             ),
             traffic_color=traffic_color,
         )
+        self._update_cone_processing_gate()
+
+    def _update_cone_processing_gate(self) -> None:
+        if self.mission_trigger_mode == "semantic":
+            requested = self.mission_supervisor.cone_processing_requested(
+                time.monotonic()
+            )
+        else:
+            requested = self.cone_mode_active
+            if self.current_path_index is not None:
+                requested = requested or (
+                    self._active_controller(self.current_path_index)
+                    == "cone_rule"
+                )
+        self._publish_cone_processing_enabled(requested)
+
+    def _publish_cone_processing_enabled(
+        self, enabled: bool, *, force: bool = False
+    ) -> None:
+        enabled = bool(enabled)
+        if not force and enabled == self.cone_processing_enabled:
+            return
+        self.cone_processing_enabled = enabled
+        self.cone_processing_pub.publish(Bool(data=enabled))
+        state = "enabled" if enabled else "sleeping"
+        self.get_logger().info(f"cone processing {state}")
 
     @staticmethod
     def _normalize_class_name(value: str) -> str:

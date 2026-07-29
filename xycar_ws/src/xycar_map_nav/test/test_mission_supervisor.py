@@ -80,6 +80,29 @@ def test_cone_requires_camera_lidar_distance_and_command():
     )
 
 
+def test_cone_planner_gate_starts_on_first_camera_detection():
+    supervisor = MissionSupervisor(
+        MissionSupervisorConfig(cone_processing_hold_sec=1.5)
+    )
+    assert not supervisor.cone_processing_requested(0.0)
+
+    supervisor.observe_objects(
+        now_sec=1.0,
+        cone_count=1,
+        cone_max_confidence=0.8,
+        vehicle_count=0,
+        vehicle_max_confidence=0.0,
+        vehicle_lidar_distance_m=float("inf"),
+        traffic_color="unknown",
+    )
+
+    # Planning wakes on one YOLO frame, while control transfer still needs
+    # the stricter two-frame camera + LiDAR + command condition.
+    assert supervisor.cone_processing_requested(1.0)
+    assert supervisor.cone_processing_requested(2.49)
+    assert not supervisor.cone_processing_requested(2.51)
+
+
 def test_cone_exit_uses_minimum_duration_and_clear_hold():
     supervisor = MissionSupervisor(MissionSupervisorConfig())
     for now in (1.0, 1.1):

@@ -118,6 +118,10 @@ xycar_waypoint_nav:
     cone_entry_distance_m: 0.50
     cone_minimum_duration_sec: 1.0
     cone_clear_hold_sec: 0.70
+    # Start the expensive cone LiDAR planner on the first valid YOLO cone.
+    # Keep it warm briefly through camera flicker and for the active mission.
+    cone_processing_hold_sec: 1.50
+    cone_processing_enabled_topic: /my_rule/cone_processing_enabled
     cone_command_topic: /my_rule/cone_cmd
     cone_command_timeout_sec: 0.35
     cone_command_min_confidence: 0.30

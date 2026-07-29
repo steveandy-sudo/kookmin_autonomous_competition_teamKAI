@@ -9,9 +9,14 @@ from geometry_msgs.msg import Pose, PoseArray, PoseStamped
 from nav_msgs.msg import Path
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Bool, Float32MultiArray
 
 try:
     from scipy.interpolate import CubicSpline
@@ -29,6 +34,11 @@ class ConeNode(Node):
         self.declare_parameter("cone_cmd_topic", "my_rule/cone_cmd")
         self.declare_parameter("cone_cluster_topic", "my_rule/cone_clusters")
         self.declare_parameter("cone_path_topic", "my_rule/cone_path")
+        self.declare_parameter("processing_gate_enabled", False)
+        self.declare_parameter(
+            "processing_enabled_topic",
+            "/my_rule/cone_processing_enabled",
+        )
         self.declare_parameter("max_range_m", 1.6)
         self.declare_parameter("min_range_m", 0.18)
         self.declare_parameter("scan_angle_offset_deg", 0.0)
@@ -106,15 +116,15 @@ class ConeNode(Node):
         self.declare_parameter("blind_recovery_min_clusters", 2)
         self.declare_parameter("blind_recovery_steer_decay", 0.92)
 
-        qos = QoSProfile(
+        self.scan_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
         )
-        self.create_subscription(LaserScan, str(self.get_parameter("scan_topic").value), self.scan_callback, qos)
         self.cmd_pub = self.create_publisher(Float32MultiArray, str(self.get_parameter("cone_cmd_topic").value), 10)
         self.cluster_pub = self.create_publisher(PoseArray, str(self.get_parameter("cone_cluster_topic").value), 10)
         self.path_pub = self.create_publisher(Path, str(self.get_parameter("cone_path_topic").value), 10)
+        self.scan_subscription = None
         self.prev_path: Optional[List[Point2]] = None
         self.path_miss_count = 0
         self.path_is_held = False
@@ -130,11 +140,95 @@ class ConeNode(Node):
         self.last_valid_steering = 0.0
         self.blind_recovery_count = 0
         self.had_valid_path = False
+        self.processing_gate_enabled = bool(
+            self.get_parameter("processing_gate_enabled").value
+        )
+        self.processing_enabled = not self.processing_gate_enabled
+        self.processing_gate_subscription = None
+        if self.processing_gate_enabled:
+            gate_qos = QoSProfile(
+                reliability=ReliabilityPolicy.RELIABLE,
+                history=HistoryPolicy.KEEP_LAST,
+                depth=1,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            )
+            self.processing_gate_subscription = self.create_subscription(
+                Bool,
+                str(
+                    self.get_parameter(
+                        "processing_enabled_topic"
+                    ).value
+                ),
+                self.processing_enabled_callback,
+                gate_qos,
+            )
+        else:
+            self.start_scan_processing()
         offset = float(self.get_parameter("scan_angle_offset_deg").value)
         method = str(self.get_parameter("path_interpolation_method").value)
-        self.get_logger().info(f"cone_node ready: scan offset {offset:.1f} deg, path interpolation {method}")
+        state = (
+            "camera-gated sleep"
+            if self.processing_gate_enabled
+            else "active"
+        )
+        self.get_logger().info(
+            f"cone_node ready: scan offset {offset:.1f} deg, "
+            f"path interpolation {method}, state={state}"
+        )
+
+    def processing_enabled_callback(self, msg: Bool) -> None:
+        requested = bool(msg.data)
+        if requested == self.processing_enabled:
+            return
+        if requested:
+            self.processing_enabled = True
+            self.start_scan_processing()
+            self.get_logger().info(
+                "cone camera evidence received; LiDAR planning enabled"
+            )
+            return
+
+        self.processing_enabled = False
+        if self.scan_subscription is not None:
+            self.destroy_subscription(self.scan_subscription)
+            self.scan_subscription = None
+        self.reset_processing_state()
+        self.publish_clusters([])
+        self.publish_path([])
+        self.publish_cmd(0.0, 0.0, 0.0)
+        self.get_logger().info(
+            "cone evidence cleared; LiDAR planning sleeping"
+        )
+
+    def start_scan_processing(self) -> None:
+        if self.scan_subscription is not None:
+            return
+        self.scan_subscription = self.create_subscription(
+            LaserScan,
+            str(self.get_parameter("scan_topic").value),
+            self.scan_callback,
+            self.scan_qos,
+        )
+
+    def reset_processing_state(self) -> None:
+        self.prev_path = None
+        self.path_miss_count = 0
+        self.path_is_held = False
+        self.cluster_candidate_history.clear()
+        self.midpoints_inferred = False
+        self.midpoint_source = "none"
+        self.active_inferred_boundary = None
+        self.pending_inferred_boundary = None
+        self.pending_inferred_frames = 0
+        self.steering_history.clear()
+        self.stabilized_steering = None
+        self.last_valid_steering = 0.0
+        self.blind_recovery_count = 0
+        self.had_valid_path = False
 
     def scan_callback(self, msg: LaserScan) -> None:
+        if not self.processing_enabled:
+            return
         points = self.scan_to_points(msg)
         clusters = self.cluster_cones(points)
         clusters = self.filter_front_clusters_by_angle(clusters)
