@@ -1,6 +1,10 @@
 import unittest
 
-from xycar_rl.reward import calculate_reward, large_steering_oscillation
+from xycar_rl.reward import (
+    calculate_reward,
+    large_steering_oscillation,
+    straight_high_speed_objective_weights,
+)
 from xycar_rl.termination import EpisodeTermination, TerminationConfig
 from xycar_rl.track_geometry import TrackProjection
 
@@ -19,6 +23,13 @@ def projection(cross_track=0.0, heading=0.0):
 
 
 class RewardTerminationTest(unittest.TestCase):
+    def test_straight_high_speed_objective_targets_command_25_and_weave(self):
+        weights = straight_high_speed_objective_weights()
+        self.assertAlmostEqual(weights.straight_target_speed_mps, 2.0153)
+        self.assertEqual(weights.curve_target_speed_mps, weights.straight_target_speed_mps)
+        self.assertGreater(weights.large_oscillation, 1.0)
+        self.assertGreater(weights.steering_rate, 0.1)
+
     def test_forward_centered_motion_is_positive(self):
         reward = calculate_reward(
             projection=projection(),
@@ -73,14 +84,14 @@ class RewardTerminationTest(unittest.TestCase):
     def test_speed_reward_requires_centered_heading(self):
         centered = calculate_reward(
             projection=projection(),
-            progress_delta_m=0.0,
+            progress_delta_m=0.08,
             steering_norm=0.0,
             previous_steering_norm=0.0,
             linear_speed_mps=0.8,
         )
         risky = calculate_reward(
             projection=projection(cross_track=0.30, heading=0.4),
-            progress_delta_m=0.0,
+            progress_delta_m=0.08,
             steering_norm=0.0,
             previous_steering_norm=0.0,
             linear_speed_mps=0.8,
@@ -90,13 +101,31 @@ class RewardTerminationTest(unittest.TestCase):
         self.assertLess(risky.unsafe_speed, 0.0)
         self.assertGreater(centered.total, risky.total)
 
+    def test_same_safe_progress_rewards_higher_speed(self):
+        slow = calculate_reward(
+            projection=projection(),
+            progress_delta_m=0.08,
+            steering_norm=0.0,
+            previous_steering_norm=0.0,
+            linear_speed_mps=0.8,
+        )
+        fast = calculate_reward(
+            projection=projection(),
+            progress_delta_m=0.08,
+            steering_norm=0.0,
+            previous_steering_norm=0.0,
+            linear_speed_mps=1.7,
+        )
+        self.assertGreater(fast.safe_speed, slow.safe_speed)
+        self.assertGreater(fast.total, slow.total)
+
     def test_preview_curve_penalizes_overspeed_before_tracking_error(self):
         straight = calculate_reward(
             projection=projection(),
             progress_delta_m=0.0,
             steering_norm=0.0,
             previous_steering_norm=0.0,
-            linear_speed_mps=0.80,
+            linear_speed_mps=1.60,
             preview_curvature=0.0,
         )
         upcoming_curve = calculate_reward(
@@ -104,7 +133,7 @@ class RewardTerminationTest(unittest.TestCase):
             progress_delta_m=0.0,
             steering_norm=0.0,
             previous_steering_norm=0.0,
-            linear_speed_mps=0.80,
+            linear_speed_mps=1.60,
             preview_curvature=1.0,
         )
         self.assertAlmostEqual(straight.unsafe_speed, 0.0)

@@ -1,7 +1,9 @@
+import csv
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import numpy as np
 import torch
 
 from xycar_rl.camera_speed_models import (
@@ -22,16 +24,53 @@ from xycar_rl.train_camera_speed_bc import (
     transition_rows_are_contiguous,
 )
 from xycar_rl.train_camera_speed_td3_bc import (
+    parse_args as parse_td3_args,
     planned_simulation_cap,
     restore_agent_checkpoint,
     save_checkpoint,
     transition_root,
+    transition_roots,
 )
 from xycar_rl.policy_runtime_node import apply_optional_speed_cap
-from xycar_rl.transition_dataset import camera_speed_action_targets
+from xycar_rl.rollout_policy import straight_segment_start_fractions
+from xycar_rl.track_geometry import TrackReference
+from xycar_rl.transition_dataset import (
+    CameraSpeedTransitionDataset,
+    camera_speed_action_targets,
+    successful_bc_episode_keys,
+)
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+WORLD = PROJECT_ROOT / "worlds" / "kookmin_xycar_track_final.sdf"
 
 
 class CameraSpeedContractTest(unittest.TestCase):
+    def test_straight_training_arguments_are_explicit(self):
+        args = parse_td3_args(
+            [
+                "--transitions",
+                "/tmp/transitions",
+                "--initial-checkpoint",
+                "/tmp/model.pth",
+                "--output-dir",
+                "/tmp/output",
+                "--straight-only",
+                "--expand-speed-range",
+                "--reward-objective",
+                "straight_high_speed",
+                "--max-speed-command",
+                "25",
+                "--straight-bc-target-speed-command",
+                "25",
+            ]
+        )
+        self.assertTrue(args.straight_only)
+        self.assertTrue(args.expand_speed_range)
+        self.assertEqual(args.reward_objective, "straight_high_speed")
+        self.assertEqual(args.max_speed_command, 25.0)
+        self.assertEqual(args.straight_bc_target_speed_command, 25.0)
+
     def test_milestones_do_not_add_a_speed_cap(self):
         self.assertEqual(planned_simulation_cap(5, 20), 0.0)
         self.assertEqual(planned_simulation_cap(20, 20), 0.0)
@@ -48,6 +87,20 @@ class CameraSpeedContractTest(unittest.TestCase):
             csv_path.write_text("episode_id\n", encoding="utf-8")
             self.assertEqual(transition_root(root), root.resolve())
             self.assertEqual(transition_root(csv_path), root.resolve())
+
+    def test_focus_transition_roots_expand_parallel_worker_tree(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            expected = set()
+            for index in range(3):
+                worker = root / f"worker_{index:02d}" / "transitions"
+                worker.mkdir(parents=True)
+                (worker / "transitions.csv").write_text(
+                    "episode_id\n",
+                    encoding="utf-8",
+                )
+                expected.add(worker.resolve())
+            self.assertEqual(transition_roots([root]), expected)
 
     def test_steering_sample_weight_emphasizes_curves(self):
         self.assertEqual(steering_sample_weight(0.0, 4.0), 1.0)
@@ -134,11 +187,188 @@ class CameraSpeedContractTest(unittest.TestCase):
         )
         self.assertEqual(applied, bc_target)
 
+    def test_straight_bc_can_target_full_speed_without_changing_applied_action(self):
+        applied, bc_target = camera_speed_action_targets(
+            {"action_norm": "0.1", "speed_command": "21.0"},
+            4.0,
+            25.0,
+            bc_speed_target_command=25.0,
+        )
+        self.assertLess(applied[1], 1.0)
+        self.assertEqual(bc_target, [0.1, 1.0])
+
     def test_straight_target_uses_maximum_speed(self):
         self.assertAlmostEqual(
             speed_target_from_transition(0.0, 0.0, 0.0),
-            24.0,
+            25.0,
         )
+
+    def test_straight_filter_rejects_curve_and_curve_preview(self):
+        track = TrackReference.from_sdf(WORLD, target_right_offset_m=0.0)
+        samples = np.linspace(0.0, track.length_m, 1_000, endpoint=False)
+        straight_progress = min(
+            samples,
+            key=lambda progress: (
+                abs(track.curvature_at(progress, sample_distance_m=0.30))
+                + track.max_abs_curvature_ahead(
+                    progress,
+                    preview_distance_m=0.80,
+                )
+            ),
+        )
+        curve_progress = max(
+            samples,
+            key=lambda progress: abs(
+                track.curvature_at(progress, sample_distance_m=0.30)
+            ),
+        )
+        dataset = CameraSpeedTransitionDataset.__new__(
+            CameraSpeedTransitionDataset
+        )
+        dataset.straight_curvature_threshold = 0.10
+        dataset.straight_guard_distance_m = 0.80
+        self.assertTrue(
+            dataset._is_straight_transition(
+                {
+                    "progress_m": str(straight_progress),
+                    "progress_delta_m": "0.01",
+                },
+                track,
+            )
+        )
+        self.assertFalse(
+            dataset._is_straight_transition(
+                {
+                    "progress_m": str(curve_progress),
+                    "progress_delta_m": "0.01",
+                },
+                track,
+            )
+        )
+
+    def test_straight_rollout_starts_cover_guarded_intervals(self):
+        track = TrackReference.from_sdf(WORLD, target_right_offset_m=0.0)
+        starts = straight_segment_start_fractions(
+            track,
+            curvature_threshold=0.10,
+            guard_distance_m=0.80,
+        )
+        self.assertEqual(len(starts), 3)
+        for fraction in starts:
+            progress_m = fraction * track.length_m
+            self.assertLessEqual(
+                abs(
+                    track.curvature_at(
+                        progress_m,
+                        sample_distance_m=0.30,
+                    )
+                ),
+                0.10,
+            )
+            self.assertLessEqual(
+                track.max_abs_curvature_ahead(
+                    progress_m,
+                    preview_distance_m=0.80,
+                ),
+                0.10,
+            )
+
+    def test_straight_filter_keeps_pre_filter_lap_success_for_bc(self):
+        track = TrackReference.from_sdf(WORLD, target_right_offset_m=0.0)
+        samples = np.linspace(0.0, track.length_m, 1_000, endpoint=False)
+        straight_progress = min(
+            samples,
+            key=lambda progress: (
+                abs(track.curvature_at(progress, sample_distance_m=0.30))
+                + track.max_abs_curvature_ahead(
+                    progress,
+                    preview_distance_m=0.80,
+                )
+            ),
+        )
+        curve_progress = max(
+            samples,
+            key=lambda progress: abs(
+                track.curvature_at(progress, sample_distance_m=0.30)
+            ),
+        )
+        fields = [
+            "episode_id",
+            "step_id",
+            "state_timestamp_ns",
+            "next_timestamp_ns",
+            "state_image_path",
+            "next_image_path",
+            "action_norm",
+            "speed_command",
+            "reward",
+            "terminated",
+            "truncated",
+            "termination_reason",
+            "progress_m",
+            "progress_delta_m",
+        ]
+        rows = [
+            {
+                "episode_id": "7",
+                "step_id": "0",
+                "state_timestamp_ns": "100",
+                "next_timestamp_ns": "200",
+                "state_image_path": "state.png",
+                "next_image_path": "next.png",
+                "action_norm": "0.0",
+                "speed_command": "25.0",
+                "reward": "0.0",
+                "terminated": "0",
+                "truncated": "0",
+                "termination_reason": "running",
+                "progress_m": str(straight_progress),
+                "progress_delta_m": "0.01",
+            },
+            {
+                "episode_id": "7",
+                "step_id": "1",
+                "state_timestamp_ns": "200",
+                "next_timestamp_ns": "300",
+                "state_image_path": "next.png",
+                "next_image_path": "terminal.png",
+                "action_norm": "0.0",
+                "speed_command": "25.0",
+                "reward": "1.0",
+                "terminated": "1",
+                "truncated": "0",
+                "termination_reason": "lap_complete",
+                "progress_m": str(curve_progress),
+                "progress_delta_m": "0.01",
+            },
+        ]
+        with TemporaryDirectory() as directory:
+            csv_path = Path(directory) / "transitions.csv"
+            with csv_path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields)
+                writer.writeheader()
+                writer.writerows(rows)
+            dataset = CameraSpeedTransitionDataset(
+                [csv_path],
+                world_sdf=WORLD,
+                straight_only=True,
+                bc_successful_episodes_only=True,
+            )
+        self.assertEqual(len(dataset), 1)
+        self.assertIn((csv_path.parent, "7"), dataset.successful_episode_keys)
+
+    def test_straight_segment_completion_is_successful_for_bc(self):
+        rows = [
+            (
+                Path("/tmp/segment"),
+                {
+                    "episode_id": "3",
+                    "termination_reason": "straight_segment_complete",
+                },
+            )
+        ]
+        successful = successful_bc_episode_keys(rows)
+        self.assertEqual(successful, {(Path("/tmp/segment"), "3")})
 
     def test_sharp_or_recovery_target_slows_down(self):
         sharp = speed_target_from_transition(1.0, 0.0, 0.0)

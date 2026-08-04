@@ -15,6 +15,13 @@ class ParallelPolicyCollectorTest(unittest.TestCase):
     def test_default_worker_count_matches_long_run_capacity(self):
         args = parse_args(["--checkpoint", "/tmp/model.pth"])
         self.assertEqual(args.workers, 10)
+        self.assertEqual(args.target_right_offset_m, 0.0)
+        self.assertEqual(args.speed_cap_command, 25.0)
+        self.assertFalse(args.raw_steering_actions)
+        self.assertFalse(args.straight_segment_only)
+        self.assertFalse(args.trace_privileged_expert)
+        self.assertEqual(args.recovery_min_lateral_m, 0.08)
+        self.assertEqual(args.recovery_max_yaw_deg, 14.0)
 
     def test_episode_allocation_uses_every_requested_episode(self):
         self.assertEqual(_episode_allocation(10, 4), [3, 3, 2, 2])
@@ -104,6 +111,40 @@ class ParallelPolicyCollectorTest(unittest.TestCase):
         self.assertEqual(actual[0]["terminated"], "1")
         self.assertEqual(actual[1]["termination_reason"], "off_track")
         self.assertEqual(actual[1]["terminated"], "1")
+
+    def test_straight_segment_terminal_is_a_truncation(self):
+        fields = [
+            "episode_id",
+            "state_timestamp_ns",
+            "terminated",
+            "truncated",
+            "termination_reason",
+        ]
+        with TemporaryDirectory() as directory:
+            csv_path = Path(directory) / "transitions.csv"
+            log_path = Path(directory) / "rollout.log"
+            with csv_path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields)
+                writer.writeheader()
+                writer.writerow(
+                    {
+                        "episode_id": "1",
+                        "state_timestamp_ns": "100",
+                        "terminated": "0",
+                        "truncated": "0",
+                        "termination_reason": "running",
+                    }
+                )
+            log_path.write_text(
+                "episode=0 steps=12 reason=straight_segment_complete\n",
+                encoding="utf-8",
+            )
+            apply_rollout_terminals(csv_path, log_path)
+            with csv_path.open(newline="", encoding="utf-8") as handle:
+                actual = next(csv.DictReader(handle))
+        self.assertEqual(actual["termination_reason"], "straight_segment_complete")
+        self.assertEqual(actual["terminated"], "0")
+        self.assertEqual(actual["truncated"], "1")
 
 
 if __name__ == "__main__":

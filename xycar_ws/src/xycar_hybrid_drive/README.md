@@ -9,11 +9,12 @@ chain in the actuation path.
 Priority is fixed:
 
 1. `CONE_RULE`: LiDAR cone corridor, adapted from `teamkai/hwj`
-2. `LANE_RULE_CURVE`: canonical Stanley/Pure-Pursuit on curves
-3. `MODEL_STRAIGHT`: temporal camera-speed policy on straight sections
+2. `LANE_RULE_CURVE`: continuous canonical-path rule at command 25
+3. `MODEL_STRAIGHT`: recovery-trained temporal camera-speed policy on straight
+   sections at up to 25
 
-The canonical preview enters curve mode after one frame. Returning to the model
-requires three straight frames, which prevents mode chatter. Cone mode requires
+The canonical preview enters and exits curve mode after one confirmed frame;
+the minimum curve hold and aligned-exit checks prevent mode chatter. Cone mode requires
 three consecutive valid LiDAR corridor paths and remains active through short
 dropouts. It exits only after the cone path is stale and canonical lane recovery
 has been observed repeatedly.
@@ -22,6 +23,23 @@ For curve frames, the node computes the canonical rule path first and skips
 neural-policy inference entirely. This removes model inference time from the
 curve command path. A straight recovery frame restarts the temporal policy
 before the mode returns to `MODEL_STRAIGHT`.
+
+The model command is passed through a straight-only deadband, low-pass, and
+rate limiter. Curves retain the rule controller's continuous steering values;
+the optional three-level pulse controller is disabled. Gazebo uses its CAD
+track pose only for route classification and a measured-steering-map
+Pure-Pursuit rule with a `1.20 m` lookahead. That simulation-only feedback is
+disabled in the real configuration, where the camera-derived canonical rule
+remains the curve controller. The real path target is `0.0 m`, exactly 10 cm left of the
+previous `+0.10 m` right-offset calibration.
+
+The default straight checkpoint is
+`straight_speed25_recovery_v3_20260805/camera_speed_td3_bc_best.pth`. In its
+normal straight evaluation it completed all 27 executed episodes at mean speed
+`24.985`, with no large oscillation event. The final speed-25 hybrid setting
+then completed three consecutive Gazebo laps; the two instrumented repeats
+took `12.798 s` and `12.796 s` from first motion to 98% lap progress, with
+maximum CAD-relative cross-track errors of `0.203 m` and `0.285 m`.
 
 The cone planner retains the `hwj` sequence:
 
@@ -52,7 +70,7 @@ Start in shadow mode first:
 ros2 launch xycar_final_drive final_real_stack.launch.py \
   driver_mode:=hybrid \
   drive_enabled:=false \
-  model_speed_cap:=8.0 \
+  model_speed_cap:=25.0 \
   cone_speed_cap:=9.5
 ```
 
@@ -71,12 +89,13 @@ checks pass:
 ros2 launch xycar_final_drive final_real_stack.launch.py \
   driver_mode:=hybrid \
   drive_enabled:=true \
-  model_speed_cap:=8.0 \
+  model_speed_cap:=25.0 \
   cone_speed_cap:=9.5
 ```
 
-The launch defaults to `drive_enabled:=false`. Raise either speed cap only after
-recording a successful low-speed bag for all three mode transitions.
+The launch defaults to `drive_enabled:=false`. Command 25 and the continuous
+curve outputs must remain in shadow/lifted-wheel testing until the steering
+sign, emergency stop, and every left-right mode transition have been checked.
 
 ## Simulation
 
@@ -88,13 +107,14 @@ source install/setup.bash
 ros2 launch xycar_hybrid_drive hybrid_sim.launch.py \
   headless:=gui \
   enable_rviz:=true \
-  model_speed_cap:=8.0 \
+  model_speed_cap:=25.0 \
   cone_speed_cap:=9.5
 ```
 
-The current competition world may not contain a cone corridor. Lane/model mode
+The competition world may not contain a cone corridor. Lane/model mode
 switching can still be checked there; cone mode requires cone-sized LiDAR
-clusters with a `0.68-0.98 m` corridor.
+clusters with a `0.68-0.98 m` corridor. The CAD Pure-Pursuit feedback mentioned
+above is a Gazebo validation aid and is never enabled by the real launch.
 
 ## Debug Topics
 

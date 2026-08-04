@@ -61,7 +61,19 @@ def parse_args(argv=None):
     parser.add_argument("--action-noise", type=float, default=0.03)
     parser.add_argument("--speed-action-noise", type=float, default=0.03)
     parser.add_argument("--speed-action-bias", type=float, default=0.02)
+    parser.add_argument(
+        "--raw-steering-actions",
+        action="store_true",
+        help=(
+            "Disable the deployment straight steering stabilizer. Use only "
+            "for critic-focused oscillation collection."
+        ),
+    )
     parser.add_argument("--recovery-probability", type=float, default=0.30)
+    parser.add_argument("--recovery-min-lateral-m", type=float, default=0.08)
+    parser.add_argument("--recovery-max-lateral-m", type=float, default=0.22)
+    parser.add_argument("--recovery-min-yaw-deg", type=float, default=4.0)
+    parser.add_argument("--recovery-max-yaw-deg", type=float, default=14.0)
     parser.add_argument("--s-curve-focus-probability", type=float, default=0.40)
     parser.add_argument(
         "--start-progress-fraction",
@@ -71,8 +83,25 @@ def parse_args(argv=None):
     )
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="cuda")
     parser.add_argument("--gui-first-worker", action="store_true")
-    parser.add_argument("--target-right-offset-m", type=float, default=0.10)
+    parser.add_argument("--target-right-offset-m", type=float, default=0.0)
+    parser.add_argument(
+        "--speed-cap-command",
+        type=float,
+        default=25.0,
+        help="Cap collected policy actions at the requested real command.",
+    )
     parser.add_argument("--off-track-threshold-m", type=float, default=0.38)
+    parser.add_argument("--straight-segment-only", action="store_true")
+    parser.add_argument("--straight-curvature-threshold", type=float, default=0.10)
+    parser.add_argument("--straight-guard-distance-m", type=float, default=0.80)
+    parser.add_argument(
+        "--trace-privileged-expert",
+        action="store_true",
+        help=(
+            "Record simulator pose-based expert labels alongside the "
+            "learner actions for TD3+BC recovery training."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -172,7 +201,9 @@ def apply_rollout_terminals(csv_path: Path, rollout_log_path: Path) -> None:
                 }
             )
         )
-        final["truncated"] = str(int(reason == "time_limit"))
+        final["truncated"] = str(
+            int(reason in {"time_limit", "straight_segment_complete"})
+        )
     temporary = csv_path.with_suffix(".terminal.tmp")
     with temporary.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -190,7 +221,7 @@ class ParallelPolicyCollector:
             raise FileNotFoundError(self.checkpoint)
         payload = checkpoint_payload(self.checkpoint)
         self.min_speed = float(payload.get("min_speed_command", 4.0))
-        self.max_speed = float(payload.get("max_speed_command", 24.0))
+        self.max_speed = float(payload.get("max_speed_command", 25.0))
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         self.output_root = (
             args.output_root.expanduser().resolve()
@@ -292,6 +323,11 @@ class ParallelPolicyCollector:
                         "-p",
                         "require_action_trace:=true",
                         "-p",
+                        (
+                            "require_expert_action_trace:="
+                            f"{str(self.args.trace_privileged_expert).lower()}"
+                        ),
+                        "-p",
                         "auto_stop_on_terminal:=false",
                         "-p",
                         f"max_rate_hz:={self.args.control_rate_hz}",
@@ -333,19 +369,44 @@ class ParallelPolicyCollector:
                 str(self.min_speed),
                 "--max-speed-command",
                 str(self.max_speed),
+                "--target-right-offset-m",
+                str(self.args.target_right_offset_m),
+                "--speed-cap-command",
+                str(self.args.speed_cap_command),
                 "--action-noise",
                 str(self.args.action_noise),
                 "--speed-action-noise",
                 str(self.args.speed_action_noise),
                 "--speed-action-bias",
                 str(self.args.speed_action_bias),
-                "--disable-adaptive-steering",
                 "--steering-temporal-alpha",
+                "0.20",
+                "--straight-steering-temporal-alpha",
+                "0.20",
+                "--steering-straight-threshold",
                 "1.0",
+                "--steering-curve-threshold",
+                "1.0",
+                "--straight-steering-rate-limit",
+                "0.05",
+                "--curve-steering-rate-limit",
+                "0.05",
+                "--steering-deadband",
+                "0.02",
+                "--turn-in-anticipation-gain",
+                "0.0",
                 "--speed-temporal-alpha",
                 "1.0",
                 "--recovery-probability",
                 str(self.args.recovery_probability),
+                "--recovery-min-lateral-m",
+                str(self.args.recovery_min_lateral_m),
+                "--recovery-max-lateral-m",
+                str(self.args.recovery_max_lateral_m),
+                "--recovery-min-yaw-deg",
+                str(self.args.recovery_min_yaw_deg),
+                "--recovery-max-yaw-deg",
+                str(self.args.recovery_max_yaw_deg),
                 "--s-curve-focus-probability",
                 str(self.args.s_curve_focus_probability),
                 "--seed",
@@ -353,6 +414,20 @@ class ParallelPolicyCollector:
                 "--device",
                 self.args.device,
             ]
+            if self.args.raw_steering_actions:
+                rollout_command.append("--disable-adaptive-steering")
+            if self.args.straight_segment_only:
+                rollout_command.extend(
+                    [
+                        "--straight-segment-only",
+                        "--straight-curvature-threshold",
+                        str(self.args.straight_curvature_threshold),
+                        "--straight-guard-distance-m",
+                        str(self.args.straight_guard_distance_m),
+                    ]
+                )
+            if self.args.trace_privileged_expert:
+                rollout_command.append("--trace-privileged-expert")
             if self.args.start_progress_fraction is not None:
                 rollout_command.extend(
                     [
@@ -443,6 +518,25 @@ class ParallelPolicyCollector:
             "checkpoint": str(self.checkpoint),
             "min_speed_command": self.min_speed,
             "max_speed_command": self.max_speed,
+            "speed_cap_command": self.args.speed_cap_command,
+            "raw_steering_actions": self.args.raw_steering_actions,
+            "straight_segment_only": self.args.straight_segment_only,
+            "straight_curvature_threshold": (
+                self.args.straight_curvature_threshold
+            ),
+            "straight_guard_distance_m": self.args.straight_guard_distance_m,
+            "trace_privileged_expert": self.args.trace_privileged_expert,
+            "recovery_probability": self.args.recovery_probability,
+            "recovery_min_lateral_m": self.args.recovery_min_lateral_m,
+            "recovery_max_lateral_m": self.args.recovery_max_lateral_m,
+            "recovery_min_yaw_deg": self.args.recovery_min_yaw_deg,
+            "recovery_max_yaw_deg": self.args.recovery_max_yaw_deg,
+            "straight_steering_stabilizer": {
+                "alpha": 0.20,
+                "rate_limit": 0.05,
+                "deadband": 0.02,
+                "zero_crossing_threshold": 0.12,
+            },
             "control_rate_hz": self.args.control_rate_hz,
             "workers": len(allocation),
             "requested_episodes": sum(allocation),

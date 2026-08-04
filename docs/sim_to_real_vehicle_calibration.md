@@ -47,10 +47,29 @@ speed_mps = 0.080612 * speed_command
 abs(speed_command) < 3 -> 0 m/s
 steering response = direction-aware command-to-curvature lookup
 steering delay = 0.10 s
+steering joint rate limit = 20.0 rad/s
+steering joint effort limit = 80.0
+Ackermann steering P gain = 20.0
 speed delay = 0.20 s
 acceleration response tau = 0.19 s
 braking response tau = 0.09 s
+Ackermann shared linear/angular acceleration limiter = disabled
 ```
+
+The steering joint rate is matched to the 2026-07-13 maximum-steering trials.
+Across 36 `0 -> +-35/40/42` steps, the IMU yaw response reached 10% at a
+median `0.10 s`, 50% at `0.15 s`, and 90% at about `0.20 s`. Keeping the
+measured `0.10 s` command delay, non-binding `20.0 rad/s` / `80.0` joint
+limits, and an explicit Ackermann `steer_p_gain=20.0` reproduce the fast servo
+response. An isolated Gazebo `0 -> +42` check measured wheel-angle
+`t10/t50/t90 = 0.122/0.156/0.225 s` and odometry-yaw `t90 = 0.241 s`, with no
+overshoot. The plugin's default proportional gain of `1.0` took roughly two
+seconds. Its shared `+-2` acceleration limiter also constrained yaw-rate
+commands and therefore double-filtered steering; longitudinal acceleration is
+already represented by the measured bridge time constants, so that plugin
+limiter is no longer used. The competition and temporary-track camera bags do
+not contain wheel angle, IMU, or odometry feedback and therefore cannot
+identify steering rate by themselves.
 
 같은 절댓값에서도 양수 조향 명령이 음수보다 더 급하게 회전했으므로 단일 `steering_gain` 대신 좌우 비대칭 보간 테이블을 사용한다. 실차 VESC 변환과 기존 주행 코드의 부호를 유지해 양수 `angle_cmd`는 우회전으로 정의한다. 전원 저하로 움직이지 않은 반복은 계산에서 제외했다. 측정 CSV는 `data/vehicle_dynamics/2026-07-12`와 `teamkai/data/vehicle-dynamics-20260713` 브랜치의 `data/vehicle_dynamics/2026-07-13`에 있다.
 

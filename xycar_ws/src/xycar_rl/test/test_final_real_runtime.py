@@ -15,15 +15,15 @@ class FinalRealRuntimeTest(unittest.TestCase):
         checkpoint = (
             Path(__file__).resolve().parents[1]
             / "models"
-            / "final_rule_td3_bc_uncapped_avg17_20260723"
+            / "straight_speed25_recovery_v3_20260805"
             / "camera_speed_td3_bc_best.pth"
         )
         actor, payload = load_camera_speed_actor(checkpoint, device="cpu")
 
-        self.assertEqual(payload["epoch"], 14)
+        self.assertEqual(payload["epoch"], 29)
         self.assertEqual(payload["temporal_frames"], 2)
         self.assertEqual(payload["min_speed_command"], 4.0)
-        self.assertEqual(payload["max_speed_command"], 24.0)
+        self.assertEqual(payload["max_speed_command"], 25.0)
         self.assertEqual(actor.temporal_frames, 2)
 
 

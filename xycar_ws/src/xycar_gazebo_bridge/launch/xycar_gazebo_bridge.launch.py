@@ -1,5 +1,6 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -17,10 +18,19 @@ def generate_launch_description():
         "/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo",
         "/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan",
         "/imu@sensor_msgs/msg/Imu@gz.msgs.IMU",
+        "/model/xycar_ackermann/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry",
+        "/world/kookmin_xycar_track/dynamic_pose/info@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
+        "/xycar_contact@ros_gz_interfaces/msg/Contacts[gz.msgs.Contacts",
+        "/world/kookmin_xycar_track/control@ros_gz_interfaces/srv/ControlWorld",
     ]
 
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "auto_start",
+                default_value="true",
+                description="Unpause Gazebo after startup. RL owns stepping when false.",
+            ),
             DeclareLaunchArgument(
                 "params_file",
                 default_value=config_file,
@@ -45,6 +55,7 @@ def generate_launch_description():
                             "pause: false",
                         ],
                         output="screen",
+                        condition=IfCondition(LaunchConfiguration("auto_start")),
                     )
                 ],
             ),

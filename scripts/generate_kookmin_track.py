@@ -127,16 +127,21 @@ XYCAR_CAMERA_VISIBILITY_MASK = 4294967293
 XYCAR_SELF_VISIBILITY_FLAGS = 2
 # Effective raw-image FOV recovered from the measured OpenCV fisheye K/D.
 # The lens is marketed as 170 deg, but the calibrated 1280 px image spans 102.95 deg.
-XYCAR_CAMERA_HFOV = math.radians(102.95)
 XYCAR_CAMERA_WIDTH = 1280
 XYCAR_CAMERA_HEIGHT = 1024
-XYCAR_CAMERA_PITCH = 0.10
+XYCAR_SIM_CAMERA_WIDTH = 320
+XYCAR_SIM_CAMERA_HEIGHT = 256
+XYCAR_CAMERA_RECTIFIED_FX = 560.3981298315102
+XYCAR_CAMERA_HFOV = 2.0 * math.atan(
+    XYCAR_CAMERA_WIDTH / (2.0 * XYCAR_CAMERA_RECTIFIED_FX)
+)
+XYCAR_CAMERA_PITCH = 0.187
 XYCAR_LIDAR_SAMPLES = 505
 XYCAR_LIDAR_RANGE_MAX = 12.0
 XYCAR_SPAWN_X = -2.70
-XYCAR_SPAWN_Y = 2.25
+XYCAR_SPAWN_Y = 2.665
 XYCAR_SPAWN_Z = 0.05
-XYCAR_SPAWN_YAW = 0.0
+XYCAR_SPAWN_YAW = math.pi
 
 WORLD_W = 22.50
 WORLD_H = 13.50
@@ -2445,15 +2450,15 @@ def vehicle_model():
         <sensor name="front_camera" type="camera">
           <pose>{XYCAR_CAMERA_X:.3f} 0 {XYCAR_CAMERA_Z:.3f} 0 {XYCAR_CAMERA_PITCH:.4f} 0</pose>
           <topic>/image_raw</topic>
-          <update_rate>30</update_rate>
+          <update_rate>14</update_rate>
           <camera>
             <camera_info_topic>/camera_info</camera_info_topic>
             <horizontal_fov>{XYCAR_CAMERA_HFOV:.4f}</horizontal_fov>
-            <image><width>{XYCAR_CAMERA_WIDTH}</width><height>{XYCAR_CAMERA_HEIGHT}</height><format>R8G8B8</format></image>
+            <image><width>{XYCAR_SIM_CAMERA_WIDTH}</width><height>{XYCAR_SIM_CAMERA_HEIGHT}</height><format>R8G8B8</format></image>
             <clip><near>0.03</near><far>20</far></clip>
             <visibility_mask>{XYCAR_CAMERA_VISIBILITY_MASK}</visibility_mask>
             <lens>
-              <type>equidistant</type>
+              <type>gnomonical</type>
               <scale_to_hfov>true</scale_to_hfov>
               <cutoff_angle>1.5707963267948966</cutoff_angle>
               <env_texture_size>512</env_texture_size>

@@ -38,7 +38,7 @@ def generate_launch_description():
         [
             rl_share,
             "models",
-            "final_rule_td3_bc_uncapped_avg17_20260723",
+            "straight_speed25_recovery_v3_20260805",
             "camera_speed_td3_bc_best.pth",
         ]
     )
@@ -61,7 +61,7 @@ def generate_launch_description():
                 "checkpoint_path",
                 default_value=checkpoint,
             ),
-            DeclareLaunchArgument("model_speed_cap", default_value="8.0"),
+            DeclareLaunchArgument("model_speed_cap", default_value="25.0"),
             DeclareLaunchArgument("cone_speed_cap", default_value="9.5"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
@@ -100,6 +100,18 @@ def generate_launch_description():
                         "hybrid_cone_speed_cap": ParameterValue(
                             LaunchConfiguration("cone_speed_cap"),
                             value_type=float,
+                        ),
+                        "hybrid_sim_track_mode_override": True,
+                        "hybrid_sim_track_curve_feedback_enabled": True,
+                        "hybrid_sim_track_world_path": ParameterValue(
+                            PathJoinSubstitution(
+                                [
+                                    project_root,
+                                    "worlds",
+                                    "kookmin_xycar_track_final.sdf",
+                                ]
+                            ),
+                            value_type=str,
                         ),
                     },
                 ],

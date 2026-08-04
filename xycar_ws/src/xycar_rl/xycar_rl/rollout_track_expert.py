@@ -19,7 +19,8 @@ def parse_args(argv=None):
     parser.add_argument("--total-steps", type=int, default=0)
     parser.add_argument("--seed", type=int, default=20260716)
     parser.add_argument("--min-speed-command", type=float, default=4.0)
-    parser.add_argument("--max-speed-command", type=float, default=10.0)
+    parser.add_argument("--max-speed-command", type=float, default=25.0)
+    parser.add_argument("--control-rate-hz", type=float, default=7.0)
     parser.add_argument("--base-lookahead-m", type=float, default=0.28)
     parser.add_argument("--speed-lookahead-gain", type=float, default=0.45)
     parser.add_argument("--steering-gain", type=float, default=1.0)
@@ -46,6 +47,7 @@ def main(argv=None) -> None:
         require_lidar=False,
         min_speed_command=args.min_speed_command,
         max_speed_command=args.max_speed_command,
+        control_rate_hz=args.control_rate_hz,
     )
     expert = PrivilegedTrackExpert(
         env.track,

@@ -14,10 +14,14 @@ class DriveMode(IntEnum):
 class ModeManagerConfig:
     curve_entry_per_m: float = 0.16
     curve_exit_per_m: float = 0.10
+    curve_entry_path_angle_rad: float = 0.12
+    curve_exit_path_angle_rad: float = 0.11
     curve_entry_angle_command: float = 10.0
     curve_exit_angle_command: float = 6.0
     curve_entry_frames: int = 1
-    curve_exit_frames: int = 3
+    curve_exit_frames: int = 1
+    curve_min_duration_sec: float = 1.2
+    straight_min_duration_sec: float = 0.0
     cone_entry_confidence: float = 0.35
     cone_entry_frames: int = 3
     cone_min_duration_sec: float = 1.0
@@ -55,7 +59,9 @@ class HybridModeManager:
         lane_available: bool,
         model_available: bool,
         path_curvature_per_m: float,
+        path_turn_angle_rad: float,
         rule_angle_command: float,
+        route_curve_override: bool | None,
         cone_confidence: float,
         cone_age_sec: float,
         cone_cluster_count: int,
@@ -109,39 +115,57 @@ class HybridModeManager:
             self.cone_lane_recovery_count = 0
             target = self._lane_mode(
                 path_curvature_per_m,
+                path_turn_angle_rad,
                 rule_angle_command,
                 model_available,
                 lane_available,
+                route_curve_override,
             )
             return self._change(target, now_sec, "cone ended; lane recovered")
 
         if not new_canonical_frame:
             return ModeDecision(self.mode, False, "holding current frame")
 
-        curve_entry = lane_available and (
-            path_curvature_per_m >= cfg.curve_entry_per_m
-            or abs(rule_angle_command) >= cfg.curve_entry_angle_command
-        )
-        straight_exit = lane_available and (
-            path_curvature_per_m <= cfg.curve_exit_per_m
-            and abs(rule_angle_command) <= cfg.curve_exit_angle_command
-        )
+        if route_curve_override is None:
+            curve_entry = self.curve_entry_detected(
+                lane_available,
+                path_curvature_per_m,
+                path_turn_angle_rad,
+            )
+            straight_exit = self.straight_detected(
+                lane_available,
+                path_curvature_per_m,
+                path_turn_angle_rad,
+            )
+        else:
+            curve_entry = bool(route_curve_override)
+            straight_exit = not bool(route_curve_override)
         self.curve_frames = self.curve_frames + 1 if curve_entry else 0
         self.straight_frames = self.straight_frames + 1 if straight_exit else 0
 
         if self.mode == DriveMode.MODEL_STRAIGHT:
-            if not model_available and lane_available:
-                return self._change(
-                    DriveMode.LANE_RULE_CURVE,
-                    now_sec,
-                    "model unavailable",
-                )
             if self.curve_frames >= max(1, cfg.curve_entry_frames):
+                if (
+                    self.mode_started_sec > 0.0
+                    and now_sec - self.mode_started_sec
+                    < cfg.straight_min_duration_sec
+                ):
+                    return ModeDecision(
+                        self.mode,
+                        False,
+                        "minimum straight hold",
+                    )
                 self.straight_frames = 0
                 return self._change(
                     DriveMode.LANE_RULE_CURVE,
                     now_sec,
                     "curve preview threshold",
+                )
+            if not model_available:
+                return ModeDecision(
+                    self.mode,
+                    False,
+                    "waiting for straight model",
                 )
             return ModeDecision(self.mode, False, "straight model")
 
@@ -150,6 +174,12 @@ class HybridModeManager:
                 model_available
                 and self.straight_frames >= max(1, cfg.curve_exit_frames)
             ):
+                if now_sec - self.mode_started_sec < cfg.curve_min_duration_sec:
+                    return ModeDecision(
+                        self.mode,
+                        False,
+                        "minimum curve hold",
+                    )
                 self.curve_frames = 0
                 return self._change(
                     DriveMode.MODEL_STRAIGHT,
@@ -163,17 +193,55 @@ class HybridModeManager:
     def _lane_mode(
         self,
         curvature_per_m: float,
+        path_turn_angle_rad: float,
         rule_angle_command: float,
         model_available: bool,
         lane_available: bool,
+        route_curve_override: bool | None,
     ) -> DriveMode:
-        curve = lane_available and (
-            curvature_per_m >= self.config.curve_exit_per_m
-            or abs(rule_angle_command) >= self.config.curve_exit_angle_command
+        curve = (
+            self.curve_entry_detected(
+                lane_available,
+                curvature_per_m,
+                path_turn_angle_rad,
+            )
+            if route_curve_override is None
+            else bool(route_curve_override)
         )
-        if curve or not model_available:
+        if curve:
             return DriveMode.LANE_RULE_CURVE
         return DriveMode.MODEL_STRAIGHT
+
+    def curve_entry_detected(
+        self,
+        lane_available: bool,
+        curvature_per_m: float,
+        path_turn_angle_rad: float,
+    ) -> bool:
+        """Return whether current unsmoothed lane geometry previews a curve."""
+        cfg = self.config
+        turn = abs(float(path_turn_angle_rad))
+        return bool(lane_available) and (
+            turn >= cfg.curve_entry_path_angle_rad
+            or (
+                float(curvature_per_m) >= cfg.curve_entry_per_m
+                and turn >= cfg.curve_exit_path_angle_rad
+            )
+        )
+
+    def straight_detected(
+        self,
+        lane_available: bool,
+        curvature_per_m: float,
+        path_turn_angle_rad: float,
+    ) -> bool:
+        """Return whether lane geometry is straight enough for the RL policy."""
+        cfg = self.config
+        return bool(lane_available) and (
+            float(curvature_per_m) <= cfg.curve_exit_per_m
+            and abs(float(path_turn_angle_rad))
+            <= cfg.curve_exit_path_angle_rad
+        )
 
     def _change(
         self,

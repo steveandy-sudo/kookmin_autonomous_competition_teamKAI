@@ -341,7 +341,7 @@ class RLPolicyRuntimeNode(Node):
         self.declare_parameter("drive_enabled", False)
         self.declare_parameter("speed_command", 3.0)
         self.declare_parameter("min_speed_command", 4.0)
-        self.declare_parameter("max_speed_command", 24.0)
+        self.declare_parameter("max_speed_command", 25.0)
         self.declare_parameter("deployment_speed_cap", 0.0)
         self.declare_parameter("speed_temporal_alpha", 0.35)
         self.declare_parameter("max_steering_command", 42.0)

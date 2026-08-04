@@ -92,6 +92,31 @@ class TrackGeometryTest(unittest.TestCase):
             )
             self.assertAlmostEqual(yaw_difference, np.pi, delta=0.12)
 
+    def test_lane_offset_is_to_the_right_in_both_directions(self):
+        for reverse_direction in (False, True):
+            center = TrackReference.from_sdf(
+                WORLD,
+                target_right_offset_m=0.0,
+                reverse_direction=reverse_direction,
+            )
+            right_lane = TrackReference.from_sdf(
+                WORLD,
+                target_right_offset_m=0.20,
+                reverse_direction=reverse_direction,
+            )
+            for index in range(0, len(center.points), 113):
+                previous = center.points[(index - 1) % len(center.points)]
+                following = center.points[(index + 1) % len(center.points)]
+                tangent = following - previous
+                tangent /= np.linalg.norm(tangent)
+                right_normal = np.asarray([tangent[1], -tangent[0]])
+                offset = right_lane.points[index] - center.points[index]
+                self.assertAlmostEqual(
+                    float(np.dot(offset, right_normal)),
+                    0.20,
+                    delta=0.015,
+                )
+
     def test_wrap_angle(self):
         self.assertAlmostEqual(wrap_angle(3.0 * math.pi), -math.pi)
         self.assertAlmostEqual(wrap_angle(-3.0 * math.pi), -math.pi)

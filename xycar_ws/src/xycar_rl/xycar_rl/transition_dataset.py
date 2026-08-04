@@ -44,6 +44,8 @@ def camera_speed_action_targets(
     row: dict[str, str],
     min_speed_command: float,
     max_speed_command: float,
+    *,
+    bc_speed_target_command: float | None = None,
 ) -> tuple[list[float], list[float]]:
     speed_norm = normalize_speed_command(
         float(row["speed_command"]),
@@ -54,15 +56,37 @@ def camera_speed_action_targets(
     expert_action_norm = row.get("expert_action_norm", "")
     expert_speed_command = row.get("expert_speed_command", "")
     if expert_action_norm == "" or expert_speed_command == "":
-        return applied_action, applied_action.copy()
-    return applied_action, [
-        float(expert_action_norm),
-        normalize_speed_command(
-            float(expert_speed_command),
+        bc_action = applied_action.copy()
+    else:
+        bc_action = [
+            float(expert_action_norm),
+            normalize_speed_command(
+                float(expert_speed_command),
+                min_speed_command,
+                max_speed_command,
+            ),
+        ]
+    if bc_speed_target_command is not None:
+        bc_action[1] = normalize_speed_command(
+            min(
+                max(float(bc_speed_target_command), min_speed_command),
+                max_speed_command,
+            ),
             min_speed_command,
             max_speed_command,
-        ),
-    ]
+        )
+    return applied_action, bc_action
+
+
+def successful_bc_episode_keys(
+    rows: list[tuple[Path, dict[str, str]]],
+) -> set[tuple[Path, str]]:
+    return {
+        (root, row.get("episode_id", "0"))
+        for root, row in rows
+        if str(row.get("termination_reason") or "")
+        in {"lap_complete", "straight_segment_complete"}
+    }
 
 
 class RLTransitionDataset(Dataset):
@@ -142,6 +166,10 @@ class CameraSpeedTransitionDataset(RLTransitionDataset):
         target_right_offset_m: float = 0.0,
         reward_weights: RewardWeights = RewardWeights(),
         bc_successful_episodes_only: bool = False,
+        straight_only: bool = False,
+        straight_curvature_threshold: float = 0.10,
+        straight_guard_distance_m: float = 0.80,
+        bc_speed_target_command: float | None = None,
         input_width: int = 160,
         input_height: int = 90,
     ) -> None:
@@ -154,14 +182,36 @@ class CameraSpeedTransitionDataset(RLTransitionDataset):
         self.max_speed_command = float(max_speed_command)
         self.target_right_offset_m = float(target_right_offset_m)
         self.reward_weights = reward_weights
+        self.bc_speed_target_command = bc_speed_target_command
+        self.original_row_count = len(self.rows)
+        self.successful_episode_keys = successful_bc_episode_keys(self.rows)
+        self.straight_only = bool(straight_only)
+        self.straight_curvature_threshold = max(
+            0.0, float(straight_curvature_threshold)
+        )
+        self.straight_guard_distance_m = max(
+            0.0, float(straight_guard_distance_m)
+        )
+        if self.straight_only:
+            if world_sdf is None:
+                raise ValueError("world_sdf is required when straight_only is true")
+            straight_track = TrackReference.from_sdf(
+                Path(world_sdf).expanduser().resolve(),
+                target_right_offset_m=self.target_right_offset_m,
+            )
+            self.rows = [
+                (root, row)
+                for root, row in self.rows
+                if self._is_straight_transition(row, straight_track)
+            ]
+            if not self.rows:
+                raise ValueError(
+                    "straight_only filtering removed every transition row"
+                )
+        self.straight_row_count = len(self.rows)
         self.bc_successful_episodes_only = bool(
             bc_successful_episodes_only
         )
-        self.successful_episode_keys = {
-            (root, row.get("episode_id", "0"))
-            for root, row in self.rows
-            if str(row.get("termination_reason") or "") == "lap_complete"
-        }
         self.temporal_frames = int(temporal_frames)
         if self.temporal_frames not in {1, 2}:
             raise ValueError("temporal_frames must be 1 or 2")
@@ -187,6 +237,28 @@ class CameraSpeedTransitionDataset(RLTransitionDataset):
             if world_sdf is None:
                 raise ValueError("world_sdf is required when recompute_rewards is true")
             self._recompute_rewards(Path(world_sdf).expanduser().resolve())
+
+    def _is_straight_transition(
+        self,
+        row: dict[str, str],
+        track: TrackReference,
+    ) -> bool:
+        progress_m = float(row.get("progress_m") or 0.0)
+        next_progress_m = progress_m + float(
+            row.get("progress_delta_m") or 0.0
+        )
+        threshold = self.straight_curvature_threshold
+        guard = self.straight_guard_distance_m
+        return all(
+            abs(track.curvature_at(sample, sample_distance_m=0.30))
+            <= threshold
+            and track.max_abs_curvature_ahead(
+                sample,
+                preview_distance_m=guard,
+            )
+            <= threshold
+            for sample in (progress_m, next_progress_m)
+        )
 
     def _recompute_rewards(self, world_sdf: Path) -> None:
         track = TrackReference.from_sdf(
@@ -281,6 +353,7 @@ class CameraSpeedTransitionDataset(RLTransitionDataset):
             row,
             self.min_speed_command,
             self.max_speed_command,
+            bc_speed_target_command=self.bc_speed_target_command,
         )
         return {
             "image": self._temporal_image(
