@@ -46,10 +46,19 @@ setup(
         "console_scripts": [
             "command_odom_node = xycar_map_nav.command_odom_node:main",
             "imu_yaw_calibrator = xycar_map_nav.imu_yaw_calibrator:main",
+            "diagnostic_image_compressor = "
+            "xycar_map_nav.diagnostic_image_compressor:main",
+            "replay_diagnostic_mosaic = "
+            "xycar_map_nav.replay_diagnostic_mosaic:main",
+            "analyze_integrated_drive_bag = "
+            "xycar_map_nav.analyze_integrated_drive_bag:main",
             "odom_tf_republisher = "
             "xycar_map_nav.odom_tf_republisher:main",
             "gazebo_pose_tf_republisher = "
             "xycar_map_nav.gazebo_pose_tf_republisher:main",
+            "sequential_hybrid_driver = "
+            "xycar_map_nav.sequential_hybrid_driver:main",
+            "space_drive_gate = xycar_map_nav.space_drive_gate:main",
             "occupancy_grid_to_cloud = "
             "xycar_map_nav.occupancy_grid_to_cloud:main",
             "route_start_pose_publisher = "

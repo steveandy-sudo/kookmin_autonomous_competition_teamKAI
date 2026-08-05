@@ -1,0 +1,30 @@
+/wide_camera_mjpeg/image_raw/compressed:
+  reliability: reliable
+  durability: volatile
+  history: keep_last
+  depth: 2
+/recording/object_detection_debug/compressed:
+  reliability: reliable
+  durability: volatile
+  history: keep_last
+  depth: 2
+/recording/canonical_road_image/compressed:
+  reliability: reliable
+  durability: volatile
+  history: keep_last
+  depth: 2
+/recording/canonical_white_mask/compressed:
+  reliability: reliable
+  durability: volatile
+  history: keep_last
+  depth: 2
+/recording/canonical_yellow_mask/compressed:
+  reliability: reliable
+  durability: volatile
+  history: keep_last
+  depth: 2
+/recording/rule_canonical_debug/compressed:
+  reliability: reliable
+  durability: volatile
+  history: keep_last
+  depth: 2

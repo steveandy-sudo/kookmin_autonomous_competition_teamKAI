@@ -1,0 +1,117 @@
+sequential_hybrid_driver:
+  ros__parameters:
+    use_sim_time: false
+    drive_enabled: false
+    gate_arming_required: false
+    drive_armed_topic: /hybrid_gate/drive_armed
+    control_rate_hz: 20.0
+
+    rl_command_topic: /rl/policy_motor_shadow
+    rule_command_topic: /hybrid/rule_candidate
+    cone_command_topic: /my_rule/cone_cmd
+    scan_topic: /scan
+    motor_topic: /xycar_motor
+    shadow_motor_topic: /hybrid_gate/xycar_motor_shadow
+    mode_topic: /hybrid_gate/mode
+    status_topic: /hybrid_gate/status
+    diagnostics_topic: /hybrid_gate/diagnostics
+
+    # Robust 20th-percentile distance in seven narrow LiDAR sectors.
+    sector_centers_deg: [-90.0, -60.0, -30.0, 0.0, 30.0, 60.0, 90.0]
+    sector_half_angle_deg: 8.0
+    sector_distance_quantile: 0.20
+    minimum_sector_points: 4
+    minimum_sector_span_deg: 4.0
+    scan_timeout_sec: 0.35
+
+    # User-reviewed frame sequence from main_track_run01_20260804_164328:
+    # RL -> T7/8 G1 RULE -> T28 RL -> T43 G2 RULE -> T52 RL
+    # -> T78 S RULE -> T100 RL -> T123 next-lap G1 RULE.
+    initial_source: RL
+    gate_names: [G1_RULE_START, G1_RL_RETURN, G2_RULE_START, G2_RL_RETURN, S_RULE_START, S_RL_RETURN]
+    gate_next_sources: [RULE, RL, RULE, RL, RULE, RL]
+
+    # Sector indices: 0=-90, 1=-60, 2=-30, 3=front, 4=+30,
+    # 5=+60, 6=+90 degrees. A secondary index of -1 disables it.
+    gate_primary_sector_indices: [3, 3, 3, 3, 3, 4]
+    gate_primary_min_m: [0.0, 6.0, 0.0, 6.0, 0.0, 6.0]
+    gate_primary_max_m: [2.5, 16.0, 2.4, 16.0, 3.8, 16.0]
+    gate_secondary_sector_indices: [1, 1, 1, -1, 1, 1]
+    gate_secondary_min_m: [1.2, 0.6, 1.2, 0.0, 0.5, 0.5]
+    gate_secondary_max_m: [1.9, 1.5, 1.9, 100.0, 1.2, 1.5]
+
+    # G2 returns to RL only after the front opens and the rule path reports
+    # a near-straight command. Other gates leave this check effectively off.
+    gate_rule_abs_angle_max: [100.0, 100.0, 100.0, 8.0, 100.0, 100.0]
+
+    start_delay_sec: 3.0
+    minimum_stage_sec: 0.8
+    required_gate_frames: 3
+    candidate_fresh_sec: 0.35
+    candidate_hold_sec: 0.75
+    transition_blend_sec: 0.30
+    minimum_speed_command: 3.0
+    maximum_speed_command: 30.0
+    maximum_abs_angle_command: 42.0
+    repeat_sequence: true
+
+    # The recorded main-track cone section appears while WP6 is pending. WP1
+    # remains eligible for starts immediately before the cone section.
+    pre_waypoint_cone_enabled: true
+    cone_eligible_waypoint_numbers: [1, 6]
+    cone_entry_confidence: 0.35
+    cone_exit_confidence: 0.20
+    cone_entry_frames: 3
+    cone_exit_frames: 5
+    cone_command_timeout_sec: 0.35
+    cone_yolo_min_confidence: 0.50
+    cone_yolo_required_frames: 2
+    cone_yolo_timeout_sec: 0.75
+    cone_entry_distance_m: 1.0
+    cone_cluster_timeout_sec: 0.50
+    cone_cluster_topic: /my_rule/cone_clusters
+    cone_processing_enabled_topic: /my_rule/cone_processing_enabled
+
+    # Two YOLO frames plus a matching LiDAR return start avoidance immediately.
+    # The camera side selects the opposite lane, and a short detection gap is
+    # held so one obstacle episode cannot repeatedly release and re-enter.
+    # Traffic-light detections are intentionally not consumed here.
+    object_detections_topic: /my_rule/object_detections
+    vehicle_class_names: [obstacle_vehicle, car]
+    vehicle_yolo_min_confidence: 0.45
+    vehicle_yolo_required_frames: 2
+    vehicle_yolo_timeout_sec: 2.50
+    vehicle_camera_lidar_hfov_deg: 60.0
+    vehicle_camera_lidar_padding_deg: 3.0
+    vehicle_lidar_min_points: 2
+    vehicle_lidar_sector_memory_sec: 1.5
+    vehicle_avoidance_enabled: true
+    vehicle_avoidance_immediate_on_yolo: true
+    vehicle_avoidance_entry_distance_m: 1.20
+    vehicle_minimum_side_clearance_m: 0.70
+    vehicle_left_offset_m: 0.33
+    vehicle_right_offset_m: 0.33
+    vehicle_offset_rate_mps: 0.35
+    vehicle_avoidance_speed_limit_command: 8.0
+    vehicle_minimum_avoid_sec: 0.80
+    vehicle_clear_hold_sec: 1.0
+    vehicle_return_hold_sec: 0.30
+    vehicle_return_deadband_m: 0.02
+    avoidance_offset_topic: /hybrid/avoidance_lateral_offset
+    avoidance_debug_topic: /hybrid/avoidance_debug
+
+    # Multi-ray geometry rejects isolated noise and broad walls. It is used
+    # only after the vehicle YOLO has armed avoidance.
+    lidar_obstacle_detect_distance_m: 1.50
+    lidar_obstacle_minimum_distance_m: 0.18
+    lidar_obstacle_path_half_width_m: 0.18
+    lidar_obstacle_minimum_cluster_points: 3
+    lidar_obstacle_maximum_scan_index_gap: 2
+    lidar_obstacle_maximum_cluster_gap_m: 0.16
+    lidar_obstacle_minimum_cluster_width_m: 0.09
+    lidar_obstacle_maximum_cluster_width_m: 0.70
+    lidar_obstacle_side_probe_inner_m: 0.18
+    lidar_obstacle_side_probe_outer_m: 0.55
+    lidar_obstacle_lidar_x_m: 0.065
+    lidar_obstacle_lidar_y_m: 0.0
+    lidar_obstacle_lidar_yaw_deg: 0.0
