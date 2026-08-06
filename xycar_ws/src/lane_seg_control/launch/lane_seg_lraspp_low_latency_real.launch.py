@@ -23,7 +23,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("cpu_threads", default_value="4"),
-            DeclareLaunchArgument("max_output_rate_hz", default_value="7.0"),
+            DeclareLaunchArgument("max_output_rate_hz", default_value="10.0"),
             DeclareLaunchArgument("debug_rate_hz", default_value="0.0"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(canonical_launch),

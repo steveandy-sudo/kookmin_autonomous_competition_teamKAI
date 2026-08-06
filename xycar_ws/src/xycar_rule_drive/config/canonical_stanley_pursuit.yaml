@@ -23,9 +23,10 @@ canonical_stanley_pursuit_driver:
     path_point_count: 32
     path_previous_weight: 0.10
     min_lane_pixels: 8
-    # Follow the yellow centerline with a 10 cm right calibration that places
-    # the observed vehicle body over the line. White fallback uses this target.
-    target_right_offset_m: 0.10
+    # Real-car target: follow 15 cm left of the observed yellow reference.
+    # White fallback reconstructs this exact same lateral target.
+    target_right_offset_m: 0.0
+    target_left_offset_m: 0.15
     # A yellow dash can leave the camera during a tight turn. While the outer
     # white boundary remains visible, reconstruct the yellow centerline from
     # the measured 40 cm yellow-to-white distance.

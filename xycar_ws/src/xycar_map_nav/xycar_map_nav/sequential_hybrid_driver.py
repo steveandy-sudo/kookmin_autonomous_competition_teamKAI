@@ -1,0 +1,1121 @@
+"""ROS node for ordered LiDAR-gate RL/rule command selection."""
+
+from __future__ import annotations
+
+import math
+import time
+from dataclasses import replace
+
+import rclpy
+from geometry_msgs.msg import PoseArray
+from my_rule_msgs.msg import ObjectDetectionArray
+from rclpy.executors import ExternalShutdownException
+from rclpy.node import Node
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
+from rclpy.signals import SignalHandlerOptions
+from sensor_msgs.msg import LaserScan
+from std_msgs.msg import Bool, Float32, Float32MultiArray, String
+from std_srvs.srv import Trigger
+
+from .corner_survey_core import measure_sector, SectorMeasurement
+from .cone_waypoint_bypass import ConeBypassConfig
+from .cone_waypoint_bypass import ConeBypassEvent
+from .cone_waypoint_bypass import PreWaypointConeBypass
+from .lidar_obstacle import detect_path_obstacle
+from .lidar_obstacle import LidarPathObstacle
+from .lidar_obstacle import LidarPathObstacleConfig
+from .mission_supervisor import camera_box_lidar_sector
+from .mission_supervisor import scan_sector_distance
+from .sequential_hybrid_core import CandidateSource
+from .sequential_hybrid_core import GateDefinition
+from .sequential_hybrid_core import HybridState
+from .sequential_hybrid_core import SequentialHybridConfig
+from .sequential_hybrid_core import SequentialHybridController
+from .sequential_hybrid_core import SequentialHybridInput
+from .yolo_lidar_avoidance import YoloLidarAvoidanceConfig
+from .yolo_lidar_avoidance import YoloLidarAvoidanceController
+from .yolo_lidar_avoidance import YoloLidarAvoidanceMode
+
+
+STATE_CODES = {state: float(index) for index, state in enumerate(HybridState)}
+SOURCE_CODES = {
+    CandidateSource.RL: 0.0,
+    CandidateSource.RULE: 1.0,
+}
+
+
+class SequentialHybridDriver(Node):
+    def __init__(self) -> None:
+        super().__init__("sequential_hybrid_driver")
+        self._declare_parameters()
+        self.drive_enabled = bool(self.get_parameter("drive_enabled").value)
+        self.gate_arming_required = bool(
+            self.get_parameter("gate_arming_required").value
+        )
+        self.force_rule_only = bool(
+            self.get_parameter("force_rule_only").value
+        )
+        self.drive_armed = not self.gate_arming_required
+        self.sector_centers_deg = self._float_array("sector_centers_deg")
+        self.controller = SequentialHybridController(self._config())
+        self.start_waypoint_number = int(
+            self.get_parameter("start_waypoint_number").value
+        )
+        self.controller.select_start_waypoint(self.start_waypoint_number)
+        if self.force_rule_only:
+            self.controller.source = CandidateSource.RULE
+        self.rl_command = (0.0, 0.0)
+        self.rule_command = (0.0, 0.0)
+        self.rl_command_time = float("-inf")
+        self.rule_command_time = float("-inf")
+        self.cone_command = (0.0, 0.0, 0.0)
+        self.last_valid_cone_command = (0.0, 0.0)
+        self.cone_command_time = float("-inf")
+        self.cone_bypass = PreWaypointConeBypass(
+            ConeBypassConfig(
+                entry_confidence=float(
+                    self.get_parameter("cone_entry_confidence").value
+                ),
+                exit_confidence=float(
+                    self.get_parameter("cone_exit_confidence").value
+                ),
+                entry_frames=int(
+                    self.get_parameter("cone_entry_frames").value
+                ),
+                exit_frames=int(
+                    self.get_parameter("cone_exit_frames").value
+                ),
+                entry_distance_m=float(
+                    self.get_parameter("cone_entry_distance_m").value
+                ),
+            )
+        )
+        self.cone_yolo_frames = 0
+        self.cone_yolo_time = float("-inf")
+        self.cone_yolo_confidence = 0.0
+        self.cone_lidar_distance_m = float("inf")
+        self.cone_cluster_time = float("-inf")
+        self.latest_scan: LaserScan | None = None
+        self.tracked_vehicle_sector: tuple[float, float] | None = None
+        self.tracked_vehicle_sector_time = float("-inf")
+        self.tracked_vehicle_distance_m = float("inf")
+        self.avoidance_controller = YoloLidarAvoidanceController(
+            YoloLidarAvoidanceConfig(
+                yolo_min_confidence=float(
+                    self.get_parameter(
+                        "vehicle_yolo_min_confidence"
+                    ).value
+                ),
+                yolo_required_frames=int(
+                    self.get_parameter("vehicle_yolo_required_frames").value
+                ),
+                yolo_timeout_sec=float(
+                    self.get_parameter("vehicle_yolo_timeout_sec").value
+                ),
+                entry_distance_m=float(
+                    self.get_parameter(
+                        "vehicle_avoidance_entry_distance_m"
+                    ).value
+                ),
+                minimum_side_clearance_m=float(
+                    self.get_parameter(
+                        "vehicle_minimum_side_clearance_m"
+                    ).value
+                ),
+                left_offset_m=float(
+                    self.get_parameter("vehicle_left_offset_m").value
+                ),
+                right_offset_m=float(
+                    self.get_parameter("vehicle_right_offset_m").value
+                ),
+                offset_rate_mps=float(
+                    self.get_parameter("vehicle_offset_rate_mps").value
+                ),
+                speed_limit_command=float(
+                    self.get_parameter(
+                        "vehicle_avoidance_speed_limit_command"
+                    ).value
+                ),
+                minimum_avoid_sec=float(
+                    self.get_parameter("vehicle_minimum_avoid_sec").value
+                ),
+                clear_hold_sec=float(
+                    self.get_parameter("vehicle_clear_hold_sec").value
+                ),
+                return_hold_sec=float(
+                    self.get_parameter("vehicle_return_hold_sec").value
+                ),
+                return_deadband_m=float(
+                    self.get_parameter("vehicle_return_deadband_m").value
+                ),
+                immediate_on_yolo=bool(
+                    self.get_parameter(
+                        "vehicle_avoidance_immediate_on_yolo"
+                    ).value
+                ),
+            )
+        )
+        self.avoidance_state = self.avoidance_controller.state()
+        self.local_obstacle_route = tuple(
+            (0.02 * index, 0.0) for index in range(251)
+        )
+        self.lidar_obstacle_config = LidarPathObstacleConfig(
+            detect_distance_m=float(
+                self.get_parameter("lidar_obstacle_detect_distance_m").value
+            ),
+            minimum_distance_m=float(
+                self.get_parameter("lidar_obstacle_minimum_distance_m").value
+            ),
+            path_corridor_half_width_m=float(
+                self.get_parameter("lidar_obstacle_path_half_width_m").value
+            ),
+            minimum_cluster_points=int(
+                self.get_parameter("lidar_obstacle_minimum_cluster_points").value
+            ),
+            maximum_scan_index_gap=int(
+                self.get_parameter("lidar_obstacle_maximum_scan_index_gap").value
+            ),
+            maximum_cluster_gap_m=float(
+                self.get_parameter("lidar_obstacle_maximum_cluster_gap_m").value
+            ),
+            minimum_cluster_width_m=float(
+                self.get_parameter("lidar_obstacle_minimum_cluster_width_m").value
+            ),
+            maximum_cluster_width_m=float(
+                self.get_parameter("lidar_obstacle_maximum_cluster_width_m").value
+            ),
+            side_probe_inner_m=float(
+                self.get_parameter("lidar_obstacle_side_probe_inner_m").value
+            ),
+            side_probe_outer_m=float(
+                self.get_parameter("lidar_obstacle_side_probe_outer_m").value
+            ),
+            lidar_x_m=float(
+                self.get_parameter("lidar_obstacle_lidar_x_m").value
+            ),
+            lidar_y_m=float(
+                self.get_parameter("lidar_obstacle_lidar_y_m").value
+            ),
+            lidar_yaw_rad=math.radians(
+                float(
+                    self.get_parameter("lidar_obstacle_lidar_yaw_deg").value
+                )
+            ),
+        )
+        self.latest_lidar_obstacle: LidarPathObstacle | None = None
+        self.scan_time = float("-inf")
+        self.scan_sequence = 0
+        self.evaluated_scan_sequence = -1
+        self.sectors = tuple(
+            SectorMeasurement(float("inf"), 0, 0.0)
+            for _ in self.sector_centers_deg
+        )
+        self.last_update_time = time.monotonic()
+        self.last_status_time = 0.0
+        self.last_status_key = ""
+
+        sensor_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+        )
+        self.create_subscription(
+            Float32MultiArray,
+            str(self.get_parameter("rl_command_topic").value),
+            self._on_rl_command,
+            10,
+        )
+        self.create_subscription(
+            Float32MultiArray,
+            str(self.get_parameter("rule_command_topic").value),
+            self._on_rule_command,
+            10,
+        )
+        if bool(self.get_parameter("pre_waypoint_cone_enabled").value):
+            self.create_subscription(
+                Float32MultiArray,
+                str(self.get_parameter("cone_command_topic").value),
+                self._on_cone_command,
+                10,
+            )
+        self.create_subscription(
+            LaserScan,
+            str(self.get_parameter("scan_topic").value),
+            self._on_scan,
+            sensor_qos,
+        )
+        self.create_subscription(
+            ObjectDetectionArray,
+            str(self.get_parameter("object_detections_topic").value),
+            self._on_object_detections,
+            sensor_qos,
+        )
+        self.create_subscription(
+            PoseArray,
+            str(self.get_parameter("cone_cluster_topic").value),
+            self._on_cone_clusters,
+            sensor_qos,
+        )
+        self.create_subscription(
+            Bool,
+            str(self.get_parameter("drive_armed_topic").value),
+            self._on_drive_armed,
+            10,
+        )
+        self.shadow_pub = self.create_publisher(
+            Float32MultiArray,
+            str(self.get_parameter("shadow_motor_topic").value),
+            10,
+        )
+        self.motor_pub = (
+            self.create_publisher(
+                Float32MultiArray,
+                str(self.get_parameter("motor_topic").value),
+                10,
+            )
+            if self.drive_enabled
+            else None
+        )
+        self.mode_pub = self.create_publisher(
+            String,
+            str(self.get_parameter("mode_topic").value),
+            10,
+        )
+        self.status_pub = self.create_publisher(
+            String,
+            str(self.get_parameter("status_topic").value),
+            10,
+        )
+        self.diagnostics_pub = self.create_publisher(
+            Float32MultiArray,
+            str(self.get_parameter("diagnostics_topic").value),
+            10,
+        )
+        self.avoidance_offset_pub = self.create_publisher(
+            Float32,
+            str(self.get_parameter("avoidance_offset_topic").value),
+            10,
+        )
+        self.avoidance_debug_pub = self.create_publisher(
+            Float32MultiArray,
+            str(self.get_parameter("avoidance_debug_topic").value),
+            10,
+        )
+        cone_gate_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.cone_processing_pub = self.create_publisher(
+            Bool,
+            str(self.get_parameter("cone_processing_enabled_topic").value),
+            cone_gate_qos,
+        )
+        self.cone_processing_pub.publish(Bool(data=False))
+        self.create_service(Trigger, "~/reset", self._reset)
+        self.create_service(Trigger, "~/advance_gate", self._advance_gate)
+        rate_hz = max(1.0, float(self.get_parameter("control_rate_hz").value))
+        self.control_timer = self.create_timer(1.0 / rate_hz, self._control_step)
+        self.get_logger().info(
+            "SEQUENTIAL HYBRID: map/pose/SLAM are not used; "
+            f"drive_enabled={self.drive_enabled}, "
+            f"gates={len(self.controller.config.gates)}"
+        )
+
+    def _declare_parameters(self) -> None:
+        self.declare_parameter("drive_enabled", False)
+        self.declare_parameter("gate_arming_required", False)
+        self.declare_parameter("force_rule_only", True)
+        self.declare_parameter("drive_armed_topic", "/hybrid_gate/drive_armed")
+        self.declare_parameter("control_rate_hz", 20.0)
+        self.declare_parameter("rl_command_topic", "/rl/policy_motor_shadow")
+        self.declare_parameter("rule_command_topic", "/hybrid/rule_candidate")
+        self.declare_parameter("cone_command_topic", "/my_rule/cone_cmd")
+        self.declare_parameter("scan_topic", "/scan")
+        self.declare_parameter("motor_topic", "/xycar_motor")
+        self.declare_parameter(
+            "shadow_motor_topic", "/hybrid_gate/xycar_motor_shadow"
+        )
+        self.declare_parameter("mode_topic", "/hybrid_gate/mode")
+        self.declare_parameter("status_topic", "/hybrid_gate/status")
+        self.declare_parameter(
+            "diagnostics_topic", "/hybrid_gate/diagnostics"
+        )
+        self.declare_parameter(
+            "sector_centers_deg", [-90.0, -60.0, -30.0, 0.0, 30.0, 60.0, 90.0]
+        )
+        self.declare_parameter("sector_half_angle_deg", 8.0)
+        self.declare_parameter("sector_distance_quantile", 0.20)
+        self.declare_parameter("minimum_sector_points", 4)
+        self.declare_parameter("minimum_sector_span_deg", 4.0)
+        self.declare_parameter("scan_timeout_sec", 0.35)
+        self.declare_parameter("initial_source", "RULE")
+        self.declare_parameter("start_waypoint_number", 1)
+        self.declare_parameter(
+            "gate_names",
+            [
+                "G1_RULE_START",
+                "G1_RL_RETURN",
+                "G2_RULE_START",
+                "G2_RL_RETURN",
+                "S_RULE_START",
+                "S_RL_RETURN",
+            ],
+        )
+        self.declare_parameter(
+            "gate_next_sources", ["RULE", "RL", "RULE", "RL", "RULE", "RL"]
+        )
+        self.declare_parameter("gate_primary_sector_indices", [3, 3, 3, 3, 3, 4])
+        self.declare_parameter("gate_primary_min_m", [0.0, 6.0, 0.0, 6.0, 0.0, 6.0])
+        self.declare_parameter(
+            "gate_primary_max_m", [2.5, 16.0, 2.4, 16.0, 3.8, 16.0]
+        )
+        self.declare_parameter("gate_secondary_sector_indices", [1, 1, 1, -1, 1, 1])
+        self.declare_parameter(
+            "gate_secondary_min_m", [1.2, 0.6, 1.2, 0.0, 0.5, 0.5]
+        )
+        self.declare_parameter(
+            "gate_secondary_max_m", [1.9, 1.5, 1.9, 100.0, 1.2, 1.5]
+        )
+        self.declare_parameter(
+            "gate_rule_abs_angle_max", [100.0, 100.0, 100.0, 8.0, 100.0, 100.0]
+        )
+        self.declare_parameter("start_delay_sec", 3.0)
+        self.declare_parameter("minimum_stage_sec", 0.8)
+        self.declare_parameter("required_gate_frames", 3)
+        self.declare_parameter("candidate_fresh_sec", 0.35)
+        self.declare_parameter("candidate_hold_sec", 0.75)
+        self.declare_parameter("transition_blend_sec", 0.30)
+        self.declare_parameter("minimum_speed_command", 3.0)
+        self.declare_parameter("maximum_speed_command", 30.0)
+        self.declare_parameter("maximum_abs_angle_command", 42.0)
+        self.declare_parameter("repeat_sequence", True)
+        self.declare_parameter("pre_waypoint_cone_enabled", True)
+        self.declare_parameter("cone_eligible_waypoint_numbers", [1])
+        self.declare_parameter("cone_entry_confidence", 0.35)
+        self.declare_parameter("cone_exit_confidence", 0.20)
+        self.declare_parameter("cone_entry_frames", 3)
+        self.declare_parameter("cone_exit_frames", 5)
+        self.declare_parameter("cone_command_timeout_sec", 0.35)
+        self.declare_parameter("cone_yolo_min_confidence", 0.50)
+        self.declare_parameter("cone_yolo_required_frames", 2)
+        self.declare_parameter("cone_yolo_timeout_sec", 0.75)
+        self.declare_parameter("cone_entry_distance_m", 1.0)
+        self.declare_parameter("cone_cluster_timeout_sec", 0.50)
+        self.declare_parameter("cone_cluster_topic", "/my_rule/cone_clusters")
+        self.declare_parameter(
+            "cone_processing_enabled_topic",
+            "/my_rule/cone_processing_enabled",
+        )
+        self.declare_parameter(
+            "object_detections_topic", "/my_rule/object_detections"
+        )
+        self.declare_parameter(
+            "vehicle_class_names", ["obstacle_vehicle", "car"]
+        )
+        self.declare_parameter("vehicle_yolo_min_confidence", 0.45)
+        self.declare_parameter("vehicle_yolo_required_frames", 2)
+        self.declare_parameter("vehicle_yolo_timeout_sec", 0.75)
+        self.declare_parameter("vehicle_camera_lidar_hfov_deg", 60.0)
+        self.declare_parameter("vehicle_camera_lidar_padding_deg", 3.0)
+        self.declare_parameter("vehicle_lidar_min_points", 2)
+        self.declare_parameter("vehicle_lidar_sector_memory_sec", 1.5)
+        self.declare_parameter("vehicle_avoidance_enabled", True)
+        self.declare_parameter(
+            "vehicle_avoidance_immediate_on_yolo", False
+        )
+        self.declare_parameter("vehicle_avoidance_entry_distance_m", 1.20)
+        self.declare_parameter("vehicle_minimum_side_clearance_m", 0.70)
+        self.declare_parameter("vehicle_left_offset_m", 0.28)
+        self.declare_parameter("vehicle_right_offset_m", 0.28)
+        self.declare_parameter("vehicle_offset_rate_mps", 0.35)
+        self.declare_parameter("vehicle_avoidance_speed_limit_command", 4.0)
+        self.declare_parameter("vehicle_minimum_avoid_sec", 0.80)
+        self.declare_parameter("vehicle_clear_hold_sec", 1.0)
+        self.declare_parameter("vehicle_return_hold_sec", 0.30)
+        self.declare_parameter("vehicle_return_deadband_m", 0.02)
+        self.declare_parameter(
+            "avoidance_offset_topic", "/hybrid/avoidance_lateral_offset"
+        )
+        self.declare_parameter(
+            "avoidance_debug_topic", "/hybrid/avoidance_debug"
+        )
+        self.declare_parameter("lidar_obstacle_detect_distance_m", 1.50)
+        self.declare_parameter("lidar_obstacle_minimum_distance_m", 0.18)
+        self.declare_parameter("lidar_obstacle_path_half_width_m", 0.18)
+        self.declare_parameter("lidar_obstacle_minimum_cluster_points", 3)
+        self.declare_parameter("lidar_obstacle_maximum_scan_index_gap", 2)
+        self.declare_parameter("lidar_obstacle_maximum_cluster_gap_m", 0.16)
+        self.declare_parameter("lidar_obstacle_minimum_cluster_width_m", 0.09)
+        self.declare_parameter("lidar_obstacle_maximum_cluster_width_m", 0.70)
+        self.declare_parameter("lidar_obstacle_side_probe_inner_m", 0.18)
+        self.declare_parameter("lidar_obstacle_side_probe_outer_m", 0.55)
+        self.declare_parameter("lidar_obstacle_lidar_x_m", 0.065)
+        self.declare_parameter("lidar_obstacle_lidar_y_m", 0.0)
+        self.declare_parameter("lidar_obstacle_lidar_yaw_deg", 0.0)
+
+    def _float_array(self, name: str) -> tuple[float, ...]:
+        return tuple(float(value) for value in self.get_parameter(name).value)
+
+    def _int_array(self, name: str) -> tuple[int, ...]:
+        return tuple(int(value) for value in self.get_parameter(name).value)
+
+    def _string_array(self, name: str) -> tuple[str, ...]:
+        return tuple(str(value) for value in self.get_parameter(name).value)
+
+    def _config(self) -> SequentialHybridConfig:
+        names = self._string_array("gate_names")
+        sources = self._string_array("gate_next_sources")
+        primary_indices = self._int_array("gate_primary_sector_indices")
+        primary_minimums = self._float_array("gate_primary_min_m")
+        primary_maximums = self._float_array("gate_primary_max_m")
+        secondary_indices = self._int_array("gate_secondary_sector_indices")
+        secondary_minimums = self._float_array("gate_secondary_min_m")
+        secondary_maximums = self._float_array("gate_secondary_max_m")
+        rule_angle_maximums = self._float_array(
+            "gate_rule_abs_angle_max"
+        )
+        arrays = (
+            sources,
+            primary_indices,
+            primary_minimums,
+            primary_maximums,
+            secondary_indices,
+            secondary_minimums,
+            secondary_maximums,
+            rule_angle_maximums,
+        )
+        if any(len(values) != len(names) for values in arrays):
+            raise ValueError("all per-gate parameter arrays must have equal length")
+        gates = tuple(
+            GateDefinition(
+                name=names[index],
+                next_source=CandidateSource(sources[index].upper()),
+                primary_sector_index=primary_indices[index],
+                primary_min_m=primary_minimums[index],
+                primary_max_m=primary_maximums[index],
+                secondary_sector_index=secondary_indices[index],
+                secondary_min_m=secondary_minimums[index],
+                secondary_max_m=secondary_maximums[index],
+                rule_abs_angle_max=rule_angle_maximums[index],
+            )
+            for index in range(len(names))
+        )
+        maximum_sector = len(self.sector_centers_deg) - 1
+        for gate in gates:
+            if gate.primary_sector_index > maximum_sector:
+                raise ValueError(f"gate {gate.name} primary sector is invalid")
+            if gate.secondary_sector_index > maximum_sector:
+                raise ValueError(f"gate {gate.name} secondary sector is invalid")
+        return SequentialHybridConfig(
+            gates=gates,
+            initial_source=CandidateSource(
+                str(self.get_parameter("initial_source").value).upper()
+            ),
+            start_delay_sec=float(self.get_parameter("start_delay_sec").value),
+            minimum_stage_sec=float(
+                self.get_parameter("minimum_stage_sec").value
+            ),
+            required_gate_frames=int(
+                self.get_parameter("required_gate_frames").value
+            ),
+            candidate_fresh_sec=float(
+                self.get_parameter("candidate_fresh_sec").value
+            ),
+            candidate_hold_sec=float(
+                self.get_parameter("candidate_hold_sec").value
+            ),
+            transition_blend_sec=float(
+                self.get_parameter("transition_blend_sec").value
+            ),
+            minimum_speed_command=float(
+                self.get_parameter("minimum_speed_command").value
+            ),
+            maximum_speed_command=float(
+                self.get_parameter("maximum_speed_command").value
+            ),
+            maximum_abs_angle_command=float(
+                self.get_parameter("maximum_abs_angle_command").value
+            ),
+            repeat_sequence=bool(self.get_parameter("repeat_sequence").value),
+        )
+
+    def _on_rl_command(self, message: Float32MultiArray) -> None:
+        if len(message.data) < 2:
+            return
+        self.rl_command = (float(message.data[0]), float(message.data[1]))
+        self.rl_command_time = time.monotonic()
+
+    def _on_rule_command(self, message: Float32MultiArray) -> None:
+        if len(message.data) < 2:
+            return
+        self.rule_command = (float(message.data[0]), float(message.data[1]))
+        self.rule_command_time = time.monotonic()
+
+    def _on_drive_armed(self, message: Bool) -> None:
+        armed = bool(message.data)
+        if self.drive_armed and not armed:
+            self.cone_bypass.reset()
+            self.avoidance_controller.reset()
+            self.avoidance_state = self.avoidance_controller.state()
+            self.avoidance_offset_pub.publish(Float32(data=0.0))
+        self.drive_armed = armed if self.gate_arming_required else True
+
+    @staticmethod
+    def _normalize_class_name(value: str) -> str:
+        return (
+            str(value)
+            .strip()
+            .lower()
+            .replace("-", "_")
+            .replace(" ", "_")
+        )
+
+    def _scan_distance_for_sector(
+        self,
+        sector: tuple[float, float],
+    ) -> float:
+        scan = self.latest_scan
+        if scan is None:
+            return float("inf")
+        return scan_sector_distance(
+            ranges=scan.ranges,
+            angle_min=float(scan.angle_min),
+            angle_increment=float(scan.angle_increment),
+            range_min=float(scan.range_min),
+            range_max=float(scan.range_max),
+            sector_min_angle=float(sector[0]),
+            sector_max_angle=float(sector[1]),
+            minimum_points=int(
+                self.get_parameter("vehicle_lidar_min_points").value
+            ),
+        )
+
+    def _on_object_detections(
+        self,
+        message: ObjectDetectionArray,
+    ) -> None:
+        now = time.monotonic()
+        image_width = max(0, int(message.image_width))
+        cone_confidences = [
+            float(item.confidence)
+            for item in message.detections
+            if self._normalize_class_name(item.class_name) == "cone"
+        ]
+        cone_confidence = max(cone_confidences, default=0.0)
+        cone_seen = cone_confidence >= float(
+            self.get_parameter("cone_yolo_min_confidence").value
+        )
+        self.cone_yolo_frames = (
+            self.cone_yolo_frames + 1 if cone_seen else 0
+        )
+        if cone_seen:
+            self.cone_yolo_time = now
+            self.cone_yolo_confidence = cone_confidence
+
+        vehicle_names = {
+            self._normalize_class_name(value)
+            for value in self.get_parameter("vehicle_class_names").value
+        }
+        vehicles = [
+            item
+            for item in message.detections
+            if self._normalize_class_name(item.class_name) in vehicle_names
+            and float(item.confidence)
+            >= float(
+                self.get_parameter("vehicle_yolo_min_confidence").value
+            )
+        ]
+        selected = None
+        selected_sector = None
+        selected_distance = float("inf")
+        for vehicle in vehicles:
+            if image_width <= 0:
+                continue
+            sector = camera_box_lidar_sector(
+                xmin=float(vehicle.xmin),
+                xmax=float(vehicle.xmax),
+                image_width=image_width,
+                horizontal_fov_deg=float(
+                    self.get_parameter(
+                        "vehicle_camera_lidar_hfov_deg"
+                    ).value
+                ),
+                padding_deg=float(
+                    self.get_parameter(
+                        "vehicle_camera_lidar_padding_deg"
+                    ).value
+                ),
+            )
+            distance = self._scan_distance_for_sector(sector)
+            if selected is None or distance < selected_distance:
+                selected = vehicle
+                selected_sector = sector
+                selected_distance = distance
+        if selected is None and vehicles:
+            selected = max(vehicles, key=lambda item: float(item.confidence))
+        if selected_sector is not None:
+            self.tracked_vehicle_sector = selected_sector
+            self.tracked_vehicle_sector_time = now
+            self.tracked_vehicle_distance_m = selected_distance
+        preferred_mode = None
+        if selected is not None and image_width > 0:
+            box_center_x = 0.5 * (
+                float(selected.xmin) + float(selected.xmax)
+            )
+            preferred_mode = (
+                YoloLidarAvoidanceMode.AVOID_LEFT
+                if box_center_x >= 0.5 * float(image_width)
+                else YoloLidarAvoidanceMode.AVOID_RIGHT
+            )
+        self.avoidance_controller.observe_yolo(
+            now_sec=now,
+            detected=selected is not None,
+            confidence=(float(selected.confidence) if selected else 0.0),
+            lidar_distance_m=selected_distance,
+            preferred_mode=preferred_mode,
+        )
+        self._publish_cone_processing_gate(now)
+
+    def _on_cone_clusters(self, message: PoseArray) -> None:
+        distances = [
+            math.hypot(
+                float(pose.position.x),
+                float(pose.position.y),
+            )
+            for pose in message.poses
+            if (
+                float(pose.position.x) > 0.0
+                and math.isfinite(float(pose.position.x))
+                and math.isfinite(float(pose.position.y))
+            )
+        ]
+        self.cone_lidar_distance_m = min(distances, default=float("inf"))
+        self.cone_cluster_time = time.monotonic()
+
+    def _cone_gate_eligible(self) -> bool:
+        waypoint_number = self.controller.gate_index + 1
+        eligible_numbers = {
+            int(value)
+            for value in self.get_parameter(
+                "cone_eligible_waypoint_numbers"
+            ).value
+        }
+        return waypoint_number in eligible_numbers
+
+    def _cone_yolo_confirmed(self, now: float) -> bool:
+        return bool(
+            self._cone_gate_eligible()
+            and self.cone_yolo_frames
+            >= int(self.get_parameter("cone_yolo_required_frames").value)
+            and now - self.cone_yolo_time
+            <= float(self.get_parameter("cone_yolo_timeout_sec").value)
+        )
+
+    def _publish_cone_processing_gate(self, now: float) -> None:
+        requested = bool(
+            self.drive_armed
+            and (
+                self.cone_bypass.active
+                or (
+                    self._cone_gate_eligible()
+                    and now - self.cone_yolo_time
+                    <= float(self.get_parameter("cone_yolo_timeout_sec").value)
+                )
+            )
+        )
+        self.cone_processing_pub.publish(Bool(data=requested))
+
+    def _on_cone_command(self, message: Float32MultiArray) -> None:
+        if self.gate_arming_required and not self.drive_armed:
+            return
+        if len(message.data) < 3:
+            return
+        angle = float(message.data[0])
+        speed = float(message.data[1])
+        confidence = float(message.data[2])
+        self.cone_command = (angle, speed, confidence)
+        self.cone_command_time = time.monotonic()
+        if (
+            confidence
+            > float(self.get_parameter("cone_exit_confidence").value)
+            and speed > 0.0
+        ):
+            self.last_valid_cone_command = (angle, speed)
+        event = self.cone_bypass.update(
+            lap_count=self.controller.lap_count,
+            target_waypoint_index=(
+                0 if self._cone_gate_eligible() else -1
+            ),
+            confidence=confidence,
+            speed_command=speed,
+            yolo_confirmed=self._cone_yolo_confirmed(
+                time.monotonic()
+            ),
+            lidar_distance_m=(
+                self.cone_lidar_distance_m
+                if time.monotonic() - self.cone_cluster_time
+                <= float(
+                    self.get_parameter("cone_cluster_timeout_sec").value
+                )
+                else float("inf")
+            ),
+        )
+        if event == ConeBypassEvent.STARTED:
+            self.get_logger().warning(
+                "CONE_RULE START; waypoint gate matching is paused"
+            )
+        elif event == ConeBypassEvent.FINISHED:
+            if self.controller.gate_index == 0:
+                self.controller.last_angle_command = float(
+                    self.last_valid_cone_command[0]
+                )
+                self.controller.last_speed_command = float(
+                    self.last_valid_cone_command[1]
+                )
+                self.controller.advance_gate()
+                self.get_logger().warning(
+                    "CONE_RULE FINISHED; WP1 skipped, target is now WP2"
+                )
+
+    def _on_scan(self, message: LaserScan) -> None:
+        self.latest_scan = message
+        maximum = float(message.range_max)
+        if maximum <= 0.0 or not math.isfinite(maximum):
+            maximum = 20.0
+        half_angle = math.radians(
+            float(self.get_parameter("sector_half_angle_deg").value)
+        )
+        quantile = float(
+            self.get_parameter("sector_distance_quantile").value
+        )
+        minimum_points = int(
+            self.get_parameter("minimum_sector_points").value
+        )
+        minimum_span = math.radians(
+            float(self.get_parameter("minimum_sector_span_deg").value)
+        )
+        sectors = []
+        for center_deg in self.sector_centers_deg:
+            measurement = measure_sector(
+                message.ranges,
+                angle_min_rad=float(message.angle_min),
+                angle_increment_rad=float(message.angle_increment),
+                range_min_m=max(0.0, float(message.range_min)),
+                range_max_m=maximum,
+                center_angle_rad=math.radians(center_deg),
+                half_angle_rad=half_angle,
+                distance_quantile=quantile,
+            )
+            if (
+                measurement.point_count < minimum_points
+                or measurement.angular_span_rad < minimum_span
+            ):
+                measurement = SectorMeasurement(float("inf"), 0, 0.0)
+            sectors.append(measurement)
+        self.sectors = tuple(sectors)
+        self.latest_lidar_obstacle = detect_path_obstacle(
+            ranges=message.ranges,
+            angle_min=float(message.angle_min),
+            angle_increment=float(message.angle_increment),
+            range_min=max(0.0, float(message.range_min)),
+            range_max=maximum,
+            route_points=self.local_obstacle_route,
+            nearest_index=0,
+            vehicle_x=0.0,
+            vehicle_y=0.0,
+            vehicle_yaw=0.0,
+            closed=False,
+            config=self.lidar_obstacle_config,
+        )
+        now = time.monotonic()
+        if (
+            self.tracked_vehicle_sector is not None
+            and now - self.tracked_vehicle_sector_time
+            <= float(
+                self.get_parameter(
+                    "vehicle_lidar_sector_memory_sec"
+                ).value
+            )
+        ):
+            distance = self._scan_distance_for_sector(
+                self.tracked_vehicle_sector
+            )
+            if math.isfinite(distance):
+                self.tracked_vehicle_distance_m = distance
+                self.avoidance_controller.update_lidar_distance(distance)
+        self.scan_time = now
+        self.scan_sequence += 1
+
+    def _reset(self, _request, response):
+        self.controller.select_start_waypoint(self.start_waypoint_number)
+        if self.force_rule_only:
+            self.controller.source = CandidateSource.RULE
+        self.cone_bypass.reset()
+        self.avoidance_controller.reset()
+        self.avoidance_state = self.avoidance_controller.state()
+        self.avoidance_offset_pub.publish(Float32(data=0.0))
+        response.success = True
+        response.message = (
+            f"hybrid sequence reset to waypoint {self.start_waypoint_number}"
+        )
+        return response
+
+    def _advance_gate(self, _request, response):
+        self.cone_bypass.cancel()
+        self.avoidance_controller.reset()
+        self.controller.advance_gate()
+        response.success = True
+        response.message = (
+            f"advanced to gate {self.controller.gate_index + 1}"
+        )
+        return response
+
+    def _publish_status(self, output, now: float) -> None:
+        if self.cone_bypass.active:
+            source_value = "CONE_RULE"
+            source_label = "CONE_RULE"
+        elif self.avoidance_state.controls_vehicle:
+            source_value = "YOLO_LIDAR_AVOIDANCE"
+            source_label = self.avoidance_state.mode.value
+        elif (
+            self.avoidance_state.mode
+            == YoloLidarAvoidanceMode.YOLO_TRACKING
+        ):
+            source_value = output.source.value
+            source_label = (
+                f"YOLO_TRACKING({self.avoidance_state.tracked_distance_m:.2f}m)"
+            )
+        else:
+            source_value = output.source.value
+            source_label = (
+                "RL/IMITATION"
+                if output.source == CandidateSource.RL
+                else "RULE"
+            )
+        status = (
+            f"state={output.state.value} source={source_value} "
+            f"mode_label={source_label} target_waypoint={output.next_gate_number}/"
+            f"{len(self.controller.config.gates)}:{output.next_gate_name} "
+            f"lap={output.lap_count} streak={output.gate_streak} "
+            f"cmd=[{output.angle_command:.1f},{output.speed_command:.1f}] "
+            f"reason={output.reason}"
+        )
+        self.mode_pub.publish(String(data=source_value))
+        self.status_pub.publish(String(data=status))
+        status_key = (
+            f"{output.state.value}:{source_value}:"
+            f"{output.next_gate_number}:{output.lap_count}:{output.reason}"
+        )
+        if status_key != self.last_status_key or now - self.last_status_time >= 0.5:
+            self.get_logger().info(status)
+            self.last_status_key = status_key
+            self.last_status_time = now
+
+    def _control_step(self) -> None:
+        now = time.monotonic()
+        dt = max(0.0, min(0.25, now - self.last_update_time))
+        self.last_update_time = now
+        scan_is_new = self.scan_sequence != self.evaluated_scan_sequence
+        self.evaluated_scan_sequence = self.scan_sequence
+        scan_fresh = (
+            now - self.scan_time
+            <= float(self.get_parameter("scan_timeout_sec").value)
+        )
+        self._publish_cone_processing_gate(now)
+        if (
+            self.drive_armed
+            and bool(self.get_parameter("vehicle_avoidance_enabled").value)
+        ):
+            self.avoidance_state = self.avoidance_controller.step(
+                now_sec=now,
+                dt_sec=dt,
+                obstacle=self.latest_lidar_obstacle,
+                cone_active=self.cone_bypass.active,
+            )
+        else:
+            self.avoidance_controller.reset()
+            self.avoidance_state = self.avoidance_controller.state()
+        self.avoidance_offset_pub.publish(
+            Float32(data=float(self.avoidance_state.lateral_offset_m))
+        )
+        obstacle = self.latest_lidar_obstacle
+        avoidance_mode_code = float(
+            list(YoloLidarAvoidanceMode).index(
+                self.avoidance_state.mode
+            )
+        )
+        self.avoidance_debug_pub.publish(
+            Float32MultiArray(
+                data=[
+                    avoidance_mode_code,
+                    float(self.avoidance_state.lateral_offset_m),
+                    float(self.avoidance_state.tracked_distance_m),
+                    float(self.avoidance_state.yolo_confidence),
+                    float(obstacle.left_clearance_m)
+                    if obstacle
+                    else float("inf"),
+                    float(obstacle.right_clearance_m)
+                    if obstacle
+                    else float("inf"),
+                ]
+            )
+        )
+        output = self.controller.step(
+            SequentialHybridInput(
+                scan_fresh=(scan_fresh or self.force_rule_only),
+                # A cone episode owns longitudinal progress. Do not allow a
+                # wall gate to fire underneath it.
+                scan_sample_is_new=(
+                    scan_is_new
+                    and not self.cone_bypass.active
+                    and not self.avoidance_state.controls_vehicle
+                ),
+                sector_distances_m=tuple(
+                    float(item.distance_m) for item in self.sectors
+                ),
+                rl_command_age_sec=now - self.rl_command_time,
+                rl_angle_command=self.rl_command[0],
+                rl_speed_command=self.rl_command[1],
+                rule_command_age_sec=now - self.rule_command_time,
+                rule_angle_command=self.rule_command[0],
+                rule_speed_command=self.rule_command[1],
+                gate_advancement_enabled=(
+                    self.drive_armed and not self.force_rule_only
+                ),
+            ),
+            dt_sec=dt,
+        )
+        cone_fresh = (
+            now - self.cone_command_time
+            <= float(self.get_parameter("cone_command_timeout_sec").value)
+        )
+        if self.cone_bypass.active:
+            if (
+                output.state == HybridState.RUNNING
+                and scan_fresh
+                and cone_fresh
+            ):
+                output = replace(
+                    output,
+                    state=HybridState.RUNNING,
+                    angle_command=float(self.last_valid_cone_command[0]),
+                    speed_command=float(self.last_valid_cone_command[1]),
+                    reason="cone rule override",
+                )
+            else:
+                output = replace(
+                    output,
+                    state=HybridState.SENSOR_STOP,
+                    angle_command=0.0,
+                    speed_command=0.0,
+                    reason="cone or LiDAR command stale",
+                )
+        elif (
+            self.avoidance_state.controls_vehicle
+            and output.state == HybridState.RUNNING
+        ):
+            if (
+                self.avoidance_state.mode
+                == YoloLidarAvoidanceMode.WAIT_SIDE_CLEAR
+            ):
+                output = replace(
+                    output,
+                    angle_command=0.0,
+                    speed_command=0.0,
+                    reason="YOLO obstacle close; both lanes blocked",
+                )
+            elif (
+                now - self.rule_command_time
+                <= self.controller.config.candidate_hold_sec
+            ):
+                speed = float(output.speed_command)
+                speed_limit = self.avoidance_state.speed_limit_command
+                if speed > 0.0 and speed_limit is not None:
+                    speed = min(speed, float(speed_limit))
+                output = replace(
+                    output,
+                    angle_command=float(self.rule_command[0]),
+                    speed_command=speed,
+                    reason=(
+                        f"{self.avoidance_state.mode.value}; "
+                        f"LiDAR={self.avoidance_state.tracked_distance_m:.2f}m, "
+                        f"offset={self.avoidance_state.lateral_offset_m:+.2f}m"
+                    ),
+                )
+            else:
+                output = replace(
+                    output,
+                    state=HybridState.SENSOR_STOP,
+                    angle_command=0.0,
+                    speed_command=0.0,
+                    reason="avoidance lane-rule command stale",
+                )
+        command = Float32MultiArray(
+            data=[output.angle_command, output.speed_command]
+        )
+        self.shadow_pub.publish(command)
+        if self.motor_pub is not None:
+            self.motor_pub.publish(command)
+        diagnostics = Float32MultiArray(
+            data=[
+                STATE_CODES[output.state],
+                (
+                    2.0
+                    if self.cone_bypass.active
+                    else 3.0
+                    if self.avoidance_state.controls_vehicle
+                    else 4.0
+                    if self.avoidance_state.mode
+                    == YoloLidarAvoidanceMode.YOLO_TRACKING
+                    else SOURCE_CODES[output.source]
+                ),
+                float(output.next_gate_number),
+                float(output.lap_count),
+                float(output.gate_streak),
+                *[float(item.distance_m) for item in self.sectors],
+                float(now - self.rl_command_time),
+                float(now - self.rule_command_time),
+                float(output.angle_command),
+                float(output.speed_command),
+            ]
+        )
+        self.diagnostics_pub.publish(diagnostics)
+        self._publish_status(output, now)
+
+    def stop(self) -> None:
+        self.control_timer.cancel()
+        self.avoidance_offset_pub.publish(Float32(data=0.0))
+        self.cone_processing_pub.publish(Bool(data=False))
+        command = Float32MultiArray(data=[0.0, 0.0])
+        self.shadow_pub.publish(command)
+        if self.motor_pub is not None:
+            self.motor_pub.publish(command)
+
+
+def main(args=None) -> None:
+    rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
+    node = SequentialHybridDriver()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    except ExternalShutdownException:
+        pass
+    finally:
+        if rclpy.ok():
+            node.stop()
+            rclpy.spin_once(node, timeout_sec=0.05)
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,90 @@
+{
+  "bag": "/home/as/rosbags/integrated_drive/rule_test_01_20260805_150810/bag/bag_0.db3",
+  "camera_frames_total": 20180,
+  "camera_frames_in_rule_mode": 17555,
+  "sampled_rule_frames": 500,
+  "metrics": {
+    "yellow_small_px": {
+      "count": 500,
+      "median": 133.0,
+      "p10": 0.0,
+      "p90": 563.8000000000002
+    },
+    "white_small_px": {
+      "count": 500,
+      "median": 654.0,
+      "p10": 112.20000000000005,
+      "p90": 907.2
+    },
+    "current_yellow_y_030_m": {
+      "count": 374,
+      "median": -0.07709460751076572,
+      "p10": -0.21485576548133112,
+      "p90": 0.11519190473392257
+    },
+    "current_target_left15_y_030_m": {
+      "count": 374,
+      "median": 0.07290539248923428,
+      "p10": -0.06485576548133112,
+      "p90": 0.26519190473392257
+    },
+    "current_path_span_m": {
+      "count": 374,
+      "median": 0.5244755244755245,
+      "p10": 0.2517482517482518,
+      "p90": 0.986013986013986
+    },
+    "current_white_spacing_m": {
+      "count": 409,
+      "median": 0.7218749999999999,
+      "p10": 0.024609375,
+      "p90": 0.8317968749999999
+    },
+    "current_white_midpoint_m": {
+      "count": 409,
+      "median": 0.0,
+      "p10": -0.19058593749999994,
+      "p90": 0.15339843749999996
+    },
+    "calibrated_yellow_y_030_m": {
+      "count": 369,
+      "median": -0.023187986881965782,
+      "p10": -0.1573181361804726,
+      "p90": 0.1474102856350753
+    },
+    "calibrated_target_left15_y_030_m": {
+      "count": 369,
+      "median": 0.12681201311803422,
+      "p10": -0.007318136180472618,
+      "p90": 0.2974102856350753
+    },
+    "calibrated_path_span_m": {
+      "count": 369,
+      "median": 0.5454545454545454,
+      "p10": 0.2517482517482517,
+      "p90": 0.8853146853146852
+    },
+    "calibrated_white_spacing_m": {
+      "count": 408,
+      "median": 0.809375,
+      "p10": 0.02734375,
+      "p90": 0.89140625
+    },
+    "calibrated_white_midpoint_m": {
+      "count": 408,
+      "median": 0.002734375,
+      "p10": -0.142802734375,
+      "p90": 0.194345703125
+    }
+  },
+  "path_valid": {
+    "current": 374,
+    "calibrated": 369
+  },
+  "paired_path_shift_calibrated_minus_current_m": {
+    "count": 369,
+    "median": 0.06061441940995591,
+    "p10": 0.013511158473044321,
+    "p90": 0.0779019780119098
+  }
+}

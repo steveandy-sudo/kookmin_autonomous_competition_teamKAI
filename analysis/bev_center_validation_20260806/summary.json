@@ -1,0 +1,202 @@
+{
+  "bag": "/tmp/xycar_center_bag.4SFcB0/20260721_170617_bev_marker_050_100_150/diagnostic_bag",
+  "topic": "/wide_camera/rect/image_raw",
+  "frames": 214,
+  "model": "xycar_ws/src/lane_seg_control/models/kookmin_lane_lraspp_mbv3s_256x144.pt",
+  "profiles": {
+    "current": {
+      "source": [
+        0.36875,
+        0.482421875,
+        0.7078125,
+        0.474609375,
+        0.99375,
+        0.59765625,
+        0.0359375,
+        0.607421875
+      ],
+      "dest": [
+        0.125,
+        0.875,
+        0.0,
+        0.7257575757575757
+      ]
+    },
+    "calibrated": {
+      "source": [
+        0.442578,
+        0.480781,
+        0.688281,
+        0.480781,
+        0.919141,
+        0.614189,
+        0.190625,
+        0.614189
+      ],
+      "dest": [
+        0.205714,
+        0.794286,
+        0.0,
+        0.666666667
+      ]
+    }
+  },
+  "metrics": {
+    "inference_ms": {
+      "count": 214,
+      "median": 5.639834500470897,
+      "p10": 5.416766800772166,
+      "p90": 6.221374699816807,
+      "min": 5.268729999443167,
+      "max": 19.5314699994924
+    },
+    "yellow_small_px": {
+      "count": 214,
+      "median": 26.0,
+      "p10": 22.0,
+      "p90": 29.700000000000017,
+      "min": 20.0,
+      "max": 34.0
+    },
+    "current_lateral_m": {
+      "count": 214,
+      "median": -0.068359375,
+      "p10": -0.07109375,
+      "p90": -0.0669921875,
+      "min": -0.07337239583333344,
+      "max": -0.06562499999999999
+    },
+    "calibrated_lateral_m": {
+      "count": 214,
+      "median": -0.002734375,
+      "p10": -0.004101562499999999,
+      "p90": 0.0,
+      "min": -0.004101562499999999,
+      "max": 0.0
+    },
+    "current_forward_m": {
+      "count": 214,
+      "median": 0.21354166666666666,
+      "p10": 0.20833333333333334,
+      "p90": 0.21354166666666666,
+      "min": 0.203125,
+      "max": 0.21354166666666666
+    },
+    "calibrated_forward_m": {
+      "count": 214,
+      "median": 0.34375,
+      "p10": 0.34375,
+      "p90": 0.3489583333333333,
+      "min": 0.34375,
+      "max": 0.3489583333333333
+    },
+    "current_physical_lateral_m": {
+      "count": 214,
+      "median": -0.07875,
+      "p10": -0.07984374999999999,
+      "p90": -0.07875,
+      "min": -0.07984374999999999,
+      "max": -0.07875
+    },
+    "calibrated_physical_lateral_m": {
+      "count": 214,
+      "median": -0.0021874999999999998,
+      "p10": -0.0021874999999999998,
+      "p90": -0.0021874999999999998,
+      "min": -0.0032812499999999994,
+      "max": 0.0
+    },
+    "current_physical_forward_m": {
+      "count": 214,
+      "median": 0.6909090909090909,
+      "p10": 0.6909090909090909,
+      "p90": 0.6954545454545454,
+      "min": 0.6852272727272727,
+      "max": 0.7931818181818182
+    },
+    "calibrated_physical_forward_m": {
+      "count": 214,
+      "median": 0.7931818181818182,
+      "p10": 0.7931818181818182,
+      "p90": 0.7977272727272727,
+      "min": 0.7863636363636364,
+      "max": 0.8920454545454546
+    },
+    "current_path_span_m": {
+      "count": 0,
+      "median": null,
+      "p10": null,
+      "p90": null,
+      "min": null,
+      "max": null
+    },
+    "calibrated_path_span_m": {
+      "count": 0,
+      "median": null,
+      "p10": null,
+      "p90": null,
+      "min": null,
+      "max": null
+    },
+    "detected_lateral_delta_m": {
+      "count": 214,
+      "median": -0.068359375,
+      "p10": -0.07109375,
+      "p90": -0.0669921875,
+      "min": -0.07337239583333344,
+      "max": -0.06562499999999999
+    },
+    "current_white_spacing_m": {
+      "count": 214,
+      "median": 0.7765624999999999,
+      "p10": 0.7710937499999999,
+      "p90": 0.78203125,
+      "min": 0.765625,
+      "max": 0.79296875
+    },
+    "current_white_midpoint_m": {
+      "count": 214,
+      "median": -0.06289062499999999,
+      "p10": -0.06562499999999999,
+      "p90": -0.057421875,
+      "min": -0.073828125,
+      "max": -0.0546875
+    },
+    "calibrated_white_spacing_m": {
+      "count": 214,
+      "median": 0.84765625,
+      "p10": 0.8203125,
+      "p90": 0.8804687499999999,
+      "min": 0.809375,
+      "max": 0.89140625
+    },
+    "calibrated_white_midpoint_m": {
+      "count": 214,
+      "median": 0.00546875,
+      "p10": -0.00546875,
+      "p90": 0.021054687500000044,
+      "min": -0.013671875,
+      "max": 0.02734375
+    }
+  },
+  "detection": {
+    "current_detected": 214,
+    "calibrated_detected": 214,
+    "current_path_valid": 0,
+    "calibrated_path_valid": 0,
+    "current_physical_detected": 214,
+    "calibrated_physical_detected": 214
+  },
+  "model_current_minus_calibrated": {
+    "count": 214,
+    "median_m": -0.065625,
+    "p10_m": -0.0669921875,
+    "p90_m": -0.065625
+  },
+  "physical_current_minus_calibrated": {
+    "count": 214,
+    "median_m": -0.0765625,
+    "p10_m": -0.07765625,
+    "p90_m": -0.0765625
+  }
+}

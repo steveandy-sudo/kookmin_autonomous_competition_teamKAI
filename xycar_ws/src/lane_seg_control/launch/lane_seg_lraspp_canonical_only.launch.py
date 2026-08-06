@@ -27,18 +27,18 @@ def generate_launch_description():
     yellow_topic = "/lane_seg/yellow_centerline_mask"
 
     geometry_parameters = {
-        "src_tl_x_ratio": 472.0 / 1280.0,
-        "src_tl_y_ratio": 494.0 / 1024.0,
-        "src_tr_x_ratio": 906.0 / 1280.0,
-        "src_tr_y_ratio": 486.0 / 1024.0,
-        "src_br_x_ratio": 1272.0 / 1280.0,
-        "src_br_y_ratio": 612.0 / 1024.0,
-        "src_bl_x_ratio": 46.0 / 1280.0,
-        "src_bl_y_ratio": 622.0 / 1024.0,
+        "src_tl_x_ratio": _as_float("src_tl_x_ratio"),
+        "src_tl_y_ratio": _as_float("src_tl_y_ratio"),
+        "src_tr_x_ratio": _as_float("src_tr_x_ratio"),
+        "src_tr_y_ratio": _as_float("src_tr_y_ratio"),
+        "src_br_x_ratio": _as_float("src_br_x_ratio"),
+        "src_br_y_ratio": _as_float("src_br_y_ratio"),
+        "src_bl_x_ratio": _as_float("src_bl_x_ratio"),
+        "src_bl_y_ratio": _as_float("src_bl_y_ratio"),
         "dst_left_ratio": _as_float("dst_left_ratio"),
         "dst_right_ratio": _as_float("dst_right_ratio"),
         "dst_top_y_ratio": 0.0,
-        "dst_bottom_y_ratio": 479.0 / 660.0,
+        "dst_bottom_y_ratio": _as_float("dst_bottom_y_ratio"),
         "bev_width": 640,
         "bev_height": 660,
         "bev_valid_lateral_margin_px": 0,
@@ -138,11 +138,24 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "output_native_resolution", default_value="false"
         ),
+        # 2026-07-21 stationary 0.5/1.0/1.5 m calibration. These defaults
+        # place the vehicle-axis yellow reference at canonical y=0.
+        DeclareLaunchArgument("src_tl_x_ratio", default_value="0.442578"),
+        DeclareLaunchArgument("src_tl_y_ratio", default_value="0.480781"),
+        DeclareLaunchArgument("src_tr_x_ratio", default_value="0.688281"),
+        DeclareLaunchArgument("src_tr_y_ratio", default_value="0.480781"),
+        DeclareLaunchArgument("src_br_x_ratio", default_value="0.919141"),
+        DeclareLaunchArgument("src_br_y_ratio", default_value="0.614189"),
+        DeclareLaunchArgument("src_bl_x_ratio", default_value="0.190625"),
+        DeclareLaunchArgument("src_bl_y_ratio", default_value="0.614189"),
         DeclareLaunchArgument(
-            "dst_left_ratio", default_value=str(80.0 / 640.0)
+            "dst_left_ratio", default_value="0.205714"
         ),
         DeclareLaunchArgument(
-            "dst_right_ratio", default_value=str(560.0 / 640.0)
+            "dst_right_ratio", default_value="0.794286"
+        ),
+        DeclareLaunchArgument(
+            "dst_bottom_y_ratio", default_value="0.666666667"
         ),
         DeclareLaunchArgument(
             "canonical_white_fit_enabled", default_value="true"
