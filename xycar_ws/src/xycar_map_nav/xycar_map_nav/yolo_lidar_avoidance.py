@@ -38,6 +38,7 @@ class YoloLidarAvoidanceConfig:
     return_hold_sec: float = 0.30
     return_deadband_m: float = 0.02
     immediate_on_yolo: bool = False
+    preferred_side_required_frames: int = 2
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,8 @@ class YoloLidarAvoidanceController:
         self.mode_started_sec = 0.0
         self.clear_started_sec: float | None = None
         self.preferred_mode: YoloLidarAvoidanceMode | None = None
+        self.preferred_candidate: YoloLidarAvoidanceMode | None = None
+        self.preferred_candidate_frames = 0
 
     def observe_yolo(
         self,
@@ -100,19 +103,22 @@ class YoloLidarAvoidanceController:
             YoloLidarAvoidanceMode.AVOID_LEFT,
             YoloLidarAvoidanceMode.AVOID_RIGHT,
         }:
-            self.preferred_mode = preferred_mode
+            if preferred_mode == self.preferred_candidate:
+                self.preferred_candidate_frames += 1
+            else:
+                self.preferred_candidate = preferred_mode
+                self.preferred_candidate_frames = 1
+            if self.preferred_candidate_frames >= max(
+                1,
+                int(self.config.preferred_side_required_frames),
+            ):
+                self.preferred_mode = preferred_mode
         if (
             self.mode == YoloLidarAvoidanceMode.IDLE
             and self.yolo_frames >= max(1, self.config.yolo_required_frames)
         ):
-            immediate_mode = (
-                self.preferred_mode
-                if self.config.immediate_on_yolo
-                and math.isfinite(self.tracked_distance_m)
-                else None
-            )
             self._transition(
-                immediate_mode or YoloLidarAvoidanceMode.YOLO_TRACKING,
+                YoloLidarAvoidanceMode.YOLO_TRACKING,
                 float(now_sec),
             )
 
@@ -139,7 +145,10 @@ class YoloLidarAvoidanceController:
             if not yolo_fresh:
                 self.reset()
                 return self.state()
-            if self.tracked_distance_m <= self.config.entry_distance_m:
+            if (
+                self.config.immediate_on_yolo
+                or self.tracked_distance_m <= self.config.entry_distance_m
+            ):
                 next_mode = self._choose_avoidance_side(obstacle)
                 self._transition(next_mode, now)
         elif self.mode == YoloLidarAvoidanceMode.WAIT_SIDE_CLEAR:
@@ -225,11 +234,21 @@ class YoloLidarAvoidanceController:
         left = float(obstacle.left_clearance_m)
         right = float(obstacle.right_clearance_m)
         minimum = self.config.minimum_side_clearance_m
-        if left < minimum and right < minimum:
+        if self.preferred_mode is None:
             return YoloLidarAvoidanceMode.WAIT_SIDE_CLEAR
-        if left >= right:
-            return YoloLidarAvoidanceMode.AVOID_LEFT
-        return YoloLidarAvoidanceMode.AVOID_RIGHT
+        if self.preferred_mode == YoloLidarAvoidanceMode.AVOID_LEFT:
+            return (
+                YoloLidarAvoidanceMode.AVOID_LEFT
+                if left >= minimum
+                else YoloLidarAvoidanceMode.WAIT_SIDE_CLEAR
+            )
+        if self.preferred_mode == YoloLidarAvoidanceMode.AVOID_RIGHT:
+            return (
+                YoloLidarAvoidanceMode.AVOID_RIGHT
+                if right >= minimum
+                else YoloLidarAvoidanceMode.WAIT_SIDE_CLEAR
+            )
+        return YoloLidarAvoidanceMode.WAIT_SIDE_CLEAR
 
     def _transition(
         self,

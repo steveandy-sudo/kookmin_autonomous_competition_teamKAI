@@ -1370,11 +1370,18 @@ class CanonicalStanleyPursuitDriver(Node):
         self.path_valid = False
         self.loss_announced = False
         mode = "AUTO" if self.drive_enabled else "SHADOW"
+        minimum_speed = float(
+            self.get_parameter("minimum_speed_command").value
+        )
+        cruise_speed = float(
+            self.get_parameter("cruise_speed_command").value
+        )
+        yellow_gap = float(self.get_parameter("yellow_max_gap_m").value)
         self.get_logger().info(
             "canonical Stanley/Pure Pursuit driver ready: "
-            f"{mode}, 7Hz, speed={float(self.get_parameter('minimum_speed_command').value):.1f}"
-            f"..{float(self.get_parameter('cruise_speed_command').value):.1f}, "
-            f"yellow_gap={float(self.get_parameter('yellow_max_gap_m').value):.2f}m"
+            f"{mode}, {rate_hz:.1f}Hz, "
+            f"speed={minimum_speed:.1f}..{cruise_speed:.1f}, "
+            f"yellow_gap={yellow_gap:.2f}m"
         )
 
     def on_external_lateral_offset(self, message: Float32) -> None:

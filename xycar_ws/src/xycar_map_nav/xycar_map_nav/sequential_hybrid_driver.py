@@ -6,8 +6,10 @@ import math
 import time
 from dataclasses import replace
 
+import numpy as np
 import rclpy
 from geometry_msgs.msg import PoseArray
+from lane_seg_control.white_lane_fitter import fit_yellow_centerline_reference
 from my_rule_msgs.msg import ObjectDetectionArray
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
@@ -18,7 +20,7 @@ from rclpy.qos import (
     ReliabilityPolicy,
 )
 from rclpy.signals import SignalHandlerOptions
-from sensor_msgs.msg import LaserScan
+from sensor_msgs.msg import Image, LaserScan
 from std_msgs.msg import Bool, Float32, Float32MultiArray, String
 from std_srvs.srv import Trigger
 
@@ -48,6 +50,44 @@ SOURCE_CODES = {
     CandidateSource.RL: 0.0,
     CandidateSource.RULE: 1.0,
 }
+
+
+def is_avoidance_detection(
+    *,
+    class_name: str,
+    confidence: float,
+    vehicle_names: set[str],
+    vehicle_min_confidence: float,
+    cone_as_vehicle_obstacle: bool,
+    cone_min_confidence: float,
+) -> bool:
+    if class_name == "cone" and cone_as_vehicle_obstacle:
+        return float(confidence) >= float(cone_min_confidence)
+    return (
+        class_name in vehicle_names
+        and float(confidence) >= float(vehicle_min_confidence)
+    )
+
+
+def preferred_avoidance_mode_from_yellow_reference(
+    *,
+    object_x: float,
+    object_y: float,
+    yellow_x_by_y,
+    deadband_px: float,
+) -> YoloLidarAvoidanceMode | None:
+    if yellow_x_by_y is None or len(yellow_x_by_y) == 0:
+        return None
+    row = max(0, min(len(yellow_x_by_y) - 1, int(round(object_y))))
+    divider_x = float(yellow_x_by_y[row])
+    if not math.isfinite(divider_x):
+        return None
+    deadband = max(0.0, float(deadband_px))
+    if float(object_x) < divider_x - deadband:
+        return YoloLidarAvoidanceMode.AVOID_RIGHT
+    if float(object_x) > divider_x + deadband:
+        return YoloLidarAvoidanceMode.AVOID_LEFT
+    return None
 
 
 class SequentialHybridDriver(Node):
@@ -106,15 +146,28 @@ class SequentialHybridDriver(Node):
         self.tracked_vehicle_sector_time = float("-inf")
         self.tracked_vehicle_distance_m = float("inf")
         self.tracked_vehicle_distance_time = float("-inf")
+        self.yellow_reference_x_by_y = None
+        self.yellow_reference_width = 0
+        self.yellow_reference_height = 0
+        self.yellow_reference_time = float("-inf")
+        self.avoidance_side_basis_code = 0.0
         self.traffic_light_sectors: tuple[tuple[float, float], ...] = ()
         self.traffic_light_sector_time = float("-inf")
-        self.avoidance_controller = YoloLidarAvoidanceController(
-            YoloLidarAvoidanceConfig(
-                yolo_min_confidence=float(
+        avoidance_yolo_min_confidence = float(
+            self.get_parameter("vehicle_yolo_min_confidence").value
+        )
+        if bool(self.get_parameter("cone_as_vehicle_obstacle").value):
+            avoidance_yolo_min_confidence = min(
+                avoidance_yolo_min_confidence,
+                float(
                     self.get_parameter(
-                        "vehicle_yolo_min_confidence"
+                        "cone_as_vehicle_min_confidence"
                     ).value
                 ),
+            )
+        self.avoidance_controller = YoloLidarAvoidanceController(
+            YoloLidarAvoidanceConfig(
+                yolo_min_confidence=avoidance_yolo_min_confidence,
                 yolo_required_frames=int(
                     self.get_parameter("vehicle_yolo_required_frames").value
                 ),
@@ -160,6 +213,11 @@ class SequentialHybridDriver(Node):
                 immediate_on_yolo=bool(
                     self.get_parameter(
                         "vehicle_avoidance_immediate_on_yolo"
+                    ).value
+                ),
+                preferred_side_required_frames=int(
+                    self.get_parameter(
+                        "vehicle_preferred_side_required_frames"
                     ).value
                 ),
             )
@@ -258,6 +316,12 @@ class SequentialHybridDriver(Node):
             ObjectDetectionArray,
             str(self.get_parameter("object_detections_topic").value),
             self._on_object_detections,
+            sensor_qos,
+        )
+        self.create_subscription(
+            Image,
+            str(self.get_parameter("yellow_mask_topic").value),
+            self._on_yellow_mask,
             sensor_qos,
         )
         self.create_subscription(
@@ -443,10 +507,20 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("traffic_light_sector_memory_sec", 0.75)
         self.declare_parameter("traffic_light_lidar_padding_deg", 2.0)
         self.declare_parameter("vehicle_yolo_min_confidence", 0.45)
+        self.declare_parameter("cone_as_vehicle_obstacle", False)
+        self.declare_parameter("cone_as_vehicle_min_confidence", 0.50)
         self.declare_parameter("vehicle_yolo_required_frames", 2)
         self.declare_parameter("vehicle_yolo_timeout_sec", 0.75)
         self.declare_parameter("vehicle_camera_lidar_hfov_deg", 60.0)
         self.declare_parameter("vehicle_camera_lidar_padding_deg", 3.0)
+        self.declare_parameter(
+            "yellow_mask_topic", "/lane_seg/yellow_centerline_mask"
+        )
+        self.declare_parameter("yellow_reference_timeout_sec", 0.40)
+        self.declare_parameter("yellow_reference_min_pixels", 3)
+        self.declare_parameter("yellow_reference_residual_px", 6.0)
+        self.declare_parameter("yellow_side_deadband_px", 6.0)
+        self.declare_parameter("vehicle_preferred_side_required_frames", 2)
         self.declare_parameter("vehicle_lidar_min_points", 2)
         self.declare_parameter("vehicle_lidar_sector_memory_sec", 0.5)
         self.declare_parameter(
@@ -721,13 +795,25 @@ class SequentialHybridDriver(Node):
             self._normalize_class_name(value)
             for value in self.get_parameter("vehicle_class_names").value
         }
+        cone_as_vehicle_obstacle = bool(
+            self.get_parameter("cone_as_vehicle_obstacle").value
+        )
         vehicles = [
             item
             for item in message.detections
-            if self._normalize_class_name(item.class_name) in vehicle_names
-            and float(item.confidence)
-            >= float(
-                self.get_parameter("vehicle_yolo_min_confidence").value
+            if is_avoidance_detection(
+                class_name=self._normalize_class_name(item.class_name),
+                confidence=float(item.confidence),
+                vehicle_names=vehicle_names,
+                vehicle_min_confidence=float(
+                    self.get_parameter("vehicle_yolo_min_confidence").value
+                ),
+                cone_as_vehicle_obstacle=cone_as_vehicle_obstacle,
+                cone_min_confidence=float(
+                    self.get_parameter(
+                        "cone_as_vehicle_min_confidence"
+                    ).value
+                ),
             )
         ]
         selected = None
@@ -768,15 +854,52 @@ class SequentialHybridDriver(Node):
             if math.isfinite(selected_distance):
                 self.tracked_vehicle_distance_time = now
         preferred_mode = None
+        if (
+            self.avoidance_controller.mode == YoloLidarAvoidanceMode.IDLE
+            and self.avoidance_controller.preferred_mode is None
+        ):
+            self.avoidance_side_basis_code = 0.0
         if selected is not None and image_width > 0:
             box_center_x = 0.5 * (
                 float(selected.xmin) + float(selected.xmax)
             )
-            preferred_mode = (
-                YoloLidarAvoidanceMode.AVOID_LEFT
-                if box_center_x >= 0.5 * float(image_width)
-                else YoloLidarAvoidanceMode.AVOID_RIGHT
+            yellow_fresh = (
+                now - self.yellow_reference_time
+                <= float(
+                    self.get_parameter("yellow_reference_timeout_sec").value
+                )
             )
+            if (
+                yellow_fresh
+                and self.yellow_reference_x_by_y is not None
+                and self.yellow_reference_width > 0
+                and self.yellow_reference_height > 0
+                and int(message.image_height) > 0
+            ):
+                object_x = (
+                    box_center_x
+                    * self.yellow_reference_width
+                    / float(image_width)
+                )
+                object_y = (
+                    float(selected.ymax)
+                    * self.yellow_reference_height
+                    / float(message.image_height)
+                )
+                preferred_mode = (
+                    preferred_avoidance_mode_from_yellow_reference(
+                        object_x=object_x,
+                        object_y=object_y,
+                        yellow_x_by_y=self.yellow_reference_x_by_y,
+                        deadband_px=float(
+                            self.get_parameter(
+                                "yellow_side_deadband_px"
+                            ).value
+                        ),
+                    )
+                )
+                if preferred_mode is not None:
+                    self.avoidance_side_basis_code = 1.0
         self.avoidance_controller.observe_yolo(
             now_sec=now,
             detected=selected is not None,
@@ -785,6 +908,35 @@ class SequentialHybridDriver(Node):
             preferred_mode=preferred_mode,
         )
         self._publish_cone_processing_gate(now)
+
+    def _on_yellow_mask(self, message: Image) -> None:
+        if str(message.encoding).lower() not in {"mono8", "8uc1"}:
+            return
+        width = int(message.width)
+        height = int(message.height)
+        step = int(message.step)
+        if width <= 0 or height <= 0 or step < width:
+            return
+        raw = np.frombuffer(message.data, dtype=np.uint8)
+        if raw.size < height * step:
+            return
+        mask = raw[: height * step].reshape(height, step)[:, :width]
+        reference = fit_yellow_centerline_reference(
+            mask,
+            min_pixels=int(
+                self.get_parameter("yellow_reference_min_pixels").value
+            ),
+            residual_threshold_px=float(
+                self.get_parameter("yellow_reference_residual_px").value
+            ),
+            line_width_px=1,
+        )
+        if not reference.valid:
+            return
+        self.yellow_reference_x_by_y = reference.x_by_y
+        self.yellow_reference_width = width
+        self.yellow_reference_height = height
+        self.yellow_reference_time = time.monotonic()
 
     def _on_cone_clusters(self, message: PoseArray) -> None:
         distances = [
@@ -1184,6 +1336,14 @@ class SequentialHybridDriver(Node):
                 self.avoidance_state.mode
             )
         )
+        preferred_mode = self.avoidance_controller.preferred_mode
+        preferred_side_code = (
+            1.0
+            if preferred_mode == YoloLidarAvoidanceMode.AVOID_LEFT
+            else -1.0
+            if preferred_mode == YoloLidarAvoidanceMode.AVOID_RIGHT
+            else 0.0
+        )
         self.avoidance_debug_pub.publish(
             Float32MultiArray(
                 data=[
@@ -1206,6 +1366,9 @@ class SequentialHybridDriver(Node):
                     float(obstacle.width_m)
                     if obstacle
                     else 0.0,
+                    preferred_side_code,
+                    0.0,
+                    self.avoidance_side_basis_code,
                 ]
             )
         )

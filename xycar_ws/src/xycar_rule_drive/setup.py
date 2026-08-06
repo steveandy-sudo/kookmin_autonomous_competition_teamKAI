@@ -39,6 +39,7 @@ setup(
         "console_scripts": [
             "lane_rule_driver = xycar_rule_drive.lane_rule_driver:main",
             "canonical_stanley_pursuit_driver = xycar_rule_drive.canonical_stanley_pursuit_driver:main",
+            "rule_command_adapter = xycar_rule_drive.rule_command_adapter:main",
             "keyboard_teleop = xycar_rule_drive.keyboard_teleop:main",
             "kookmin_legacy_camera_driver = xycar_rule_drive.kookmin_legacy_camera_driver:main",
         ],

@@ -111,6 +111,12 @@ def generate_launch_description():
         DeclareLaunchArgument("use_compressed_image", default_value="false"),
         DeclareLaunchArgument("enable_rectify", default_value="false"),
         DeclareLaunchArgument(
+            "direct_model_rectify_enabled", default_value="false"
+        ),
+        DeclareLaunchArgument(
+            "direct_model_rectify_oversample", default_value="1"
+        ),
+        DeclareLaunchArgument(
             "camera_yaml",
             default_value=PathJoinSubstitution(
                 [
@@ -218,6 +224,12 @@ def generate_launch_description():
                 "image_topic": image_topic,
                 "use_compressed_image": _as_bool("use_compressed_image"),
                 "enable_rectify": _as_bool("enable_rectify"),
+                "direct_model_rectify_enabled": _as_bool(
+                    "direct_model_rectify_enabled"
+                ),
+                "direct_model_rectify_oversample": _as_int(
+                    "direct_model_rectify_oversample"
+                ),
                 "camera_yaml": LaunchConfiguration("camera_yaml"),
                 "rect_balance": _as_float("rect_balance"),
                 "max_input_age_sec": _as_float("max_input_age_sec"),

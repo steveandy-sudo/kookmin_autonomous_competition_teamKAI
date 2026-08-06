@@ -79,6 +79,59 @@ class LaneSegIntegrationTest(unittest.TestCase):
         self.assertIs(first_map, rectifier.map1)
         np.testing.assert_array_equal(first, second)
 
+    def test_camera_rectifier_directly_outputs_model_resolution(self):
+        calibration = (
+            Path(__file__).resolve().parents[2]
+            / "xycar_perception"
+            / "config"
+            / "wide_camera_fisheye_1280x1024_20260708.yaml"
+        )
+        rectifier = CameraRectifier(calibration, 0.3)
+        frame = np.zeros((1024, 1280, 3), dtype=np.uint8)
+        cv2.line(frame, (180, 1000), (540, 300), (255, 255, 255), 12)
+        cv2.line(frame, (1100, 1000), (750, 300), (0, 220, 255), 12)
+
+        direct = rectifier.rectify_to_size(frame, 256, 144)
+        first_map = rectifier.scaled_maps[(1280, 1024, 256, 144)][0]
+        repeated = rectifier.rectify_to_size(frame, 256, 144)
+
+        self.assertEqual(direct.shape, (144, 256, 3))
+        self.assertIs(
+            first_map,
+            rectifier.scaled_maps[(1280, 1024, 256, 144)][0],
+        )
+        np.testing.assert_array_equal(direct, repeated)
+
+    def test_direct_model_rectification_matches_full_resolution_geometry(self):
+        calibration = (
+            Path(__file__).resolve().parents[2]
+            / "xycar_perception"
+            / "config"
+            / "wide_camera_fisheye_1280x1024_20260708.yaml"
+        )
+        rectifier = CameraRectifier(calibration, 0.3)
+        frame = np.zeros((1024, 1280, 3), dtype=np.uint8)
+        for x in range(80, 1280, 120):
+            cv2.line(frame, (x, 0), (x, 1023), (255, 255, 255), 3)
+        for y in range(64, 1024, 96):
+            cv2.line(frame, (0, y), (1279, y), (255, 255, 255), 3)
+
+        full_then_resize = cv2.resize(
+            rectifier.rectify(frame),
+            (256, 144),
+            interpolation=cv2.INTER_AREA,
+        )
+        direct = rectifier.rectify_to_size(frame, 256, 144)
+        full_edges = cv2.Canny(full_then_resize, 40, 120)
+        direct_edges = cv2.Canny(direct, 40, 120)
+        tolerance = np.ones((3, 3), dtype=np.uint8)
+        covered = cv2.dilate(full_edges, tolerance) > 0
+        direct_edge_pixels = direct_edges > 0
+        overlap_ratio = np.count_nonzero(
+            direct_edge_pixels & covered
+        ) / max(1, np.count_nonzero(direct_edge_pixels))
+        self.assertGreater(overlap_ratio, 0.95)
+
     def test_direct_mask_warp_is_pixel_identical_to_adapter_warp(self):
         height, width = 144, 256
         image = np.full((height, width, 3), 48, dtype=np.uint8)

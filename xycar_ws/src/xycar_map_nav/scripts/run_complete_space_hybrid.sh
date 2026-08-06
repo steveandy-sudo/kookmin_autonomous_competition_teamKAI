@@ -3,7 +3,16 @@
 set -eo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
-WORKSPACE="${XYCAR_WS:-$(cd -- "$SCRIPT_DIR/../../.." && pwd)}"
+SOURCE_WORKSPACE="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
+WORKSPACE="${XYCAR_WS:-$SOURCE_WORKSPACE}"
+if [[ ! -x "$WORKSPACE/src/xycar_map_nav/scripts/run_space_hybrid_test.sh" ]]; then
+  if [[ -n "${XYCAR_WS:-}" ]]; then
+    echo "[경고] XYCAR_WS=$XYCAR_WS 에 현재 통합 주행 코드가 없습니다."
+    echo "[자동 복구] 이 스크립트의 workspace를 사용합니다: $SOURCE_WORKSPACE"
+  fi
+  WORKSPACE="$SOURCE_WORKSPACE"
+fi
+export XYCAR_WS="$WORKSPACE"
 CAMERA_DEVICE="/dev/v4l/by-id/usb-HD_USB_Camera_HD_USB_Camera-video-index0"
 SPEED_COMMAND="${1:-}"
 START_WAYPOINT="${2:-}"
@@ -12,6 +21,16 @@ MODEL_PROFILE="${4:-${MODEL_PROFILE:-speed100}}"
 LOOKAHEAD_DISTANCE="${5:-${LOOKAHEAD_DISTANCE:-}}"
 STANLEY_PERCENT="${6:-${STANLEY_PERCENT:-}}"
 LEFT_OFFSET_CM="${7:-${LEFT_OFFSET_CM:-}}"
+PURE_PURSUIT_CONTROL_X_M="${PURE_PURSUIT_CONTROL_X_M:-}"
+STANLEY_CONTROL_X_M="${STANLEY_CONTROL_X_M:-}"
+STANLEY_GAIN="${STANLEY_GAIN:-}"
+STANLEY_SOFTENING_MPS="${STANLEY_SOFTENING_MPS:-}"
+STRAIGHT_STANLEY_PERCENT="${STRAIGHT_STANLEY_PERCENT:-}"
+STRAIGHT_STANLEY_GAIN="${STRAIGHT_STANLEY_GAIN:-}"
+STRAIGHT_STANLEY_SOFTENING_MPS="${STRAIGHT_STANLEY_SOFTENING_MPS:-}"
+OPPOSED_STANLEY_PERCENT="${OPPOSED_STANLEY_PERCENT:-}"
+CONTROL_LATENCY_PREVIEW_SEC="${CONTROL_LATENCY_PREVIEW_SEC:-}"
+STEERING_ONLY="${XYCAR_STEERING_ONLY:-false}"
 SENSOR_LOG="/tmp/xycar_hybrid_sensors_$(date +%Y%m%d_%H%M%S).log"
 SENSOR_PID=""
 
@@ -24,17 +43,46 @@ problem() {
   echo "[확인 방법] $action" >&2
 }
 
-if [[ -z "$SPEED_COMMAND" ]]; then
+prompt_float() {
+  local variable_name="$1"
+  local prompt="$2"
+  local default_value="$3"
+  local minimum="$4"
+  local maximum="$5"
+  local value="${!variable_name:-}"
+  if [[ -z "$value" ]]; then
+    read -r -p "$prompt [기본 $default_value]: " value
+    value="${value:-$default_value}"
+  fi
+  value="${value/,/.}"
+  if [[ ! "$value" =~ ^-?[0-9]+([.][0-9]+)?$ ]] || \
+    ! awk -v value="$value" -v minimum="$minimum" -v maximum="$maximum" \
+      'BEGIN { exit !(value >= minimum && value <= maximum) }'; then
+    problem \
+      "제어 파라미터 입력 오류" \
+      "'$value'은 $prompt 값으로 사용할 수 없습니다." \
+      "$minimum 부터 $maximum 사이 숫자를 입력하세요."
+    exit 2
+  fi
+  printf -v "$variable_name" '%.3f' "$value"
+}
+
+if [[ "$STEERING_ONLY" == "true" ]]; then
+  SPEED_COMMAND=0.0
+elif [[ -z "$SPEED_COMMAND" ]]; then
   read -r -p "주행 속도 command [3.0-30.0, 기본 3.0]: " SPEED_COMMAND
   SPEED_COMMAND="${SPEED_COMMAND:-3.0}"
 fi
-if [[ ! "$SPEED_COMMAND" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
-  ! awk -v speed="$SPEED_COMMAND" 'BEGIN { exit !(speed >= 3.0 && speed <= 30.0) }'; then
-  problem \
-    "속도 입력 오류" \
-    "'$SPEED_COMMAND'은 사용할 수 없는 속도입니다." \
-    "3.0부터 30.0 사이의 숫자 하나를 입력하세요. 예: 5"
-  exit 2
+if [[ "$STEERING_ONLY" != "true" ]]; then
+  if [[ ! "$SPEED_COMMAND" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
+    ! awk -v speed="$SPEED_COMMAND" \
+      'BEGIN { exit !(speed >= 3.0 && speed <= 30.0) }'; then
+    problem \
+      "속도 입력 오류" \
+      "'$SPEED_COMMAND'은 사용할 수 없는 속도입니다." \
+      "3.0부터 30.0 사이의 숫자 하나를 입력하세요. 예: 5"
+    exit 2
+  fi
 fi
 SPEED_COMMAND="$(awk -v speed="$SPEED_COMMAND" 'BEGIN { printf "%.3f", speed }')"
 
@@ -87,6 +135,25 @@ if [[ ! "$STANLEY_PERCENT" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
 fi
 STANLEY_PERCENT="$(awk -v value="$STANLEY_PERCENT" \
   'BEGIN { printf "%.3f", value }')"
+
+prompt_float PURE_PURSUIT_CONTROL_X_M \
+  "Pure Pursuit 제어점 X [m]" -0.08 -1.0 1.0
+prompt_float STANLEY_CONTROL_X_M \
+  "Stanley 제어점 X [m]" 0.16 -1.0 1.0
+prompt_float STANLEY_GAIN \
+  "곡선 Stanley 횡오차 gain" 1.15 0.0 10.0
+prompt_float STANLEY_SOFTENING_MPS \
+  "곡선 Stanley 저속 완화값 [m/s]" 0.35 0.01 10.0
+prompt_float STRAIGHT_STANLEY_PERCENT \
+  "직선 Stanley 비율 [%]" 90.0 0.0 100.0
+prompt_float STRAIGHT_STANLEY_GAIN \
+  "직선 Stanley 횡오차 gain" 0.65 0.0 10.0
+prompt_float STRAIGHT_STANLEY_SOFTENING_MPS \
+  "직선 Stanley 저속 완화값 [m/s]" 0.65 0.01 10.0
+prompt_float OPPOSED_STANLEY_PERCENT \
+  "PP와 Stanley 방향 상충 시 Stanley 비율 [%]" 70.0 0.0 100.0
+prompt_float CONTROL_LATENCY_PREVIEW_SEC \
+  "제어 지연 예측 시간 [s]" 0.30 0.0 2.0
 
 if [[ -z "$LEFT_OFFSET_CM" ]]; then
   read -r -p "좌측 주행 보정 거리 [cm, 기본 9]: " LEFT_OFFSET_CM
@@ -239,10 +306,23 @@ wait_for_message /vehicle/vesc_state VESC
 echo
 echo "========== 모든 센서 정상 =========="
 echo "속도 상한: $SPEED_COMMAND | 시작 목표: WP$START_WAYPOINT"
+if [[ "$STEERING_ONLY" == "true" ]]; then
+  echo "조향 전용: ON | 최종 속도 command는 항상 0.0"
+fi
 echo "곡선 제어: LD=${LOOKAHEAD_DISTANCE}m | Stanley=${STANLEY_PERCENT}%"
+echo "제어점: PP X=${PURE_PURSUIT_CONTROL_X_M}m | Stanley X=${STANLEY_CONTROL_X_M}m"
+echo "곡선 Stanley: gain=${STANLEY_GAIN} | soft=${STANLEY_SOFTENING_MPS}m/s"
+echo "직선 Stanley: ${STRAIGHT_STANLEY_PERCENT}% | gain=${STRAIGHT_STANLEY_GAIN} | soft=${STRAIGHT_STANLEY_SOFTENING_MPS}m/s"
+echo "상충 Stanley: ${OPPOSED_STANLEY_PERCENT}% | 지연 예측=${CONTROL_LATENCY_PREVIEW_SEC}s"
 echo "좌측 주행 보정: ${LEFT_OFFSET_CM}cm"
 echo "제어기를 준비합니다. 아직 차량은 정지 상태입니다."
 echo
+
+export PURE_PURSUIT_CONTROL_X_M STANLEY_CONTROL_X_M
+export STANLEY_GAIN STANLEY_SOFTENING_MPS
+export STRAIGHT_STANLEY_PERCENT STRAIGHT_STANLEY_GAIN
+export STRAIGHT_STANLEY_SOFTENING_MPS OPPOSED_STANLEY_PERCENT
+export CONTROL_LATENCY_PREVIEW_SEC
 
 "$WORKSPACE/src/xycar_map_nav/scripts/run_space_hybrid_test.sh" \
   "$SPEED_COMMAND" "$START_WAYPOINT" "$RUN_MODE" "$MODEL_PROFILE" \

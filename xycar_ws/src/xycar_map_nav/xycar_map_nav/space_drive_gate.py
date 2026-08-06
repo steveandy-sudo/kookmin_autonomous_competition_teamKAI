@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
+import math
 import re
 import select
 import sys
@@ -56,6 +57,103 @@ def estimate_message_rate_hz(timestamps: list[float]) -> float:
     return float(len(timestamps) - 1) / duration
 
 
+def format_avoidance_basis(
+    drive_mode: str,
+    debug_data: list[float] | tuple[float, ...] | None,
+    *,
+    target_label: str,
+    yolo_min_confidence: float,
+    entry_distance_m: float,
+    minimum_side_clearance_m: float,
+) -> str:
+    target_label = {"cone": "라바콘", "vehicle": "차량"}.get(
+        target_label,
+        target_label,
+    )
+    if debug_data is None or len(debug_data) < 9:
+        return f"대상={target_label} | 회피 센서값 대기 중"
+
+    distance = float(debug_data[2])
+    confidence = float(debug_data[3])
+    left = float(debug_data[4])
+    right = float(debug_data[5])
+    preferred_side = float(debug_data[9]) if len(debug_data) >= 10 else 0.0
+    side_basis_code = float(debug_data[11]) if len(debug_data) >= 12 else 0.0
+    yellow_side_available = (
+        side_basis_code > 0.5 and abs(preferred_side) > 0.5
+    )
+
+    def obstacle_side_text() -> str:
+        if preferred_side > 0.5 and yellow_side_available:
+            obstacle_side = "오른쪽"
+        elif preferred_side < -0.5 and yellow_side_available:
+            obstacle_side = "왼쪽"
+        else:
+            return ""
+        return f"노란 중앙선 기준 장애물={obstacle_side}"
+
+    def distance_text(value: float) -> str:
+        return f"{value:.2f}m" if math.isfinite(value) else "미확인"
+
+    common = (
+        f"대상={target_label} | YOLO={confidence:.2f}"
+        f">={float(yolo_min_confidence):.2f} | "
+        f"LiDAR={distance_text(distance)}"
+    )
+    if drive_mode == "AVOIDANCE_TRACK":
+        side_text = obstacle_side_text()
+        side_suffix = f" | {side_text}" if side_text else ""
+        return (
+            f"{common} | 진입기준={float(entry_distance_m):.2f}m | "
+            f"회피 전 거리 추적 중{side_suffix}"
+        )
+    clearances = (
+        f"좌측여유={distance_text(left)}, 우측여유={distance_text(right)}, "
+        f"최소기준={float(minimum_side_clearance_m):.2f}m"
+    )
+    if drive_mode == "AVOIDANCE_LEFT":
+        side_text = obstacle_side_text()
+        if side_text:
+            return (
+                f"{common} | {side_text} | {clearances} | "
+                "반대쪽인 왼쪽으로 회피"
+            )
+        return f"{common} | {clearances} | 좌측 공간이 더 넓어 좌회피"
+    if drive_mode == "AVOIDANCE_RIGHT":
+        side_text = obstacle_side_text()
+        if side_text:
+            return (
+                f"{common} | {side_text} | {clearances} | "
+                "반대쪽인 오른쪽으로 회피"
+            )
+        return f"{common} | {clearances} | 우측 공간이 더 넓어 우회피"
+    if drive_mode == "AVOIDANCE_BLOCKED":
+        if not math.isfinite(left) or not math.isfinite(right):
+            return f"{common} | LiDAR 군집·좌우 공간 연관 대기"
+        side_text = obstacle_side_text()
+        if not side_text:
+            if left < minimum_side_clearance_m and right < minimum_side_clearance_m:
+                return (
+                    f"{common} | 노란 중앙선 좌우판단 대기 | "
+                    f"{clearances} | 양쪽 공간 부족"
+                )
+            return f"{common} | 노란 중앙선 좌우판단 대기 | {clearances}"
+        if preferred_side < -0.5 and right < minimum_side_clearance_m:
+            return (
+                f"{common} | {side_text} | {clearances} | "
+                "오른쪽 공간 부족으로 대기"
+            )
+        if preferred_side > 0.5 and left < minimum_side_clearance_m:
+            return (
+                f"{common} | {side_text} | {clearances} | "
+                "왼쪽 공간 부족으로 대기"
+            )
+        return f"{common} | {clearances} | 양쪽 공간 부족으로 대기"
+    if drive_mode == "AVOIDANCE_RETURN":
+        return f"{common} | 장애물 소실 확인 완료, 중앙 경로로 복귀"
+    return f"{common} | 회피 비활성"
+
+
 class SpaceDriveGate(Node):
     def __init__(self) -> None:
         super().__init__("space_drive_gate")
@@ -68,6 +166,7 @@ class SpaceDriveGate(Node):
             maximum_abs_angle_command=float(
                 self.get_parameter("maximum_abs_angle_command").value
             ),
+            steering_only=bool(self.get_parameter("steering_only").value),
         )
         self.candidate = (0.0, 0.0)
         self.candidate_time = float("-inf")
@@ -81,6 +180,7 @@ class SpaceDriveGate(Node):
         self.quit_requested = False
         self.has_started = False
         self.last_display_key = ""
+        self.avoidance_debug: list[float] | None = None
         self.rl_message_times: deque[float] = deque(maxlen=30)
         self.stdin_is_tty = sys.stdin.isatty()
         self.original_terminal_settings = None
@@ -110,6 +210,12 @@ class SpaceDriveGate(Node):
             self._on_rl_candidate,
             10,
         )
+        self.create_subscription(
+            Float32MultiArray,
+            str(self.get_parameter("avoidance_debug_topic").value),
+            self._on_avoidance_debug,
+            10,
+        )
         self.motor_pub = self.create_publisher(
             Float32MultiArray,
             str(self.get_parameter("motor_topic").value),
@@ -133,11 +239,19 @@ class SpaceDriveGate(Node):
             "selector_status_topic", "/hybrid_gate/status"
         )
         self.declare_parameter("rl_candidate_topic", "/rl/policy_motor_shadow")
+        self.declare_parameter(
+            "avoidance_debug_topic", "/hybrid/avoidance_debug"
+        )
+        self.declare_parameter("avoidance_target_label", "vehicle")
+        self.declare_parameter("avoidance_yolo_min_confidence", 0.45)
+        self.declare_parameter("avoidance_entry_distance_m", 1.20)
+        self.declare_parameter("avoidance_minimum_side_clearance_m", 0.70)
         self.declare_parameter("motor_topic", "/xycar_motor")
         self.declare_parameter("drive_armed_topic", "/hybrid_gate/drive_armed")
         self.declare_parameter("speed_command", 3.0)
         self.declare_parameter("maximum_speed_command", 30.0)
         self.declare_parameter("maximum_abs_angle_command", 42.0)
+        self.declare_parameter("steering_only", False)
         self.declare_parameter("candidate_timeout_sec", 0.40)
         self.declare_parameter("publish_rate_hz", 20.0)
 
@@ -163,6 +277,9 @@ class SpaceDriveGate(Node):
 
     def _on_rl_candidate(self, _message: Float32MultiArray) -> None:
         self.rl_message_times.append(time.monotonic())
+
+    def _on_avoidance_debug(self, message: Float32MultiArray) -> None:
+        self.avoidance_debug = [float(value) for value in message.data]
 
     def _rl_rate_hz(self, now: float) -> float:
         if not self.rl_message_times or now - self.rl_message_times[-1] > 1.0:
@@ -211,6 +328,30 @@ class SpaceDriveGate(Node):
             f"SPEED={output.speed_command:.1f} | "
             f"WAYPOINT=WP{self.target_waypoint}"
         )
+        if drive_mode.startswith("AVOIDANCE_"):
+            self.get_logger().info(
+                "[회피 판단] "
+                + format_avoidance_basis(
+                    drive_mode,
+                    self.avoidance_debug,
+                    target_label=str(
+                        self.get_parameter("avoidance_target_label").value
+                    ),
+                    yolo_min_confidence=float(
+                        self.get_parameter(
+                            "avoidance_yolo_min_confidence"
+                        ).value
+                    ),
+                    entry_distance_m=float(
+                        self.get_parameter("avoidance_entry_distance_m").value
+                    ),
+                    minimum_side_clearance_m=float(
+                        self.get_parameter(
+                            "avoidance_minimum_side_clearance_m"
+                        ).value
+                    ),
+                )
+            )
         if self.selector_state not in {"UNKNOWN", "RUNNING"}:
             self.get_logger().warning(
                 f"[문제] 주행 선택기={self.selector_state} | "

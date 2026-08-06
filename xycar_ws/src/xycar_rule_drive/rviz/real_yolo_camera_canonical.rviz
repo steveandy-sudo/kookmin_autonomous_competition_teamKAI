@@ -10,6 +10,10 @@ Panels:
         - /Canonical White Fit Debug1
         - /Model Camera1
         - /Canonical Model Input1
+        - /Object Detection1
+        - /Recorded Original Canonical1
+        - /Recorded Original Rule Debug1
+        - /Recorded Original Object Detection1
       Splitter Ratio: 0.5
     Tree Height: 125
 Visualization Manager:
@@ -58,7 +62,7 @@ Visualization Manager:
         Value: /perception/canonical_white_fit_debug
       Value: true
     - Class: rviz_default_plugins/Image
-      Enabled: false
+      Enabled: true
       Max Value: 1
       Median window: 5
       Min Value: 0
@@ -69,8 +73,8 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Best Effort
-        Value: /perception/rectified_camera_image
-      Value: false
+        Value: /lane_seg/source_image
+      Value: true
     - Class: rviz_default_plugins/Image
       Enabled: true
       Max Value: 1
@@ -84,6 +88,62 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /perception/canonical_road_image
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Object Detection
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /my_rule/object_detection/debug_image
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Recorded Original Canonical
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /comparison/original_canonical
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Recorded Original Rule Debug
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /comparison/original_rule_debug
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Recorded Original Object Detection
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /comparison/original_object_debug
       Value: true
   Enabled: true
   Global Options:
@@ -136,6 +196,8 @@ Window Geometry:
   Hide Left Dock: false
   Hide Right Dock: false
   Model Camera:
+    collapsed: false
+  Object Detection:
     collapsed: false
   QMainWindow State: 000000ff00000000fd00000001000000000000036c000002dafc0200000004fb000000260059004f004c004f0020004c0061006e006500200044006500740065006300740069006f006e010000003d0000016a0000002800fffffffb00000018004d006f00640065006c002000430061006d0065007200610000000132000000f00000002800fffffffb0000002a00430061006e006f006e006900630061006c0020004d006f00640065006c00200049006e00700075007401000001ad0000016a0000002800fffffffb000000100044006900730070006c006100790073000000021700000100000000c900ffffff0000018e000002da00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Width: 1280

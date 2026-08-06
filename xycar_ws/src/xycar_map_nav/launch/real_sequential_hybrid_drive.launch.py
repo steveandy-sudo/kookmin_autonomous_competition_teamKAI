@@ -59,6 +59,13 @@ def generate_launch_description():
             "wide_camera_fisheye_1280x1024_20260708.yaml",
         ]
     )
+    rviz_config = PathJoinSubstitution(
+        [
+            FindPackageShare("xycar_map_nav"),
+            "rviz",
+            "avoidance_test.rviz",
+        ]
+    )
     drive_enabled = LaunchConfiguration("drive_enabled")
     speed_command = LaunchConfiguration("speed_command")
     scan_topic = LaunchConfiguration("scan_topic")
@@ -66,8 +73,10 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("drive_enabled", default_value="false"),
+            DeclareLaunchArgument("steering_only", default_value="false"),
             DeclareLaunchArgument("gate_arming_required", default_value="false"),
             DeclareLaunchArgument("force_rule_only", default_value="true"),
+            DeclareLaunchArgument("enable_rviz", default_value="false"),
             DeclareLaunchArgument("start_perception", default_value="true"),
             DeclareLaunchArgument("start_rule", default_value="true"),
             DeclareLaunchArgument("start_cone", default_value="true"),
@@ -87,6 +96,31 @@ def generate_launch_description():
                 "pure_pursuit_weight", default_value="0.8"
             ),
             DeclareLaunchArgument(
+                "pure_pursuit_control_x_m", default_value="-0.08"
+            ),
+            DeclareLaunchArgument(
+                "stanley_control_x_m", default_value="0.16"
+            ),
+            DeclareLaunchArgument("stanley_gain", default_value="1.15"),
+            DeclareLaunchArgument(
+                "stanley_softening_mps", default_value="0.35"
+            ),
+            DeclareLaunchArgument(
+                "straight_pure_pursuit_weight", default_value="0.10"
+            ),
+            DeclareLaunchArgument(
+                "straight_stanley_gain", default_value="0.65"
+            ),
+            DeclareLaunchArgument(
+                "straight_stanley_softening_mps", default_value="0.65"
+            ),
+            DeclareLaunchArgument(
+                "opposed_stanley_weight", default_value="0.70"
+            ),
+            DeclareLaunchArgument(
+                "control_latency_preview_sec", default_value="0.30"
+            ),
+            DeclareLaunchArgument(
                 "target_left_offset_m", default_value="0.09"
             ),
             DeclareLaunchArgument(
@@ -96,7 +130,117 @@ def generate_launch_description():
                 "maximum_speed_command", default_value="30.0"
             ),
             DeclareLaunchArgument(
-                "perception_max_output_rate_hz", default_value="10.0"
+                "perception_max_output_rate_hz", default_value="15.0"
+            ),
+            DeclareLaunchArgument(
+                "direct_model_rectify_enabled", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "direct_model_rectify_oversample", default_value="3"
+            ),
+            DeclareLaunchArgument(
+                "vehicle_yolo_min_confidence", default_value="0.45"
+            ),
+            DeclareLaunchArgument(
+                "cone_as_vehicle_obstacle", default_value="false"
+            ),
+            DeclareLaunchArgument(
+                "cone_as_vehicle_min_confidence", default_value="0.50"
+            ),
+            DeclareLaunchArgument(
+                "vehicle_yolo_required_frames", default_value="2"
+            ),
+            DeclareLaunchArgument(
+                "vehicle_yolo_timeout_sec", default_value="2.50"
+            ),
+            DeclareLaunchArgument(
+                "vehicle_camera_lidar_hfov_deg", default_value="60.0"
+            ),
+            DeclareLaunchArgument(
+                "vehicle_camera_lidar_padding_deg", default_value="3.0"
+            ),
+            DeclareLaunchArgument(
+                "vehicle_preferred_side_required_frames", default_value="2"
+            ),
+            DeclareLaunchArgument(
+                "vehicle_lidar_min_points", default_value="2"
+            ),
+            DeclareLaunchArgument(
+                "vehicle_lidar_sector_memory_sec", default_value="0.50"
+            ),
+            DeclareLaunchArgument(
+                "vehicle_lidar_association_angle_margin_deg",
+                default_value="2.0",
+            ),
+            DeclareLaunchArgument(
+                "vehicle_lidar_association_distance_tolerance_m",
+                default_value="0.35",
+            ),
+            DeclareLaunchArgument(
+                "vehicle_avoidance_immediate_on_yolo", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "vehicle_avoidance_entry_distance_m", default_value="1.20"
+            ),
+            DeclareLaunchArgument(
+                "vehicle_minimum_side_clearance_m", default_value="0.70"
+            ),
+            DeclareLaunchArgument("vehicle_left_offset_m", default_value="0.33"),
+            DeclareLaunchArgument("vehicle_right_offset_m", default_value="0.33"),
+            DeclareLaunchArgument(
+                "vehicle_offset_rate_mps", default_value="0.35"
+            ),
+            DeclareLaunchArgument(
+                "vehicle_avoidance_speed_limit_command", default_value="8.0"
+            ),
+            DeclareLaunchArgument(
+                "vehicle_minimum_avoid_sec", default_value="0.80"
+            ),
+            DeclareLaunchArgument("vehicle_clear_hold_sec", default_value="1.0"),
+            DeclareLaunchArgument("vehicle_return_hold_sec", default_value="0.30"),
+            DeclareLaunchArgument(
+                "vehicle_return_deadband_m", default_value="0.02"
+            ),
+            DeclareLaunchArgument("vehicle_body_length_m", default_value="0.55"),
+            DeclareLaunchArgument("vehicle_body_width_m", default_value="0.28"),
+            DeclareLaunchArgument(
+                "lidar_obstacle_detect_distance_m", default_value="1.50"
+            ),
+            DeclareLaunchArgument(
+                "lidar_obstacle_minimum_distance_m", default_value="0.18"
+            ),
+            DeclareLaunchArgument(
+                "lidar_obstacle_path_half_width_m", default_value="0.18"
+            ),
+            DeclareLaunchArgument(
+                "lidar_obstacle_minimum_cluster_points", default_value="3"
+            ),
+            DeclareLaunchArgument(
+                "lidar_obstacle_maximum_scan_index_gap", default_value="2"
+            ),
+            DeclareLaunchArgument(
+                "lidar_obstacle_maximum_cluster_gap_m", default_value="0.16"
+            ),
+            DeclareLaunchArgument(
+                "lidar_obstacle_minimum_cluster_width_m", default_value="0.09"
+            ),
+            DeclareLaunchArgument(
+                "lidar_obstacle_maximum_cluster_width_m", default_value="0.70"
+            ),
+            DeclareLaunchArgument(
+                "lidar_obstacle_side_probe_inner_m", default_value="0.18"
+            ),
+            DeclareLaunchArgument(
+                "lidar_obstacle_side_probe_outer_m", default_value="0.55"
+            ),
+            DeclareLaunchArgument(
+                "lidar_obstacle_lidar_x_m", default_value="0.065"
+            ),
+            DeclareLaunchArgument(
+                "lidar_obstacle_lidar_y_m", default_value="0.0"
+            ),
+            DeclareLaunchArgument(
+                "lidar_obstacle_lidar_yaw_deg", default_value="0.0"
             ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(perception_launch),
@@ -105,8 +249,27 @@ def generate_launch_description():
                     "max_output_rate_hz": LaunchConfiguration(
                         "perception_max_output_rate_hz"
                     ),
+                    "direct_model_rectify_enabled": LaunchConfiguration(
+                        "direct_model_rectify_enabled"
+                    ),
+                    "direct_model_rectify_oversample": LaunchConfiguration(
+                        "direct_model_rectify_oversample"
+                    ),
                     "debug_rate_hz": "0.0",
+                    "publish_intermediate_topics": "true",
                 }.items(),
+            ),
+            Node(
+                package="rviz2",
+                executable="rviz2",
+                name="rviz2_avoidance_test",
+                condition=IfCondition(LaunchConfiguration("enable_rviz")),
+                output="screen",
+                arguments=["-d", rviz_config],
+                additional_env={
+                    "LIBGL_ALWAYS_SOFTWARE": "1",
+                    "QT_XCB_GL_INTEGRATION": "none",
+                },
             ),
             Node(
                 package="xycar_rule_drive",
@@ -120,6 +283,11 @@ def generate_launch_description():
                     {
                         "use_sim_time": False,
                         "drive_enabled": False,
+                        "steering_only": ParameterValue(
+                            LaunchConfiguration("steering_only"),
+                            value_type=bool,
+                        ),
+                        "base_frame_id": "laser_frame",
                         "shadow_motor_topic": "/hybrid/rule_candidate",
                         "cruise_speed_command": ParameterValue(
                             speed_command, value_type=float
@@ -135,6 +303,48 @@ def generate_launch_description():
                             LaunchConfiguration("pure_pursuit_weight"),
                             value_type=float,
                         ),
+                        "pure_pursuit_control_x_m": ParameterValue(
+                            LaunchConfiguration("pure_pursuit_control_x_m"),
+                            value_type=float,
+                        ),
+                        "stanley_control_x_m": ParameterValue(
+                            LaunchConfiguration("stanley_control_x_m"),
+                            value_type=float,
+                        ),
+                        "stanley_gain": ParameterValue(
+                            LaunchConfiguration("stanley_gain"),
+                            value_type=float,
+                        ),
+                        "stanley_softening_mps": ParameterValue(
+                            LaunchConfiguration("stanley_softening_mps"),
+                            value_type=float,
+                        ),
+                        "straight_pure_pursuit_weight": ParameterValue(
+                            LaunchConfiguration(
+                                "straight_pure_pursuit_weight"
+                            ),
+                            value_type=float,
+                        ),
+                        "straight_stanley_gain": ParameterValue(
+                            LaunchConfiguration("straight_stanley_gain"),
+                            value_type=float,
+                        ),
+                        "straight_stanley_softening_mps": ParameterValue(
+                            LaunchConfiguration(
+                                "straight_stanley_softening_mps"
+                            ),
+                            value_type=float,
+                        ),
+                        "opposed_stanley_weight": ParameterValue(
+                            LaunchConfiguration("opposed_stanley_weight"),
+                            value_type=float,
+                        ),
+                        "control_latency_preview_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "control_latency_preview_sec"
+                            ),
+                            value_type=float,
+                        ),
                         # Keep the validated static calibration. Vehicle
                         # avoidance now shapes the full target path with the
                         # gazebo_sitl entry/hold/return planner.
@@ -148,8 +358,14 @@ def generate_launch_description():
                         "sitl_bypass_path_request_topic": (
                             "/hybrid/avoidance_path_request"
                         ),
-                        "vehicle_body_length_m": 0.55,
-                        "vehicle_body_width_m": 0.28,
+                        "vehicle_body_length_m": ParameterValue(
+                            LaunchConfiguration("vehicle_body_length_m"),
+                            value_type=float,
+                        ),
+                        "vehicle_body_width_m": ParameterValue(
+                            LaunchConfiguration("vehicle_body_width_m"),
+                            value_type=float,
+                        ),
                         "lane_center_separation_m": 0.40,
                     },
                 ],
@@ -177,6 +393,12 @@ def generate_launch_description():
                         "camera_yaml": object_camera_yaml,
                         "startup_signal_hsv_enabled": False,
                         "inference_rate_hz": 3.0,
+                        "cone_confidence": ParameterValue(
+                            LaunchConfiguration(
+                                "cone_as_vehicle_min_confidence"
+                            ),
+                            value_type=float,
+                        ),
                     },
                 ],
             ),
@@ -245,6 +467,200 @@ def generate_launch_description():
                                 "vehicle_avoidance_enabled"
                             ),
                             value_type=bool,
+                        ),
+                        "vehicle_yolo_min_confidence": ParameterValue(
+                            LaunchConfiguration("vehicle_yolo_min_confidence"),
+                            value_type=float,
+                        ),
+                        "cone_as_vehicle_obstacle": ParameterValue(
+                            LaunchConfiguration("cone_as_vehicle_obstacle"),
+                            value_type=bool,
+                        ),
+                        "cone_as_vehicle_min_confidence": ParameterValue(
+                            LaunchConfiguration(
+                                "cone_as_vehicle_min_confidence"
+                            ),
+                            value_type=float,
+                        ),
+                        "vehicle_yolo_required_frames": ParameterValue(
+                            LaunchConfiguration("vehicle_yolo_required_frames"),
+                            value_type=int,
+                        ),
+                        "vehicle_yolo_timeout_sec": ParameterValue(
+                            LaunchConfiguration("vehicle_yolo_timeout_sec"),
+                            value_type=float,
+                        ),
+                        "vehicle_camera_lidar_hfov_deg": ParameterValue(
+                            LaunchConfiguration("vehicle_camera_lidar_hfov_deg"),
+                            value_type=float,
+                        ),
+                        "vehicle_camera_lidar_padding_deg": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_camera_lidar_padding_deg"
+                            ),
+                            value_type=float,
+                        ),
+                        "vehicle_preferred_side_required_frames": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_preferred_side_required_frames"
+                            ),
+                            value_type=int,
+                        ),
+                        "vehicle_lidar_min_points": ParameterValue(
+                            LaunchConfiguration("vehicle_lidar_min_points"),
+                            value_type=int,
+                        ),
+                        "vehicle_lidar_sector_memory_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_lidar_sector_memory_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "vehicle_lidar_association_angle_margin_deg": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_lidar_association_angle_margin_deg"
+                            ),
+                            value_type=float,
+                        ),
+                        "vehicle_lidar_association_distance_tolerance_m": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_lidar_association_distance_tolerance_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "vehicle_avoidance_immediate_on_yolo": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_avoidance_immediate_on_yolo"
+                            ),
+                            value_type=bool,
+                        ),
+                        "vehicle_avoidance_entry_distance_m": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_avoidance_entry_distance_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "vehicle_minimum_side_clearance_m": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_minimum_side_clearance_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "vehicle_left_offset_m": ParameterValue(
+                            LaunchConfiguration("vehicle_left_offset_m"),
+                            value_type=float,
+                        ),
+                        "vehicle_right_offset_m": ParameterValue(
+                            LaunchConfiguration("vehicle_right_offset_m"),
+                            value_type=float,
+                        ),
+                        "vehicle_offset_rate_mps": ParameterValue(
+                            LaunchConfiguration("vehicle_offset_rate_mps"),
+                            value_type=float,
+                        ),
+                        "vehicle_avoidance_speed_limit_command": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_avoidance_speed_limit_command"
+                            ),
+                            value_type=float,
+                        ),
+                        "vehicle_minimum_avoid_sec": ParameterValue(
+                            LaunchConfiguration("vehicle_minimum_avoid_sec"),
+                            value_type=float,
+                        ),
+                        "vehicle_clear_hold_sec": ParameterValue(
+                            LaunchConfiguration("vehicle_clear_hold_sec"),
+                            value_type=float,
+                        ),
+                        "vehicle_return_hold_sec": ParameterValue(
+                            LaunchConfiguration("vehicle_return_hold_sec"),
+                            value_type=float,
+                        ),
+                        "vehicle_return_deadband_m": ParameterValue(
+                            LaunchConfiguration("vehicle_return_deadband_m"),
+                            value_type=float,
+                        ),
+                        "vehicle_body_length_m": ParameterValue(
+                            LaunchConfiguration("vehicle_body_length_m"),
+                            value_type=float,
+                        ),
+                        "vehicle_body_width_m": ParameterValue(
+                            LaunchConfiguration("vehicle_body_width_m"),
+                            value_type=float,
+                        ),
+                        "lidar_obstacle_detect_distance_m": ParameterValue(
+                            LaunchConfiguration(
+                                "lidar_obstacle_detect_distance_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "lidar_obstacle_minimum_distance_m": ParameterValue(
+                            LaunchConfiguration(
+                                "lidar_obstacle_minimum_distance_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "lidar_obstacle_path_half_width_m": ParameterValue(
+                            LaunchConfiguration(
+                                "lidar_obstacle_path_half_width_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "lidar_obstacle_minimum_cluster_points": ParameterValue(
+                            LaunchConfiguration(
+                                "lidar_obstacle_minimum_cluster_points"
+                            ),
+                            value_type=int,
+                        ),
+                        "lidar_obstacle_maximum_scan_index_gap": ParameterValue(
+                            LaunchConfiguration(
+                                "lidar_obstacle_maximum_scan_index_gap"
+                            ),
+                            value_type=int,
+                        ),
+                        "lidar_obstacle_maximum_cluster_gap_m": ParameterValue(
+                            LaunchConfiguration(
+                                "lidar_obstacle_maximum_cluster_gap_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "lidar_obstacle_minimum_cluster_width_m": ParameterValue(
+                            LaunchConfiguration(
+                                "lidar_obstacle_minimum_cluster_width_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "lidar_obstacle_maximum_cluster_width_m": ParameterValue(
+                            LaunchConfiguration(
+                                "lidar_obstacle_maximum_cluster_width_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "lidar_obstacle_side_probe_inner_m": ParameterValue(
+                            LaunchConfiguration(
+                                "lidar_obstacle_side_probe_inner_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "lidar_obstacle_side_probe_outer_m": ParameterValue(
+                            LaunchConfiguration(
+                                "lidar_obstacle_side_probe_outer_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "lidar_obstacle_lidar_x_m": ParameterValue(
+                            LaunchConfiguration("lidar_obstacle_lidar_x_m"),
+                            value_type=float,
+                        ),
+                        "lidar_obstacle_lidar_y_m": ParameterValue(
+                            LaunchConfiguration("lidar_obstacle_lidar_y_m"),
+                            value_type=float,
+                        ),
+                        "lidar_obstacle_lidar_yaw_deg": ParameterValue(
+                            LaunchConfiguration(
+                                "lidar_obstacle_lidar_yaw_deg"
+                            ),
+                            value_type=float,
                         ),
                     },
                 ],

@@ -49,6 +49,22 @@ def test_gate_does_not_override_selector_stop_or_stale_command():
     assert selector_stop.reason == "SELECTOR_STOP"
 
 
+def test_steering_only_keeps_candidate_angle_and_forces_zero_speed():
+    controller = SpaceDriveGateController(
+        speed_command=0.0,
+        steering_only=True,
+    )
+    controller.toggle()
+    output = controller.command(
+        candidate_fresh=True,
+        candidate_angle_command=-31.0,
+        candidate_speed_command=0.0,
+    )
+    assert output.angle_command == -31.0
+    assert output.speed_command == 0.0
+    assert output.reason == "SPACE_RUN"
+
+
 def test_speed_and_angle_are_clamped():
     controller = SpaceDriveGateController(
         speed_command=20.0,

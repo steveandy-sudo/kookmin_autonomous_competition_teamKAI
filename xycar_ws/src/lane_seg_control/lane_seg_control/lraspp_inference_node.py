@@ -39,7 +39,12 @@ def prepare_model_input(
     frame: np.ndarray, width: int, height: int
 ) -> np.ndarray:
     """Return a contiguous ImageNet-normalized RGB NCHW tensor array."""
-    resized = cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA)
+    if frame.shape[:2] == (height, width):
+        resized = frame
+    else:
+        resized = cv2.resize(
+            frame, (width, height), interpolation=cv2.INTER_AREA
+        )
     rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
     normalized = (rgb - IMAGENET_MEAN) / IMAGENET_STD
     return np.ascontiguousarray(normalized.transpose(2, 0, 1)[np.newaxis, ...])
@@ -98,6 +103,8 @@ class LrasppInferenceNode(Node):
         self.declare_parameter("image_topic", "/wide_camera/rect/image_raw")
         self.declare_parameter("use_compressed_image", False)
         self.declare_parameter("enable_rectify", False)
+        self.declare_parameter("direct_model_rectify_enabled", False)
+        self.declare_parameter("direct_model_rectify_oversample", 1)
         self.declare_parameter("camera_yaml", "")
         self.declare_parameter("rect_balance", 0.3)
         self.declare_parameter("max_input_age_sec", 0.0)
@@ -207,6 +214,17 @@ class LrasppInferenceNode(Node):
         self.enable_rectify = bool(
             self.get_parameter("enable_rectify").value
         )
+        self.direct_model_rectify_enabled = bool(
+            self.get_parameter("direct_model_rectify_enabled").value
+        )
+        self.direct_model_rectify_oversample = max(
+            1,
+            int(
+                self.get_parameter(
+                    "direct_model_rectify_oversample"
+                ).value
+            ),
+        )
         self.max_input_age_sec = max(
             0.0, float(self.get_parameter("max_input_age_sec").value)
         )
@@ -229,6 +247,15 @@ class LrasppInferenceNode(Node):
             self.rectifier = CameraRectifier(
                 str(self.get_parameter("camera_yaml").value),
                 float(self.get_parameter("rect_balance").value),
+            )
+        if self.direct_model_rectify_enabled and self.rectifier is None:
+            raise ValueError(
+                "direct_model_rectify_enabled requires enable_rectify=true"
+            )
+        if self.direct_model_rectify_enabled and self.output_native_resolution:
+            raise ValueError(
+                "direct_model_rectify_enabled requires "
+                "output_native_resolution=false"
             )
         self.geometry: BevGeometry | None = None
         self.geometry_input_size: tuple[int, int] | None = None
@@ -356,10 +383,11 @@ class LrasppInferenceNode(Node):
         self.scheduler_tick_count = 0
         self.scheduler_stop = threading.Event()
         self.scheduler_thread: threading.Thread | None = None
+        self.context.on_shutdown(self.stop_output_scheduler)
         if self.max_output_rate_hz > 0.0:
             self.scheduler_thread = threading.Thread(
                 target=self.run_output_scheduler,
-                name="lane_seg_7hz_scheduler",
+                name="lane_seg_output_scheduler",
                 daemon=True,
             )
             self.scheduler_thread.start()
@@ -371,7 +399,9 @@ class LrasppInferenceNode(Node):
             f"threads=torch:{cpu_threads},opencv:{opencv_threads}, "
             f"output={'native' if self.output_native_resolution else 'model'}, "
             f"source={'compressed' if self.use_compressed_image else 'raw'}, "
-            f"rectify={self.enable_rectify}, direct_canonical="
+            f"rectify={self.enable_rectify}, direct_model_rectify="
+            f"{self.direct_model_rectify_enabled}x"
+            f"{self.direct_model_rectify_oversample}, direct_canonical="
             f"{self.direct_canonical_enabled}, "
             f"scheduler={'latest-frame timer' if self.max_output_rate_hz > 0.0 else 'input'}, "
             f"rate_limit={self.max_output_rate_hz:.1f}Hz"
@@ -521,7 +551,16 @@ class LrasppInferenceNode(Node):
                 message, desired_encoding="bgr8"
             )
         if self.rectifier is not None:
-            frame = self.rectifier.rectify(frame)
+            if self.direct_model_rectify_enabled:
+                frame = self.rectifier.rectify_to_size(
+                    frame,
+                    self.input_width
+                    * self.direct_model_rectify_oversample,
+                    self.input_height
+                    * self.direct_model_rectify_oversample,
+                )
+            else:
+                frame = self.rectifier.rectify(frame)
         return frame
 
     def on_image(self, message: CameraMessage) -> None:
@@ -556,15 +595,28 @@ class LrasppInferenceNode(Node):
             if self.scheduler_stop.wait(wait_sec):
                 break
             self.scheduler_tick_count += 1
-            self.on_output_timer()
+            try:
+                self.on_output_timer()
+            except RuntimeError:
+                if self.scheduler_stop.is_set() or not rclpy.ok(
+                    context=self.context
+                ):
+                    break
+                raise
             deadline += period
             if deadline < time.monotonic() - period:
                 deadline = time.monotonic() + period
 
-    def destroy_node(self):
+    def stop_output_scheduler(self) -> None:
         self.scheduler_stop.set()
-        if self.scheduler_thread is not None:
+        if (
+            self.scheduler_thread is not None
+            and self.scheduler_thread is not threading.current_thread()
+        ):
             self.scheduler_thread.join(timeout=2.0)
+
+    def destroy_node(self):
+        self.stop_output_scheduler()
         return super().destroy_node()
 
     @staticmethod

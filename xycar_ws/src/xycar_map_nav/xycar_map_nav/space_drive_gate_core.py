@@ -25,6 +25,7 @@ class SpaceDriveGateController:
         speed_command: float,
         maximum_speed_command: float = 30.0,
         maximum_abs_angle_command: float = 42.0,
+        steering_only: bool = False,
     ) -> None:
         self.maximum_speed_command = max(0.0, float(maximum_speed_command))
         self.maximum_abs_angle_command = max(
@@ -33,6 +34,7 @@ class SpaceDriveGateController:
         self.speed_command = clamp(
             speed_command, 0.0, self.maximum_speed_command
         )
+        self.steering_only = bool(steering_only)
         self.armed = False
 
     def toggle(self) -> bool:
@@ -53,6 +55,16 @@ class SpaceDriveGateController:
             return SpaceDriveOutput(0.0, 0.0, "SPACE_STOP")
         if not candidate_fresh:
             return SpaceDriveOutput(0.0, 0.0, "CANDIDATE_STALE")
+        if self.steering_only:
+            return SpaceDriveOutput(
+                clamp(
+                    candidate_angle_command,
+                    -self.maximum_abs_angle_command,
+                    self.maximum_abs_angle_command,
+                ),
+                0.0,
+                "SPACE_RUN",
+            )
         if float(candidate_speed_command) <= 0.0:
             return SpaceDriveOutput(0.0, 0.0, "SELECTOR_STOP")
         return SpaceDriveOutput(
