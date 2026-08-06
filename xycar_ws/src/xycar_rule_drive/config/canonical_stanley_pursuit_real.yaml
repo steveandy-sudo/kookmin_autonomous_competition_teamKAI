@@ -13,21 +13,11 @@ canonical_stanley_pursuit_driver:
     steering_lead_time_sec: 0.08
     steering_max_lead_command: 6.0
 
-    # Use a near target and give Stanley 10% of the normal curve blend.
-    # Straight-only control still uses its independent straight parameters.
-    lookahead_distance_m: 0.50
-    pure_pursuit_weight: 0.90
-
-    # The calibrated BEV removes about 6 cm of the previous right bias.
-    # Start at 9 cm to preserve the validated real-car trajectory.
-    target_right_offset_m: 0.0
-    target_left_offset_m: 0.09
-
     # Safe first real-car defaults. The launch arguments can raise these only
     # after shadow output and curve completion have been checked.
     cruise_speed_command: 8.0
     minimum_speed_command: 6.0
     curve_slowdown_angle_command: 18.0
     lane_loss_speed_command: 4.0
-    command_rate_hz: 10.0
+    command_rate_hz: 7.0
     command_on_canonical: true

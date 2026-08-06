@@ -16,7 +16,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
-from std_msgs.msg import Float32, Float32MultiArray
+from std_msgs.msg import Float32MultiArray
 from visualization_msgs.msg import Marker, MarkerArray
 
 from xycar_rule_drive.lane_rule_driver import (
@@ -339,44 +339,13 @@ def offset_path_left(path: np.ndarray, left_offset_m: float) -> np.ndarray:
 def white_boundary_to_target_offset(
     lane_half_width_m: float,
     target_right_offset_m: float,
-    target_left_offset_m: float = 0.0,
 ) -> float:
     """Return the left shift from the outer white line to the target path."""
     yellow_to_white_m = 2.0 * max(0.0, float(lane_half_width_m))
     return max(
         0.0,
-        yellow_to_white_m
-        - max(0.0, float(target_right_offset_m))
-        + max(0.0, float(target_left_offset_m)),
+        yellow_to_white_m - max(0.0, float(target_right_offset_m)),
     )
-
-
-def offset_lane_target(
-    path: np.ndarray,
-    *,
-    target_right_offset_m: float,
-    target_left_offset_m: float,
-) -> np.ndarray:
-    """Apply one explicit lateral target; positive left wins over right."""
-    left = max(0.0, float(target_left_offset_m))
-    if left > 0.0:
-        return offset_path_left(path, left)
-    return offset_path_right(path, target_right_offset_m)
-
-
-def effective_target_offsets(
-    *,
-    target_right_offset_m: float,
-    target_left_offset_m: float,
-    external_lateral_offset_m: float,
-) -> tuple[float, float]:
-    """Combine static and live offsets into exclusive right/left values."""
-    net_left_m = (
-        max(0.0, float(target_left_offset_m))
-        - max(0.0, float(target_right_offset_m))
-        + float(external_lateral_offset_m)
-    )
-    return max(0.0, -net_left_m), max(0.0, net_left_m)
 
 
 def fuse_lane_center_paths(
@@ -1068,14 +1037,7 @@ class CanonicalStanleyPursuitDriver(Node):
         self.declare_parameter("path_point_count", 32)
         self.declare_parameter("path_previous_weight", 0.10)
         self.declare_parameter("min_lane_pixels", 8)
-        self.declare_parameter("target_right_offset_m", 0.0)
-        self.declare_parameter("target_left_offset_m", 0.09)
-        self.declare_parameter("external_lateral_offset_enabled", False)
-        self.declare_parameter(
-            "external_lateral_offset_topic",
-            "/rule_drive/external_lateral_offset",
-        )
-        self.declare_parameter("external_lateral_offset_timeout_sec", 0.40)
+        self.declare_parameter("target_right_offset_m", 0.10)
         self.declare_parameter("white_fallback_enabled", True)
         self.declare_parameter("lane_half_width_m", 0.20)
         self.declare_parameter("white_fallback_max_gap_m", 0.25)
@@ -1270,21 +1232,6 @@ class CanonicalStanleyPursuitDriver(Node):
             str(self.get_parameter("action_trace_topic").value),
             10,
         )
-        self.external_lateral_offset_m = 0.0
-        self.external_lateral_offset_time = float("-inf")
-        if bool(
-            self.get_parameter("external_lateral_offset_enabled").value
-        ):
-            self.create_subscription(
-                Float32,
-                str(
-                    self.get_parameter(
-                        "external_lateral_offset_topic"
-                    ).value
-                ),
-                self.on_external_lateral_offset,
-                10,
-            )
         self.create_subscription(
             Image,
             str(self.get_parameter("canonical_topic").value),
@@ -1324,33 +1271,6 @@ class CanonicalStanleyPursuitDriver(Node):
             f"{mode}, 7Hz, speed={float(self.get_parameter('minimum_speed_command').value):.1f}"
             f"..{float(self.get_parameter('cruise_speed_command').value):.1f}, "
             f"yellow_gap={float(self.get_parameter('yellow_max_gap_m').value):.2f}m"
-        )
-
-    def on_external_lateral_offset(self, message: Float32) -> None:
-        self.external_lateral_offset_m = float(message.data)
-        self.external_lateral_offset_time = time.monotonic()
-
-    def current_target_offsets(self, now: float) -> tuple[float, float]:
-        external_offset_m = 0.0
-        if bool(
-            self.get_parameter("external_lateral_offset_enabled").value
-        ) and (
-            float(now) - self.external_lateral_offset_time
-            <= float(
-                self.get_parameter(
-                    "external_lateral_offset_timeout_sec"
-                ).value
-            )
-        ):
-            external_offset_m = self.external_lateral_offset_m
-        return effective_target_offsets(
-            target_right_offset_m=float(
-                self.get_parameter("target_right_offset_m").value
-            ),
-            target_left_offset_m=float(
-                self.get_parameter("target_left_offset_m").value
-            ),
-            external_lateral_offset_m=external_offset_m,
         )
 
     def on_canonical(self, message: Image) -> None:
@@ -1459,15 +1379,10 @@ class CanonicalStanleyPursuitDriver(Node):
         if white_connected is not None:
             self.latest_white_path = white_connected.points
 
-        target_right_offset_m, target_left_offset_m = (
-            self.current_target_offsets(now)
-        )
-
         yellow_target = (
-            offset_lane_target(
+            offset_path_right(
                 yellow_connected.points,
-                target_right_offset_m=target_right_offset_m,
-                target_left_offset_m=target_left_offset_m,
+                float(self.get_parameter("target_right_offset_m").value),
             )
             if yellow_connected is not None
             else None
@@ -1477,8 +1392,9 @@ class CanonicalStanleyPursuitDriver(Node):
                 white_connected.points,
                 white_boundary_to_target_offset(
                     float(self.get_parameter("lane_half_width_m").value),
-                    target_right_offset_m,
-                    target_left_offset_m,
+                    float(
+                        self.get_parameter("target_right_offset_m").value
+                    ),
                 ),
             )
             if white_connected is not None
@@ -2144,10 +2060,6 @@ class CanonicalStanleyPursuitDriver(Node):
             {"yellow": 1.0, "white": 2.0, "fused": 3.0}.get(
                 self.latest_path_source, 0.0
             ),
-            float(terms.cross_track_error_m if terms is not None else 0.0),
-            float(terms.heading_error_rad if terms is not None else 0.0),
-            float(terms.target_x_m if terms is not None else 0.0),
-            float(terms.target_y_m if terms is not None else 0.0),
         ]
         self.diagnostics_pub.publish(message)
 

@@ -13,12 +13,10 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
     command_during_lane_loss,
     connect_yellow_centerline,
     compute_departure_guard_pure_pursuit_weight,
-    effective_target_offsets,
     fuse_lane_center_paths,
     fused_stanley_pursuit,
     latency_compensated_lookahead,
     lead_compensated_steering_command,
-    offset_lane_target,
     offset_path_left,
     offset_path_right,
     outer_white_is_consistent,
@@ -33,23 +31,6 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
 
 
 class CanonicalStanleyPursuitTest(unittest.TestCase):
-    def test_external_lateral_offset_combines_with_static_target(self):
-        right, left = effective_target_offsets(
-            target_right_offset_m=0.10,
-            target_left_offset_m=0.0,
-            external_lateral_offset_m=0.28,
-        )
-        self.assertAlmostEqual(right, 0.0)
-        self.assertAlmostEqual(left, 0.18)
-
-        right, left = effective_target_offsets(
-            target_right_offset_m=0.0,
-            target_left_offset_m=0.0,
-            external_lateral_offset_m=-0.28,
-        )
-        self.assertAlmostEqual(right, 0.28)
-        self.assertAlmostEqual(left, 0.0)
-
     def test_latency_preview_adds_distance_travelled_before_actuation(self):
         self.assertAlmostEqual(
             latency_compensated_lookahead(1.0, 1.36, 0.25),
@@ -673,20 +654,6 @@ class CanonicalStanleyPursuitTest(unittest.TestCase):
         np.testing.assert_allclose(target[:, 1], yellow[:, 1] - 0.20)
         self.assertTrue(np.all(np.diff(target[:, 0]) > 0.0))
 
-    def test_explicit_left_target_moves_yellow_left_ten_cm(self):
-        yellow = np.asarray(
-            [[0.05, 0.0], [0.50, 0.0], [1.00, 0.0]],
-            dtype=np.float64,
-        )
-
-        target = offset_lane_target(
-            yellow,
-            target_right_offset_m=0.0,
-            target_left_offset_m=0.10,
-        )
-
-        np.testing.assert_allclose(target[:, 1], 0.10)
-
     def test_left_offset_moves_outer_white_to_lane_center(self):
         outer_white = np.asarray(
             [[0.05, -0.26], [0.50, -0.26], [1.00, -0.26]],
@@ -713,10 +680,6 @@ class CanonicalStanleyPursuitTest(unittest.TestCase):
         self.assertAlmostEqual(
             white_boundary_to_target_offset(0.20, 0.20),
             0.20,
-        )
-        self.assertAlmostEqual(
-            white_boundary_to_target_offset(0.20, 0.0, 0.10),
-            0.50,
         )
 
     def test_outer_white_is_accepted_at_measured_lane_width(self):

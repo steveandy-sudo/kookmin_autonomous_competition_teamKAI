@@ -70,11 +70,6 @@ def read_motor_commands(
         topic.name: topic.type for topic in reader.get_all_topics_and_types()
     }
     expected_type = "std_msgs/msg/Float32MultiArray"
-    if topics.get(topic_name) is None:
-        return (
-            np.empty((0,), dtype=np.int64),
-            np.empty((0, 2), dtype=np.float32),
-        )
     if topics.get(topic_name) != expected_type:
         raise RuntimeError(
             f"{topic_name} must have type {expected_type}; "
@@ -304,11 +299,6 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--rl-input-width", type=int, default=160)
     parser.add_argument("--rl-input-height", type=int, default=90)
     parser.add_argument("--rl-max-steering-command", type=float, default=42.0)
-    parser.add_argument(
-        "--skip-policy",
-        action="store_true",
-        help="Export perception panels without loading an RL checkpoint.",
-    )
     return parser
 
 
@@ -329,7 +319,7 @@ def export_montages(args: argparse.Namespace) -> Path:
         raise FileNotFoundError(f"TorchScript model not found: {model_path}")
     if not camera_yaml.is_file():
         raise FileNotFoundError(f"camera calibration not found: {camera_yaml}")
-    if not args.skip_policy and not rl_checkpoint.is_file():
+    if not rl_checkpoint.is_file():
         raise FileNotFoundError(f"RL checkpoint not found: {rl_checkpoint}")
     if args.sample_hz <= 0.0:
         raise ValueError("sample_hz must be positive")
@@ -362,20 +352,14 @@ def export_montages(args: argparse.Namespace) -> Path:
         256,
     ):
         raise RuntimeError(f"unexpected model output shape: {tuple(output.shape)}")
-    rl_policy = None
-    rl_payload: dict = {}
-    rl_min_speed = float("nan")
-    rl_max_speed = float("nan")
-    rl_epoch = -1
-    if not args.skip_policy:
-        rl_policy, rl_payload = load_camera_speed_policy(
-            rl_checkpoint,
-            device="cpu",
-        )
-        rl_policy.reset()
-        rl_min_speed = float(rl_payload.get("min_speed_command", 4.0))
-        rl_max_speed = float(rl_payload.get("max_speed_command", 12.0))
-        rl_epoch = int(rl_payload.get("epoch", -1))
+    rl_policy, rl_payload = load_camera_speed_policy(
+        rl_checkpoint,
+        device="cpu",
+    )
+    rl_policy.reset()
+    rl_min_speed = float(rl_payload.get("min_speed_command", 4.0))
+    rl_max_speed = float(rl_payload.get("max_speed_command", 12.0))
+    rl_epoch = int(rl_payload.get("epoch", -1))
     motor_stamps, motor_commands = read_motor_commands(
         bag_path,
         args.motor_topic,
@@ -391,20 +375,20 @@ def export_montages(args: argparse.Namespace) -> Path:
         image_size[0],
         image_size[1],
         source_ratios=(
-            0.442578,
-            0.480781,
-            0.688281,
-            0.480781,
-            0.919141,
-            0.614189,
-            0.190625,
-            0.614189,
+            472.0 / 1280.0,
+            494.0 / 1024.0,
+            906.0 / 1280.0,
+            486.0 / 1024.0,
+            1272.0 / 1280.0,
+            612.0 / 1024.0,
+            46.0 / 1280.0,
+            622.0 / 1024.0,
         ),
         destination_ratios=(
-            0.205714,
-            0.794286,
+            80.0 / 640.0,
+            560.0 / 640.0,
             0.0,
-            0.666666667,
+            479.0 / 660.0,
         ),
         bev_width=640,
         bev_height=660,
@@ -601,26 +585,21 @@ def export_montages(args: argparse.Namespace) -> Path:
                 white_fit,
                 yellow_reference,
             )
-            if rl_policy is None:
-                rl_steering_norm = float("nan")
-                rl_steering_command = float("nan")
-                rl_speed_command = float("nan")
-            else:
-                rl_image = preprocess_bgr_image(
-                    fitted_road,
-                    int(args.rl_input_width),
-                    int(args.rl_input_height),
-                )
-                rl_action = rl_policy({"image": rl_image})
-                rl_steering_norm = float(rl_action[0])
-                rl_steering_command = (
-                    rl_steering_norm * float(args.rl_max_steering_command)
-                )
-                rl_speed_command = denormalize_speed_command(
-                    float(rl_action[1]),
-                    rl_min_speed,
-                    rl_max_speed,
-                )
+            rl_image = preprocess_bgr_image(
+                fitted_road,
+                int(args.rl_input_width),
+                int(args.rl_input_height),
+            )
+            rl_action = rl_policy({"image": rl_image})
+            rl_steering_norm = float(rl_action[0])
+            rl_steering_command = (
+                rl_steering_norm * float(args.rl_max_steering_command)
+            )
+            rl_speed_command = denormalize_speed_command(
+                float(rl_action[1]),
+                rl_min_speed,
+                rl_max_speed,
+            )
             motor = nearest_motor_command(
                 int(storage_timestamp),
                 motor_stamps,
@@ -639,16 +618,13 @@ def export_montages(args: argparse.Namespace) -> Path:
                     f"REC_CMD steer={recorded_steering:+.2f} "
                     f"speed={recorded_speed:.2f} dt={motor_delta_ms:+.1f}ms"
                 )
-            if rl_policy is None:
-                policy_text = "POLICY=disabled"
-            else:
-                policy_text = (
-                    f"RL Focus-v3 E{rl_epoch} raw steer="
-                    f"{rl_steering_command:+.2f} "
-                    f"(norm={rl_steering_norm:+.3f}) "
-                    f"speed={rl_speed_command:.2f}"
-                )
-            annotation = f"t={stamp_ns} | {recorded_text} | {policy_text}"
+            annotation = (
+                f"t={stamp_ns} | {recorded_text} | "
+                f"RL Focus-v3 E{rl_epoch} raw steer="
+                f"{rl_steering_command:+.2f} "
+                f"(norm={rl_steering_norm:+.3f}) "
+                f"speed={rl_speed_command:.2f}"
+            )
             montage = make_montage(
                 rectified,
                 make_bev_overlay(bev_image, bev_white, bev_yellow),
@@ -772,28 +748,18 @@ def export_montages(args: argparse.Namespace) -> Path:
             "sync_tolerance_sec": float(args.motor_sync_tolerance_sec),
             "note": "command value, not measured physical steering feedback",
         },
-        "rl_prediction": (
-            {"enabled": False}
-            if rl_policy is None
-            else {
-                "enabled": True,
-                "policy_kind": "camera_speed_td3_bc",
-                "checkpoint": str(rl_checkpoint),
-                "checkpoint_sha256": sha256sum(rl_checkpoint),
-                "epoch": rl_epoch,
-                "temporal_frames": int(rl_policy.temporal_frames),
-                "input_size": [
-                    int(args.rl_input_width),
-                    int(args.rl_input_height),
-                ],
-                "max_steering_command": float(
-                    args.rl_max_steering_command
-                ),
-                "min_speed_command": rl_min_speed,
-                "max_speed_command": rl_max_speed,
-                "output": "raw actor prediction before runtime stabilizer",
-            }
-        ),
+        "rl_prediction": {
+            "policy_kind": "camera_speed_td3_bc",
+            "checkpoint": str(rl_checkpoint),
+            "checkpoint_sha256": sha256sum(rl_checkpoint),
+            "epoch": rl_epoch,
+            "temporal_frames": int(rl_policy.temporal_frames),
+            "input_size": [int(args.rl_input_width), int(args.rl_input_height)],
+            "max_steering_command": float(args.rl_max_steering_command),
+            "min_speed_command": rl_min_speed,
+            "max_speed_command": rl_max_speed,
+            "output": "raw actor prediction before runtime stabilizer",
+        },
         "montage_size": [
             PANEL_WIDTH * 4,
             PANEL_HEIGHT + ANNOTATION_HEIGHT,
