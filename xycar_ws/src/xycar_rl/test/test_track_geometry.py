@@ -19,8 +19,8 @@ class TrackGeometryTest(unittest.TestCase):
 
     def test_loads_closed_cad_reference(self):
         self.assertGreater(self.track.points.shape[0], 800)
-        self.assertGreater(self.track.length_m, 20.0)
-        self.assertLess(self.track.length_m, 40.0)
+        self.assertGreater(self.track.length_m, 45.0)
+        self.assertLess(self.track.length_m, 60.0)
 
     def test_projection_has_small_error_on_reference(self):
         for index in range(0, len(self.track.points), 97):

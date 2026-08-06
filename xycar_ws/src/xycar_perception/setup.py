@@ -37,8 +37,10 @@ setup(
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
+            "benchmark_lightweight_lane = xycar_perception.benchmark_lightweight_lane:main",
             "benchmark_yolo_lane = xycar_perception.benchmark_yolo_lane:main",
             "camera_perception_node = xycar_perception.camera_perception_node:main",
+            "train_semantic_lane = xycar_perception.train_semantic_lane:main",
         ],
     },
 )

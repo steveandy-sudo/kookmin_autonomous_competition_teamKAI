@@ -8,7 +8,9 @@ world:
 moving_vehicle:
   name: mission_moving_vehicle
   class_name: car
-  pose: [-4.60, 5.59, 0.08, 0.0, 0.0, 3.141592654]
+  # The yellow centre line is y=5.59m.  Put the car in the competition
+  # lane, rather than over the yellow line, so the other lane stays open.
+  pose: [-4.60, 5.39, 0.08, 0.0, 0.0, 3.141592654]
   speed_mps: 0.16
   # Shuttle inside the top straight instead of leaving the track.
   shuttle_min_x: -7.70
@@ -19,7 +21,9 @@ moving_vehicle:
 fixed_vehicles:
   - name: mission_fixed_vehicle
     class_name: car
-    pose: [1.30, -4.56, 0.08, 0.0, 0.0, 0.0]
+    # The yellow centre line is y=-4.56m.  A +0.20m lateral shift centres
+    # this obstacle in one 0.40m lane and leaves the opposite lane open.
+    pose: [1.30, -4.36, 0.08, 0.0, 0.0, 0.0]
     size: [0.58, 0.31, 0.16]
     color: [0.90, 0.12, 0.10, 1.0]
 

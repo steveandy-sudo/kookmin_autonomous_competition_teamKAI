@@ -25,6 +25,8 @@ from xycar_rule_drive.lane_rule_driver import (
     inverse_lookup_table,
     make_point,
 )
+from xycar_rule_drive.sitl_bypass_path import SitlBypassConfig
+from xycar_rule_drive.sitl_bypass_path import SitlBypassPathPlanner
 
 
 @dataclass(frozen=True)
@@ -1076,6 +1078,18 @@ class CanonicalStanleyPursuitDriver(Node):
             "/rule_drive/external_lateral_offset",
         )
         self.declare_parameter("external_lateral_offset_timeout_sec", 0.40)
+        self.declare_parameter("sitl_bypass_path_enabled", False)
+        self.declare_parameter(
+            "sitl_bypass_path_request_topic",
+            "/hybrid/avoidance_path_request",
+        )
+        self.declare_parameter("sitl_bypass_request_timeout_sec", 0.40)
+        self.declare_parameter("sitl_reference_vehicle_length_m", 2.473)
+        self.declare_parameter("vehicle_body_length_m", 0.55)
+        self.declare_parameter("vehicle_body_width_m", 0.28)
+        self.declare_parameter("lane_center_separation_m", 0.40)
+        self.declare_parameter("avoidance_obstacle_length_m", 0.55)
+        self.declare_parameter("avoidance_obstacle_width_m", 0.28)
         self.declare_parameter("white_fallback_enabled", True)
         self.declare_parameter("lane_half_width_m", 0.20)
         self.declare_parameter("white_fallback_max_gap_m", 0.25)
@@ -1285,6 +1299,43 @@ class CanonicalStanleyPursuitDriver(Node):
                 self.on_external_lateral_offset,
                 10,
             )
+        self.sitl_bypass_planner = SitlBypassPathPlanner(
+            SitlBypassConfig(
+                vehicle_length_m=float(
+                    self.get_parameter("vehicle_body_length_m").value
+                ),
+                vehicle_width_m=float(
+                    self.get_parameter("vehicle_body_width_m").value
+                ),
+                sitl_vehicle_length_m=float(
+                    self.get_parameter(
+                        "sitl_reference_vehicle_length_m"
+                    ).value
+                ),
+                lane_center_separation_m=float(
+                    self.get_parameter("lane_center_separation_m").value
+                ),
+                estimated_obstacle_length_m=float(
+                    self.get_parameter("avoidance_obstacle_length_m").value
+                ),
+                minimum_obstacle_width_m=float(
+                    self.get_parameter("avoidance_obstacle_width_m").value
+                ),
+            )
+        )
+        self.sitl_bypass_request_time = float("-inf")
+        self.sitl_bypass_progress_time: float | None = None
+        if bool(self.get_parameter("sitl_bypass_path_enabled").value):
+            self.create_subscription(
+                Float32MultiArray,
+                str(
+                    self.get_parameter(
+                        "sitl_bypass_path_request_topic"
+                    ).value
+                ),
+                self.on_sitl_bypass_request,
+                10,
+            )
         self.create_subscription(
             Image,
             str(self.get_parameter("canonical_topic").value),
@@ -1329,6 +1380,55 @@ class CanonicalStanleyPursuitDriver(Node):
     def on_external_lateral_offset(self, message: Float32) -> None:
         self.external_lateral_offset_m = float(message.data)
         self.external_lateral_offset_time = time.monotonic()
+
+    def advance_sitl_bypass_memory(self, now: float) -> None:
+        previous = self.sitl_bypass_progress_time
+        self.sitl_bypass_progress_time = float(now)
+        if previous is None or not self.sitl_bypass_planner.active:
+            return
+        dt = clamp(float(now) - previous, 0.0, 0.30)
+        speed_mps = max(
+            0.0,
+            self.last_speed_command
+            * float(self.get_parameter("speed_gain_mps_per_cmd").value),
+        )
+        self.sitl_bypass_planner.advance(speed_mps * dt)
+
+    def on_sitl_bypass_request(self, message: Float32MultiArray) -> None:
+        if len(message.data) < 7:
+            return
+        now = time.monotonic()
+        self.advance_sitl_bypass_memory(now)
+        self.sitl_bypass_request_time = now
+        self.sitl_bypass_planner.observe(
+            active=float(message.data[0]) >= 0.5,
+            observation_valid=float(message.data[1]) >= 0.5,
+            bypass_side=float(message.data[2]),
+            obstacle_x=float(message.data[3]),
+            obstacle_y=float(message.data[4]),
+            obstacle_length=float(message.data[5]),
+            obstacle_width=float(message.data[6]),
+        )
+
+    def apply_sitl_bypass_path(
+        self,
+        path: np.ndarray,
+        now: float,
+    ) -> tuple[np.ndarray, bool]:
+        if not bool(self.get_parameter("sitl_bypass_path_enabled").value):
+            return path, False
+        self.advance_sitl_bypass_memory(now)
+        if (
+            float(now) - self.sitl_bypass_request_time
+            > float(
+                self.get_parameter("sitl_bypass_request_timeout_sec").value
+            )
+        ):
+            self.sitl_bypass_planner.reset()
+            return path, False
+        if not self.sitl_bypass_planner.active:
+            return path, False
+        return self.sitl_bypass_planner.make_path(path), True
 
     def current_target_offsets(self, now: float) -> tuple[float, float]:
         external_offset_m = 0.0
@@ -1524,6 +1624,14 @@ class CanonicalStanleyPursuitDriver(Node):
             target_path = None
             connected = None
             path_source = "none"
+
+        if target_path is not None:
+            target_path, bypass_active = self.apply_sitl_bypass_path(
+                target_path,
+                now,
+            )
+            if bypass_active:
+                path_source = f"{path_source}_sitl_bypass"
 
         self.path_valid = target_path is not None
         self.latest_path_info = connected

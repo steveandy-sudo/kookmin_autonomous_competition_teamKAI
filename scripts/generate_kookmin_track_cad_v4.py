@@ -533,7 +533,9 @@ def world_xml(
     spawn_y,
     centerline,
 ):
-    legacy.XYCAR_SPAWN_X = -2.70
+    # The car faces toward decreasing X on the top straight.  Keep one
+    # additional metre behind the first mission objects for a stable launch.
+    legacy.XYCAR_SPAWN_X = -1.70
     legacy.XYCAR_SPAWN_Y = spawn_y
     legacy.XYCAR_SPAWN_Z = 0.05
     legacy.XYCAR_SPAWN_YAW = math.pi
@@ -669,7 +671,7 @@ def main() -> None:
             16,
             int(math.ceil(legacy.polyline_length(centerline) / 0.25)),
         ),
-        "spawn_pose": [-2.70, spawn_y, 0.05, math.pi],
+        "spawn_pose": [-1.70, spawn_y, 0.05, math.pi],
         "previous_cad_white_bbox_m": list(old_bbox) if old_bbox else None,
         "outputs": {
             "world": str(WORLD_PATH.relative_to(ROOT)),
@@ -686,7 +688,7 @@ def main() -> None:
     print(f"outer wall: {wall_width:.3f} m x {wall_height:.3f} m")
     print(f"track contour pairs: {geometry['outer_pair']} / {geometry['inner_pair']}")
     print(f"yellow dash polygons: {len(dash_indices)}")
-    print(f"spawn: -2.700 {spawn_y:.3f} yaw=pi")
+    print(f"spawn: -1.700 {spawn_y:.3f} yaw=pi")
     print(f"wrote {WORLD_PATH}")
     if args.promote:
         print(f"promoted {FINAL_WORLD_PATH}")

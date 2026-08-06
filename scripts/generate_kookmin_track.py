@@ -90,14 +90,18 @@ LEFT_TURN_CENTER_X = -6.816
 
 # Real Xycar geometry and the steering range needed to reproduce the
 # 2026-07-12 measured response and the temporary +/-42 curvature extrapolation.
-XYCAR_BODY_LENGTH = 0.55
-XYCAR_BODY_WIDTH = 0.30
+# The 0.55 m overall envelope consists of a 0.50 m body plus the LiDAR
+# protruding 0.05 m beyond the body's front face.
+XYCAR_BODY_LENGTH = 0.50
+# Measured real-vehicle widths: 0.20 m central body and 0.28 m at the
+# outer tyre faces.  With 0.035 m-wide tyres, their centre spacing is 0.245 m.
+XYCAR_BODY_WIDTH = 0.20
 XYCAR_BODY_HEIGHT = 0.12
 XYCAR_TOTAL_HEIGHT = 0.25
-XYCAR_WHEEL_Y = 0.1325
-XYCAR_STEERING_LINK_Y = 0.1200
-XYCAR_WHEEL_SEPARATION = 0.265
-XYCAR_KINGPIN_WIDTH = 0.240
+XYCAR_WHEEL_Y = 0.1225
+XYCAR_STEERING_LINK_Y = 0.1100
+XYCAR_WHEEL_SEPARATION = 0.245
+XYCAR_KINGPIN_WIDTH = 0.220
 XYCAR_STEERING_LIMIT = 0.560
 XYCAR_STEERING_JOINT_LIMIT = 0.700
 XYCAR_SPEED_MIN = -4.0
@@ -122,6 +126,14 @@ XYCAR_LIDAR_Z = (
     XYCAR_FRONT_WHEEL_CENTER_Z
     + XYCAR_LIDAR_FROM_FRONT_WHEEL_Z
     - XYCAR_CHASSIS_Z
+)
+XYCAR_LIDAR_RADIUS = 0.040
+XYCAR_LIDAR_FRONT_OVERHANG = 0.050
+XYCAR_BODY_X = (
+    XYCAR_LIDAR_X
+    + XYCAR_LIDAR_RADIUS
+    - XYCAR_LIDAR_FRONT_OVERHANG
+    - 0.5 * XYCAR_BODY_LENGTH
 )
 XYCAR_CAMERA_VISIBILITY_MASK = 4294967293
 XYCAR_SELF_VISIBILITY_FLAGS = 2
@@ -2420,33 +2432,170 @@ def short_centerline_white_models():
     )
 
 
+def vehicle_box_visual(name, pose, size, color):
+    """Return a non-colliding box visual attached to the chassis link."""
+    x, y, z, roll, pitch, yaw = pose
+    sx, sy, sz = size
+    return f"""
+        <visual name="{name}">
+          <visibility_flags>{XYCAR_SELF_VISIBILITY_FLAGS}</visibility_flags>
+          <pose>{x:.4f} {y:.4f} {z:.4f} {roll:.5f} {pitch:.5f} {yaw:.5f}</pose>
+          <geometry><box><size>{sx:.4f} {sy:.4f} {sz:.4f}</size></box></geometry>
+          {material_xml(color)}
+        </visual>"""
+
+
 def vehicle_model():
+    cyan = (48, 169, 211, 255)
+    pink = (221, 42, 112, 255)
+    red = (196, 30, 54, 255)
+    yellow = (244, 218, 38, 255)
+    shell_black = (22, 25, 34, 255)
+    aluminium = (172, 178, 182, 255)
+    dark_metal = (54, 60, 65, 255)
+    shell_visuals = "".join(
+        [
+            # Narrow exposed chassis visible in the first reference photo.
+            vehicle_box_visual(
+                "chassis_plate",
+                (XYCAR_BODY_X, 0.0, -0.045, 0.0, 0.0, 0.0),
+                (XYCAR_BODY_LENGTH, XYCAR_BODY_WIDTH, 0.025),
+                dark_metal,
+            ),
+            vehicle_box_visual(
+                "electronics_lower_deck",
+                (-0.035, 0.0, 0.025, 0.0, 0.0, 0.0),
+                (0.25, 0.17, 0.018),
+                aluminium,
+            ),
+            # The installed shell: wide front / rear decks and an open centre.
+            vehicle_box_visual(
+                "shell_front_hood",
+                (0.135, 0.0, 0.058, 0.0, -0.055, 0.0),
+                (0.160, 0.270, 0.065),
+                cyan,
+            ),
+            vehicle_box_visual(
+                "shell_front_nose",
+                (0.207, 0.0, 0.035, 0.0, -0.10, 0.0),
+                (0.016, 0.280, 0.060),
+                pink,
+            ),
+            vehicle_box_visual(
+                "shell_rear_deck",
+                (-0.205, 0.0, 0.055, 0.0, 0.050, 0.0),
+                (0.160, 0.270, 0.065),
+                cyan,
+            ),
+            vehicle_box_visual(
+                "shell_rear_bumper",
+                (-0.277, 0.0, 0.020, 0.0, 0.08, 0.0),
+                (0.016, 0.250, 0.050),
+                shell_black,
+            ),
+            vehicle_box_visual(
+                "shell_left_centre_rail",
+                (-0.035, 0.120, 0.030, 0.0, 0.0, 0.0),
+                (0.180, 0.040, 0.070),
+                cyan,
+            ),
+            vehicle_box_visual(
+                "shell_right_centre_rail",
+                (-0.035, -0.120, 0.030, 0.0, 0.0, 0.0),
+                (0.180, 0.040, 0.070),
+                cyan,
+            ),
+            # Pink fender caps reproduce the shell surrounding all four tyres.
+            *[
+                vehicle_box_visual(
+                    f"shell_fender_{axle}_{side}",
+                    (x, y, 0.077, 0.0, 0.0, 0.0),
+                    (0.085, 0.055, 0.018),
+                    pink,
+                )
+                for axle, x in (("front", 0.160), ("rear", -0.205))
+                for side, y in (("left", 0.1125), ("right", -0.1125))
+            ],
+            # Black window / vent panels around the open electronics bay.
+            vehicle_box_visual(
+                "shell_front_window",
+                (0.070, 0.0, 0.093, 0.0, -0.055, 0.0),
+                (0.055, 0.155, 0.008),
+                shell_black,
+            ),
+            vehicle_box_visual(
+                "shell_rear_window",
+                (-0.135, 0.0, 0.091, 0.0, 0.050, 0.0),
+                (0.045, 0.150, 0.008),
+                shell_black,
+            ),
+            # Approximate the red, black and yellow wrap graphics in the photo.
+            vehicle_box_visual(
+                "shell_front_red_stripe",
+                (0.145, 0.0, 0.095, 0.0, -0.055, 0.55),
+                (0.170, 0.014, 0.006),
+                red,
+            ),
+            vehicle_box_visual(
+                "shell_front_black_stripe",
+                (0.145, 0.0, 0.097, 0.0, -0.055, -0.48),
+                (0.165, 0.012, 0.006),
+                shell_black,
+            ),
+            vehicle_box_visual(
+                "shell_rear_red_stripe",
+                (-0.210, 0.0, 0.094, 0.0, 0.050, -0.52),
+                (0.165, 0.014, 0.006),
+                red,
+            ),
+            vehicle_box_visual(
+                "shell_rear_yellow_stripe",
+                (-0.210, 0.0, 0.096, 0.0, 0.050, 0.48),
+                (0.150, 0.010, 0.006),
+                yellow,
+            ),
+            # Exposed computer and camera hardware remain visible through the cut-out.
+            vehicle_box_visual(
+                "mini_pc_body",
+                (-0.020, 0.0, 0.115, 0.0, 0.0, 0.0),
+                (0.170, 0.130, 0.065),
+                shell_black,
+            ),
+            vehicle_box_visual(
+                "mini_pc_top_plate",
+                (-0.020, 0.0, 0.151, 0.0, 0.0, 0.0),
+                (0.180, 0.140, 0.008),
+                aluminium,
+            ),
+            vehicle_box_visual(
+                "front_camera_body",
+                (XYCAR_CAMERA_X, 0.0, XYCAR_CAMERA_Z, 0.0, XYCAR_CAMERA_PITCH, 0.0),
+                (0.045, 0.055, 0.040),
+                shell_black,
+            ),
+        ]
+    )
     return f"""
     <model name="xycar_ackermann">
       <pose>{XYCAR_SPAWN_X:.4f} {XYCAR_SPAWN_Y:.4f} {XYCAR_SPAWN_Z:.4f} 0 0 {XYCAR_SPAWN_YAW:.4f}</pose>
       <link name="chassis">
         <pose>0 0 {XYCAR_CHASSIS_Z:.3f} 0 0 0</pose>
         <inertial>
+          <pose>{XYCAR_BODY_X:.3f} 0 0 0 0 0</pose>
           <mass>2.2</mass>
           <inertia><ixx>0.055</ixx><ixy>0</ixy><ixz>0</ixz><iyy>0.13</iyy><iyz>0</iyz><izz>0.16</izz></inertia>
         </inertial>
-        <collision name="collision"><geometry><box><size>{XYCAR_BODY_LENGTH:.3f} {XYCAR_BODY_WIDTH:.3f} {XYCAR_BODY_HEIGHT:.3f}</size></box></geometry></collision>
-        <visual name="body">
-          <visibility_flags>{XYCAR_SELF_VISIBILITY_FLAGS}</visibility_flags>
-          <geometry><box><size>{XYCAR_BODY_LENGTH:.3f} {XYCAR_BODY_WIDTH:.3f} {XYCAR_BODY_HEIGHT:.3f}</size></box></geometry>
-          <material><ambient>0.1 0.28 0.8 1</ambient><diffuse>0.1 0.28 0.8 1</diffuse></material>
-        </visual>
-        <visual name="mini_pc_body">
-          <visibility_flags>{XYCAR_SELF_VISIBILITY_FLAGS}</visibility_flags>
-          <pose>-0.02 0 0.115 0 0 0</pose>
-          <geometry><box><size>0.17 0.13 0.07</size></box></geometry>
-          <material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse></material>
-        </visual>
+        <collision name="collision"><pose>{XYCAR_BODY_X:.3f} 0 0 0 0 0</pose><geometry><box><size>{XYCAR_BODY_LENGTH:.3f} {XYCAR_BODY_WIDTH:.3f} {XYCAR_BODY_HEIGHT:.3f}</size></box></geometry></collision>
+        {shell_visuals}
         <visual name="lidar_body">
           <pose>{XYCAR_LIDAR_X:.3f} 0 {XYCAR_LIDAR_Z - 0.0175:.4f} 0 0 0</pose>
-          <geometry><cylinder><length>0.035</length><radius>0.040</radius></cylinder></geometry>
+          <geometry><cylinder><length>0.035</length><radius>{XYCAR_LIDAR_RADIUS:.3f}</radius></cylinder></geometry>
           <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
         </visual>
+        <collision name="lidar_collision">
+          <pose>{XYCAR_LIDAR_X:.3f} 0 {XYCAR_LIDAR_Z - 0.0175:.4f} 0 0 0</pose>
+          <geometry><cylinder><length>0.035</length><radius>{XYCAR_LIDAR_RADIUS:.3f}</radius></cylinder></geometry>
+        </collision>
         <sensor name="front_camera" type="camera">
           <pose>{XYCAR_CAMERA_X:.3f} 0 {XYCAR_CAMERA_Z:.3f} 0 {XYCAR_CAMERA_PITCH:.4f} 0</pose>
           <topic>/image_raw</topic>

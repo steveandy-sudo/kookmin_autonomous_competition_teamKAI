@@ -44,6 +44,7 @@ setup(
             "collect_parallel_rule_expert = xycar_rl.parallel_rule_collector:main",
             "collect_parallel_policy = xycar_rl.parallel_policy_collector:main",
             "rollout_dagger = xycar_rl.rollout_dagger:main",
+            "gazebo_camera_follow = xycar_rl.gazebo_camera_follow:main",
         ],
     },
 )

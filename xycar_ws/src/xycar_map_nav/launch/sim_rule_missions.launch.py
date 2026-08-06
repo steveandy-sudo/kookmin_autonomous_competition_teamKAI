@@ -22,6 +22,13 @@ def generate_launch_description():
             "canonical_stanley_pursuit.yaml",
         ]
     )
+    rule_real_config = PathJoinSubstitution(
+        [
+            FindPackageShare("xycar_rule_drive"),
+            "config",
+            "canonical_stanley_pursuit_real.yaml",
+        ]
+    )
     hybrid_config = PathJoinSubstitution(
         [
             FindPackageShare("xycar_map_nav"),
@@ -80,7 +87,17 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "drive_enabled",
                 default_value="false",
-                description="False publishes only the safe shadow command.",
+                description=(
+                    "Keep false when using the SPACE drive gate. False "
+                    "publishes only the safe shadow command."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "gate_arming_required",
+                default_value="true",
+                description=(
+                    "Hold mission state until /hybrid_gate/drive_armed is true."
+                ),
             ),
             DeclareLaunchArgument("start_ground_truth", default_value="true"),
             DeclareLaunchArgument(
@@ -94,15 +111,18 @@ def generate_launch_description():
                 "object_detections_topic",
                 default_value="/my_rule/sim_ground_truth_detections",
             ),
-            DeclareLaunchArgument("speed_command", default_value="6.0"),
+            DeclareLaunchArgument("speed_command", default_value="3.0"),
             DeclareLaunchArgument("cone_speed_command", default_value="6.0"),
             DeclareLaunchArgument(
-                "target_left_offset_m", default_value="0.15"
+                "target_left_offset_m", default_value="0.0"
             ),
             DeclareLaunchArgument(
-                "lookahead_distance_m", default_value="1.50"
+                "lookahead_distance_m", default_value="0.30"
             ),
-            DeclareLaunchArgument("pure_pursuit_weight", default_value="0.95"),
+            DeclareLaunchArgument("pure_pursuit_weight", default_value="0.80"),
+            DeclareLaunchArgument(
+                "maximum_speed_command", default_value="30.0"
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(simulation_launch),
                 launch_arguments={
@@ -142,6 +162,7 @@ def generate_launch_description():
                 output="screen",
                 parameters=[
                     rule_config,
+                    rule_real_config,
                     {
                         "use_sim_time": True,
                         "drive_enabled": False,
@@ -167,10 +188,14 @@ def generate_launch_description():
                             LaunchConfiguration("target_left_offset_m"),
                             value_type=float,
                         ),
-                        "external_lateral_offset_enabled": True,
-                        "external_lateral_offset_topic": (
-                            "/hybrid/avoidance_lateral_offset"
+                        "external_lateral_offset_enabled": False,
+                        "sitl_bypass_path_enabled": True,
+                        "sitl_bypass_path_request_topic": (
+                            "/hybrid/avoidance_path_request"
                         ),
+                        "vehicle_body_length_m": 0.55,
+                        "vehicle_body_width_m": 0.28,
+                        "lane_center_separation_m": 0.40,
                     },
                 ],
             ),
@@ -260,14 +285,20 @@ def generate_launch_description():
                             LaunchConfiguration("drive_enabled"),
                             value_type=bool,
                         ),
-                        "gate_arming_required": False,
+                        "gate_arming_required": ParameterValue(
+                            LaunchConfiguration("gate_arming_required"),
+                            value_type=bool,
+                        ),
                         "force_rule_only": True,
                         "object_detections_topic": detections_topic,
                         "minimum_speed_command": ParameterValue(
                             LaunchConfiguration("speed_command"),
                             value_type=float,
                         ),
-                        "maximum_speed_command": 12.0,
+                        "maximum_speed_command": ParameterValue(
+                            LaunchConfiguration("maximum_speed_command"),
+                            value_type=float,
+                        ),
                         "vehicle_avoidance_enabled": True,
                     },
                 ],

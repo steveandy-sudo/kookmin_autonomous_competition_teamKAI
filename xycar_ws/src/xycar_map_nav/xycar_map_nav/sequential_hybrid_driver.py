@@ -30,6 +30,7 @@ from .lidar_obstacle import detect_path_obstacle
 from .lidar_obstacle import LidarPathObstacle
 from .lidar_obstacle import LidarPathObstacleConfig
 from .mission_supervisor import camera_box_lidar_sector
+from .mission_supervisor import lidar_target_matches_camera_sector
 from .mission_supervisor import scan_sector_distance
 from .sequential_hybrid_core import CandidateSource
 from .sequential_hybrid_core import GateDefinition
@@ -104,6 +105,9 @@ class SequentialHybridDriver(Node):
         self.tracked_vehicle_sector: tuple[float, float] | None = None
         self.tracked_vehicle_sector_time = float("-inf")
         self.tracked_vehicle_distance_m = float("inf")
+        self.tracked_vehicle_distance_time = float("-inf")
+        self.traffic_light_sectors: tuple[tuple[float, float], ...] = ()
+        self.traffic_light_sector_time = float("-inf")
         self.avoidance_controller = YoloLidarAvoidanceController(
             YoloLidarAvoidanceConfig(
                 yolo_min_confidence=float(
@@ -208,6 +212,7 @@ class SequentialHybridDriver(Node):
             ),
         )
         self.latest_lidar_obstacle: LidarPathObstacle | None = None
+        self.latest_vehicle_lidar_obstacle: LidarPathObstacle | None = None
         self.scan_time = float("-inf")
         self.scan_sequence = 0
         self.evaluated_scan_sequence = -1
@@ -304,6 +309,11 @@ class SequentialHybridDriver(Node):
         self.avoidance_debug_pub = self.create_publisher(
             Float32MultiArray,
             str(self.get_parameter("avoidance_debug_topic").value),
+            10,
+        )
+        self.avoidance_path_request_pub = self.create_publisher(
+            Float32MultiArray,
+            str(self.get_parameter("avoidance_path_request_topic").value),
             10,
         )
         cone_gate_qos = QoSProfile(
@@ -419,13 +429,32 @@ class SequentialHybridDriver(Node):
         self.declare_parameter(
             "vehicle_class_names", ["obstacle_vehicle", "car"]
         )
+        self.declare_parameter(
+            "traffic_light_class_names",
+            [
+                "traffic_light",
+                "traffic_signal",
+                "red",
+                "yellow",
+                "green",
+            ],
+        )
+        self.declare_parameter("traffic_light_min_confidence", 0.30)
+        self.declare_parameter("traffic_light_sector_memory_sec", 0.75)
+        self.declare_parameter("traffic_light_lidar_padding_deg", 2.0)
         self.declare_parameter("vehicle_yolo_min_confidence", 0.45)
         self.declare_parameter("vehicle_yolo_required_frames", 2)
         self.declare_parameter("vehicle_yolo_timeout_sec", 0.75)
         self.declare_parameter("vehicle_camera_lidar_hfov_deg", 60.0)
         self.declare_parameter("vehicle_camera_lidar_padding_deg", 3.0)
         self.declare_parameter("vehicle_lidar_min_points", 2)
-        self.declare_parameter("vehicle_lidar_sector_memory_sec", 1.5)
+        self.declare_parameter("vehicle_lidar_sector_memory_sec", 0.5)
+        self.declare_parameter(
+            "vehicle_lidar_association_angle_margin_deg", 2.0
+        )
+        self.declare_parameter(
+            "vehicle_lidar_association_distance_tolerance_m", 0.35
+        )
         self.declare_parameter("vehicle_avoidance_enabled", True)
         self.declare_parameter(
             "vehicle_avoidance_immediate_on_yolo", False
@@ -446,6 +475,12 @@ class SequentialHybridDriver(Node):
         self.declare_parameter(
             "avoidance_debug_topic", "/hybrid/avoidance_debug"
         )
+        self.declare_parameter(
+            "avoidance_path_request_topic",
+            "/hybrid/avoidance_path_request",
+        )
+        self.declare_parameter("vehicle_body_length_m", 0.55)
+        self.declare_parameter("vehicle_body_width_m", 0.28)
         self.declare_parameter("lidar_obstacle_detect_distance_m", 1.50)
         self.declare_parameter("lidar_obstacle_minimum_distance_m", 0.18)
         self.declare_parameter("lidar_obstacle_path_half_width_m", 0.18)
@@ -565,6 +600,11 @@ class SequentialHybridDriver(Node):
             self.avoidance_controller.reset()
             self.avoidance_state = self.avoidance_controller.state()
             self.avoidance_offset_pub.publish(Float32(data=0.0))
+            self._publish_avoidance_path_request(
+                now=time.monotonic(),
+                scan_fresh=False,
+                force_inactive=True,
+            )
         self.drive_armed = armed if self.gate_arming_required else True
 
     @staticmethod
@@ -580,6 +620,8 @@ class SequentialHybridDriver(Node):
     def _scan_distance_for_sector(
         self,
         sector: tuple[float, float],
+        *,
+        excluded_sectors: tuple[tuple[float, float], ...] = (),
     ) -> float:
         scan = self.latest_scan
         if scan is None:
@@ -595,7 +637,23 @@ class SequentialHybridDriver(Node):
             minimum_points=int(
                 self.get_parameter("vehicle_lidar_min_points").value
             ),
+            excluded_sectors=excluded_sectors,
         )
+
+    def _fresh_traffic_light_sectors(
+        self,
+        now: float,
+    ) -> tuple[tuple[float, float], ...]:
+        if (
+            float(now) - self.traffic_light_sector_time
+            <= float(
+                self.get_parameter(
+                    "traffic_light_sector_memory_sec"
+                ).value
+            )
+        ):
+            return self.traffic_light_sectors
+        return ()
 
     def _on_object_detections(
         self,
@@ -618,6 +676,46 @@ class SequentialHybridDriver(Node):
         if cone_seen:
             self.cone_yolo_time = now
             self.cone_yolo_confidence = cone_confidence
+
+        traffic_light_names = {
+            self._normalize_class_name(value)
+            for value in self.get_parameter(
+                "traffic_light_class_names"
+            ).value
+        }
+        traffic_light_sectors = []
+        if image_width > 0:
+            for item in message.detections:
+                if (
+                    self._normalize_class_name(item.class_name)
+                    not in traffic_light_names
+                    or float(item.confidence)
+                    < float(
+                        self.get_parameter(
+                            "traffic_light_min_confidence"
+                        ).value
+                    )
+                ):
+                    continue
+                traffic_light_sectors.append(
+                    camera_box_lidar_sector(
+                        xmin=float(item.xmin),
+                        xmax=float(item.xmax),
+                        image_width=image_width,
+                        horizontal_fov_deg=float(
+                            self.get_parameter(
+                                "vehicle_camera_lidar_hfov_deg"
+                            ).value
+                        ),
+                        padding_deg=float(
+                            self.get_parameter(
+                                "traffic_light_lidar_padding_deg"
+                            ).value
+                        ),
+                    )
+                )
+        self.traffic_light_sectors = tuple(traffic_light_sectors)
+        self.traffic_light_sector_time = now
 
         vehicle_names = {
             self._normalize_class_name(value)
@@ -653,7 +751,10 @@ class SequentialHybridDriver(Node):
                     ).value
                 ),
             )
-            distance = self._scan_distance_for_sector(sector)
+            distance = self._scan_distance_for_sector(
+                sector,
+                excluded_sectors=self.traffic_light_sectors,
+            )
             if selected is None or distance < selected_distance:
                 selected = vehicle
                 selected_sector = sector
@@ -664,6 +765,8 @@ class SequentialHybridDriver(Node):
             self.tracked_vehicle_sector = selected_sector
             self.tracked_vehicle_sector_time = now
             self.tracked_vehicle_distance_m = selected_distance
+            if math.isfinite(selected_distance):
+                self.tracked_vehicle_distance_time = now
         preferred_mode = None
         if selected is not None and image_width > 0:
             box_center_x = 0.5 * (
@@ -835,7 +938,8 @@ class SequentialHybridDriver(Node):
             config=self.lidar_obstacle_config,
         )
         now = time.monotonic()
-        if (
+        excluded_sectors = self._fresh_traffic_light_sectors(now)
+        vehicle_sector_fresh = bool(
             self.tracked_vehicle_sector is not None
             and now - self.tracked_vehicle_sector_time
             <= float(
@@ -843,13 +947,43 @@ class SequentialHybridDriver(Node):
                     "vehicle_lidar_sector_memory_sec"
                 ).value
             )
-        ):
+        )
+        if vehicle_sector_fresh:
             distance = self._scan_distance_for_sector(
-                self.tracked_vehicle_sector
+                self.tracked_vehicle_sector,
+                excluded_sectors=excluded_sectors,
             )
             if math.isfinite(distance):
                 self.tracked_vehicle_distance_m = distance
+                self.tracked_vehicle_distance_time = now
                 self.avoidance_controller.update_lidar_distance(distance)
+        obstacle = self.latest_lidar_obstacle
+        if (
+            vehicle_sector_fresh
+            and obstacle is not None
+            and lidar_target_matches_camera_sector(
+                target_x_m=float(obstacle.x_vehicle_m),
+                target_y_m=float(obstacle.y_vehicle_m),
+                camera_sector=self.tracked_vehicle_sector,
+                camera_sector_distance_m=self.tracked_vehicle_distance_m,
+                excluded_sectors=excluded_sectors,
+                angle_margin_rad=math.radians(
+                    float(
+                        self.get_parameter(
+                            "vehicle_lidar_association_angle_margin_deg"
+                        ).value
+                    )
+                ),
+                distance_tolerance_m=float(
+                    self.get_parameter(
+                        "vehicle_lidar_association_distance_tolerance_m"
+                    ).value
+                ),
+            )
+        ):
+            self.latest_vehicle_lidar_obstacle = obstacle
+        else:
+            self.latest_vehicle_lidar_obstacle = None
         self.scan_time = now
         self.scan_sequence += 1
 
@@ -861,6 +995,11 @@ class SequentialHybridDriver(Node):
         self.avoidance_controller.reset()
         self.avoidance_state = self.avoidance_controller.state()
         self.avoidance_offset_pub.publish(Float32(data=0.0))
+        self._publish_avoidance_path_request(
+            now=time.monotonic(),
+            scan_fresh=False,
+            force_inactive=True,
+        )
         response.success = True
         response.message = (
             f"hybrid sequence reset to waypoint {self.start_waypoint_number}"
@@ -870,12 +1009,101 @@ class SequentialHybridDriver(Node):
     def _advance_gate(self, _request, response):
         self.cone_bypass.cancel()
         self.avoidance_controller.reset()
+        self.avoidance_state = self.avoidance_controller.state()
+        self.avoidance_offset_pub.publish(Float32(data=0.0))
+        self._publish_avoidance_path_request(
+            now=time.monotonic(),
+            scan_fresh=False,
+            force_inactive=True,
+        )
         self.controller.advance_gate()
         response.success = True
         response.message = (
             f"advanced to gate {self.controller.gate_index + 1}"
         )
         return response
+
+    def _publish_avoidance_path_request(
+        self,
+        *,
+        now: float,
+        scan_fresh: bool,
+        force_inactive: bool = False,
+    ) -> None:
+        """Publish the metric obstacle consumed by the SITL bypass planner.
+
+        Layout: active, observation_valid, bypass_side, obstacle_center_x,
+        obstacle_y, obstacle_length, obstacle_width.
+        """
+        mode = self.avoidance_state.mode
+        active = (
+            not force_inactive
+            and mode
+            in {
+                YoloLidarAvoidanceMode.AVOID_LEFT,
+                YoloLidarAvoidanceMode.AVOID_RIGHT,
+                YoloLidarAvoidanceMode.RETURN_CENTER,
+            }
+        )
+        if mode == YoloLidarAvoidanceMode.AVOID_LEFT:
+            bypass_side = 1.0
+        elif mode == YoloLidarAvoidanceMode.AVOID_RIGHT:
+            bypass_side = -1.0
+        elif self.avoidance_state.lateral_offset_m > 0.0:
+            bypass_side = 1.0
+        elif self.avoidance_state.lateral_offset_m < 0.0:
+            bypass_side = -1.0
+        elif (
+            self.avoidance_controller.preferred_mode
+            == YoloLidarAvoidanceMode.AVOID_RIGHT
+        ):
+            bypass_side = -1.0
+        else:
+            bypass_side = 1.0
+
+        obstacle_length = float(
+            self.get_parameter("vehicle_body_length_m").value
+        )
+        obstacle_width = float(
+            self.get_parameter("vehicle_body_width_m").value
+        )
+        obstacle_x = float("inf")
+        obstacle_y = 0.0
+        observation_valid = False
+        obstacle = self.latest_vehicle_lidar_obstacle
+        if scan_fresh and obstacle is not None:
+            obstacle_x = max(
+                0.0,
+                float(obstacle.x_vehicle_m) + 0.5 * obstacle_length,
+            )
+            obstacle_y = float(obstacle.y_vehicle_m)
+            obstacle_width = max(obstacle_width, float(obstacle.width_m))
+            observation_valid = True
+        elif (
+            scan_fresh
+            and math.isfinite(self.tracked_vehicle_distance_m)
+            and now - self.tracked_vehicle_distance_time
+            <= float(self.get_parameter("scan_timeout_sec").value)
+        ):
+            obstacle_x = max(
+                0.0,
+                self.tracked_vehicle_distance_m + 0.5 * obstacle_length,
+            )
+            observation_valid = True
+
+        self.avoidance_path_request_pub.publish(
+            Float32MultiArray(
+                data=[
+                    1.0 if active else 0.0,
+                    1.0 if observation_valid else 0.0,
+                    bypass_side,
+                    obstacle_x,
+                    obstacle_y,
+                    obstacle_length,
+                    obstacle_width,
+                ]
+            )
+        )
 
     def _publish_status(self, output, now: float) -> None:
         if self.cone_bypass.active:
@@ -936,16 +1164,21 @@ class SequentialHybridDriver(Node):
             self.avoidance_state = self.avoidance_controller.step(
                 now_sec=now,
                 dt_sec=dt,
-                obstacle=self.latest_lidar_obstacle,
+                obstacle=self.latest_vehicle_lidar_obstacle,
                 cone_active=self.cone_bypass.active,
             )
         else:
             self.avoidance_controller.reset()
             self.avoidance_state = self.avoidance_controller.state()
-        self.avoidance_offset_pub.publish(
-            Float32(data=float(self.avoidance_state.lateral_offset_m))
+        # The old implementation shifted the whole lane by one scalar. The
+        # SITL port publishes a shaped target path instead, so keep this legacy
+        # topic neutral for old launch files and bag tooling.
+        self.avoidance_offset_pub.publish(Float32(data=0.0))
+        self._publish_avoidance_path_request(
+            now=now,
+            scan_fresh=scan_fresh,
         )
-        obstacle = self.latest_lidar_obstacle
+        obstacle = self.latest_vehicle_lidar_obstacle
         avoidance_mode_code = float(
             list(YoloLidarAvoidanceMode).index(
                 self.avoidance_state.mode
@@ -964,6 +1197,15 @@ class SequentialHybridDriver(Node):
                     float(obstacle.right_clearance_m)
                     if obstacle
                     else float("inf"),
+                    float(obstacle.x_vehicle_m)
+                    if obstacle
+                    else float("inf"),
+                    float(obstacle.y_vehicle_m)
+                    if obstacle
+                    else 0.0,
+                    float(obstacle.width_m)
+                    if obstacle
+                    else 0.0,
                 ]
             )
         )
@@ -1092,6 +1334,11 @@ class SequentialHybridDriver(Node):
     def stop(self) -> None:
         self.control_timer.cancel()
         self.avoidance_offset_pub.publish(Float32(data=0.0))
+        self._publish_avoidance_path_request(
+            now=time.monotonic(),
+            scan_fresh=False,
+            force_inactive=True,
+        )
         self.cone_processing_pub.publish(Bool(data=False))
         command = Float32MultiArray(data=[0.0, 0.0])
         self.shadow_pub.publish(command)

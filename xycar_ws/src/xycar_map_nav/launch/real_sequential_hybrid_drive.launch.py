@@ -81,10 +81,10 @@ def generate_launch_description():
             DeclareLaunchArgument("speed_command", default_value="3.0"),
             DeclareLaunchArgument("cone_speed_command", default_value="6.0"),
             DeclareLaunchArgument(
-                "lookahead_distance_m", default_value="0.5"
+                "lookahead_distance_m", default_value="0.3"
             ),
             DeclareLaunchArgument(
-                "pure_pursuit_weight", default_value="0.9"
+                "pure_pursuit_weight", default_value="0.8"
             ),
             DeclareLaunchArgument(
                 "target_left_offset_m", default_value="0.09"
@@ -135,16 +135,22 @@ def generate_launch_description():
                             LaunchConfiguration("pure_pursuit_weight"),
                             value_type=float,
                         ),
-                        # Static calibration plus live avoidance offset.
+                        # Keep the validated static calibration. Vehicle
+                        # avoidance now shapes the full target path with the
+                        # gazebo_sitl entry/hold/return planner.
                         "target_right_offset_m": 0.0,
                         "target_left_offset_m": ParameterValue(
                             LaunchConfiguration("target_left_offset_m"),
                             value_type=float,
                         ),
-                        "external_lateral_offset_enabled": True,
-                        "external_lateral_offset_topic": (
-                            "/hybrid/avoidance_lateral_offset"
+                        "external_lateral_offset_enabled": False,
+                        "sitl_bypass_path_enabled": True,
+                        "sitl_bypass_path_request_topic": (
+                            "/hybrid/avoidance_path_request"
                         ),
+                        "vehicle_body_length_m": 0.55,
+                        "vehicle_body_width_m": 0.28,
+                        "lane_center_separation_m": 0.40,
                     },
                 ],
             ),

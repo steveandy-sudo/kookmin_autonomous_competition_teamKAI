@@ -84,7 +84,9 @@ sequential_hybrid_driver:
     vehicle_camera_lidar_hfov_deg: 60.0
     vehicle_camera_lidar_padding_deg: 3.0
     vehicle_lidar_min_points: 2
-    vehicle_lidar_sector_memory_sec: 1.5
+    # A stale car box must not bind a later traffic-light pole to avoidance.
+    # The detector runs at 3 Hz, so 0.5 s still spans a normal frame interval.
+    vehicle_lidar_sector_memory_sec: 0.5
     vehicle_avoidance_enabled: true
     vehicle_avoidance_immediate_on_yolo: true
     vehicle_avoidance_entry_distance_m: 1.20
@@ -99,6 +101,11 @@ sequential_hybrid_driver:
     vehicle_return_deadband_m: 0.02
     avoidance_offset_topic: /hybrid/avoidance_lateral_offset
     avoidance_debug_topic: /hybrid/avoidance_debug
+    avoidance_path_request_topic: /hybrid/avoidance_path_request
+    # Xycar envelope measured from the real vehicle: 28 cm at the wheels and
+    # 55 cm from the front LiDAR edge to the rear body edge.
+    vehicle_body_width_m: 0.28
+    vehicle_body_length_m: 0.55
 
     # Multi-ray geometry rejects isolated noise and broad walls. It is used
     # only after the vehicle YOLO has armed avoidance.

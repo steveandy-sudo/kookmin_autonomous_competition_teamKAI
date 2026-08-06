@@ -8,6 +8,65 @@ import math
 from typing import Sequence
 
 
+AngleSector = tuple[float, float]
+
+
+def angle_in_sector(
+    angle_rad: float,
+    sector: AngleSector,
+    *,
+    padding_rad: float = 0.0,
+) -> bool:
+    """Return whether an angle lies inside a non-wrapping camera sector."""
+    padding = max(0.0, float(padding_rad))
+    return (
+        float(sector[0]) - padding
+        <= float(angle_rad)
+        <= float(sector[1]) + padding
+    )
+
+
+def lidar_target_matches_camera_sector(
+    *,
+    target_x_m: float,
+    target_y_m: float,
+    camera_sector: AngleSector | None,
+    camera_sector_distance_m: float,
+    excluded_sectors: Sequence[AngleSector] = (),
+    angle_margin_rad: float = 0.0,
+    distance_tolerance_m: float = 0.35,
+) -> bool:
+    """Associate a planar LiDAR target with one semantic camera target.
+
+    Excluded sectors have priority. This is used to guarantee that a traffic
+    light return cannot be promoted to a vehicle obstacle merely because it is
+    the closest cluster on the driving path.
+    """
+    if camera_sector is None:
+        return False
+    x = float(target_x_m)
+    y = float(target_y_m)
+    if not math.isfinite(x) or not math.isfinite(y) or x <= 0.0:
+        return False
+    bearing = math.atan2(y, x)
+    if any(angle_in_sector(bearing, sector) for sector in excluded_sectors):
+        return False
+    if not angle_in_sector(
+        bearing,
+        camera_sector,
+        padding_rad=angle_margin_rad,
+    ):
+        return False
+    expected_distance = float(camera_sector_distance_m)
+    if not math.isfinite(expected_distance):
+        return False
+    target_distance = math.hypot(x, y)
+    return abs(target_distance - expected_distance) <= max(
+        0.0,
+        float(distance_tolerance_m),
+    )
+
+
 def camera_box_lidar_sector(
     *,
     xmin: float,
@@ -41,6 +100,7 @@ def scan_sector_distance(
     sector_min_angle: float,
     sector_max_angle: float,
     minimum_points: int,
+    excluded_sectors: Sequence[AngleSector] = (),
 ) -> float:
     """Return the mean of the closest valid points in a LiDAR sector."""
     values = []
@@ -53,7 +113,13 @@ def scan_sector_distance(
         ):
             continue
         angle = float(angle_min) + index * float(angle_increment)
-        if float(sector_min_angle) <= angle <= float(sector_max_angle):
+        if (
+            float(sector_min_angle) <= angle <= float(sector_max_angle)
+            and not any(
+                angle_in_sector(angle, sector)
+                for sector in excluded_sectors
+            )
+        ):
             values.append(distance)
     required = max(1, int(minimum_points))
     if len(values) < required:

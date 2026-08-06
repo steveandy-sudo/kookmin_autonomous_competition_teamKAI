@@ -45,10 +45,10 @@ fi
 
 if [[ -z "$LOOKAHEAD_DISTANCE" ]]; then
   if [[ -t 0 ]]; then
-    read -r -p "Curve lookahead distance [m, default 0.5]: " \
+    read -r -p "Curve lookahead distance [m, default 0.3]: " \
       LOOKAHEAD_DISTANCE
   fi
-  LOOKAHEAD_DISTANCE="${LOOKAHEAD_DISTANCE:-0.5}"
+  LOOKAHEAD_DISTANCE="${LOOKAHEAD_DISTANCE:-0.3}"
 fi
 LOOKAHEAD_DISTANCE="${LOOKAHEAD_DISTANCE/,/.}"
 if [[ ! "$LOOKAHEAD_DISTANCE" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
@@ -62,10 +62,10 @@ LOOKAHEAD_DISTANCE="$(awk -v value="$LOOKAHEAD_DISTANCE" \
 
 if [[ -z "$STANLEY_PERCENT" ]]; then
   if [[ -t 0 ]]; then
-    read -r -p "Curve Stanley percentage [0-100, default 10]: " \
+    read -r -p "Curve Stanley percentage [0-100, default 20]: " \
       STANLEY_PERCENT
   fi
-  STANLEY_PERCENT="${STANLEY_PERCENT:-10}"
+  STANLEY_PERCENT="${STANLEY_PERCENT:-20}"
 fi
 STANLEY_PERCENT="${STANLEY_PERCENT/,/.}"
 if [[ ! "$STANLEY_PERCENT" =~ ^[0-9]+([.][0-9]+)?$ ]] || \

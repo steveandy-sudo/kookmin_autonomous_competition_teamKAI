@@ -33,6 +33,11 @@ def generate_launch_description():
     yolo_max_detections = LaunchConfiguration("yolo_max_detections")
     yolo_cpu_threads = LaunchConfiguration("yolo_cpu_threads")
     yolo_retina_masks = LaunchConfiguration("yolo_retina_masks")
+    semantic_model_path = LaunchConfiguration("semantic_model_path")
+    semantic_device = LaunchConfiguration("semantic_device")
+    semantic_input_width = LaunchConfiguration("semantic_input_width")
+    semantic_input_height = LaunchConfiguration("semantic_input_height")
+    semantic_cpu_threads = LaunchConfiguration("semantic_cpu_threads")
     publish_rate_limit_hz = LaunchConfiguration("publish_rate_limit_hz")
     src_tl_x_ratio = LaunchConfiguration("src_tl_x_ratio")
     src_tr_x_ratio = LaunchConfiguration("src_tr_x_ratio")
@@ -109,6 +114,11 @@ def generate_launch_description():
             DeclareLaunchArgument("yolo_max_detections", default_value="30"),
             DeclareLaunchArgument("yolo_cpu_threads", default_value="0"),
             DeclareLaunchArgument("yolo_retina_masks", default_value="true"),
+            DeclareLaunchArgument("semantic_model_path", default_value=""),
+            DeclareLaunchArgument("semantic_device", default_value="cpu"),
+            DeclareLaunchArgument("semantic_input_width", default_value="256"),
+            DeclareLaunchArgument("semantic_input_height", default_value="144"),
+            DeclareLaunchArgument("semantic_cpu_threads", default_value="1"),
             DeclareLaunchArgument(
                 "publish_rate_limit_hz", default_value="0.0"
             ),
@@ -228,6 +238,19 @@ def generate_launch_description():
                         ),
                         "yolo_retina_masks": ParameterValue(
                             yolo_retina_masks, value_type=bool
+                        ),
+                        "semantic_model_path": semantic_model_path,
+                        "semantic_device": ParameterValue(
+                            semantic_device, value_type=str
+                        ),
+                        "semantic_input_width": ParameterValue(
+                            semantic_input_width, value_type=int
+                        ),
+                        "semantic_input_height": ParameterValue(
+                            semantic_input_height, value_type=int
+                        ),
+                        "semantic_cpu_threads": ParameterValue(
+                            semantic_cpu_threads, value_type=int
                         ),
                         "publish_rate_limit_hz": ParameterValue(
                             publish_rate_limit_hz, value_type=float

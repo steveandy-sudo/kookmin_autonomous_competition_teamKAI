@@ -13,10 +13,10 @@ canonical_stanley_pursuit_driver:
     steering_lead_time_sec: 0.08
     steering_max_lead_command: 6.0
 
-    # Use a near target and give Stanley 10% of the normal curve blend.
-    # Straight-only control still uses its independent straight parameters.
-    lookahead_distance_m: 0.50
-    pure_pursuit_weight: 0.90
+    # Match the stable real-car profile recorded in rule_test_01. Straight-only
+    # control still uses its independent straight Stanley parameters.
+    lookahead_distance_m: 0.30
+    pure_pursuit_weight: 0.80
 
     # The calibrated BEV removes about 6 cm of the previous right bias.
     # Start at 9 cm to preserve the validated real-car trajectory.

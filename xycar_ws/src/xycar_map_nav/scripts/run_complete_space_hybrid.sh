@@ -55,8 +55,8 @@ if [[ ! "$START_WAYPOINT" =~ ^[1-6]$ ]]; then
 fi
 
 if [[ -z "$LOOKAHEAD_DISTANCE" ]]; then
-  read -r -p "곡선 Lookahead distance [m, 기본 0.5]: " LOOKAHEAD_DISTANCE
-  LOOKAHEAD_DISTANCE="${LOOKAHEAD_DISTANCE:-0.5}"
+  read -r -p "곡선 Lookahead distance [m, 기본 0.3]: " LOOKAHEAD_DISTANCE
+  LOOKAHEAD_DISTANCE="${LOOKAHEAD_DISTANCE:-0.3}"
 fi
 LOOKAHEAD_DISTANCE="${LOOKAHEAD_DISTANCE/,/.}"
 if [[ ! "$LOOKAHEAD_DISTANCE" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
@@ -72,8 +72,8 @@ LOOKAHEAD_DISTANCE="$(awk -v value="$LOOKAHEAD_DISTANCE" \
   'BEGIN { printf "%.3f", value }')"
 
 if [[ -z "$STANLEY_PERCENT" ]]; then
-  read -r -p "곡선 Stanley 비율 [%, 기본 10]: " STANLEY_PERCENT
-  STANLEY_PERCENT="${STANLEY_PERCENT:-10}"
+  read -r -p "곡선 Stanley 비율 [%, 기본 20]: " STANLEY_PERCENT
+  STANLEY_PERCENT="${STANLEY_PERCENT:-20}"
 fi
 STANLEY_PERCENT="${STANLEY_PERCENT/,/.}"
 if [[ ! "$STANLEY_PERCENT" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
@@ -82,7 +82,7 @@ if [[ ! "$STANLEY_PERCENT" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
   problem \
     "Stanley 비율 입력 오류" \
     "'$STANLEY_PERCENT'은 사용할 수 없는 비율입니다." \
-    "0부터 100 사이 퍼센트 숫자만 입력하세요. 예: 10"
+    "0부터 100 사이 퍼센트 숫자만 입력하세요. 예: 20"
   exit 2
 fi
 STANLEY_PERCENT="$(awk -v value="$STANLEY_PERCENT" \

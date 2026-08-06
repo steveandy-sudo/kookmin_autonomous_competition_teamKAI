@@ -10,6 +10,7 @@ import numpy as np
 
 
 YELLOW_DASH_PREFIX = "yellow_centerline_dash_"
+TRACK_REFERENCE_PREFIX = "track_reference_anchor_"
 
 
 def wrap_angle(angle_rad: float) -> float:
@@ -68,6 +69,26 @@ def _ordered_nearest_neighbours(
     )
     if float(neighbour_lengths.max()) > 1.25:
         raise ValueError("CAD centerline ordering contains a gap larger than 1.25m")
+    return result
+
+
+def _ordered_named_points(
+    named_points: list[tuple[str, np.ndarray]],
+) -> np.ndarray:
+    """Preserve the explicit numeric order of CAD-derived reference anchors."""
+    if len(named_points) < 4:
+        raise ValueError("at least four explicit track reference points are required")
+    ordered = sorted(named_points, key=lambda item: _numeric_suffix(item[0]))
+    suffixes = [_numeric_suffix(name) for name, _ in ordered]
+    if len(set(suffixes)) != len(suffixes):
+        raise ValueError("explicit track reference point numbers must be unique")
+    result = np.asarray([point for _, point in ordered], dtype=np.float64)
+    neighbour_lengths = np.linalg.norm(
+        np.roll(result, -1, axis=0) - result,
+        axis=1,
+    )
+    if float(neighbour_lengths.max()) > 0.50:
+        raise ValueError("explicit track reference contains a gap larger than 0.50m")
     return result
 
 
@@ -139,25 +160,45 @@ class TrackReference:
         world = ET.parse(path).getroot().find("world")
         if world is None:
             raise ValueError(f"SDF contains no world: {path}")
-        named_points: list[tuple[str, np.ndarray]] = []
-        for model in world.findall("model"):
-            name = model.attrib.get("name", "")
-            if not name.startswith(YELLOW_DASH_PREFIX):
+        reference_points: list[tuple[str, np.ndarray]] = []
+        for frame in world.findall("frame"):
+            name = frame.attrib.get("name", "")
+            if not name.startswith(TRACK_REFERENCE_PREFIX):
                 continue
-            pose = model.findtext("pose")
+            pose = frame.findtext("pose")
             if not pose:
                 continue
             values = [float(value) for value in pose.split()]
-            if len(values) < 2:
-                continue
-            named_points.append((name, np.asarray(values[:2], dtype=np.float64)))
-        anchors = _ordered_nearest_neighbours(named_points)
+            if len(values) >= 2:
+                reference_points.append(
+                    (name, np.asarray(values[:2], dtype=np.float64))
+                )
+
+        if reference_points:
+            anchors = _ordered_named_points(reference_points)
+        else:
+            # Backward compatibility for the original map, whose only centre
+            # reference is the set of visible yellow dash models.
+            dash_points: list[tuple[str, np.ndarray]] = []
+            for model in world.findall("model"):
+                name = model.attrib.get("name", "")
+                if not name.startswith(YELLOW_DASH_PREFIX):
+                    continue
+                pose = model.findtext("pose")
+                if not pose:
+                    continue
+                values = [float(value) for value in pose.split()]
+                if len(values) >= 2:
+                    dash_points.append(
+                        (name, np.asarray(values[:2], dtype=np.float64))
+                    )
+            anchors = _ordered_nearest_neighbours(dash_points)
         yellow_centerline = _sample_closed_catmull_rom(
             anchors,
             samples_per_anchor,
         )
-        # The CAD dash numbering is clockwise, while the competition's driving
-        # direction is counter-clockwise.
+        # Both the generated CAD anchors and legacy dash order are clockwise;
+        # the competition driving direction is counter-clockwise.
         if reverse_direction:
             yellow_centerline = yellow_centerline[::-1].copy()
         # The local left normal is recomputed after reversing the samples, so a

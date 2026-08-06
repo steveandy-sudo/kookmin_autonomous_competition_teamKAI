@@ -27,6 +27,7 @@ def generate_launch_description():
     headless = LaunchConfiguration("headless")
     enable_rviz = LaunchConfiguration("enable_rviz")
     auto_start = LaunchConfiguration("auto_start")
+    camera_follow_enabled = LaunchConfiguration("camera_follow_enabled")
     gui_requested = PythonExpression(["'", headless, "' == 'gui'"])
     gazebo_server = ExecuteProcess(
         cmd=["bash", "-lc", ["gz sim ", headless, " ", world]],
@@ -83,6 +84,20 @@ def generate_launch_description():
                     "the RL environment owns world stepping."
                 ),
             ),
+            DeclareLaunchArgument(
+                "camera_follow_enabled",
+                default_value="true",
+                description=(
+                    "Automatically make the Gazebo GUI camera follow Xycar."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "camera_follow_target",
+                default_value="xycar_ackermann",
+            ),
+            DeclareLaunchArgument("camera_follow_offset_x", default_value="-2.5"),
+            DeclareLaunchArgument("camera_follow_offset_y", default_value="0.0"),
+            DeclareLaunchArgument("camera_follow_offset_z", default_value="1.6"),
             SetEnvironmentVariable(
                 name="GZ_SIM_RESOURCE_PATH",
                 value=[
@@ -93,6 +108,33 @@ def generate_launch_description():
             ),
             gazebo_server,
             gazebo_gui,
+            Node(
+                package="xycar_rl",
+                executable="gazebo_camera_follow",
+                name="gazebo_camera_follow",
+                output="screen",
+                arguments=[
+                    "--model",
+                    LaunchConfiguration("camera_follow_target"),
+                    "--offset-x",
+                    LaunchConfiguration("camera_follow_offset_x"),
+                    "--offset-y",
+                    LaunchConfiguration("camera_follow_offset_y"),
+                    "--offset-z",
+                    LaunchConfiguration("camera_follow_offset_z"),
+                ],
+                condition=IfCondition(
+                    PythonExpression(
+                        [
+                            "'",
+                            headless,
+                            "' == 'gui' and '",
+                            camera_follow_enabled,
+                            "'.lower() in ('true', '1', 'yes')",
+                        ]
+                    )
+                ),
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(bridge_launch),
                 launch_arguments={
