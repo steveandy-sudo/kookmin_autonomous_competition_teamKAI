@@ -24,6 +24,22 @@ class RolloutPolicyArgumentsTest(unittest.TestCase):
         self.assertEqual(args.start_lateral_error_m, 0.0)
         self.assertEqual(args.start_yaw_error_deg, 0.0)
 
+    def test_privileged_expert_trace_is_explicitly_opt_in(self):
+        default_args = parse_args(
+            ["--policy-kind", "td3_bc", "--checkpoint", "model.pth"]
+        )
+        traced_args = parse_args(
+            [
+                "--policy-kind",
+                "td3_bc",
+                "--checkpoint",
+                "model.pth",
+                "--trace-privileged-expert",
+            ]
+        )
+        self.assertFalse(default_args.trace_privileged_expert)
+        self.assertTrue(traced_args.trace_privileged_expert)
+
     def test_dagger_accepts_multiple_targeted_start_fractions(self):
         args = parse_dagger_args(
             [

@@ -54,7 +54,7 @@ def parse_args(argv=None):
     parser.add_argument("--preserve-speed-command", type=float, default=18.5)
     parser.add_argument("--off-track-threshold-m", type=float, default=0.38)
     parser.add_argument("--lane-margin-start-m", type=float, default=0.24)
-    parser.add_argument("--target-right-offset-m", type=float, default=0.10)
+    parser.add_argument("--target-right-offset-m", type=float, default=0.0)
     parser.add_argument("--recovery-probability", type=float, default=0.20)
     parser.add_argument("--recovery-max-lateral-m", type=float, default=0.10)
     parser.add_argument("--recovery-max-yaw-deg", type=float, default=6.0)
@@ -73,6 +73,14 @@ def parse_args(argv=None):
     )
     parser.add_argument("--actor-lr", type=float, default=3.0e-6)
     parser.add_argument("--critic-lr", type=float, default=1.0e-4)
+    parser.add_argument(
+        "--speed-extension-only",
+        action="store_true",
+        help=(
+            "Freeze the approved visual encoder and steering head, and train "
+            "only the range-expanded speed extension."
+        ),
+    )
     parser.add_argument("--bc-alpha", type=float, default=1.0)
     parser.add_argument("--steering-bc-weight", type=float, default=2.0)
     parser.add_argument("--speed-bc-weight", type=float, default=0.5)
@@ -388,6 +396,13 @@ def main(argv=None) -> None:
         )
         migration = actor.speed_range_expansion
         model_type = f"{model_type}_range_expanded"
+    if args.speed_extension_only:
+        freeze_base_policy = getattr(actor, "freeze_base_policy", None)
+        if freeze_base_policy is None:
+            raise ValueError(
+                "--speed-extension-only requires a range-expanded actor"
+            )
+        freeze_base_policy()
 
     config = TD3BCConfig(
         gamma=args.gamma,

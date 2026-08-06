@@ -1,9 +1,5 @@
 # 실차 BC 모델 최종 실행 절차
 
-> 2026-07-26 이후 ROS1 VESC 컨테이너와 dynamic bridge는 사용하지 않는다.
-> native 모터 실행은
-> [`native_ros2_vesc_migration.md`](native_ros2_vesc_migration.md)를 따른다.
-
 이 문서는 `simulation` 브랜치에 포함된 카메라+LiDAR 모방학습 모델을 Xycar
 실차에서 처음 검증할 때 사용하는 순서다. Gazebo, `ros_gz_bridge`,
 `xycar_gazebo_bridge`는 실차에서 실행하지 않는다.
@@ -27,7 +23,7 @@
 1. 물리 비상 정지 담당자가 차량 옆에 있다.
 2. 처음에는 구동 바퀴를 바닥에서 띄운다.
 3. 룰베이스, 키보드 조종, 다른 자율주행 publisher를 모두 종료한다.
-4. `/xycar_motor` subscriber는 `xycar_vesc_driver` 하나이고, 자율주행
+4. `/xycar_motor` subscriber는 실차 모터 bridge 하나 이상이고, 자율주행
    publisher는 아직 0개인지 확인한다.
 5. 카메라 또는 LiDAR를 끊었을 때 shadow speed가 0으로 바뀌는지 확인한다.
 
@@ -75,15 +71,8 @@ sha256sum "$MODEL"
 
 ## 2. 실차 장치 실행 및 계약 확인
 
-카메라와 LiDAR를 실행하고 native VESC driver를 먼저 shadow로 확인한다.
-
-```bash
-source /home/xytron/kookmin_ty/slam_gazebo_controller/xycar_ws/install/setup.bash
-ros2 launch xycar_vesc_driver xycar_vesc_driver.launch.py \
-  drive_enabled:=false
-```
-
-그 다음 이 저장소의 새 터미널에서:
+차량에서 평소 사용하는 카메라, LiDAR, ROS1 VESC 컨테이너와
+ROS1-ROS2 dynamic bridge를 먼저 실행한다. 그 다음 이 저장소의 새 터미널에서:
 
 ```bash
 cd ~/kookmin_sim_to_real
@@ -172,20 +161,7 @@ ros2 topic echo /il/policy_debug
 ## 4. 바퀴를 띄운 실제 출력 시험
 
 shadow launch를 `Ctrl+C`로 완전히 종료한다. 차량 구동 바퀴를 띄우고 물리
-비상 정지를 준비한다. native VESC driver도 disabled 인스턴스를 종료하고
-별도 터미널에서 명시적으로 다시 실행한다.
-
-```bash
-source /opt/ros/humble/setup.bash
-source /home/xytron/kookmin_ty/slam_gazebo_controller/xycar_ws/install/setup.bash
-export ROS_DOMAIN_ID=7
-unset ROS_NAMESPACE
-
-ros2 launch xycar_vesc_driver xycar_vesc_driver.launch.py \
-  drive_enabled:=true
-```
-
-그 뒤 터미널 1에서 다음을 실행한다.
+비상 정지를 준비한 뒤 터미널 1에서 다음을 실행한다.
 
 ```bash
 cd ~/kookmin_sim_to_real

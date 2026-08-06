@@ -1,9 +1,5 @@
 # Xycar real-vehicle deployment
 
-> Motor migration note: the ROS1 motor container and `ros1_bridge` are no
-> longer used. Start `xycar_vesc_driver` from this repository as described in
-> [`native_ros2_vesc_migration.md`](native_ros2_vesc_migration.md).
-
 This profile runs the same camera perception, lane decision, and controller used
 in Gazebo without starting any Gazebo or `ros_gz_bridge` process. The launch
 defaults to shadow mode, where calculated commands are published only on
@@ -20,7 +16,7 @@ defaults to shadow mode, where calculated commands are published only on
     `/wide_camera/rect/image_raw`; or
   - `sensor_msgs/msg/CompressedImage`, such as
     `/wide_camera_mjpeg/image_raw/compressed`
-- The native ROS2 `xycar_vesc_driver`
+- The existing ROS1 motor container and ROS1-ROS2 dynamic bridge
 - A motor subscriber accepting `std_msgs/msg/Float32MultiArray` as
   `[angle_command, speed_command]`
 - A physical emergency-stop method and enough clear floor space
@@ -57,12 +53,7 @@ export ROS_DOMAIN_ID=7
 
 ## 1. Identify the live interfaces
 
-Start the physical camera and native motor driver in disabled mode, then check:
-
-```bash
-ros2 launch xycar_vesc_driver xycar_vesc_driver.launch.py \
-  drive_enabled:=false
-```
+Start the physical camera and the existing motor/bridge stack, then check:
 
 ```bash
 ros2 topic list -t | grep -E 'image|xycar_motor'
@@ -75,7 +66,7 @@ Required results:
 
 - exactly one intended camera topic is active;
 - its type is `Image` or `CompressedImage`;
-- `/xycar_motor` has `xycar_vesc_driver` as its only motor subscriber;
+- `/xycar_motor` has the real motor bridge as a subscriber;
 - no other autonomous or keyboard node publishes motor commands.
 
 If the motor topic is namespaced, pass it explicitly, for example

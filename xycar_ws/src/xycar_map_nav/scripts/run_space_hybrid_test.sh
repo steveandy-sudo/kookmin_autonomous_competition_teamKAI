@@ -2,10 +2,11 @@
 
 set -eo pipefail
 
-WORKSPACE="/home/xytron/kookmin_ty/slam_gazebo_controller/xycar_ws"
+SCRIPT_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+WORKSPACE="${XYCAR_WS:-$(cd -- "$SCRIPT_DIR/../../.." && pwd)}"
 SPEED_COMMAND="${1:-}"
 START_WAYPOINT="${2:-}"
-RUN_MODE="${3:-hybrid}"
+RUN_MODE="${3:-rule}"
 MODEL_PROFILE="${4:-speed100}"
 LOOKAHEAD_DISTANCE="${5:-}"
 STANLEY_PERCENT="${6:-}"
@@ -37,8 +38,8 @@ if [[ ! "$START_WAYPOINT" =~ ^[1-6]$ ]]; then
   echo "ERROR: start waypoint must be an integer from 1 to 6." >&2
   exit 2
 fi
-if [[ "$RUN_MODE" != "hybrid" && "$RUN_MODE" != "rule" ]]; then
-  echo "ERROR: run mode must be 'hybrid' or 'rule'." >&2
+if [[ "$RUN_MODE" != "rule" ]]; then
+  echo "ERROR: this SLAM-free stack supports only 'rule' mode." >&2
   exit 2
 fi
 
@@ -80,9 +81,9 @@ PURE_PURSUIT_WEIGHT="$(awk -v stanley="$STANLEY_PERCENT" \
 
 if [[ -z "$LEFT_OFFSET_CM" ]]; then
   if [[ -t 0 ]]; then
-    read -r -p "Left target correction [cm, default 15]: " LEFT_OFFSET_CM
+    read -r -p "Left target correction [cm, default 9]: " LEFT_OFFSET_CM
   fi
-  LEFT_OFFSET_CM="${LEFT_OFFSET_CM:-15}"
+  LEFT_OFFSET_CM="${LEFT_OFFSET_CM:-9}"
 fi
 LEFT_OFFSET_CM="${LEFT_OFFSET_CM/,/.}"
 if [[ ! "$LEFT_OFFSET_CM" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
@@ -96,29 +97,10 @@ LEFT_OFFSET_CM="$(awk -v value="$LEFT_OFFSET_CM" \
 LEFT_OFFSET_M="$(awk -v value="$LEFT_OFFSET_CM" \
   'BEGIN { printf "%.6f", value / 100.0 }')"
 
-case "$MODEL_PROFILE" in
-  latest)
-    CHECKPOINT_PATH="$WORKSPACE/src/xycar_rl/models/straight_speed25_recovery_v3_20260805/camera_speed_td3_bc_best.pth"
-    ;;
-  speed100)
-    CHECKPOINT_PATH="$WORKSPACE/src/xycar_rl/models/lap_time_speed_only_round02_20260723/camera_speed_lap_time_speed_only_actor.pth"
-    ;;
-  *)
-    echo "ERROR: model profile must be 'latest' or 'speed100'." >&2
-    exit 2
-    ;;
-esac
-if [[ "$RUN_MODE" == "hybrid" && ! -f "$CHECKPOINT_PATH" ]]; then
-  echo "ERROR: model checkpoint not found: $CHECKPOINT_PATH" >&2
-  exit 2
-fi
-
 run_config_tmp="${RUN_CONFIG_FILE}.tmp.$$"
 cat >"$run_config_tmp" <<EOF
 recorded_at: "$(date --iso-8601=seconds)"
 run_mode: "$RUN_MODE"
-model_profile: "$MODEL_PROFILE"
-checkpoint_path: "$CHECKPOINT_PATH"
 speed_command: $SPEED_COMMAND
 start_waypoint_number: $START_WAYPOINT
 lookahead_distance_m: $LOOKAHEAD_DISTANCE
@@ -189,18 +171,9 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-if [[ "$RUN_MODE" == "rule" ]]; then
-  echo "Starting RULE base controller with mission overrides in shadow mode."
-  echo "RL and waypoint source switching are disabled."
-  echo "Priority: CONE > YOLO+LiDAR AVOIDANCE > RULE."
-else
-  echo "Starting RL/rule waypoint selector in shadow mode."
-  echo "RL model profile: $MODEL_PROFILE"
-  echo "RL checkpoint: $CHECKPOINT_PATH"
-  echo "YOLO+LiDAR cone and obstacle avoidance are enabled."
-  echo "Traffic-light control is disabled."
-  echo "Cone rule enters inside 1.0m before WP1; after exit it targets WP2."
-fi
+echo "Starting RULE base controller with mission overrides in shadow mode."
+echo "Model and waypoint source switching are disabled."
+echo "Priority: CONE > YOLO+LiDAR AVOIDANCE > RULE."
 echo "Selected speed limit: $SPEED_COMMAND"
 echo "Selected start target: WP$START_WAYPOINT"
 echo "Curve control: LD=${LOOKAHEAD_DISTANCE}m, Stanley=${STANLEY_PERCENT}%"
@@ -212,8 +185,7 @@ echo "Control detail log: $CONTROL_LOG"
 setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   drive_enabled:=false \
   gate_arming_required:=true \
-  force_rule_only:="$([[ "$RUN_MODE" == "rule" ]] && echo true || echo false)" \
-  checkpoint_path:="$CHECKPOINT_PATH" \
+  force_rule_only:=true \
   speed_command:="$SPEED_COMMAND" \
   cone_speed_command:="$CONE_SPEED_COMMAND" \
   lookahead_distance_m:="$LOOKAHEAD_DISTANCE" \
@@ -222,8 +194,6 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   perception_max_output_rate_hz:=10.0 \
   start_waypoint_number:="$START_WAYPOINT" \
   maximum_speed_command:=30.0 \
-  model_speed_cap:=30.0 \
-  start_rl:="$([[ "$RUN_MODE" == "rule" ]] && echo false || echo true)" \
   start_cone:=true \
   start_object_detection:=true \
   vehicle_avoidance_enabled:=true \
@@ -242,12 +212,6 @@ wait_for_control_message \
   /perception/canonical_road_image \
   "차선 인지" \
   "카메라 영상과 lane_seg_lraspp_inference_node의 ERROR를 확인하세요."
-if [[ "$RUN_MODE" == "hybrid" ]]; then
-  wait_for_control_message \
-    /rl/policy_motor_shadow \
-    "모방학습 모델" \
-    "RL 모델 경로와 rl_policy_inference의 ERROR를 확인하세요."
-fi
 wait_for_control_message \
   /hybrid/rule_candidate \
   "룰베이스" \

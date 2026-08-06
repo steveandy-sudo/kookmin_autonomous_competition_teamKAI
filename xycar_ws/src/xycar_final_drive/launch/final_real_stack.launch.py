@@ -74,12 +74,12 @@ def generate_launch_description():
                     [
                         FindPackageShare("xycar_rl"),
                         "models",
-                        "final_rule_td3_bc_uncapped_avg17_20260723",
+                        "straight_speed25_recovery_v3_20260805",
                         "camera_speed_td3_bc_best.pth",
                     ]
                 ),
             ),
-            DeclareLaunchArgument("model_speed_cap", default_value="8.0"),
+            DeclareLaunchArgument("model_speed_cap", default_value="25.0"),
             DeclareLaunchArgument("cone_speed_cap", default_value="9.5"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(perception_launch),

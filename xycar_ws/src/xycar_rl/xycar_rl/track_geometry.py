@@ -157,14 +157,14 @@ class TrackReference:
             samples_per_anchor,
         )
         # The CAD dash numbering is clockwise, while the competition's driving
-        # direction is counter-clockwise. Reverse both the sampled path and the
-        # sign used for the right-side lane offset when requested.
+        # direction is counter-clockwise.
         if reverse_direction:
             yellow_centerline = yellow_centerline[::-1].copy()
-        offset_sign = 1.0 if reverse_direction else -1.0
+        # The local left normal is recomputed after reversing the samples, so a
+        # right-side target is always a negative left-normal offset.
         target = _offset_polyline_left(
             yellow_centerline,
-            offset_sign * abs(float(target_right_offset_m)),
+            -abs(float(target_right_offset_m)),
         )
         return cls(target)
 

@@ -3,19 +3,6 @@
 국민대학교 Xycar 자율주행 트랙을 Gazebo Sim에 재현하고, 시뮬레이션에서 만든
 인지·제어·학습 결과를 실제 Xycar까지 옮기기 위한 프로젝트입니다.
 
-> ROS bag SLAM 지도를 Gazebo에서 실행하고 차량·장애물 좌표를 직접 바꾸는
-> 방법: `docs/slam_map_gazebo_coordinate_control_KO.md`
->
-> 새 장소에서 SLAM 지도를 만들고 실차 전역경로를 단계적으로 검증하는
-> 체크리스트: `docs/new_map_real_vehicle_test_KO.md`
->
-> SLAM 전역경로를 기본으로 하고 YOLO+LiDAR가 함께 확인한 임무에서만
-> 라바콘·동적 차량·신호등 rule로 전환하는 통합 실행:
-> `xycar_ws/src/xycar_map_nav/README.md#제어권`
->
-> 2026-07-24 ROS bag의 LiDAR/IMU 기반 command odom 보정 결과:
-> `data/odom_calibration/2026-07-24/README.md`
-
 ```text
 트랙 재현
   -> 실차 동역학을 반영한 차량·센서 모델
@@ -129,45 +116,6 @@ gate는 4/5 이하라 승인하지 않았습니다.
 5. 직선 2~3m와 완만한 곡선에서 가장 낮은 cap부터 저속 시험
 6. BC 기준선과 TD3+BC의 횡오차, 완주율, 평균 속도, 큰 오실레이션을 비교
 7. cap 8의 `18.90m` 실패 구간을 dual-action DAgger/RL 데이터로 추가 보강
-
-### 2026-07-29 SLAM 기본 주행과 임무 rule 통합
-
-`codex/slam-gazebo-controller`에서는 기존 `main`의 객체 YOLO와 실차 검증
-LiDAR 라바콘 제어기를 SLAM 전역경로 제어기에 연결했다. 정상 상태에서는
-항상 SLAM 전역경로 Stanley 제어를 사용한다.
-
-- YOLO cone + LiDAR cone cluster `<= 0.50m`: 라바콘 rule
-- YOLO vehicle + 같은 bounding box 방향 LiDAR `<= 2.40m`: 차량 회피 rule
-- 빨강 또는 노랑 2프레임: 정지, 초록 2프레임: 정지 해제
-- 차선 이탈 rule: 인터페이스만 두고 현재 기본 비활성화
-
-라바콘 LiDAR 클러스터링은 상시 실행하지 않는다. 평소 라바콘 노드는
-`/scan` 구독을 해제한 sleep 상태이며, YOLO가 `cone`을 검출했을 때만
-구독과 경로 계산을 켠다. 임무 종료 후에는 내부 경로 이력까지 비우고 다시
-sleep으로 돌아가므로 저사양 실차에서 불필요한 CPU 사용을 줄인다.
-
-장애물 객체 모델이 완성되기 전까지는 `gazebo_sitl`의 장애물 기억 방식을
-축소한 LiDAR fallback도 사용한다. 전역경로 차량 폭 안의 연속 점군을
-2프레임 확인하면 장애물 반대편으로 경로 오프셋을 만들고, 전역경로
-진행거리로 장애물을 완전히 통과한 뒤 중앙으로 복귀한다. 최종 모터 권한은
-계속 `xycar_waypoint_nav` 하나에만 있다.
-
-첫 직선에 빨간 충돌 박스를 동적으로 배치하는 Gazebo 회귀 시험도 추가했다.
-최종 트랙 월드는 바꾸지 않으며, 실행 방법과 2026-07-29 두 바퀴 연속 회피
-결과는 `xycar_ws/src/xycar_map_nav/README.md`에 기록했다.
-
-상황 판단, 전역경로 명령, rule 후보 선택은
-`xycar_waypoint_nav` 한 노드에서 끝난다. 따라서 최종
-`/xycar_motor` publisher도 이 노드 하나뿐이며, 가져온
-`my_rule_drive_manager`는 중복 권한을 피하려고 통합 대상에서 제외했다. 먼저
-`drive_enabled:=false`로 다음 통합 launch를 검증한다.
-
-```bash
-ros2 launch xycar_map_nav semantic_hybrid_nav.launch.py \
-  map_yaml:=$HOME/xycar_maps/map_20260728_143906/map.yaml \
-  waypoints_yaml:=$HOME/xycar_maps/map_20260728_143906/waypoints_pure_pursuit.yaml \
-  drive_enabled:=false
-```
 
 오프라인 MAE와 시뮬 주행 성공은 실차 완주를 보장하지 않습니다. 현재 단계의
 완료 기준은 `shadow -> 바퀴 공중 -> 직선 -> 단일 곡선 -> 전체 트랙` 시험을

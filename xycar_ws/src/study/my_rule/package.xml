@@ -3,7 +3,7 @@
 <package format="3">
   <name>my_rule</name>
   <version>0.0.1</version>
-  <description>Low-rate YOLO mission semantics and LiDAR cone command candidates for the SLAM supervisor.</description>
+  <description>YOLO object semantics and LiDAR cone command candidates for integrated rule driving.</description>
   <maintainer email="teamkai@example.com">teamkai</maintainer>
   <license>MIT</license>
 

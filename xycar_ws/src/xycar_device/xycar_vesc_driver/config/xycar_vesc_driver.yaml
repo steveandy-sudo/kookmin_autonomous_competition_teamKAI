@@ -56,4 +56,4 @@ xycar_vesc_driver:
     # requires inspection and /vehicle/clear_motor_fault.
     auto_recover: true
 
-    disk_path: /home/xytron
+    disk_path: /

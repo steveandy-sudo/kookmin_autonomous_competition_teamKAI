@@ -460,9 +460,8 @@ class GazeboXycarEnv(gym.Env):
         min_speed_command: float = DEFAULT_MIN_SPEED_COMMAND,
         max_speed_command: float = DEFAULT_MAX_SPEED_COMMAND,
         max_steering_command: float = 42.0,
-        # The observed vehicle body is centered over the yellow line when the
-        # geometric reference is calibrated 10 cm to its right.
-        target_right_offset_m: float = 0.10,
+        # Real-car calibration moved the old +10 cm right target 10 cm left.
+        target_right_offset_m: float = 0.0,
         reset_lateral_error_m: float = 0.22,
         reset_yaw_error_rad: float = math.radians(14.0),
         observation_timeout_sec: float = 2.0,

@@ -1069,7 +1069,7 @@ class CanonicalStanleyPursuitDriver(Node):
         self.declare_parameter("path_previous_weight", 0.10)
         self.declare_parameter("min_lane_pixels", 8)
         self.declare_parameter("target_right_offset_m", 0.0)
-        self.declare_parameter("target_left_offset_m", 0.10)
+        self.declare_parameter("target_left_offset_m", 0.09)
         self.declare_parameter("external_lateral_offset_enabled", False)
         self.declare_parameter(
             "external_lateral_offset_topic",

@@ -6,7 +6,7 @@ from typing import Iterable, Sequence
 import rclpy
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Bool, Float32MultiArray
 
 
 def clamp(value: float, lower: float, upper: float) -> float:
@@ -109,6 +109,7 @@ class XycarMotorBridge(Node):
         self.declare_parameter("command_update_period_sec", 0.005)
         self.declare_parameter("cmd_timeout_sec", 0.5)
         self.declare_parameter("debug_topic", "/xycar_motor_bridge/debug")
+        self.declare_parameter("episode_reset_topic", "/rl/episode_reset")
 
         self.wheel_base = float(self.get_parameter("wheel_base").value)
         self.angle_command_min = float(self.get_parameter("angle_command_min").value)
@@ -173,6 +174,12 @@ class XycarMotorBridge(Node):
             self._motor_subscriptions.append(
                 self.create_subscription(Float32MultiArray, topic, self.on_motor_command, 10)
             )
+        self.episode_reset_sub = self.create_subscription(
+            Bool,
+            str(self.get_parameter("episode_reset_topic").value),
+            self.on_episode_reset,
+            10,
+        )
 
         self.create_timer(self.command_update_period_sec, self.on_timer)
         profile = (
@@ -222,6 +229,19 @@ class XycarMotorBridge(Node):
         self.speed_queue.append((now_ns + int(self.speed_delay_sec * 1.0e9), speed_cmd))
         self.last_command_time = now
         self.stop_sent = False
+
+    def on_episode_reset(self, msg: Bool) -> None:
+        if not msg.data:
+            return
+        self.angle_queue.clear()
+        self.speed_queue.clear()
+        self.active_angle_cmd = 0.0
+        self.active_speed_cmd = 0.0
+        self.applied_speed_mps = 0.0
+        self.last_command_time = None
+        self.last_update_ns = self.get_clock().now().nanoseconds
+        self.cmd_vel_pub.publish(Twist())
+        self.stop_sent = True
 
     def _steering_response(self, angle_cmd: float) -> tuple[float, float]:
         if self.use_measured_steering_map:

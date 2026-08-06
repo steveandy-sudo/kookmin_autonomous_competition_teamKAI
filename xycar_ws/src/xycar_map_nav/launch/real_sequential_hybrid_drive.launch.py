@@ -1,4 +1,4 @@
-"""Start perception, RL/rule candidates, and sequential gate arbitration."""
+"""Start lane RULE, cone, vehicle avoidance, and final arbitration."""
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
@@ -16,13 +16,6 @@ def generate_launch_description():
             FindPackageShare("lane_seg_control"),
             "launch",
             "lane_seg_lraspp_low_latency_real.launch.py",
-        ]
-    )
-    rl_launch = PathJoinSubstitution(
-        [
-            FindPackageShare("xycar_rl"),
-            "launch",
-            "real_shadow.launch.py",
         ]
     )
     rule_base = PathJoinSubstitution(
@@ -66,7 +59,6 @@ def generate_launch_description():
             "wide_camera_fisheye_1280x1024_20260708.yaml",
         ]
     )
-    checkpoint_path = LaunchConfiguration("checkpoint_path")
     drive_enabled = LaunchConfiguration("drive_enabled")
     speed_command = LaunchConfiguration("speed_command")
     scan_topic = LaunchConfiguration("scan_topic")
@@ -75,10 +67,9 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("drive_enabled", default_value="false"),
             DeclareLaunchArgument("gate_arming_required", default_value="false"),
-            DeclareLaunchArgument("force_rule_only", default_value="false"),
+            DeclareLaunchArgument("force_rule_only", default_value="true"),
             DeclareLaunchArgument("start_perception", default_value="true"),
             DeclareLaunchArgument("start_rule", default_value="true"),
-            DeclareLaunchArgument("start_rl", default_value="true"),
             DeclareLaunchArgument("start_cone", default_value="true"),
             DeclareLaunchArgument(
                 "start_object_detection", default_value="true"
@@ -96,7 +87,7 @@ def generate_launch_description():
                 "pure_pursuit_weight", default_value="0.9"
             ),
             DeclareLaunchArgument(
-                "target_left_offset_m", default_value="0.15"
+                "target_left_offset_m", default_value="0.09"
             ),
             DeclareLaunchArgument(
                 "start_waypoint_number", default_value="1"
@@ -107,18 +98,6 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "perception_max_output_rate_hz", default_value="10.0"
             ),
-            DeclareLaunchArgument(
-                "checkpoint_path",
-                default_value=PathJoinSubstitution(
-                    [
-                        FindPackageShare("xycar_rl"),
-                        "models",
-                        "lap_time_speed_only_round02_20260723",
-                        "camera_speed_lap_time_speed_only_actor.pth",
-                    ]
-                ),
-            ),
-            DeclareLaunchArgument("model_speed_cap", default_value="30.0"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(perception_launch),
                 condition=IfCondition(LaunchConfiguration("start_perception")),
@@ -156,8 +135,7 @@ def generate_launch_description():
                             LaunchConfiguration("pure_pursuit_weight"),
                             value_type=float,
                         ),
-                        # Apply the same configurable left correction to RULE
-                        # and learned-policy targets.
+                        # Static calibration plus live avoidance offset.
                         "target_right_offset_m": 0.0,
                         "target_left_offset_m": ParameterValue(
                             LaunchConfiguration("target_left_offset_m"),
@@ -169,48 +147,6 @@ def generate_launch_description():
                         ),
                     },
                 ],
-            ),
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(rl_launch),
-                condition=IfCondition(LaunchConfiguration("start_rl")),
-                launch_arguments={
-                    "policy_kind": "camera_speed_td3_bc",
-                    "checkpoint_path": checkpoint_path,
-                    "image_topic": "/perception/canonical_road_image",
-                    # Shift the learned target left without a constant
-                    # steering bias that would make straight driving curve.
-                    "model_target_left_offset_m": LaunchConfiguration(
-                        "target_left_offset_m"
-                    ),
-                    "canonical_lateral_range_m": "1.4",
-                    "canonical_background_gray": "36",
-                    "scan_topic": scan_topic,
-                    "drive_enabled": "false",
-                    "min_speed_command": speed_command,
-                    "max_speed_command": LaunchConfiguration(
-                        "maximum_speed_command"
-                    ),
-                    "deployment_speed_cap": LaunchConfiguration(
-                        "model_speed_cap"
-                    ),
-                    "speed_temporal_alpha": "1.0",
-                    "max_steering_command": "42.0",
-                    "steering_gain": "1.0",
-                    "max_inference_rate_hz": "0.0",
-                    "lidar_safety_enabled": "false",
-                    "adaptive_steering_enabled": "false",
-                    "straight_steering_temporal_alpha": "1.0",
-                    "steering_temporal_alpha": "1.0",
-                    "steering_straight_threshold": "1.0",
-                    "steering_curve_threshold": "1.0",
-                    "straight_steering_rate_limit": "1.0",
-                    "curve_steering_rate_limit": "1.0",
-                    "steering_deadband": "0.0",
-                    "turn_in_anticipation_gain": "0.0",
-                    "turn_in_anticipation_threshold": "1.0",
-                    "preview_steering_enabled": "false",
-                    "device": "cpu",
-                }.items(),
             ),
             Node(
                 package="my_rule",

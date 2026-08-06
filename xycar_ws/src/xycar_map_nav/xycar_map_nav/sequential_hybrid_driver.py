@@ -331,7 +331,7 @@ class SequentialHybridDriver(Node):
     def _declare_parameters(self) -> None:
         self.declare_parameter("drive_enabled", False)
         self.declare_parameter("gate_arming_required", False)
-        self.declare_parameter("force_rule_only", False)
+        self.declare_parameter("force_rule_only", True)
         self.declare_parameter("drive_armed_topic", "/hybrid_gate/drive_armed")
         self.declare_parameter("control_rate_hz", 20.0)
         self.declare_parameter("rl_command_topic", "/rl/policy_motor_shadow")
@@ -355,7 +355,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("minimum_sector_points", 4)
         self.declare_parameter("minimum_sector_span_deg", 4.0)
         self.declare_parameter("scan_timeout_sec", 0.35)
-        self.declare_parameter("initial_source", "RL")
+        self.declare_parameter("initial_source", "RULE")
         self.declare_parameter("start_waypoint_number", 1)
         self.declare_parameter(
             "gate_names",

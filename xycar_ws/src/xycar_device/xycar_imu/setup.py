@@ -37,7 +37,6 @@ setup(
         'vpython',
         'wxPython'
     ],
-    tests_require=['pytest'],
     author='Kristof Robot, Tang Tiong Yew, Paul Bouchier, Peter Bartz',
     maintainer='Kristof Robot',
     keywords=['ROS2'],

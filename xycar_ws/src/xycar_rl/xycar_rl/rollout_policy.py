@@ -10,6 +10,7 @@ from xycar_rl.gazebo_env import GazeboXycarEnv
 from xycar_rl.camera_speed_models import normalize_speed_command
 from xycar_rl.canonical_preview import CanonicalPreviewSteering
 from xycar_rl.policy_loader import load_camera_speed_policy, load_steering_policy
+from xycar_rl.privileged_track_expert import PrivilegedTrackExpert
 from xycar_rl.sampling import signed_uniform
 from xycar_rl.steering_stabilizer import (
     AdaptiveSteeringStabilizer,
@@ -55,7 +56,8 @@ def parse_args(argv=None):
     parser.add_argument("--seed", type=int, default=20260716)
     parser.add_argument("--speed-command", type=float, default=4.0)
     parser.add_argument("--min-speed-command", type=float, default=4.0)
-    parser.add_argument("--max-speed-command", type=float, default=24.0)
+    parser.add_argument("--max-speed-command", type=float, default=25.0)
+    parser.add_argument("--target-right-offset-m", type=float, default=0.0)
     parser.add_argument(
         "--speed-cap-command",
         type=float,
@@ -129,8 +131,65 @@ def parse_args(argv=None):
     parser.add_argument("--recovery-min-yaw-deg", type=float, default=4.0)
     parser.add_argument("--recovery-max-yaw-deg", type=float, default=14.0)
     parser.add_argument("--s-curve-focus-probability", type=float, default=0.50)
+    parser.add_argument(
+        "--straight-segment-only",
+        action="store_true",
+        help=(
+            "Reset into a straight and end before the guarded curve preview; "
+            "intended for straight-policy data collection."
+        ),
+    )
+    parser.add_argument("--straight-curvature-threshold", type=float, default=0.10)
+    parser.add_argument("--straight-guard-distance-m", type=float, default=0.80)
+    parser.add_argument(
+        "--trace-privileged-expert",
+        action="store_true",
+        help=(
+            "Publish pose-based expert labels alongside learner actions. "
+            "The expert is used only to label simulation training data."
+        ),
+    )
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     return parser.parse_args(argv)
+
+
+def straight_segment_start_fractions(
+    track,
+    *,
+    curvature_threshold: float,
+    guard_distance_m: float,
+    samples: int = 1_000,
+) -> list[float]:
+    """Return one early start point for every guarded straight interval."""
+    threshold = max(0.0, float(curvature_threshold))
+    guard = max(0.0, float(guard_distance_m))
+    count = max(100, int(samples))
+    flags = []
+    for index in range(count):
+        progress_m = track.length_m * index / count
+        flags.append(
+            abs(track.curvature_at(progress_m, sample_distance_m=0.30))
+            <= threshold
+            and track.max_abs_curvature_ahead(
+                progress_m,
+                preview_distance_m=guard,
+            )
+            <= threshold
+        )
+    starts: list[float] = []
+    interval_start = None
+    for index, is_straight in enumerate(flags + [False]):
+        if is_straight and interval_start is None:
+            interval_start = index
+        elif not is_straight and interval_start is not None:
+            interval_size = index - interval_start
+            if interval_size >= 2:
+                start_index = interval_start + max(1, interval_size // 20)
+                starts.append((start_index / count) % 1.0)
+            interval_start = None
+    if not starts:
+        raise ValueError("track has no guarded straight segment")
+    return starts
 
 
 def main(argv=None) -> None:
@@ -146,7 +205,7 @@ def main(argv=None) -> None:
             args.checkpoint, device=device
         )
         checkpoint_min = float(policy_payload.get("min_speed_command", 4.0))
-        checkpoint_max = float(policy_payload.get("max_speed_command", 24.0))
+        checkpoint_max = float(policy_payload.get("max_speed_command", 25.0))
         if (
             abs(args.min_speed_command - checkpoint_min) > 1.0e-6
             or abs(args.max_speed_command - checkpoint_max) > 1.0e-6
@@ -169,6 +228,7 @@ def main(argv=None) -> None:
         min_speed_command=args.min_speed_command,
         max_speed_command=args.max_speed_command,
         control_rate_hz=args.control_rate_hz,
+        target_right_offset_m=args.target_right_offset_m,
     )
     rng = np.random.default_rng(args.seed)
     steering_stabilizer = AdaptiveSteeringStabilizer(
@@ -185,6 +245,26 @@ def main(argv=None) -> None:
         )
     )
     preview_steering = CanonicalPreviewSteering()
+    expert = (
+        PrivilegedTrackExpert(
+            env.track,
+            min_speed_command=args.min_speed_command,
+            max_speed_command=args.max_speed_command,
+            action_min_speed_command=args.min_speed_command,
+            action_max_speed_command=args.max_speed_command,
+        )
+        if args.trace_privileged_expert
+        else None
+    )
+    straight_starts = (
+        straight_segment_start_fractions(
+            env.track,
+            curvature_threshold=args.straight_curvature_threshold,
+            guard_distance_m=args.straight_guard_distance_m,
+        )
+        if args.straight_segment_only
+        else []
+    )
     global_step = 0
     try:
         for episode in range(args.episodes):
@@ -206,6 +286,24 @@ def main(argv=None) -> None:
                 options["yaw_error_rad"] = math.radians(
                     float(args.start_yaw_error_deg)
                 )
+            elif args.straight_segment_only:
+                options["progress_fraction"] = float(
+                    straight_starts[episode % len(straight_starts)]
+                )
+                if rng.random() < args.recovery_probability:
+                    options["lateral_error_m"] = signed_uniform(
+                        rng,
+                        args.recovery_min_lateral_m,
+                        args.recovery_max_lateral_m,
+                    )
+                    options["yaw_error_rad"] = signed_uniform(
+                        rng,
+                        math.radians(args.recovery_min_yaw_deg),
+                        math.radians(args.recovery_max_yaw_deg),
+                    )
+                else:
+                    options["lateral_error_m"] = 0.0
+                    options["yaw_error_rad"] = 0.0
             else:
                 if rng.random() < args.s_curve_focus_probability:
                     options["progress_fraction"] = float(
@@ -222,7 +320,7 @@ def main(argv=None) -> None:
                         math.radians(args.recovery_min_yaw_deg),
                         math.radians(args.recovery_max_yaw_deg),
                     )
-            observation, _ = env.reset(
+            observation, info = env.reset(
                 seed=args.seed + episode,
                 options=options or None,
             )
@@ -230,6 +328,8 @@ def main(argv=None) -> None:
                 policy.reset()
                 steering_stabilizer.reset()
                 preview_steering.reset()
+            if expert is not None:
+                expert.reset()
             total_reward = 0.0
             speed_commands = []
             cross_track_errors = []
@@ -238,7 +338,6 @@ def main(argv=None) -> None:
             large_oscillation_events = 0
             large_oscillation_steps = 0
             large_oscillation_active = False
-            info = {}
             previous_steering = 0.0
             metric_previous_steering = 0.0
             previous_speed = -1.0
@@ -314,9 +413,28 @@ def main(argv=None) -> None:
                 ):
                     straight_steering_flips += 1
                 metric_previous_steering = applied_steering
+                expert_action = None if expert is None else expert.action(info)
                 observation, reward, terminated, truncated, info = env.step(
-                    action
+                    action,
+                    trace_action=expert_action,
                 )
+                if args.straight_segment_only and not (
+                    abs(
+                        env.track.curvature_at(
+                            float(info.get("progress_m", 0.0)),
+                            sample_distance_m=0.30,
+                        )
+                    )
+                    <= args.straight_curvature_threshold
+                    and env.track.max_abs_curvature_ahead(
+                        float(info.get("progress_m", 0.0)),
+                        preview_distance_m=args.straight_guard_distance_m,
+                    )
+                    <= args.straight_curvature_threshold
+                ):
+                    info = dict(info)
+                    info["reason"] = "straight_segment_complete"
+                    truncated = True
                 oscillation_term = float(
                     info.get("reward_terms", {}).get("large_oscillation", 0.0)
                 )

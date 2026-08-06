@@ -23,7 +23,7 @@ setup(
     maintainer="teamkai",
     maintainer_email="teamkai@example.com",
     description=(
-        "Object semantics and LiDAR cone command candidates for SLAM control."
+        "Object semantics and LiDAR cone commands for integrated rule driving."
     ),
     license="MIT",
     tests_require=["pytest"],

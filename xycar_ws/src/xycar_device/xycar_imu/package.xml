@@ -31,10 +31,9 @@
     <depend>wxPython</depend>
     <depend>transforms3d</depend>
 
-    <test_depend>python3-pytest</test_depend>
-
     <export>
         <build_type>ament_python</build_type>
     </export>
 </package>
+
 

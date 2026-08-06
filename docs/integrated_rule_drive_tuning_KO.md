@@ -36,7 +36,7 @@ SHA256: 875117819232ba81e385ca0b772e4c5dfdb868abb084e95714d95dc084767070
 | 일반 주행 속도 command | 3.0 | 시작 시 3.0~30.0 입력 |
 | 곡선 lookahead distance | 0.50 m | 시작 시 변경 가능 |
 | 곡선 Stanley 비율 | 10% | Pure Pursuit는 자동으로 90% |
-| 좌측 목표 보정 | 15 cm | 룰베이스 목표 경로에 적용 |
+| 좌측 목표 보정 | 9 cm | BEV 영점 보정 후 기존 실차 궤적을 유지하는 시작값 |
 | 콘 주행 속도 command | 6.0 | 일반 주행 속도와 분리 |
 | 최대 조향 command | +/-42 | 하드웨어 명령 한계 |
 | 룰 명령 주기 | 10 Hz | canonical 입력이 정상일 때 |
@@ -82,26 +82,26 @@ LD를 줄이면 가까운 경로점을 보므로 곡선 진입이 빨라지지�
 | `pure_pursuit_weight` | PP 혼합 비율, Stanley는 `1-value` |
 | `target_left_offset_m` | 목표 경로 좌측 보정 |
 | `cone_speed_command` | 콘 주행 전용 속도 |
-| `force_rule_only` | RL 대신 RULE을 기본 주행원으로 고정 |
+| `force_rule_only` | RULE을 기본 주행원으로 고정, 기본 `true` |
 
 ### 실행 스크립트
 
 - `run_complete_rule_only.sh`: 센서 확인부터 SPACE 주행까지 한 번에 실행
 - `run_complete_space_hybrid.sh`: 입력 검증과 센서 준비
 - `run_space_hybrid_test.sh`: 제어 launch 실행 및 READY 상태 확인
-- `record_integrated_drive_bag.sh`: 통합 주행 rosbag과 파라미터 저장
-- `replay_integrated_drive_bag.sh`: 저장된 주행을 RViz와 진단 화면으로 재생
 
 ## 4. 빌드
 
 ```bash
-cd /home/xytron/kookmin_ty/slam_gazebo_controller/xycar_ws
+cd /path/to/your/xycar_ws
 set +u
 source /opt/ros/humble/setup.bash
 
 colcon build --packages-select \
   wide_camera \
+  xycar_vesc_driver \
   lane_seg_control \
+  my_rule_msgs \
   my_rule \
   xycar_rule_drive \
   xycar_map_nav \
@@ -117,7 +117,7 @@ unset ROS_NAMESPACE
 모터 배터리, 비상 정지 담당자, 카메라와 LiDAR 고정을 먼저 확인한다.
 
 ```bash
-cd /home/xytron/kookmin_ty/slam_gazebo_controller/xycar_ws
+cd /path/to/your/xycar_ws
 bash src/xycar_map_nav/scripts/run_complete_rule_only.sh
 ```
 
@@ -127,47 +127,13 @@ bash src/xycar_map_nav/scripts/run_complete_rule_only.sh
 주행 속도 command: 5
 곡선 Lookahead distance(m): 0.7
 곡선 Stanley 비율(%): 10
-좌측 주행 보정 거리(cm): 15
+좌측 주행 보정 거리(cm): 9
 ```
 
 모든 토픽이 준비되면 `READY`가 한 번 출력된다. SPACE를 한 번 누르면
 주행하고 다시 누르면 정지한다.
 
-## 6. Rosbag 기록
-
-주행보다 먼저 별도 터미널에서 기록을 시작한다.
-
-```bash
-cd /home/xytron/kookmin_ty/slam_gazebo_controller/xycar_ws
-set +u
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-export ROS_DOMAIN_ID=7
-unset ROS_NAMESPACE
-
-bash src/xycar_map_nav/scripts/record_integrated_drive_bag.sh \
-  rule_tuning_ld050_stanley10_run01
-```
-
-기록 종료는 `Ctrl+C`다. 결과는 다음 위치에 저장된다.
-
-```text
-~/rosbags/integrated_drive/<세션명>_<날짜시간>/
-```
-
-각 세션에는 다음 자료가 포함된다.
-
-- `bag/`: zstd 압축 rosbag
-- `launch_inputs.yaml`: 속도, LD, Stanley, 좌측 보정, 콘 속도
-- `parameters/`: 실제 실행 노드의 전체 ROS 파라미터
-- `run_manifest.yaml`: Git commit, 브랜치, 환경과 기록 옵션
-- `git_diff_at_start.patch`: 시험 당시 미커밋 코드
-- `source_snapshot.tar.zst`: 재현용 소스 스냅샷
-
-세션 이름에는 비교할 값을 넣는다. 예를 들어
-`rule_tuning_ld070_stanley20_run02`처럼 기록하면 분석 시 혼동이 적다.
-
-## 7. Pure Pursuit와 Stanley 튜닝 계획
+## 6. Pure Pursuit와 Stanley 튜닝 계획
 
 먼저 속도, 좌측 보정, 카메라 위치를 고정하고 LD와 Stanley만 바꾼다.
 한 번에 두 개 이상의 조건을 바꾸지 않는다.
@@ -195,7 +161,7 @@ bash src/xycar_map_nav/scripts/record_integrated_drive_bag.sh \
 트랙 이탈이나 큰 오실레이션이 발생한 세션은 성공 세션과 분리해서
 보존한다. 실패 직전 영상과 명령이 다음 파라미터를 정하는 핵심 자료다.
 
-## 8. 조향각 기반 속도 제어 계획
+## 7. 조향각 기반 속도 제어 계획
 
 현재 일반 룰 속도는 시작 시 입력한 고정 command다. 다음 단계에서는 최종
 조향 command의 절댓값에 따라 속도를 연속적으로 낮추는 프로파일을 시험한다.
@@ -213,7 +179,7 @@ bash src/xycar_map_nav/scripts/record_integrated_drive_bag.sh \
 바꾸면 조향 개선과 감속 효과를 구분할 수 없다. 가속 복귀에는 별도 rate
 limit를 둬 곡선 출구에서 급가속하지 않게 해야 한다.
 
-## 9. 남은 미션별 작업
+## 8. 남은 미션별 작업
 
 ### 장애물 회피
 
@@ -237,7 +203,7 @@ limit를 둬 곡선 출구에서 급가속하지 않게 해야 한다.
 - 정지선과의 거리 조건 추가
 - 녹색 전환 오검출 및 timeout을 shadow mode에서 먼저 검증
 
-## 10. 완료 기준
+## 9. 완료 기준
 
 다음 조건을 만족하면 룰베이스 기본값 후보로 승격한다.
 

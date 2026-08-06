@@ -2,11 +2,12 @@
 
 set -eo pipefail
 
-WORKSPACE="/home/xytron/kookmin_ty/slam_gazebo_controller/xycar_ws"
+SCRIPT_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+WORKSPACE="${XYCAR_WS:-$(cd -- "$SCRIPT_DIR/../../.." && pwd)}"
 CAMERA_DEVICE="/dev/v4l/by-id/usb-HD_USB_Camera_HD_USB_Camera-video-index0"
 SPEED_COMMAND="${1:-}"
 START_WAYPOINT="${2:-}"
-RUN_MODE="${3:-${RUN_MODE:-hybrid}}"
+RUN_MODE="${3:-${RUN_MODE:-rule}}"
 MODEL_PROFILE="${4:-${MODEL_PROFILE:-speed100}}"
 LOOKAHEAD_DISTANCE="${5:-${LOOKAHEAD_DISTANCE:-}}"
 STANLEY_PERCENT="${6:-${STANLEY_PERCENT:-}}"
@@ -37,20 +38,14 @@ if [[ ! "$SPEED_COMMAND" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
 fi
 SPEED_COMMAND="$(awk -v speed="$SPEED_COMMAND" 'BEGIN { printf "%.3f", speed }')"
 
-if [[ "$RUN_MODE" == "rule" ]]; then
-  START_WAYPOINT=1
-elif [[ -z "$START_WAYPOINT" ]]; then
-  read -r -p "시작 목표 웨이포인트 번호 [1-6, 기본 1]: " START_WAYPOINT
-  START_WAYPOINT="${START_WAYPOINT:-1}"
-fi
-if [[ "$RUN_MODE" == "hybrid" && \
-  "$MODEL_PROFILE" != "latest" && "$MODEL_PROFILE" != "speed100" ]]; then
+if [[ "$RUN_MODE" != "rule" ]]; then
   problem \
-    "모델 선택 오류" \
-    "'$MODEL_PROFILE'은 존재하지 않는 모델 프로필입니다." \
-    "latest 또는 speed100 중 하나를 사용하세요."
+    "주행 모드 오류" \
+    "이 SLAM-free 통합본은 RULE 모드만 지원합니다." \
+    "RUN_MODE를 지정하지 않거나 rule로 지정하세요."
   exit 2
 fi
+START_WAYPOINT=1
 if [[ ! "$START_WAYPOINT" =~ ^[1-6]$ ]]; then
   problem \
     "웨이포인트 입력 오류" \
@@ -94,8 +89,8 @@ STANLEY_PERCENT="$(awk -v value="$STANLEY_PERCENT" \
   'BEGIN { printf "%.3f", value }')"
 
 if [[ -z "$LEFT_OFFSET_CM" ]]; then
-  read -r -p "좌측 주행 보정 거리 [cm, 기본 15]: " LEFT_OFFSET_CM
-  LEFT_OFFSET_CM="${LEFT_OFFSET_CM:-15}"
+  read -r -p "좌측 주행 보정 거리 [cm, 기본 9]: " LEFT_OFFSET_CM
+  LEFT_OFFSET_CM="${LEFT_OFFSET_CM:-9}"
 fi
 LEFT_OFFSET_CM="${LEFT_OFFSET_CM/,/.}"
 if [[ ! "$LEFT_OFFSET_CM" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
@@ -113,11 +108,6 @@ LEFT_OFFSET_CM="$(awk -v value="$LEFT_OFFSET_CM" \
 if awk -v speed="$SPEED_COMMAND" 'BEGIN { exit !(speed > 10.0) }'; then
   echo "[주의] command $SPEED_COMMAND은 기존 실차 시험 상한 10을 초과합니다."
 fi
-if [[ "$RUN_MODE" == "hybrid" && "$MODEL_PROFILE" == "latest" ]] && \
-  awk -v speed="$SPEED_COMMAND" 'BEGIN { exit !(speed > 25.0) }'; then
-  echo "[주의] command $SPEED_COMMAND은 현재 RL 모델 학습 범위 상한 25를 초과합니다."
-fi
-
 set +u
 source /opt/ros/humble/setup.bash
 source "$WORKSPACE/install/setup.bash"
@@ -251,9 +241,6 @@ echo "========== 모든 센서 정상 =========="
 echo "속도 상한: $SPEED_COMMAND | 시작 목표: WP$START_WAYPOINT"
 echo "곡선 제어: LD=${LOOKAHEAD_DISTANCE}m | Stanley=${STANLEY_PERCENT}%"
 echo "좌측 주행 보정: ${LEFT_OFFSET_CM}cm"
-if [[ "$RUN_MODE" == "hybrid" ]]; then
-  echo "모델 프로필: $MODEL_PROFILE"
-fi
 echo "제어기를 준비합니다. 아직 차량은 정지 상태입니다."
 echo
 

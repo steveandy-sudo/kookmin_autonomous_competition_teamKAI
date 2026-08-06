@@ -21,6 +21,7 @@ from xycar_rl.lap_time_selection import (
 from xycar_rl.reward import calculate_reward, lap_time_objective_weights
 from xycar_rl.track_geometry import TrackProjection
 from xycar_rl.train_lap_time_online import ReplayBuffer
+from xycar_rl.train_lap_time_online import parse_args as parse_online_args
 
 
 def projection(cross_track_error_m=0.0):
@@ -34,6 +35,20 @@ def projection(cross_track_error_m=0.0):
         heading_error_rad=0.0,
         segment_index=0,
     )
+
+
+class OnlineTrainingArgumentTest(unittest.TestCase):
+    def test_speed_extension_only_argument(self):
+        args = parse_online_args(
+            [
+                "--initial-checkpoint",
+                "/tmp/actor.pth",
+                "--output-dir",
+                "/tmp/output",
+                "--speed-extension-only",
+            ]
+        )
+        self.assertTrue(args.speed_extension_only)
 
 
 class LapTimeRewardTest(unittest.TestCase):
