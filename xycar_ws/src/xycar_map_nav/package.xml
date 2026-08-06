@@ -15,13 +15,18 @@
   <exec_depend>lane_seg_control</exec_depend>
   <exec_depend>my_rule</exec_depend>
   <exec_depend>my_rule_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>std_srvs</exec_depend>
+  <exec_depend>tf2_msgs</exec_depend>
   <exec_depend>wide_camera</exec_depend>
   <exec_depend>xycar_lidar</exec_depend>
   <exec_depend>xycar_rule_drive</exec_depend>
+  <exec_depend>xycar_rl</exec_depend>
   <exec_depend>xycar_vesc_driver</exec_depend>
 
   <test_depend>ament_pytest</test_depend>

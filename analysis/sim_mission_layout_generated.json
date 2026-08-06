@@ -1,0 +1,189 @@
+{
+  "moving_vehicle": {
+    "name": "mission_moving_vehicle",
+    "class_name": "car",
+    "pose": [
+      -4.6,
+      5.59,
+      0.08,
+      0.0,
+      0.0,
+      3.141592654
+    ],
+    "speed_mps": 0.16,
+    "shuttle_min_x": -7.7,
+    "shuttle_max_x": -4.6,
+    "size": [
+      0.56,
+      0.3,
+      0.16
+    ],
+    "color": [
+      0.1,
+      0.35,
+      0.95,
+      1.0
+    ]
+  },
+  "fixed_vehicles": [
+    {
+      "name": "mission_fixed_vehicle",
+      "class_name": "car",
+      "pose": [
+        1.3,
+        -4.56,
+        0.08,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "size": [
+        0.58,
+        0.31,
+        0.16
+      ],
+      "color": [
+        0.9,
+        0.12,
+        0.1,
+        1.0
+      ]
+    }
+  ],
+  "traffic_light": {
+    "name": "mission_traffic_light",
+    "class_name": "green",
+    "pose": [
+      -3.9,
+      4.94,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "active_color": "green",
+    "detection_offset_xy": [
+      0.0,
+      0.58
+    ],
+    "head_width_m": 0.5,
+    "head_height_m": 0.16
+  },
+  "cone_count": 22,
+  "cone_positions": [
+    {
+      "name": "mission_cone_east_01",
+      "x": -8.44,
+      "y": 2.85
+    },
+    {
+      "name": "mission_cone_west_01",
+      "x": -9.22,
+      "y": 2.85
+    },
+    {
+      "name": "mission_cone_east_02",
+      "x": -8.44,
+      "y": 2.4
+    },
+    {
+      "name": "mission_cone_west_02",
+      "x": -9.22,
+      "y": 2.4
+    },
+    {
+      "name": "mission_cone_east_03",
+      "x": -8.44,
+      "y": 1.9500000000000002
+    },
+    {
+      "name": "mission_cone_west_03",
+      "x": -9.22,
+      "y": 1.9500000000000002
+    },
+    {
+      "name": "mission_cone_east_04",
+      "x": -8.44,
+      "y": 1.5
+    },
+    {
+      "name": "mission_cone_west_04",
+      "x": -9.22,
+      "y": 1.5
+    },
+    {
+      "name": "mission_cone_east_05",
+      "x": -8.44,
+      "y": 1.05
+    },
+    {
+      "name": "mission_cone_west_05",
+      "x": -9.22,
+      "y": 1.05
+    },
+    {
+      "name": "mission_cone_east_06",
+      "x": -8.44,
+      "y": 0.6000000000000001
+    },
+    {
+      "name": "mission_cone_west_06",
+      "x": -9.22,
+      "y": 0.6000000000000001
+    },
+    {
+      "name": "mission_cone_east_07",
+      "x": -8.44,
+      "y": 0.1499999999999999
+    },
+    {
+      "name": "mission_cone_west_07",
+      "x": -9.22,
+      "y": 0.1499999999999999
+    },
+    {
+      "name": "mission_cone_east_08",
+      "x": -8.44,
+      "y": -0.2999999999999998
+    },
+    {
+      "name": "mission_cone_west_08",
+      "x": -9.22,
+      "y": -0.2999999999999998
+    },
+    {
+      "name": "mission_cone_east_09",
+      "x": -8.44,
+      "y": -0.75
+    },
+    {
+      "name": "mission_cone_west_09",
+      "x": -9.22,
+      "y": -0.75
+    },
+    {
+      "name": "mission_cone_east_10",
+      "x": -8.44,
+      "y": -1.1999999999999997
+    },
+    {
+      "name": "mission_cone_west_10",
+      "x": -9.22,
+      "y": -1.1999999999999997
+    },
+    {
+      "name": "mission_cone_east_11",
+      "x": -8.44,
+      "y": -1.65
+    },
+    {
+      "name": "mission_cone_west_11",
+      "x": -9.22,
+      "y": -1.65
+    }
+  ],
+  "config": "xycar_ws/src/xycar_map_nav/config/sim_mission_layout.yaml",
+  "base_sdf": "worlds/kookmin_xycar_track_cad_v4.sdf",
+  "output_sdf": "worlds/kookmin_xycar_track_cad_v4_missions.sdf",
+  "world_name": "kookmin_xycar_track"
+}

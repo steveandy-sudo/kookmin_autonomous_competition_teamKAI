@@ -34,6 +34,10 @@ setup(
         "console_scripts": [
             "sequential_hybrid_driver = "
             "xycar_map_nav.sequential_hybrid_driver:main",
+            "sim_mission_ground_truth = "
+            "xycar_map_nav.sim_mission_ground_truth:main",
+            "sim_moving_vehicle_controller = "
+            "xycar_map_nav.sim_moving_vehicle_controller:main",
             "space_drive_gate = xycar_map_nav.space_drive_gate:main",
         ],
     },
