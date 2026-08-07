@@ -197,6 +197,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-gui", action="store_true")
     parser.add_argument("--display-mode", choices=DISPLAY_MODES, default="minimal")
     parser.add_argument("--show-bev-detection", action="store_true")
+    parser.add_argument(
+        "--publish-canonical",
+        nargs="?",
+        const=True,
+        default=True,
+        type=parse_bool,
+        help="Publish canonical images in addition to the direct BEV outputs.",
+    )
     parser.add_argument("--yolo-conf-threshold", type=probability, default=0.20)
     parser.add_argument("--publish-debug-images", nargs="?", const=True, default=False, type=parse_bool)
     parser.add_argument("--record", action="store_true")
@@ -825,18 +833,23 @@ class LaneSegUnifiedViewer(Node):
         self.bev_white_pub = self.create_publisher(Image, "/lane_seg_bev/white_mask", qos_profile_sensor_data)
         self.bev_yellow_pub = self.create_publisher(Image, "/lane_seg_bev/yellow_mask", qos_profile_sensor_data)
         self.bev_debug_pub = self.create_publisher(Image, "/lane_seg_bev/debug_image", qos_profile_sensor_data)
-        self.canonical_pub = self.create_publisher(
-            Image, "/perception/canonical_road_image", 10
-        )
-        self.canonical_white_pub = self.create_publisher(
-            Image, "/perception/canonical_white_mask", 10
-        )
-        self.canonical_yellow_pub = self.create_publisher(
-            Image, "/perception/canonical_yellow_mask", 10
-        )
-        self.canonical_valid_pub = self.create_publisher(
-            Image, "/perception/canonical_valid_mask", 10
-        )
+        self.canonical_pub = None
+        self.canonical_white_pub = None
+        self.canonical_yellow_pub = None
+        self.canonical_valid_pub = None
+        if self.args.publish_canonical:
+            self.canonical_pub = self.create_publisher(
+                Image, "/perception/canonical_road_image", 10
+            )
+            self.canonical_white_pub = self.create_publisher(
+                Image, "/perception/canonical_white_mask", 10
+            )
+            self.canonical_yellow_pub = self.create_publisher(
+                Image, "/perception/canonical_yellow_mask", 10
+            )
+            self.canonical_valid_pub = self.create_publisher(
+                Image, "/perception/canonical_valid_mask", 10
+            )
         self.path_pixels_pub = self.create_publisher(Float32MultiArray, "/lane_path/path_pixels", 10)
         self.path_norm_pub = self.create_publisher(Float32MultiArray, "/lane_path/path_normalized", 10)
         self.diagnostics_pub = self.create_publisher(Float32MultiArray, "/lane_path/diagnostics", 10)
@@ -1143,50 +1156,51 @@ class LaneSegUnifiedViewer(Node):
         self.bev_white_pub.publish(image_msg_from_cv(self.bridge, processed.white_bev, "mono8", frame.header))
         self.bev_yellow_pub.publish(image_msg_from_cv(self.bridge, processed.yellow_bev, "mono8", frame.header))
 
-        valid = np.full(processed.white_bev.shape, 255, dtype=np.uint8)
-        canonical = make_canonical_road_image_from_masks(
-            processed.white_bev,
-            processed.yellow_bev,
-            valid_mask=valid,
-            lateral_m_per_px=0.0021875,
-            forward_m_per_px=0.003125,
-            lateral_range_m=1.4,
-            forward_range_m=1.5,
-            output_width=256,
-            output_height=144,
-            background_gray=36,
-            line_width_px=5,
-            min_component_area_px=1,
-            geometry_filter_enabled=False,
-            preserve_white_mask=True,
-            top_ignore_m=0.0,
-            bottom_ignore_m=0.0,
-            return_stages=True,
-        )
-        if not isinstance(canonical, CanonicalRoadStages):
-            raise RuntimeError("canonical stage output was not requested")
-        canonical_header = copy.deepcopy(frame.header)
-        canonical_header.frame_id = "base_footprint"
-        self.canonical_pub.publish(
-            image_msg_from_cv(
-                self.bridge, canonical.road_image, "bgr8", canonical_header
+        if self.args.publish_canonical:
+            valid = np.full(processed.white_bev.shape, 255, dtype=np.uint8)
+            canonical = make_canonical_road_image_from_masks(
+                processed.white_bev,
+                processed.yellow_bev,
+                valid_mask=valid,
+                lateral_m_per_px=0.0021875,
+                forward_m_per_px=0.003125,
+                lateral_range_m=1.4,
+                forward_range_m=1.5,
+                output_width=256,
+                output_height=144,
+                background_gray=36,
+                line_width_px=5,
+                min_component_area_px=1,
+                geometry_filter_enabled=False,
+                preserve_white_mask=True,
+                top_ignore_m=0.0,
+                bottom_ignore_m=0.0,
+                return_stages=True,
             )
-        )
-        self.canonical_white_pub.publish(
-            image_msg_from_cv(
-                self.bridge, canonical.white_mask, "mono8", canonical_header
+            if not isinstance(canonical, CanonicalRoadStages):
+                raise RuntimeError("canonical stage output was not requested")
+            canonical_header = copy.deepcopy(frame.header)
+            canonical_header.frame_id = "base_footprint"
+            self.canonical_pub.publish(
+                image_msg_from_cv(
+                    self.bridge, canonical.road_image, "bgr8", canonical_header
+                )
             )
-        )
-        self.canonical_yellow_pub.publish(
-            image_msg_from_cv(
-                self.bridge, canonical.yellow_mask, "mono8", canonical_header
+            self.canonical_white_pub.publish(
+                image_msg_from_cv(
+                    self.bridge, canonical.white_mask, "mono8", canonical_header
+                )
             )
-        )
-        self.canonical_valid_pub.publish(
-            image_msg_from_cv(
-                self.bridge, canonical.valid_mask, "mono8", canonical_header
+            self.canonical_yellow_pub.publish(
+                image_msg_from_cv(
+                    self.bridge, canonical.yellow_mask, "mono8", canonical_header
+                )
             )
-        )
+            self.canonical_valid_pub.publish(
+                image_msg_from_cv(
+                    self.bridge, canonical.valid_mask, "mono8", canonical_header
+                )
+            )
         if self.args.publish_debug_images:
             if processed.bev_detection_panel is not None:
                 self.bev_debug_pub.publish(image_msg_from_cv(self.bridge, processed.bev_detection_panel, "bgr8", frame.header))

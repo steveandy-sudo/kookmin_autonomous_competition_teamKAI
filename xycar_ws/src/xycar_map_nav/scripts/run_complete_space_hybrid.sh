@@ -15,12 +15,9 @@ fi
 export XYCAR_WS="$WORKSPACE"
 CAMERA_DEVICE="/dev/v4l/by-id/usb-HD_USB_Camera_HD_USB_Camera-video-index0"
 SPEED_COMMAND="${1:-}"
-START_WAYPOINT="${2:-}"
-RUN_MODE="${3:-${RUN_MODE:-rule}}"
-MODEL_PROFILE="${4:-${MODEL_PROFILE:-speed100}}"
-LOOKAHEAD_DISTANCE="${5:-${LOOKAHEAD_DISTANCE:-}}"
-STANLEY_PERCENT="${6:-${STANLEY_PERCENT:-}}"
-LEFT_OFFSET_CM="${7:-${LEFT_OFFSET_CM:-}}"
+LOOKAHEAD_DISTANCE="${2:-${LOOKAHEAD_DISTANCE:-}}"
+STANLEY_PERCENT="${3:-${STANLEY_PERCENT:-}}"
+LEFT_OFFSET_CM="${4:-${LEFT_OFFSET_CM:-}}"
 PURE_PURSUIT_CONTROL_X_M="${PURE_PURSUIT_CONTROL_X_M:-}"
 STANLEY_CONTROL_X_M="${STANLEY_CONTROL_X_M:-}"
 STANLEY_GAIN="${STANLEY_GAIN:-}"
@@ -30,6 +27,9 @@ STRAIGHT_STANLEY_GAIN="${STRAIGHT_STANLEY_GAIN:-}"
 STRAIGHT_STANLEY_SOFTENING_MPS="${STRAIGHT_STANLEY_SOFTENING_MPS:-}"
 OPPOSED_STANLEY_PERCENT="${OPPOSED_STANLEY_PERCENT:-}"
 CONTROL_LATENCY_PREVIEW_SEC="${CONTROL_LATENCY_PREVIEW_SEC:-}"
+CURVE_STEERING_MULTIPLIER_ENABLED="${CURVE_STEERING_MULTIPLIER_ENABLED:-}"
+CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND="${CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND:-}"
+CURVE_STEERING_MULTIPLIER="${CURVE_STEERING_MULTIPLIER:-}"
 ADAPTIVE_STEERING_SPEED_ENABLED="${ADAPTIVE_STEERING_SPEED_ENABLED:-}"
 STEERING_TURN_SPEED_COMMAND="${STEERING_TURN_SPEED_COMMAND:-}"
 STEERING_SLOWDOWN_START_ANGLE="${STEERING_SLOWDOWN_START_ANGLE:-}"
@@ -77,7 +77,11 @@ prompt_bool() {
   local default_value="$3"
   local value="${!variable_name:-}"
   if [[ -z "$value" ]]; then
-    read -r -p "$prompt [Y/n]: " value
+    local prompt_hint="[Y/n]"
+    if [[ "${default_value,,}" =~ ^(n|no|false|0)$ ]]; then
+      prompt_hint="[y/N]"
+    fi
+    read -r -p "$prompt $prompt_hint: " value
     value="${value:-$default_value}"
   fi
   case "${value,,}" in
@@ -96,8 +100,8 @@ prompt_bool() {
 if [[ "$STEERING_ONLY" == "true" ]]; then
   SPEED_COMMAND=0.0
 elif [[ -z "$SPEED_COMMAND" ]]; then
-  read -r -p "주행 속도 command [3.0-30.0, 기본 3.0]: " SPEED_COMMAND
-  SPEED_COMMAND="${SPEED_COMMAND:-3.0}"
+  read -r -p "주행 속도 command [3.0-30.0, 기본 16.0]: " SPEED_COMMAND
+  SPEED_COMMAND="${SPEED_COMMAND:-16.0}"
 fi
 if [[ "$STEERING_ONLY" != "true" ]]; then
   if [[ ! "$SPEED_COMMAND" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
@@ -135,22 +139,6 @@ else
   STEERING_SLOWDOWN_START_ANGLE=20.000
   STEERING_FULL_SLOWDOWN_ANGLE=42.000
   STEERING_TURN_SPEED_COMMAND=8.000
-fi
-
-if [[ "$RUN_MODE" != "rule" ]]; then
-  problem \
-    "주행 모드 오류" \
-    "이 SLAM-free 통합본은 RULE 모드만 지원합니다." \
-    "RUN_MODE를 지정하지 않거나 rule로 지정하세요."
-  exit 2
-fi
-START_WAYPOINT=1
-if [[ ! "$START_WAYPOINT" =~ ^[1-6]$ ]]; then
-  problem \
-    "웨이포인트 입력 오류" \
-    "'$START_WAYPOINT'은 존재하지 않는 웨이포인트입니다." \
-    "WP 글자를 붙이지 말고 1부터 6 중 숫자 하나만 입력하세요. 예: 1"
-  exit 2
 fi
 
 if [[ -z "$LOOKAHEAD_DISTANCE" ]]; then
@@ -192,23 +180,35 @@ prompt_float PURE_PURSUIT_CONTROL_X_M \
 prompt_float STANLEY_CONTROL_X_M \
   "Stanley 제어점 X [m]" 0.16 -1.0 1.0
 prompt_float STANLEY_GAIN \
-  "곡선 Stanley 횡오차 gain" 1.15 0.0 10.0
+  "곡선 Stanley 횡오차 gain" 1.20 0.0 10.0
 prompt_float STANLEY_SOFTENING_MPS \
   "곡선 Stanley 저속 완화값 [m/s]" 0.35 0.01 10.0
 prompt_float STRAIGHT_STANLEY_PERCENT \
   "직선 Stanley 비율 [%]" 90.0 0.0 100.0
 prompt_float STRAIGHT_STANLEY_GAIN \
-  "직선 Stanley 횡오차 gain" 0.65 0.0 10.0
+  "직선 Stanley 횡오차 gain" 0.50 0.0 10.0
 prompt_float STRAIGHT_STANLEY_SOFTENING_MPS \
   "직선 Stanley 저속 완화값 [m/s]" 0.65 0.01 10.0
 prompt_float OPPOSED_STANLEY_PERCENT \
   "PP와 Stanley 방향 상충 시 Stanley 비율 [%]" 70.0 0.0 100.0
 prompt_float CONTROL_LATENCY_PREVIEW_SEC \
-  "제어 지연 예측 시간 [s]" 0.30 0.0 2.0
+  "제어 지연 예측 시간 [s]" 0.35 0.0 2.0
+
+prompt_bool CURVE_STEERING_MULTIPLIER_ENABLED \
+  "곡선에서 큰 조향 명령 배수 적용" false
+if [[ "$CURVE_STEERING_MULTIPLIER_ENABLED" == "true" ]]; then
+  prompt_float CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND \
+    "배수를 시작할 절대 조향 명령" 20.0 0.0 42.0
+  prompt_float CURVE_STEERING_MULTIPLIER \
+    "곡선 조향 배수" 1.5 0.0 3.0
+else
+  CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND="${CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND:-20.0}"
+  CURVE_STEERING_MULTIPLIER="${CURVE_STEERING_MULTIPLIER:-1.5}"
+fi
 
 if [[ -z "$LEFT_OFFSET_CM" ]]; then
-  read -r -p "좌측 주행 보정 거리 [cm, 기본 9]: " LEFT_OFFSET_CM
-  LEFT_OFFSET_CM="${LEFT_OFFSET_CM:-9}"
+  read -r -p "좌측 주행 보정 거리 [cm, 기본 12]: " LEFT_OFFSET_CM
+  LEFT_OFFSET_CM="${LEFT_OFFSET_CM:-12}"
 fi
 LEFT_OFFSET_CM="${LEFT_OFFSET_CM/,/.}"
 if [[ ! "$LEFT_OFFSET_CM" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
@@ -311,6 +311,7 @@ topic_failure_help() {
 wait_for_message() {
   local topic="$1"
   local label="$2"
+  local field="${3:-}"
   local attempt
   printf '  [확인 중] %-12s %s\n' "$label" "$topic"
   for attempt in $(seq 1 20); do
@@ -322,9 +323,15 @@ wait_for_message() {
       tail -n 40 "$SENSOR_LOG" >&2 || true
       return 1
     fi
+    local echo_command=(
+      ros2 topic echo "$topic" --once
+      --qos-reliability best_effort
+    )
+    if [[ -n "$field" ]]; then
+      echo_command+=(--field "$field")
+    fi
     if timeout --signal=INT --kill-after=1s 3s \
-      ros2 topic echo "$topic" --once \
-      --qos-reliability best_effort >/dev/null 2>&1; then
+      "${echo_command[@]}" >/dev/null 2>&1; then
       printf '  [OK] %-12s %s\n' "$label" "$topic"
       return 0
     fi
@@ -350,13 +357,13 @@ setsid ros2 launch xycar_map_nav real_hybrid_test_sensors.launch.py \
   vesc_drive_enabled:=true >"$SENSOR_LOG" 2>&1 &
 SENSOR_PID=$!
 
-wait_for_message /wide_camera_mjpeg/image_raw/compressed CAMERA
+wait_for_message /wide_camera_mjpeg/image_raw/compressed CAMERA header.stamp
 wait_for_message /scan LIDAR
 wait_for_message /vehicle/vesc_state VESC
 
 echo
 echo "========== 모든 센서 정상 =========="
-echo "속도 상한: $SPEED_COMMAND | 시작 목표: WP$START_WAYPOINT"
+echo "속도 상한: $SPEED_COMMAND | 기본 주행: RULE"
 if [[ "$ADAPTIVE_STEERING_SPEED_ENABLED" == "true" ]]; then
   echo "조향 감속: ${STEERING_SLOWDOWN_START_ANGLE}도부터 ${STEERING_FULL_SLOWDOWN_ANGLE}도까지 command ${STEERING_TURN_SPEED_COMMAND}으로 감속"
 else
@@ -370,6 +377,7 @@ echo "제어점: PP X=${PURE_PURSUIT_CONTROL_X_M}m | Stanley X=${STANLEY_CONTROL
 echo "곡선 Stanley: gain=${STANLEY_GAIN} | soft=${STANLEY_SOFTENING_MPS}m/s"
 echo "직선 Stanley: ${STRAIGHT_STANLEY_PERCENT}% | gain=${STRAIGHT_STANLEY_GAIN} | soft=${STRAIGHT_STANLEY_SOFTENING_MPS}m/s"
 echo "상충 Stanley: ${OPPOSED_STANLEY_PERCENT}% | 지연 예측=${CONTROL_LATENCY_PREVIEW_SEC}s"
+echo "곡선 조향 배수: ${CURVE_STEERING_MULTIPLIER_ENABLED} | ${CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND} 이상 x${CURVE_STEERING_MULTIPLIER} | 최대 +/-42"
 echo "좌측 주행 보정: ${LEFT_OFFSET_CM}cm"
 echo "제어기를 준비합니다. 아직 차량은 정지 상태입니다."
 echo
@@ -379,9 +387,12 @@ export STANLEY_GAIN STANLEY_SOFTENING_MPS
 export STRAIGHT_STANLEY_PERCENT STRAIGHT_STANLEY_GAIN
 export STRAIGHT_STANLEY_SOFTENING_MPS OPPOSED_STANLEY_PERCENT
 export CONTROL_LATENCY_PREVIEW_SEC
+export CURVE_STEERING_MULTIPLIER_ENABLED
+export CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND
+export CURVE_STEERING_MULTIPLIER
 export ADAPTIVE_STEERING_SPEED_ENABLED STEERING_TURN_SPEED_COMMAND
 export STEERING_SLOWDOWN_START_ANGLE STEERING_FULL_SLOWDOWN_ANGLE
 
 "$WORKSPACE/src/xycar_map_nav/scripts/run_space_hybrid_test.sh" \
-  "$SPEED_COMMAND" "$START_WAYPOINT" "$RUN_MODE" "$MODEL_PROFILE" \
-  "$LOOKAHEAD_DISTANCE" "$STANLEY_PERCENT" "$LEFT_OFFSET_CM"
+  "$SPEED_COMMAND" "$LOOKAHEAD_DISTANCE" "$STANLEY_PERCENT" \
+  "$LEFT_OFFSET_CM"

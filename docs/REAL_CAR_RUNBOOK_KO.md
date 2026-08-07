@@ -33,14 +33,8 @@ ros2 topic hz /hybrid/rule_candidate
 카메라, LiDAR, VESC를 연결한 상태에서 다음 명령 하나를 실행한다.
 
 ```bash
-cd /home/xytron/kookmin_ty/integrated_rule_drive_latest/xycar_ws
-set +u
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-export ROS_DOMAIN_ID=7
-unset ROS_NAMESPACE
-
-bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh
+cd /home/xytron/kookmin_ty/integrated_rule_drive_latest
+./run_integrated_canonical_drive.sh
 ```
 
 스크립트가 센서와 제어 노드를 확인한 뒤 아래 값을 차례대로 묻는다. 입력할
@@ -50,7 +44,7 @@ bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh
 
 | 터미널 입력 항목 | 기본값 | 역할 |
 | --- | ---: | --- |
-| 주행 속도 상한 | 3 | 전체 RULE 속도 상한 |
+| 주행 속도 상한 | 16 | 전체 RULE 속도 상한 |
 | 조향각 기반 속도 가감속 | Y | 조향각에 따른 자동 감속 ON/OFF |
 | 감속 시작 절대 조향각 | 20 | 이 값 이하에서는 속도 상한 유지 |
 | 최저속도 도달 절대 조향각 | 42 | 이 값부터 설정한 코너 속도 유지 |
@@ -59,19 +53,19 @@ bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh
 | 곡선 Stanley 비율 | 20 | 곡선에서 Stanley 혼합 비율 |
 | Pure Pursuit 제어점 X | -0.08 | PP 계산 기준점의 차량 전후 위치 |
 | Stanley 제어점 X | 0.16 | 횡오차·방향오차 계산 기준점 |
-| 곡선 Stanley gain | 1.15 | 곡선 횡오차 보정 강도 |
+| 곡선 Stanley gain | 1.20 | 곡선 횡오차 보정 강도 |
 | 곡선 Stanley softening | 0.35 | 저속에서 Stanley 과민 반응 완화 |
 | 직선 Stanley 비율 | 90 | 직선에서 Stanley 혼합 비율 |
-| 직선 Stanley gain | 0.65 | 직선 횡오차 보정 강도 |
+| 직선 Stanley gain | 0.50 | 직선 횡오차 보정 강도 |
 | 직선 Stanley softening | 0.65 | 직선 저속 보정 완화 |
 | 방향 상충 시 Stanley 비율 | 70 | PP와 Stanley 방향이 반대일 때 비율 |
-| 제어 지연 예측 시간 | 0.30 | 차량이 반응할 미래 위치의 예측 시간 |
-| 좌측 주행 보정 거리 | 9 | 기준 경로에서 왼쪽으로 이동할 cm |
+| 제어 지연 예측 시간 | 0.35 | 차량이 반응할 미래 위치의 예측 시간 |
+| 좌측 주행 보정 거리 | 12 | 기준 경로에서 왼쪽으로 이동할 cm |
 
 예를 들어 기본 튜닝을 사용하려면 아래 숫자를 프롬프트 순서대로 입력한다.
 
 ```text
-3
+16
 Y
 20
 42
@@ -80,14 +74,14 @@ Y
 20
 -0.08
 0.16
-1.15
+1.20
 0.35
 90
-0.65
+0.50
 0.65
 70
-0.30
-9
+0.35
+12
 ```
 
 곡선 Stanley 비율을 `20`으로 입력하면 Pure Pursuit 비율은 자동으로

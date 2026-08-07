@@ -48,7 +48,7 @@ class LidarPathObstacle:
 class LidarBypassConfig:
     required_frames: int = 2
     left_offset_m: float = 0.28
-    right_offset_m: float = 0.28
+    right_offset_m: float = 0.31
     offset_rate_mps: float = 0.45
     speed_limit_command: float = 4.0
     estimated_obstacle_length_m: float = 0.35

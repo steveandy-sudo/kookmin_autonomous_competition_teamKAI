@@ -1,4 +1,4 @@
-"""Interactive Space-key gate for sequential RL/rule test driving."""
+"""Interactive Space-key gate for integrated rule driving."""
 
 from __future__ import annotations
 
@@ -22,9 +22,7 @@ from .space_drive_gate_core import SpaceDriveGateController
 
 STATUS_PATTERN = re.compile(
     r"state=(?P<state>\S+)\s+source=(?P<source>\S+)\s+"
-    r"mode_label=(?P<label>\S+).*?target_waypoint="
-    r"(?P<number>\d+/\d+):(?P<name>\S+).*?lap=(?P<lap>\d+)"
-    r".*?reason=(?P<reason>.*)$"
+    r"mode_label=(?P<label>\S+).*?reason=(?P<reason>.*)$"
 )
 
 
@@ -115,29 +113,24 @@ def format_avoidance_basis(
         side_text = obstacle_side_text()
         if side_text:
             return (
-                f"{common} | {side_text} | {clearances} | "
-                "반대쪽인 왼쪽으로 회피"
+                f"{common} | {side_text} | "
+                "중앙선 기준 즉시 왼쪽으로 회피 (LiDAR 승인 미사용)"
             )
         return f"{common} | {clearances} | 좌측 공간이 더 넓어 좌회피"
     if drive_mode == "AVOIDANCE_RIGHT":
         side_text = obstacle_side_text()
         if side_text:
             return (
-                f"{common} | {side_text} | {clearances} | "
-                "반대쪽인 오른쪽으로 회피"
+                f"{common} | {side_text} | "
+                "중앙선 기준 즉시 오른쪽으로 회피 (LiDAR 승인 미사용)"
             )
         return f"{common} | {clearances} | 우측 공간이 더 넓어 우회피"
     if drive_mode == "AVOIDANCE_BLOCKED":
-        if not math.isfinite(left) or not math.isfinite(right):
-            return f"{common} | LiDAR 군집·좌우 공간 연관 대기"
         side_text = obstacle_side_text()
         if not side_text:
-            if left < minimum_side_clearance_m and right < minimum_side_clearance_m:
-                return (
-                    f"{common} | 노란 중앙선 좌우판단 대기 | "
-                    f"{clearances} | 양쪽 공간 부족"
-                )
-            return f"{common} | 노란 중앙선 좌우판단 대기 | {clearances}"
+            return f"{common} | 노란 중앙선 좌우판단 대기"
+        if not math.isfinite(left) or not math.isfinite(right):
+            return f"{common} | {side_text} | 회피 전환 대기"
         if preferred_side < -0.5 and right < minimum_side_clearance_m:
             return (
                 f"{common} | {side_text} | {clearances} | "
@@ -193,8 +186,6 @@ class SpaceDriveGate(Node):
         self.mode_label = "UNKNOWN"
         self.selector_state = "UNKNOWN"
         self.selector_reason = "waiting for selector status"
-        self.target_waypoint = "?/?:UNKNOWN"
-        self.lap_count = 0
         self.quit_requested = False
         self.has_started = False
         self.last_display_key = ""
@@ -292,10 +283,6 @@ class SpaceDriveGate(Node):
         self.source = match.group("source")
         self.mode_label = match.group("label")
         self.selector_reason = match.group("reason")
-        self.target_waypoint = (
-            f"{match.group('number')}:{match.group('name')}"
-        )
-        self.lap_count = int(match.group("lap"))
 
     def _on_rl_candidate(self, _message: Float32MultiArray) -> None:
         self.rl_message_times.append(time.monotonic())
@@ -335,8 +322,7 @@ class SpaceDriveGate(Node):
         arm_state = "RUN" if self.controller.armed else "STOP"
         drive_mode = active_drive_mode(self.source, self.mode_label)
         key = (
-            f"{arm_state}:{drive_mode}:{self.target_waypoint}:"
-            f"{self.selector_state}:{output.reason}"
+            f"{arm_state}:{drive_mode}:{self.selector_state}:{output.reason}"
         )
         if key == self.last_display_key:
             return
@@ -347,8 +333,7 @@ class SpaceDriveGate(Node):
         )
         self.get_logger().info(
             f"[{arm_state}] MODE={drive_mode}{model_hz} | "
-            f"SPEED={output.speed_command:.1f} | "
-            f"WAYPOINT=WP{self.target_waypoint}"
+            f"SPEED={output.speed_command:.1f}"
         )
         if drive_mode.startswith("AVOIDANCE_"):
             self.get_logger().info(

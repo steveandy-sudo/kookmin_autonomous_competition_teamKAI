@@ -24,62 +24,46 @@ sequential_hybrid_driver:
     minimum_sector_span_deg: 4.0
     scan_timeout_sec: 0.35
 
-    # User-reviewed frame sequence from main_track_run01_20260804_164328:
-    # RL -> T7/8 G1 RULE -> T28 RL -> T43 G2 RULE -> T52 RL
-    # -> T78 S RULE -> T100 RL -> T123 next-lap G1 RULE.
+    # The base controller is fixed to RULE. Cone and vehicle avoidance are
+    # independent mission overrides; there is no waypoint source switching.
     initial_source: RULE
-    gate_names: [G1_RULE_START, G1_RL_RETURN, G2_RULE_START, G2_RL_RETURN, S_RULE_START, S_RL_RETURN]
-    gate_next_sources: [RULE, RL, RULE, RL, RULE, RL]
-
-    # Sector indices: 0=-90, 1=-60, 2=-30, 3=front, 4=+30,
-    # 5=+60, 6=+90 degrees. A secondary index of -1 disables it.
-    gate_primary_sector_indices: [3, 3, 3, 3, 3, 4]
-    gate_primary_min_m: [0.0, 6.0, 0.0, 6.0, 0.0, 6.0]
-    gate_primary_max_m: [2.5, 16.0, 2.4, 16.0, 3.8, 16.0]
-    gate_secondary_sector_indices: [1, 1, 1, -1, 1, 1]
-    gate_secondary_min_m: [1.2, 0.6, 1.2, 0.0, 0.5, 0.5]
-    gate_secondary_max_m: [1.9, 1.5, 1.9, 100.0, 1.2, 1.5]
-
-    # G2 returns to RL only after the front opens and the rule path reports
-    # a near-straight command. Other gates leave this check effectively off.
-    gate_rule_abs_angle_max: [100.0, 100.0, 100.0, 8.0, 100.0, 100.0]
 
     start_delay_sec: 3.0
-    minimum_stage_sec: 0.8
-    required_gate_frames: 3
     candidate_fresh_sec: 0.35
     candidate_hold_sec: 0.75
-    transition_blend_sec: 0.30
     minimum_speed_command: 3.0
     maximum_speed_command: 30.0
     maximum_abs_angle_command: 42.0
-    repeat_sequence: true
 
-    # The recorded main-track cone section appears while WP6 is pending. WP1
-    # remains eligible for starts immediately before the cone section.
-    pre_waypoint_cone_enabled: true
-    cone_eligible_waypoint_numbers: [1, 6]
+    # Cone mode may start anywhere. While either YOLO or LiDAR still sees a
+    # cone, the selector holds the last valid cone steering command. It exits
+    # after both sensors have been absent for the timeout. One control frame is
+    # used only to apply that timeout result, so no second release delay stacks.
     cone_entry_confidence: 0.35
     cone_exit_confidence: 0.20
     cone_entry_frames: 3
-    cone_exit_frames: 5
-    cone_command_timeout_sec: 0.35
+    cone_exit_frames: 1
+    # cone_node publishes a physical wheel target. Convert it to the calibrated
+    # Xycar servo command used by the main real-vehicle drive manager.
+    cone_max_target_angle_deg: 26.0
+    cone_steering_actual_deg: [0.0, 4.0, 10.0, 16.0, 26.0]
+    cone_steering_command: [0.0, 10.0, 20.0, 30.0, 42.0]
     cone_yolo_min_confidence: 0.50
     cone_yolo_required_frames: 2
     cone_yolo_timeout_sec: 0.75
     cone_entry_distance_m: 1.0
     cone_cluster_timeout_sec: 0.50
+    cone_sensor_presence_timeout_sec: 0.5
     cone_cluster_topic: /my_rule/cone_clusters
     cone_processing_enabled_topic: /my_rule/cone_processing_enabled
 
-    # Two YOLO frames plus a matching LiDAR return start avoidance immediately.
-    # The camera side selects the opposite lane, and a short detection gap is
-    # held so one obstacle episode cannot repeatedly release and re-enter.
+    # One YOLO frame plus the yellow centerline side selects the opposite lane
+    # immediately. LiDAR remains distance/space telemetry, not an entry veto.
     # Traffic-light detections are intentionally not consumed here.
     object_detections_topic: /my_rule/object_detections
     vehicle_class_names: [obstacle_vehicle, car]
     vehicle_yolo_min_confidence: 0.45
-    vehicle_yolo_required_frames: 2
+    vehicle_yolo_required_frames: 1
     vehicle_yolo_timeout_sec: 2.50
     vehicle_camera_lidar_hfov_deg: 60.0
     vehicle_camera_lidar_padding_deg: 3.0
@@ -87,12 +71,23 @@ sequential_hybrid_driver:
     # A stale car box must not bind a later traffic-light pole to avoidance.
     # The detector runs at 3 Hz, so 0.5 s still spans a normal frame interval.
     vehicle_lidar_sector_memory_sec: 0.5
+    vehicle_preferred_side_required_frames: 1
+    # Choose obstacle left/right only when both the rule command and the raw
+    # yellow geometry indicate a straight road. Curves wait instead of using
+    # the full-height straight divider fitted for white-lane classification.
+    vehicle_side_decision_straight_only: true
+    vehicle_side_decision_max_rule_angle_command: 8.0
+    vehicle_side_decision_rule_timeout_sec: 0.25
+    yellow_straight_max_rmse_px: 3.0
+    yellow_straight_min_span_ratio: 0.20
     vehicle_avoidance_enabled: true
     vehicle_avoidance_immediate_on_yolo: true
     vehicle_avoidance_entry_distance_m: 1.20
     vehicle_minimum_side_clearance_m: 0.70
-    vehicle_left_offset_m: 0.33
-    vehicle_right_offset_m: 0.33
+    # Keep avoidance inside the road: left is reduced by 5 cm and right by
+    # 2 cm from the previous 0.33 m real-vehicle tuning.
+    vehicle_left_offset_m: 0.28
+    vehicle_right_offset_m: 0.31
     vehicle_offset_rate_mps: 0.35
     vehicle_avoidance_speed_limit_command: 8.0
     vehicle_minimum_avoid_sec: 0.80

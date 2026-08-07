@@ -77,7 +77,7 @@ def generate_launch_description():
         DeclareLaunchArgument("enable_rviz", default_value="true"),
         DeclareLaunchArgument("drive_enabled", default_value="false"),
         DeclareLaunchArgument("steering_only", default_value="false"),
-        DeclareLaunchArgument("speed_command", default_value="8.0"),
+        DeclareLaunchArgument("speed_command", default_value="16.0"),
         DeclareLaunchArgument(
             "straight_speed_command",
             default_value=LaunchConfiguration("speed_command"),
@@ -90,14 +90,14 @@ def generate_launch_description():
             "full_slowdown_angle_command", default_value="42.0"
         ),
         DeclareLaunchArgument("speed_curve_exponent", default_value="1.0"),
-        DeclareLaunchArgument("target_left_offset_m", default_value="0.09"),
+        DeclareLaunchArgument("target_left_offset_m", default_value="0.12"),
         DeclareLaunchArgument("lookahead_distance_m", default_value="0.30"),
         DeclareLaunchArgument("pure_pursuit_weight", default_value="0.80"),
         DeclareLaunchArgument(
             "pure_pursuit_control_x_m", default_value="-0.08"
         ),
         DeclareLaunchArgument("stanley_control_x_m", default_value="0.16"),
-        DeclareLaunchArgument("stanley_gain", default_value="1.15"),
+        DeclareLaunchArgument("stanley_gain", default_value="1.20"),
         DeclareLaunchArgument(
             "stanley_softening_mps", default_value="0.35"
         ),
@@ -105,7 +105,7 @@ def generate_launch_description():
             "straight_pure_pursuit_weight", default_value="0.10"
         ),
         DeclareLaunchArgument(
-            "straight_stanley_gain", default_value="0.65"
+            "straight_stanley_gain", default_value="0.50"
         ),
         DeclareLaunchArgument(
             "straight_stanley_softening_mps", default_value="0.65"
@@ -114,7 +114,26 @@ def generate_launch_description():
             "opposed_stanley_weight", default_value="0.70"
         ),
         DeclareLaunchArgument(
-            "control_latency_preview_sec", default_value="0.30"
+            "control_latency_preview_sec", default_value="0.35"
+        ),
+        DeclareLaunchArgument(
+            "curve_detection_near_x_m", default_value="0.15"
+        ),
+        DeclareLaunchArgument(
+            "curve_detection_far_x_m", default_value="0.60"
+        ),
+        DeclareLaunchArgument(
+            "curve_detection_segment_count", default_value="3"
+        ),
+        DeclareLaunchArgument(
+            "curve_steering_multiplier_enabled", default_value="false"
+        ),
+        DeclareLaunchArgument(
+            "curve_steering_multiplier_activation_command",
+            default_value="20.0",
+        ),
+        DeclareLaunchArgument(
+            "curve_steering_multiplier", default_value="1.5"
         ),
         DeclareLaunchArgument("angle_command_min", default_value="-42.0"),
         DeclareLaunchArgument("angle_command_max", default_value="42.0"),
@@ -272,6 +291,25 @@ def generate_launch_description():
                 ),
                 "control_latency_preview_sec": _as_float(
                     "control_latency_preview_sec"
+                ),
+                "curve_detection_near_x_m": _as_float(
+                    "curve_detection_near_x_m"
+                ),
+                "curve_detection_far_x_m": _as_float(
+                    "curve_detection_far_x_m"
+                ),
+                "curve_detection_segment_count": ParameterValue(
+                    LaunchConfiguration("curve_detection_segment_count"),
+                    value_type=int,
+                ),
+                "curve_steering_multiplier_enabled": _as_bool(
+                    "curve_steering_multiplier_enabled"
+                ),
+                "curve_steering_multiplier_activation_command": _as_float(
+                    "curve_steering_multiplier_activation_command"
+                ),
+                "curve_steering_multiplier": _as_float(
+                    "curve_steering_multiplier"
                 ),
                 "angle_command_min": _as_float("angle_command_min"),
                 "angle_command_max": _as_float("angle_command_max"),

@@ -18,6 +18,13 @@ def generate_launch_description():
             "lane_seg_lraspp_low_latency_real.launch.py",
         ]
     )
+    direct_bev_launch = PathJoinSubstitution(
+        [
+            FindPackageShare("lane_seg_control"),
+            "launch",
+            "direct_bev_stanley_pursuit.launch.py",
+        ]
+    )
     rule_base = PathJoinSubstitution(
         [
             FindPackageShare("xycar_rule_drive"),
@@ -79,6 +86,27 @@ def generate_launch_description():
             DeclareLaunchArgument("enable_rviz", default_value="false"),
             DeclareLaunchArgument("start_perception", default_value="true"),
             DeclareLaunchArgument("start_rule", default_value="true"),
+            DeclareLaunchArgument(
+                "start_direct_bev_rule", default_value="false"
+            ),
+            DeclareLaunchArgument(
+                "direct_bev_model_path",
+                default_value=PathJoinSubstitution(
+                    [FindPackageShare("lane_seg_control"), "models", "best_512.onnx"]
+                ),
+            ),
+            DeclareLaunchArgument("direct_bev_image_size", default_value="512"),
+            DeclareLaunchArgument("direct_bev_confidence", default_value="0.20"),
+            DeclareLaunchArgument(
+                "direct_bev_yellow_confidence", default_value="0.40"
+            ),
+            DeclareLaunchArgument("direct_bev_cpu_threads", default_value="4"),
+            DeclareLaunchArgument(
+                "direct_bev_command_rate_hz", default_value="10.0"
+            ),
+            DeclareLaunchArgument(
+                "direct_bev_path_timeout_sec", default_value="1.50"
+            ),
             DeclareLaunchArgument("start_cone", default_value="true"),
             DeclareLaunchArgument(
                 "start_object_detection", default_value="true"
@@ -87,8 +115,11 @@ def generate_launch_description():
                 "vehicle_avoidance_enabled", default_value="true"
             ),
             DeclareLaunchArgument("scan_topic", default_value="/scan"),
-            DeclareLaunchArgument("speed_command", default_value="3.0"),
+            DeclareLaunchArgument("speed_command", default_value="16.0"),
             DeclareLaunchArgument("cone_speed_command", default_value="6.0"),
+            DeclareLaunchArgument(
+                "cone_sensor_presence_timeout_sec", default_value="0.5"
+            ),
             DeclareLaunchArgument(
                 "lookahead_distance_m", default_value="0.3"
             ),
@@ -101,7 +132,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "stanley_control_x_m", default_value="0.16"
             ),
-            DeclareLaunchArgument("stanley_gain", default_value="1.15"),
+            DeclareLaunchArgument("stanley_gain", default_value="1.20"),
             DeclareLaunchArgument(
                 "stanley_softening_mps", default_value="0.35"
             ),
@@ -109,7 +140,7 @@ def generate_launch_description():
                 "straight_pure_pursuit_weight", default_value="0.10"
             ),
             DeclareLaunchArgument(
-                "straight_stanley_gain", default_value="0.65"
+                "straight_stanley_gain", default_value="0.50"
             ),
             DeclareLaunchArgument(
                 "straight_stanley_softening_mps", default_value="0.65"
@@ -118,13 +149,44 @@ def generate_launch_description():
                 "opposed_stanley_weight", default_value="0.70"
             ),
             DeclareLaunchArgument(
-                "control_latency_preview_sec", default_value="0.30"
+                "control_latency_preview_sec", default_value="0.35"
             ),
             DeclareLaunchArgument(
-                "target_left_offset_m", default_value="0.09"
+                "curve_detection_near_x_m", default_value="0.15"
             ),
             DeclareLaunchArgument(
-                "start_waypoint_number", default_value="1"
+                "curve_detection_far_x_m", default_value="0.60"
+            ),
+            DeclareLaunchArgument(
+                "curve_detection_segment_count", default_value="3"
+            ),
+            DeclareLaunchArgument(
+                "straight_path_curvature_threshold", default_value="0.16"
+            ),
+            DeclareLaunchArgument(
+                "steering_current_weight", default_value="0.40"
+            ),
+            DeclareLaunchArgument(
+                "steering_curve_current_weight", default_value="0.70"
+            ),
+            DeclareLaunchArgument(
+                "steering_rate_limit_cmd_per_sec", default_value="180.0"
+            ),
+            DeclareLaunchArgument(
+                "steering_curve_rate_limit_cmd_per_sec", default_value="300.0"
+            ),
+            DeclareLaunchArgument(
+                "curve_steering_multiplier_enabled", default_value="false"
+            ),
+            DeclareLaunchArgument(
+                "curve_steering_multiplier_activation_command",
+                default_value="20.0",
+            ),
+            DeclareLaunchArgument(
+                "curve_steering_multiplier", default_value="1.5"
+            ),
+            DeclareLaunchArgument(
+                "target_left_offset_m", default_value="0.12"
             ),
             DeclareLaunchArgument(
                 "maximum_speed_command", default_value="30.0"
@@ -142,13 +204,30 @@ def generate_launch_description():
                 "vehicle_yolo_min_confidence", default_value="0.45"
             ),
             DeclareLaunchArgument(
+                "vehicle_side_decision_straight_only", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "vehicle_side_decision_max_rule_angle_command",
+                default_value="8.0",
+            ),
+            DeclareLaunchArgument(
+                "vehicle_side_decision_rule_timeout_sec",
+                default_value="0.25",
+            ),
+            DeclareLaunchArgument(
+                "yellow_straight_max_rmse_px", default_value="3.0"
+            ),
+            DeclareLaunchArgument(
+                "yellow_straight_min_span_ratio", default_value="0.20"
+            ),
+            DeclareLaunchArgument(
                 "cone_as_vehicle_obstacle", default_value="false"
             ),
             DeclareLaunchArgument(
                 "cone_as_vehicle_min_confidence", default_value="0.50"
             ),
             DeclareLaunchArgument(
-                "vehicle_yolo_required_frames", default_value="2"
+                "vehicle_yolo_required_frames", default_value="1"
             ),
             DeclareLaunchArgument(
                 "vehicle_yolo_timeout_sec", default_value="2.50"
@@ -160,7 +239,7 @@ def generate_launch_description():
                 "vehicle_camera_lidar_padding_deg", default_value="3.0"
             ),
             DeclareLaunchArgument(
-                "vehicle_preferred_side_required_frames", default_value="2"
+                "vehicle_preferred_side_required_frames", default_value="1"
             ),
             DeclareLaunchArgument(
                 "vehicle_lidar_min_points", default_value="2"
@@ -185,8 +264,8 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "vehicle_minimum_side_clearance_m", default_value="0.70"
             ),
-            DeclareLaunchArgument("vehicle_left_offset_m", default_value="0.33"),
-            DeclareLaunchArgument("vehicle_right_offset_m", default_value="0.33"),
+            DeclareLaunchArgument("vehicle_left_offset_m", default_value="0.28"),
+            DeclareLaunchArgument("vehicle_right_offset_m", default_value="0.31"),
             DeclareLaunchArgument(
                 "vehicle_offset_rate_mps", default_value="0.35"
             ),
@@ -257,6 +336,115 @@ def generate_launch_description():
                     ),
                     "debug_rate_hz": "0.0",
                     "publish_intermediate_topics": "true",
+                }.items(),
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(direct_bev_launch),
+                condition=IfCondition(
+                    LaunchConfiguration("start_direct_bev_rule")
+                ),
+                launch_arguments={
+                    "start_camera": "false",
+                    "start_vesc": "false",
+                    "model_path": LaunchConfiguration(
+                        "direct_bev_model_path"
+                    ),
+                    "image_size": LaunchConfiguration(
+                        "direct_bev_image_size"
+                    ),
+                    "confidence": LaunchConfiguration(
+                        "direct_bev_confidence"
+                    ),
+                    "yellow_confidence": LaunchConfiguration(
+                        "direct_bev_yellow_confidence"
+                    ),
+                    "cpu_threads": LaunchConfiguration(
+                        "direct_bev_cpu_threads"
+                    ),
+                    "display_mode": "off",
+                    "publish_debug_images": "true",
+                    "drive_enabled": "false",
+                    "steering_only": LaunchConfiguration("steering_only"),
+                    "shadow_motor_topic": "/hybrid/rule_candidate",
+                    "external_lateral_offset_enabled": "true",
+                    "external_lateral_offset_topic": (
+                        "/hybrid/avoidance_lateral_offset"
+                    ),
+                    "cruise_speed_command": speed_command,
+                    "minimum_speed_command": speed_command,
+                    "command_rate_hz": LaunchConfiguration(
+                        "direct_bev_command_rate_hz"
+                    ),
+                    "external_path_timeout_sec": LaunchConfiguration(
+                        "direct_bev_path_timeout_sec"
+                    ),
+                    "lookahead_distance_m": LaunchConfiguration(
+                        "lookahead_distance_m"
+                    ),
+                    "pure_pursuit_weight": LaunchConfiguration(
+                        "pure_pursuit_weight"
+                    ),
+                    "pure_pursuit_control_x_m": LaunchConfiguration(
+                        "pure_pursuit_control_x_m"
+                    ),
+                    "stanley_control_x_m": LaunchConfiguration(
+                        "stanley_control_x_m"
+                    ),
+                    "stanley_gain": LaunchConfiguration("stanley_gain"),
+                    "stanley_softening_mps": LaunchConfiguration(
+                        "stanley_softening_mps"
+                    ),
+                    "target_left_offset_m": LaunchConfiguration(
+                        "target_left_offset_m"
+                    ),
+                    "straight_path_curvature_threshold": LaunchConfiguration(
+                        "straight_path_curvature_threshold"
+                    ),
+                    "curve_detection_near_x_m": LaunchConfiguration(
+                        "curve_detection_near_x_m"
+                    ),
+                    "curve_detection_far_x_m": LaunchConfiguration(
+                        "curve_detection_far_x_m"
+                    ),
+                    "curve_detection_segment_count": LaunchConfiguration(
+                        "curve_detection_segment_count"
+                    ),
+                    "straight_pure_pursuit_weight": LaunchConfiguration(
+                        "straight_pure_pursuit_weight"
+                    ),
+                    "straight_stanley_gain": LaunchConfiguration(
+                        "straight_stanley_gain"
+                    ),
+                    "straight_stanley_softening_mps": LaunchConfiguration(
+                        "straight_stanley_softening_mps"
+                    ),
+                    "opposed_stanley_weight": LaunchConfiguration(
+                        "opposed_stanley_weight"
+                    ),
+                    "control_latency_preview_sec": LaunchConfiguration(
+                        "control_latency_preview_sec"
+                    ),
+                    "steering_current_weight": LaunchConfiguration(
+                        "steering_current_weight"
+                    ),
+                    "steering_curve_current_weight": LaunchConfiguration(
+                        "steering_curve_current_weight"
+                    ),
+                    "steering_rate_limit_cmd_per_sec": LaunchConfiguration(
+                        "steering_rate_limit_cmd_per_sec"
+                    ),
+                    "steering_curve_rate_limit_cmd_per_sec": LaunchConfiguration(
+                        "steering_curve_rate_limit_cmd_per_sec"
+                    ),
+                    "curve_steering_multiplier_enabled": LaunchConfiguration(
+                        "curve_steering_multiplier_enabled"
+                    ),
+                    "curve_steering_multiplier_activation_command": LaunchConfiguration(
+                        "curve_steering_multiplier_activation_command"
+                    ),
+                    "curve_steering_multiplier": LaunchConfiguration(
+                        "curve_steering_multiplier"
+                    ),
                 }.items(),
             ),
             Node(
@@ -345,6 +533,38 @@ def generate_launch_description():
                             ),
                             value_type=float,
                         ),
+                        "curve_detection_near_x_m": ParameterValue(
+                            LaunchConfiguration("curve_detection_near_x_m"),
+                            value_type=float,
+                        ),
+                        "curve_detection_far_x_m": ParameterValue(
+                            LaunchConfiguration("curve_detection_far_x_m"),
+                            value_type=float,
+                        ),
+                        "curve_detection_segment_count": ParameterValue(
+                            LaunchConfiguration(
+                                "curve_detection_segment_count"
+                            ),
+                            value_type=int,
+                        ),
+                        "curve_steering_multiplier_enabled": ParameterValue(
+                            LaunchConfiguration(
+                                "curve_steering_multiplier_enabled"
+                            ),
+                            value_type=bool,
+                        ),
+                        "curve_steering_multiplier_activation_command": ParameterValue(
+                            LaunchConfiguration(
+                                "curve_steering_multiplier_activation_command"
+                            ),
+                            value_type=float,
+                        ),
+                        "curve_steering_multiplier": ParameterValue(
+                            LaunchConfiguration(
+                                "curve_steering_multiplier"
+                            ),
+                            value_type=float,
+                        ),
                         # Keep the validated static calibration. Vehicle
                         # avoidance now shapes the full target path with the
                         # gazebo_sitl entry/hold/return planner.
@@ -353,8 +573,11 @@ def generate_launch_description():
                             LaunchConfiguration("target_left_offset_m"),
                             value_type=float,
                         ),
-                        "external_lateral_offset_enabled": False,
-                        "sitl_bypass_path_enabled": True,
+                        "external_lateral_offset_enabled": True,
+                        "external_lateral_offset_topic": (
+                            "/hybrid/avoidance_lateral_offset"
+                        ),
+                        "sitl_bypass_path_enabled": False,
                         "sitl_bypass_path_request_topic": (
                             "/hybrid/avoidance_path_request"
                         ),
@@ -451,15 +674,17 @@ def generate_launch_description():
                             value_type=bool,
                         ),
                         "scan_topic": scan_topic,
-                        "start_waypoint_number": ParameterValue(
-                            LaunchConfiguration("start_waypoint_number"),
-                            value_type=int,
-                        ),
                         "minimum_speed_command": ParameterValue(
                             speed_command, value_type=float
                         ),
                         "maximum_speed_command": ParameterValue(
                             LaunchConfiguration("maximum_speed_command"),
+                            value_type=float,
+                        ),
+                        "cone_sensor_presence_timeout_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "cone_sensor_presence_timeout_sec"
+                            ),
                             value_type=float,
                         ),
                         "vehicle_avoidance_enabled": ParameterValue(
@@ -505,6 +730,36 @@ def generate_launch_description():
                                 "vehicle_preferred_side_required_frames"
                             ),
                             value_type=int,
+                        ),
+                        "vehicle_side_decision_straight_only": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_side_decision_straight_only"
+                            ),
+                            value_type=bool,
+                        ),
+                        "vehicle_side_decision_max_rule_angle_command": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_side_decision_max_rule_angle_command"
+                            ),
+                            value_type=float,
+                        ),
+                        "vehicle_side_decision_rule_timeout_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_side_decision_rule_timeout_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "yellow_straight_max_rmse_px": ParameterValue(
+                            LaunchConfiguration(
+                                "yellow_straight_max_rmse_px"
+                            ),
+                            value_type=float,
+                        ),
+                        "yellow_straight_min_span_ratio": ParameterValue(
+                            LaunchConfiguration(
+                                "yellow_straight_min_span_ratio"
+                            ),
+                            value_type=float,
                         ),
                         "vehicle_lidar_min_points": ParameterValue(
                             LaunchConfiguration("vehicle_lidar_min_points"),

@@ -52,7 +52,7 @@ def test_avoidance_basis_explains_blocked_state():
         entry_distance_m=1.20,
         minimum_side_clearance_m=0.70,
     )
-    assert "양쪽 공간 부족" in text
+    assert "노란 중앙선 좌우판단 대기" in text
 
 
 def test_avoidance_basis_reports_opposite_side_of_yellow_divider_obstacle():

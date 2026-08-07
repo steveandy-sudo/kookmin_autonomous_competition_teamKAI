@@ -6,6 +6,7 @@ import numpy as np
 
 from xycar_rule_drive.canonical_stanley_pursuit_driver import (
     adaptive_smooth_steering_command,
+    amplify_curve_steering_command,
     anticipatory_center_corridor_error,
     apply_turn_transition_recovery,
     blend_pursuit_stanley,
@@ -33,6 +34,47 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
 
 
 class CanonicalStanleyPursuitTest(unittest.TestCase):
+    def test_curve_steering_multiplier_ignores_straight_paths(self):
+        self.assertEqual(
+            amplify_curve_steering_command(
+                25.0,
+                curve_active=False,
+                enabled=True,
+                activation_command=20.0,
+                multiplier=1.5,
+                command_min=-42.0,
+                command_max=42.0,
+            ),
+            25.0,
+        )
+
+    def test_curve_steering_multiplier_amplifies_both_directions(self):
+        common = {
+            "curve_active": True,
+            "enabled": True,
+            "activation_command": 20.0,
+            "multiplier": 1.5,
+            "command_min": -42.0,
+            "command_max": 42.0,
+        }
+        self.assertEqual(amplify_curve_steering_command(20.0, **common), 30.0)
+        self.assertEqual(amplify_curve_steering_command(-24.0, **common), -36.0)
+        self.assertEqual(amplify_curve_steering_command(30.0, **common), 42.0)
+
+    def test_curve_steering_multiplier_ignores_small_commands(self):
+        self.assertEqual(
+            amplify_curve_steering_command(
+                -19.9,
+                curve_active=True,
+                enabled=True,
+                activation_command=20.0,
+                multiplier=1.5,
+                command_min=-42.0,
+                command_max=42.0,
+            ),
+            -19.9,
+        )
+
     def test_external_lateral_offset_combines_with_static_target(self):
         right, left = effective_target_offsets(
             target_right_offset_m=0.10,
@@ -444,6 +486,30 @@ class CanonicalStanleyPursuitTest(unittest.TestCase):
             0.16,
         )
         self.assertAlmostEqual(adaptive.fused_rad, baseline.fused_rad)
+
+    def test_segmented_curvature_finds_a_bend_between_straight_ends(self):
+        forward = np.linspace(0.05, 0.80, 151)
+        lateral = np.zeros_like(forward)
+        bend = (forward >= 0.25) & (forward <= 0.45)
+        phase = (forward[bend] - 0.25) / 0.20
+        lateral[bend] = 0.05 * (1.0 - np.cos(2.0 * math.pi * phase))
+        path = np.column_stack((forward, lateral))
+
+        whole_span = path_heading_change_per_m(
+            path,
+            near_x_m=0.15,
+            far_x_m=0.60,
+            segment_count=1,
+        )
+        segmented = path_heading_change_per_m(
+            path,
+            near_x_m=0.15,
+            far_x_m=0.60,
+            segment_count=3,
+        )
+
+        self.assertLess(whole_span, 0.16)
+        self.assertGreater(segmented, 0.16)
 
     def test_straight_center_corridor_reverses_before_crossing(self):
         forward = np.linspace(0.05, 1.5, 32)

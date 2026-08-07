@@ -26,7 +26,7 @@ canonical_stanley_pursuit_driver:
     # Real-car target: follow 15 cm left of the observed yellow reference.
     # White fallback reconstructs this exact same lateral target.
     target_right_offset_m: 0.0
-    target_left_offset_m: 0.15
+    target_left_offset_m: 0.12
     # A yellow dash can leave the camera during a tight turn. While the outer
     # white boundary remains visible, reconstruct the yellow centerline from
     # the measured 40 cm yellow-to-white distance.
@@ -66,6 +66,12 @@ canonical_stanley_pursuit_driver:
     # instead of repeatedly chasing a distant Pure Pursuit point.
     straight_stanley_enabled: true
     straight_path_curvature_threshold: 0.16
+    curve_detection_near_x_m: 0.16
+    curve_detection_far_x_m: 0.30
+    curve_detection_segment_count: 1
+    curve_steering_multiplier_enabled: false
+    curve_steering_multiplier_activation_command: 20.0
+    curve_steering_multiplier: 1.0
     straight_pure_pursuit_weight: 0.10
     straight_stanley_gain: 0.65
     straight_stanley_softening_mps: 0.65
@@ -104,9 +110,9 @@ canonical_stanley_pursuit_driver:
     opposed_stanley_weight: 0.70
     # Suppress small straight-line corrections, but release that smoothing in
     # tight curves so a left/right correction is not delayed by half a second.
-    steering_current_weight: 0.25
+    steering_current_weight: 0.40
     steering_rate_limit_cmd_per_sec: 180.0
-    steering_curve_current_weight: 0.55
+    steering_curve_current_weight: 0.70
     steering_curve_rate_limit_cmd_per_sec: 300.0
     steering_curve_activation_command: 12.0
     steering_curve_full_command: 24.0

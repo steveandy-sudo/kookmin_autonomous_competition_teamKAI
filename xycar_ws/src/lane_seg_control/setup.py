@@ -42,6 +42,8 @@ setup(
                 "lane_seg_control.bag_montage_exporter:main"
             ),
             "lane_seg_canonical_adapter = lane_seg_control.canonical_adapter_node:main",
+            "bev_path_centerline = lane_seg_control.bev_path_centerline_node:main",
+            "compressed_rectifier = lane_seg_control.compressed_rectifier_node:main",
         ],
     },
 )

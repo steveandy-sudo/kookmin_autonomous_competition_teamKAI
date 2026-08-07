@@ -15,12 +15,9 @@ if [[ ! -f "$WORKSPACE/install/setup.bash" ]] || \
 fi
 export XYCAR_WS="$WORKSPACE"
 SPEED_COMMAND="${1:-}"
-START_WAYPOINT="${2:-}"
-RUN_MODE="${3:-rule}"
-MODEL_PROFILE="${4:-speed100}"
-LOOKAHEAD_DISTANCE="${5:-}"
-STANLEY_PERCENT="${6:-}"
-LEFT_OFFSET_CM="${7:-}"
+LOOKAHEAD_DISTANCE="${2:-}"
+STANLEY_PERCENT="${3:-}"
+LEFT_OFFSET_CM="${4:-}"
 PURE_PURSUIT_CONTROL_X_M="${PURE_PURSUIT_CONTROL_X_M:-}"
 STANLEY_CONTROL_X_M="${STANLEY_CONTROL_X_M:-}"
 STANLEY_GAIN="${STANLEY_GAIN:-}"
@@ -30,6 +27,12 @@ STRAIGHT_STANLEY_GAIN="${STRAIGHT_STANLEY_GAIN:-}"
 STRAIGHT_STANLEY_SOFTENING_MPS="${STRAIGHT_STANLEY_SOFTENING_MPS:-}"
 OPPOSED_STANLEY_PERCENT="${OPPOSED_STANLEY_PERCENT:-}"
 CONTROL_LATENCY_PREVIEW_SEC="${CONTROL_LATENCY_PREVIEW_SEC:-}"
+CURVE_DETECTION_NEAR_X_M="${CURVE_DETECTION_NEAR_X_M:-0.15}"
+CURVE_DETECTION_FAR_X_M="${CURVE_DETECTION_FAR_X_M:-0.60}"
+CURVE_DETECTION_SEGMENT_COUNT="${CURVE_DETECTION_SEGMENT_COUNT:-3}"
+CURVE_STEERING_MULTIPLIER_ENABLED="${CURVE_STEERING_MULTIPLIER_ENABLED:-false}"
+CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND="${CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND:-20.0}"
+CURVE_STEERING_MULTIPLIER="${CURVE_STEERING_MULTIPLIER:-1.5}"
 ADAPTIVE_STEERING_SPEED_ENABLED="${ADAPTIVE_STEERING_SPEED_ENABLED:-}"
 STEERING_TURN_SPEED_COMMAND="${STEERING_TURN_SPEED_COMMAND:-}"
 STEERING_SLOWDOWN_START_ANGLE="${STEERING_SLOWDOWN_START_ANGLE:-}"
@@ -37,6 +40,7 @@ STEERING_FULL_SLOWDOWN_ANGLE="${STEERING_FULL_SLOWDOWN_ANGLE:-}"
 CONTROL_LOG="/tmp/xycar_hybrid_control_$(date +%Y%m%d_%H%M%S).log"
 RUN_CONFIG_FILE="${XYCAR_HYBRID_RUN_CONFIG_FILE:-/tmp/xycar_hybrid_run_config.yaml}"
 CONE_SPEED_COMMAND="6.0"
+CONE_SENSOR_PRESENCE_TIMEOUT_SEC="${CONE_SENSOR_PRESENCE_TIMEOUT_SEC:-0.5}"
 TEST_PROFILE="${XYCAR_TEST_PROFILE:-integrated}"
 ENABLE_RVIZ="${XYCAR_ENABLE_RVIZ:-false}"
 START_CONE="${XYCAR_START_CONE:-true}"
@@ -44,7 +48,8 @@ STEERING_ONLY="${XYCAR_STEERING_ONLY:-false}"
 VEHICLE_YOLO_MIN_CONFIDENCE="${VEHICLE_YOLO_MIN_CONFIDENCE:-0.45}"
 CONE_AS_VEHICLE_OBSTACLE="${CONE_AS_VEHICLE_OBSTACLE:-false}"
 CONE_AS_VEHICLE_MIN_CONFIDENCE="${CONE_AS_VEHICLE_MIN_CONFIDENCE:-0.50}"
-VEHICLE_YOLO_REQUIRED_FRAMES="${VEHICLE_YOLO_REQUIRED_FRAMES:-2}"
+VEHICLE_YOLO_REQUIRED_FRAMES="${VEHICLE_YOLO_REQUIRED_FRAMES:-1}"
+VEHICLE_PREFERRED_SIDE_REQUIRED_FRAMES="${VEHICLE_PREFERRED_SIDE_REQUIRED_FRAMES:-1}"
 VEHICLE_YOLO_TIMEOUT_SEC="${VEHICLE_YOLO_TIMEOUT_SEC:-2.50}"
 VEHICLE_CAMERA_LIDAR_HFOV_DEG="${VEHICLE_CAMERA_LIDAR_HFOV_DEG:-60.0}"
 VEHICLE_CAMERA_LIDAR_PADDING_DEG="${VEHICLE_CAMERA_LIDAR_PADDING_DEG:-3.0}"
@@ -52,11 +57,19 @@ VEHICLE_LIDAR_MIN_POINTS="${VEHICLE_LIDAR_MIN_POINTS:-2}"
 VEHICLE_LIDAR_SECTOR_MEMORY_SEC="${VEHICLE_LIDAR_SECTOR_MEMORY_SEC:-0.50}"
 VEHICLE_LIDAR_ASSOCIATION_ANGLE_MARGIN_DEG="${VEHICLE_LIDAR_ASSOCIATION_ANGLE_MARGIN_DEG:-2.0}"
 VEHICLE_LIDAR_ASSOCIATION_DISTANCE_TOLERANCE_M="${VEHICLE_LIDAR_ASSOCIATION_DISTANCE_TOLERANCE_M:-0.35}"
+RULE_PERCEPTION_BACKEND="${XYCAR_RULE_PERCEPTION_BACKEND:-canonical}"
+DIRECT_BEV_MODEL_PATH="${DIRECT_BEV_MODEL_PATH:-$WORKSPACE/src/lane_seg_control/models/best_512.onnx}"
+DIRECT_BEV_IMAGE_SIZE="${DIRECT_BEV_IMAGE_SIZE:-512}"
+DIRECT_BEV_CONFIDENCE="${DIRECT_BEV_CONFIDENCE:-0.20}"
+DIRECT_BEV_YELLOW_CONFIDENCE="${DIRECT_BEV_YELLOW_CONFIDENCE:-0.40}"
+DIRECT_BEV_CPU_THREADS="${DIRECT_BEV_CPU_THREADS:-4}"
+DIRECT_BEV_COMMAND_RATE_HZ="${DIRECT_BEV_COMMAND_RATE_HZ:-10.0}"
+DIRECT_BEV_PATH_TIMEOUT_SEC="${DIRECT_BEV_PATH_TIMEOUT_SEC:-1.50}"
 VEHICLE_AVOIDANCE_IMMEDIATE_ON_YOLO="${VEHICLE_AVOIDANCE_IMMEDIATE_ON_YOLO:-true}"
 VEHICLE_AVOIDANCE_ENTRY_DISTANCE_M="${VEHICLE_AVOIDANCE_ENTRY_DISTANCE_M:-1.20}"
 VEHICLE_MINIMUM_SIDE_CLEARANCE_M="${VEHICLE_MINIMUM_SIDE_CLEARANCE_M:-0.70}"
-VEHICLE_LEFT_OFFSET_M="${VEHICLE_LEFT_OFFSET_M:-0.33}"
-VEHICLE_RIGHT_OFFSET_M="${VEHICLE_RIGHT_OFFSET_M:-0.33}"
+VEHICLE_LEFT_OFFSET_M="${VEHICLE_LEFT_OFFSET_M:-0.28}"
+VEHICLE_RIGHT_OFFSET_M="${VEHICLE_RIGHT_OFFSET_M:-0.31}"
 VEHICLE_OFFSET_RATE_MPS="${VEHICLE_OFFSET_RATE_MPS:-0.35}"
 VEHICLE_AVOIDANCE_SPEED_LIMIT_COMMAND="${VEHICLE_AVOIDANCE_SPEED_LIMIT_COMMAND:-8.0}"
 VEHICLE_MINIMUM_AVOID_SEC="${VEHICLE_MINIMUM_AVOID_SEC:-0.80}"
@@ -131,11 +144,36 @@ else
   AVOIDANCE_DISPLAY_CONFIDENCE="$VEHICLE_YOLO_MIN_CONFIDENCE"
 fi
 
+case "$RULE_PERCEPTION_BACKEND" in
+  canonical)
+    START_CANONICAL_PERCEPTION=true
+    START_CANONICAL_RULE=true
+    START_DIRECT_BEV_RULE=false
+    RULE_READY_TOPIC=/perception/canonical_road_image
+    RULE_READY_LABEL="canonical 차선 인지"
+    ;;
+  direct_bev)
+    START_CANONICAL_PERCEPTION=false
+    START_CANONICAL_RULE=false
+    START_DIRECT_BEV_RULE=true
+    RULE_READY_TOPIC=/lane_seg/source_image
+    RULE_READY_LABEL="best_512 차선 인지"
+    if [[ ! -f "$DIRECT_BEV_MODEL_PATH" ]]; then
+      echo "ERROR: direct BEV model not found: $DIRECT_BEV_MODEL_PATH" >&2
+      exit 2
+    fi
+    ;;
+  *)
+    echo "ERROR: XYCAR_RULE_PERCEPTION_BACKEND must be canonical or direct_bev." >&2
+    exit 2
+    ;;
+esac
+
 if [[ -z "$SPEED_COMMAND" ]]; then
   if [[ -t 0 ]]; then
-    read -r -p "Driving speed command [3.0-30.0, default 3.0]: " SPEED_COMMAND
+    read -r -p "Driving speed command [3.0-30.0, default 16.0]: " SPEED_COMMAND
   fi
-  SPEED_COMMAND="${SPEED_COMMAND:-3.0}"
+  SPEED_COMMAND="${SPEED_COMMAND:-16.0}"
 fi
 if [[ "$STEERING_ONLY" == "true" ]]; then
   SPEED_COMMAND=0.0
@@ -145,6 +183,9 @@ elif [[ ! "$SPEED_COMMAND" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
     exit 2
 fi
 SPEED_COMMAND="$(awk -v speed="$SPEED_COMMAND" 'BEGIN { printf "%.3f", speed }')"
+
+prompt_float CONE_SENSOR_PRESENCE_TIMEOUT_SEC \
+  "Cone sensor-loss hold [s]" 0.5 0.1 10.0
 
 prompt_bool ADAPTIVE_STEERING_SPEED_ENABLED \
   "Adaptive steering speed" true
@@ -166,21 +207,6 @@ else
   STEERING_SLOWDOWN_START_ANGLE=20.000
   STEERING_FULL_SLOWDOWN_ANGLE=42.000
   STEERING_TURN_SPEED_COMMAND=8.000
-fi
-
-if [[ -z "$START_WAYPOINT" ]]; then
-  if [[ -t 0 ]]; then
-    read -r -p "Start target waypoint number [1-6, default 1]: " START_WAYPOINT
-  fi
-  START_WAYPOINT="${START_WAYPOINT:-1}"
-fi
-if [[ ! "$START_WAYPOINT" =~ ^[1-6]$ ]]; then
-  echo "ERROR: start waypoint must be an integer from 1 to 6." >&2
-  exit 2
-fi
-if [[ "$RUN_MODE" != "rule" ]]; then
-  echo "ERROR: this SLAM-free stack supports only 'rule' mode." >&2
-  exit 2
 fi
 
 if [[ -z "$LOOKAHEAD_DISTANCE" ]]; then
@@ -224,19 +250,19 @@ prompt_float PURE_PURSUIT_CONTROL_X_M \
 prompt_float STANLEY_CONTROL_X_M \
   "Stanley control X [m]" 0.16 -1.0 1.0
 prompt_float STANLEY_GAIN \
-  "Curve Stanley cross-track gain" 1.15 0.0 10.0
+  "Curve Stanley cross-track gain" 1.20 0.0 10.0
 prompt_float STANLEY_SOFTENING_MPS \
   "Curve Stanley softening [m/s]" 0.35 0.01 10.0
 prompt_float STRAIGHT_STANLEY_PERCENT \
   "Straight Stanley percentage" 90.0 0.0 100.0
 prompt_float STRAIGHT_STANLEY_GAIN \
-  "Straight Stanley cross-track gain" 0.65 0.0 10.0
+  "Straight Stanley cross-track gain" 0.50 0.0 10.0
 prompt_float STRAIGHT_STANLEY_SOFTENING_MPS \
   "Straight Stanley softening [m/s]" 0.65 0.01 10.0
 prompt_float OPPOSED_STANLEY_PERCENT \
   "Opposed-term Stanley percentage" 70.0 0.0 100.0
 prompt_float CONTROL_LATENCY_PREVIEW_SEC \
-  "Control latency preview [s]" 0.30 0.0 2.0
+  "Control latency preview [s]" 0.35 0.0 2.0
 
 STRAIGHT_PURE_PURSUIT_WEIGHT="$(awk \
   -v stanley="$STRAIGHT_STANLEY_PERCENT" \
@@ -246,9 +272,9 @@ OPPOSED_STANLEY_WEIGHT="$(awk -v stanley="$OPPOSED_STANLEY_PERCENT" \
 
 if [[ -z "$LEFT_OFFSET_CM" ]]; then
   if [[ -t 0 ]]; then
-    read -r -p "Left target correction [cm, default 9]: " LEFT_OFFSET_CM
+    read -r -p "Left target correction [cm, default 12]: " LEFT_OFFSET_CM
   fi
-  LEFT_OFFSET_CM="${LEFT_OFFSET_CM:-9}"
+  LEFT_OFFSET_CM="${LEFT_OFFSET_CM:-12}"
 fi
 LEFT_OFFSET_CM="${LEFT_OFFSET_CM/,/.}"
 if [[ ! "$LEFT_OFFSET_CM" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
@@ -265,9 +291,14 @@ LEFT_OFFSET_M="$(awk -v value="$LEFT_OFFSET_CM" \
 run_config_tmp="${RUN_CONFIG_FILE}.tmp.$$"
 cat >"$run_config_tmp" <<EOF
 recorded_at: "$(date --iso-8601=seconds)"
-run_mode: "$RUN_MODE"
+run_mode: "rule"
+rule_perception_backend: "$RULE_PERCEPTION_BACKEND"
+direct_bev_model_path: "$DIRECT_BEV_MODEL_PATH"
+direct_bev_image_size: $DIRECT_BEV_IMAGE_SIZE
+direct_bev_confidence: $DIRECT_BEV_CONFIDENCE
+direct_bev_yellow_confidence: $DIRECT_BEV_YELLOW_CONFIDENCE
+direct_bev_path_timeout_sec: $DIRECT_BEV_PATH_TIMEOUT_SEC
 speed_command: $SPEED_COMMAND
-start_waypoint_number: $START_WAYPOINT
 lookahead_distance_m: $LOOKAHEAD_DISTANCE
 stanley_percent: $STANLEY_PERCENT
 pure_pursuit_weight: $PURE_PURSUIT_WEIGHT
@@ -282,9 +313,16 @@ straight_stanley_softening_mps: $STRAIGHT_STANLEY_SOFTENING_MPS
 opposed_stanley_percent: $OPPOSED_STANLEY_PERCENT
 opposed_stanley_weight: $OPPOSED_STANLEY_WEIGHT
 control_latency_preview_sec: $CONTROL_LATENCY_PREVIEW_SEC
+curve_detection_near_x_m: $CURVE_DETECTION_NEAR_X_M
+curve_detection_far_x_m: $CURVE_DETECTION_FAR_X_M
+curve_detection_segment_count: $CURVE_DETECTION_SEGMENT_COUNT
+curve_steering_multiplier_enabled: $CURVE_STEERING_MULTIPLIER_ENABLED
+curve_steering_multiplier_activation_command: $CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND
+curve_steering_multiplier: $CURVE_STEERING_MULTIPLIER
 target_left_offset_cm: $LEFT_OFFSET_CM
 target_left_offset_m: $LEFT_OFFSET_M
 cone_speed_command: $CONE_SPEED_COMMAND
+cone_sensor_presence_timeout_sec: $CONE_SENSOR_PRESENCE_TIMEOUT_SEC
 test_profile: "$TEST_PROFILE"
 enable_rviz: $ENABLE_RVIZ
 start_cone: $START_CONE
@@ -297,6 +335,7 @@ vehicle_yolo_min_confidence: $VEHICLE_YOLO_MIN_CONFIDENCE
 cone_as_vehicle_obstacle: $CONE_AS_VEHICLE_OBSTACLE
 cone_as_vehicle_min_confidence: $CONE_AS_VEHICLE_MIN_CONFIDENCE
 vehicle_yolo_required_frames: $VEHICLE_YOLO_REQUIRED_FRAMES
+vehicle_preferred_side_required_frames: $VEHICLE_PREFERRED_SIDE_REQUIRED_FRAMES
 vehicle_yolo_timeout_sec: $VEHICLE_YOLO_TIMEOUT_SEC
 vehicle_camera_lidar_hfov_deg: $VEHICLE_CAMERA_LIDAR_HFOV_DEG
 vehicle_camera_lidar_padding_deg: $VEHICLE_CAMERA_LIDAR_PADDING_DEG
@@ -356,21 +395,30 @@ wait_for_control_message() {
   local topic="$1"
   local label="$2"
   local action="$3"
+  local field="${4:-}"
   local attempt
   printf '  [확인 중] %-12s %s\n' "$label" "$topic"
-  for attempt in $(seq 1 20); do
+  for attempt in $(seq 1 6); do
     if ! kill -0 "$launch_pid" 2>/dev/null; then
       echo "[문제: 주행 제어 종료] 제어 launch가 준비 도중 종료되었습니다." >&2
       echo "[제어 로그] $CONTROL_LOG" >&2
       tail -n 40 "$CONTROL_LOG" >&2 || true
       return 1
     fi
-    if timeout --signal=INT --kill-after=1s 3s \
-      ros2 topic echo "$topic" --once \
-      --qos-reliability best_effort >/dev/null 2>&1; then
+    local echo_command=(
+      ros2 topic echo "$topic" --once
+      --qos-reliability best_effort
+    )
+    if [[ -n "$field" ]]; then
+      echo_command+=(--field "$field")
+    fi
+    if timeout --signal=INT --kill-after=1s 8s \
+      "${echo_command[@]}" >/dev/null 2>&1; then
       printf '  [OK] %-12s %s\n' "$label" "$topic"
       return 0
     fi
+    printf '  [대기 %d/6] %s 메시지를 기다리는 중입니다.\n' \
+      "$attempt" "$label"
   done
   control_problem "$label" "$topic" "$action"
   return 1
@@ -394,6 +442,13 @@ trap cleanup EXIT INT TERM
 
 echo "Starting RULE base controller with mission overrides in shadow mode."
 echo "Model and waypoint source switching are disabled."
+if [[ "$RULE_PERCEPTION_BACKEND" == "direct_bev" ]]; then
+  echo "RULE perception: direct BEV / best_512 ONNX (canonical normalization bypassed)."
+  echo "RULE model: $DIRECT_BEV_MODEL_PATH"
+  echo "RULE path hold: ${DIRECT_BEV_PATH_TIMEOUT_SEC}s after the last valid BEV path."
+else
+  echo "RULE perception: canonical LR-ASPP."
+fi
 if [[ "$TEST_PROFILE" == "cone_obstacle" ]]; then
   echo "Test profile: CONE-AS-VEHICLE YOLO+LiDAR AVOIDANCE > RULE."
 elif [[ "$TEST_PROFILE" == "avoidance_only" ]]; then
@@ -410,15 +465,21 @@ fi
 if [[ "$STEERING_ONLY" == "true" ]]; then
   echo "Steering-only: enabled (/xycar_motor speed is always 0.0)"
 fi
-echo "Selected start target: WP$START_WAYPOINT"
 echo "Curve control: LD=${LOOKAHEAD_DISTANCE}m, Stanley=${STANLEY_PERCENT}%"
 echo "Control points: PP X=${PURE_PURSUIT_CONTROL_X_M}m, Stanley X=${STANLEY_CONTROL_X_M}m"
 echo "Curve Stanley: gain=$STANLEY_GAIN, soft=${STANLEY_SOFTENING_MPS}m/s"
 echo "Straight Stanley: ${STRAIGHT_STANLEY_PERCENT}%, gain=$STRAIGHT_STANLEY_GAIN, soft=${STRAIGHT_STANLEY_SOFTENING_MPS}m/s"
 echo "Opposed Stanley: ${OPPOSED_STANLEY_PERCENT}%, latency preview=${CONTROL_LATENCY_PREVIEW_SEC}s"
+echo "Curve detection: ${CURVE_DETECTION_NEAR_X_M}-${CURVE_DETECTION_FAR_X_M}m, ${CURVE_DETECTION_SEGMENT_COUNT} segments"
+echo "Curve steering multiplier: ${CURVE_STEERING_MULTIPLIER_ENABLED}, |angle|>=${CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND} x${CURVE_STEERING_MULTIPLIER}, clamp +/-42"
 echo "Left target correction: ${LEFT_OFFSET_CM}cm"
 echo "Cone speed command: $CONE_SPEED_COMMAND"
-echo "Avoidance: YOLO>=${VEHICLE_YOLO_MIN_CONFIDENCE}, entry=${VEHICLE_AVOIDANCE_ENTRY_DISTANCE_M}m, offsets=L${VEHICLE_LEFT_OFFSET_M}/R${VEHICLE_RIGHT_OFFSET_M}m"
+echo "Cone sensor-loss hold: ${CONE_SENSOR_PRESENCE_TIMEOUT_SEC}s"
+if [[ "$VEHICLE_AVOIDANCE_IMMEDIATE_ON_YOLO" == "true" ]]; then
+  echo "Avoidance: YOLO>=${VEHICLE_YOLO_MIN_CONFIDENCE}, one-frame immediate entry (LiDAR distance=telemetry), offsets=L${VEHICLE_LEFT_OFFSET_M}/R${VEHICLE_RIGHT_OFFSET_M}m"
+else
+  echo "Avoidance: YOLO>=${VEHICLE_YOLO_MIN_CONFIDENCE}, entry=${VEHICLE_AVOIDANCE_ENTRY_DISTANCE_M}m, offsets=L${VEHICLE_LEFT_OFFSET_M}/R${VEHICLE_RIGHT_OFFSET_M}m"
+fi
 if [[ "$CONE_AS_VEHICLE_OBSTACLE" == "true" ]]; then
   echo "Cone substitute: enabled, YOLO>=${CONE_AS_VEHICLE_MIN_CONFIDENCE} (slalom disabled)"
 fi
@@ -432,8 +493,19 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   gate_arming_required:=true \
   force_rule_only:=true \
   enable_rviz:="$ENABLE_RVIZ" \
+  start_perception:="$START_CANONICAL_PERCEPTION" \
+  start_rule:="$START_CANONICAL_RULE" \
+  start_direct_bev_rule:="$START_DIRECT_BEV_RULE" \
+  direct_bev_model_path:="$DIRECT_BEV_MODEL_PATH" \
+  direct_bev_image_size:="$DIRECT_BEV_IMAGE_SIZE" \
+  direct_bev_confidence:="$DIRECT_BEV_CONFIDENCE" \
+  direct_bev_yellow_confidence:="$DIRECT_BEV_YELLOW_CONFIDENCE" \
+  direct_bev_cpu_threads:="$DIRECT_BEV_CPU_THREADS" \
+  direct_bev_command_rate_hz:="$DIRECT_BEV_COMMAND_RATE_HZ" \
+  direct_bev_path_timeout_sec:="$DIRECT_BEV_PATH_TIMEOUT_SEC" \
   speed_command:="$SPEED_COMMAND" \
   cone_speed_command:="$CONE_SPEED_COMMAND" \
+  cone_sensor_presence_timeout_sec:="$CONE_SENSOR_PRESENCE_TIMEOUT_SEC" \
   lookahead_distance_m:="$LOOKAHEAD_DISTANCE" \
   pure_pursuit_weight:="$PURE_PURSUIT_WEIGHT" \
   pure_pursuit_control_x_m:="$PURE_PURSUIT_CONTROL_X_M" \
@@ -445,9 +517,14 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   straight_stanley_softening_mps:="$STRAIGHT_STANLEY_SOFTENING_MPS" \
   opposed_stanley_weight:="$OPPOSED_STANLEY_WEIGHT" \
   control_latency_preview_sec:="$CONTROL_LATENCY_PREVIEW_SEC" \
+  curve_detection_near_x_m:="$CURVE_DETECTION_NEAR_X_M" \
+  curve_detection_far_x_m:="$CURVE_DETECTION_FAR_X_M" \
+  curve_detection_segment_count:="$CURVE_DETECTION_SEGMENT_COUNT" \
+  curve_steering_multiplier_enabled:="$CURVE_STEERING_MULTIPLIER_ENABLED" \
+  curve_steering_multiplier_activation_command:="$CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND" \
+  curve_steering_multiplier:="$CURVE_STEERING_MULTIPLIER" \
   target_left_offset_m:="$LEFT_OFFSET_M" \
   perception_max_output_rate_hz:=15.0 \
-  start_waypoint_number:="$START_WAYPOINT" \
   maximum_speed_command:=30.0 \
   start_cone:="$START_CONE" \
   start_object_detection:=true \
@@ -456,6 +533,7 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   cone_as_vehicle_obstacle:="$CONE_AS_VEHICLE_OBSTACLE" \
   cone_as_vehicle_min_confidence:="$CONE_AS_VEHICLE_MIN_CONFIDENCE" \
   vehicle_yolo_required_frames:="$VEHICLE_YOLO_REQUIRED_FRAMES" \
+  vehicle_preferred_side_required_frames:="$VEHICLE_PREFERRED_SIDE_REQUIRED_FRAMES" \
   vehicle_yolo_timeout_sec:="$VEHICLE_YOLO_TIMEOUT_SEC" \
   vehicle_camera_lidar_hfov_deg:="$VEHICLE_CAMERA_LIDAR_HFOV_DEG" \
   vehicle_camera_lidar_padding_deg:="$VEHICLE_CAMERA_LIDAR_PADDING_DEG" \
@@ -501,13 +579,14 @@ fi
 echo
 echo "========== 주행 제어 준비 확인 =========="
 wait_for_control_message \
-  /perception/canonical_road_image \
-  "차선 인지" \
-  "카메라 영상과 lane_seg_lraspp_inference_node의 ERROR를 확인하세요."
+  "$RULE_READY_TOPIC" \
+  "$RULE_READY_LABEL" \
+  "카메라 영상과 선택한 lane segmentation 노드의 ERROR를 확인하세요." \
+  header.stamp
 wait_for_control_message \
   /hybrid/rule_candidate \
   "룰베이스" \
-  "canonical 영상과 canonical_stanley_pursuit_driver를 확인하세요."
+  "$RULE_READY_TOPIC 과 Stanley/Pure Pursuit 제어기를 확인하세요."
 wait_for_control_message \
   /my_rule/object_detections \
   "객체 YOLO" \
@@ -518,7 +597,7 @@ wait_for_control_message \
   "LiDAR /scan과 sequential_hybrid_driver를 확인하세요."
 
 echo
-echo "========== READY | MODE=$RUN_MODE | SPEED=$SPEED_COMMAND | WP$START_WAYPOINT | LD=$LOOKAHEAD_DISTANCE | STANLEY=$STANLEY_PERCENT% | LEFT=${LEFT_OFFSET_CM}cm =========="
+echo "========== READY | MODE=RULE | SPEED=$SPEED_COMMAND | LD=$LOOKAHEAD_DISTANCE | STANLEY=$STANLEY_PERCENT% | LEFT=${LEFT_OFFSET_CM}cm =========="
 echo "Press SPACE once to RUN. Press SPACE again to STOP."
 
 ros2 run xycar_map_nav space_drive_gate --ros-args \

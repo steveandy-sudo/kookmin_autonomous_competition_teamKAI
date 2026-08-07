@@ -42,6 +42,7 @@ setup(
             "rule_command_adapter = xycar_rule_drive.rule_command_adapter:main",
             "keyboard_teleop = xycar_rule_drive.keyboard_teleop:main",
             "kookmin_legacy_camera_driver = xycar_rule_drive.kookmin_legacy_camera_driver:main",
+            "analyze_curve_classification_bag = xycar_rule_drive.analyze_curve_classification_bag:main",
         ],
     },
 )

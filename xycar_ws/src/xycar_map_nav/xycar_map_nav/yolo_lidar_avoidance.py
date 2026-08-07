@@ -30,7 +30,7 @@ class YoloLidarAvoidanceConfig:
     entry_distance_m: float = 1.20
     minimum_side_clearance_m: float = 0.70
     left_offset_m: float = 0.28
-    right_offset_m: float = 0.28
+    right_offset_m: float = 0.31
     offset_rate_mps: float = 0.35
     speed_limit_command: float = 4.0
     minimum_avoid_sec: float = 0.80
@@ -87,6 +87,7 @@ class YoloLidarAvoidanceController:
         confidence: float,
         lidar_distance_m: float,
         preferred_mode: YoloLidarAvoidanceMode | None = None,
+        side_decision_allowed: bool = True,
     ) -> None:
         valid = (
             bool(detected)
@@ -99,7 +100,16 @@ class YoloLidarAvoidanceController:
         self.yolo_confidence = float(confidence)
         if math.isfinite(float(lidar_distance_m)):
             self.tracked_distance_m = float(lidar_distance_m)
-        if preferred_mode in {
+        active_avoidance = self.mode in {
+            YoloLidarAvoidanceMode.AVOID_LEFT,
+            YoloLidarAvoidanceMode.AVOID_RIGHT,
+            YoloLidarAvoidanceMode.RETURN_CENTER,
+        }
+        if not bool(side_decision_allowed) and not active_avoidance:
+            self.preferred_mode = None
+            self.preferred_candidate = None
+            self.preferred_candidate_frames = 0
+        if bool(side_decision_allowed) and preferred_mode in {
             YoloLidarAvoidanceMode.AVOID_LEFT,
             YoloLidarAvoidanceMode.AVOID_RIGHT,
         }:
@@ -117,10 +127,23 @@ class YoloLidarAvoidanceController:
             self.mode == YoloLidarAvoidanceMode.IDLE
             and self.yolo_frames >= max(1, self.config.yolo_required_frames)
         ):
-            self._transition(
-                YoloLidarAvoidanceMode.YOLO_TRACKING,
-                float(now_sec),
-            )
+            if (
+                self.config.immediate_on_yolo
+                and bool(side_decision_allowed)
+                and self.preferred_mode
+                in {
+                    YoloLidarAvoidanceMode.AVOID_LEFT,
+                    YoloLidarAvoidanceMode.AVOID_RIGHT,
+                }
+            ):
+                # Immediate mode is armed by camera semantics alone. LiDAR is
+                # telemetry for distance/clearance and never delays entry.
+                self._transition(self.preferred_mode, float(now_sec))
+            else:
+                self._transition(
+                    YoloLidarAvoidanceMode.YOLO_TRACKING,
+                    float(now_sec),
+                )
 
     def update_lidar_distance(self, distance_m: float) -> None:
         if math.isfinite(float(distance_m)):
@@ -145,12 +168,15 @@ class YoloLidarAvoidanceController:
             if not yolo_fresh:
                 self.reset()
                 return self.state()
-            if (
-                self.config.immediate_on_yolo
-                or self.tracked_distance_m <= self.config.entry_distance_m
-            ):
+            if self.config.immediate_on_yolo:
                 next_mode = self._choose_avoidance_side(obstacle)
-                self._transition(next_mode, now)
+                if next_mode in {
+                    YoloLidarAvoidanceMode.AVOID_LEFT,
+                    YoloLidarAvoidanceMode.AVOID_RIGHT,
+                }:
+                    self._transition(next_mode, now)
+            elif self.tracked_distance_m <= self.config.entry_distance_m:
+                self._transition(self._choose_avoidance_side(obstacle), now)
         elif self.mode == YoloLidarAvoidanceMode.WAIT_SIDE_CLEAR:
             if not yolo_fresh and obstacle is None:
                 self.reset()
@@ -180,11 +206,16 @@ class YoloLidarAvoidanceController:
             else:
                 self.clear_started_sec = None
         elif self.mode == YoloLidarAvoidanceMode.RETURN_CENTER:
-            if (
-                yolo_fresh
-                and self.tracked_distance_m <= self.config.entry_distance_m
-            ):
-                self._transition(self._choose_avoidance_side(obstacle), now)
+            if yolo_fresh:
+                if self.config.immediate_on_yolo:
+                    next_mode = self._choose_avoidance_side(obstacle)
+                    if next_mode in {
+                        YoloLidarAvoidanceMode.AVOID_LEFT,
+                        YoloLidarAvoidanceMode.AVOID_RIGHT,
+                    }:
+                        self._transition(next_mode, now)
+                elif self.tracked_distance_m <= self.config.entry_distance_m:
+                    self._transition(self._choose_avoidance_side(obstacle), now)
 
         if self.mode == YoloLidarAvoidanceMode.AVOID_LEFT:
             target_offset_m = self.config.left_offset_m
@@ -229,6 +260,15 @@ class YoloLidarAvoidanceController:
         self,
         obstacle: LidarPathObstacle | None,
     ) -> YoloLidarAvoidanceMode:
+        if (
+            self.config.immediate_on_yolo
+            and self.preferred_mode
+            in {
+                YoloLidarAvoidanceMode.AVOID_LEFT,
+                YoloLidarAvoidanceMode.AVOID_RIGHT,
+            }
+        ):
+            return self.preferred_mode
         if obstacle is None:
             return YoloLidarAvoidanceMode.WAIT_SIDE_CLEAR
         left = float(obstacle.left_clearance_m)

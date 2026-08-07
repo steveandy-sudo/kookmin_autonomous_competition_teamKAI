@@ -95,11 +95,11 @@ if [[ "$STEERING_ONLY" == "true" ]]; then
   SPEED_COMMAND=0.0
   echo "조향 전용 시험: 속도 command는 0.0으로 고정됩니다."
 else
-  prompt_float SPEED_COMMAND "기본 주행 속도 command" 3.0 3.0 30.0
+  prompt_float SPEED_COMMAND "기본 주행 속도 command" 16.0 3.0 30.0
 fi
 prompt_float LOOKAHEAD_DISTANCE "RULE Lookahead [m]" 0.30 0.10 5.0
 prompt_float STANLEY_PERCENT "RULE Stanley 비율 [%]" 20.0 0.0 100.0
-prompt_float LEFT_OFFSET_CM "기본 좌측 보정 [cm]" 9.0 0.0 100.0
+prompt_float LEFT_OFFSET_CM "기본 좌측 보정 [cm]" 12.0 0.0 100.0
 
 echo
 echo "========== 회피 핵심 파라미터 =========="
@@ -110,17 +110,18 @@ if [[ "$CONE_AS_VEHICLE_OBSTACLE" == "true" ]]; then
 else
   CONE_AS_VEHICLE_MIN_CONFIDENCE=0.50
 fi
-prompt_integer VEHICLE_YOLO_REQUIRED_FRAMES "YOLO 연속 확인 프레임" 2 1 30
+prompt_integer VEHICLE_YOLO_REQUIRED_FRAMES "YOLO 연속 확인 프레임" 1 1 30
+VEHICLE_PREFERRED_SIDE_REQUIRED_FRAMES=1
 prompt_float VEHICLE_YOLO_TIMEOUT_SEC "YOLO 검출 유지 시간 [s]" 2.50 0.05 10.0
 prompt_bool VEHICLE_AVOIDANCE_IMMEDIATE_ON_YOLO \
-  "YOLO와 LiDAR가 일치하면 거리와 무관하게 즉시 회피" \
+  "YOLO 차량을 중앙선 좌우로 판단하면 LiDAR 승인 없이 즉시 회피" \
   "$AVOIDANCE_IMMEDIATE_DEFAULT"
 prompt_float VEHICLE_AVOIDANCE_ENTRY_DISTANCE_M \
   "즉시 회피를 끈 경우 회피 진입 거리 [m]" 1.20 0.20 5.0
 prompt_float VEHICLE_MINIMUM_SIDE_CLEARANCE_M \
   "회피할 쪽의 최소 빈 공간 [m]" 0.70 0.10 3.0
-prompt_float VEHICLE_LEFT_OFFSET_M "왼쪽 회피 이동량 [m]" 0.33 0.0 1.5
-prompt_float VEHICLE_RIGHT_OFFSET_M "오른쪽 회피 이동량 [m]" 0.33 0.0 1.5
+prompt_float VEHICLE_LEFT_OFFSET_M "왼쪽 회피 이동량 [m]" 0.28 0.0 1.5
+prompt_float VEHICLE_RIGHT_OFFSET_M "오른쪽 회피 이동량 [m]" 0.31 0.0 1.5
 prompt_float VEHICLE_OFFSET_RATE_MPS "횡이동 변화율 [m/s]" 0.35 0.01 3.0
 prompt_float VEHICLE_AVOIDANCE_SPEED_LIMIT_COMMAND \
   "회피 중 속도 상한 command" 8.0 0.0 30.0
@@ -191,6 +192,7 @@ export VEHICLE_YOLO_MIN_CONFIDENCE
 export CONE_AS_VEHICLE_OBSTACLE
 export CONE_AS_VEHICLE_MIN_CONFIDENCE
 export VEHICLE_YOLO_REQUIRED_FRAMES
+export VEHICLE_PREFERRED_SIDE_REQUIRED_FRAMES
 export VEHICLE_YOLO_TIMEOUT_SEC
 export VEHICLE_CAMERA_LIDAR_HFOV_DEG
 export VEHICLE_CAMERA_LIDAR_PADDING_DEG
@@ -230,5 +232,5 @@ echo "[준비] RViz, 카메라, LiDAR, VESC와 회피 전용 제어기를 시작
 echo "[조작] READY 후 SPACE=주행, 다시 SPACE=정지, Ctrl+C=전체 종료"
 
 exec "$SCRIPT_DIR/run_complete_space_hybrid.sh" \
-  "$SPEED_COMMAND" 1 rule speed100 \
-  "$LOOKAHEAD_DISTANCE" "$STANLEY_PERCENT" "$LEFT_OFFSET_CM"
+  "$SPEED_COMMAND" "$LOOKAHEAD_DISTANCE" "$STANLEY_PERCENT" \
+  "$LEFT_OFFSET_CM"

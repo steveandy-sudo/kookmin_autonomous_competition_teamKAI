@@ -29,6 +29,9 @@ def generate_launch_description():
             DeclareLaunchArgument("start_lidar", default_value="true"),
             DeclareLaunchArgument("start_vesc", default_value="true"),
             DeclareLaunchArgument("vesc_drive_enabled", default_value="false"),
+            DeclareLaunchArgument(
+                "steering_center_trim_command", default_value="-5.0"
+            ),
             DeclareLaunchArgument("camera_device", default_value=(
                 "/dev/v4l/by-id/"
                 "usb-HD_USB_Camera_HD_USB_Camera-video-index0"
@@ -60,6 +63,9 @@ def generate_launch_description():
                     "port": "/dev/ttyMOTOR",
                     "drive_enabled": LaunchConfiguration(
                         "vesc_drive_enabled"
+                    ),
+                    "steering_center_trim_command": LaunchConfiguration(
+                        "steering_center_trim_command"
                     ),
                 },
             ),
