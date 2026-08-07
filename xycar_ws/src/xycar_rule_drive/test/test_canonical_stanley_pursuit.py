@@ -12,11 +12,13 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
     blend_pursuit_stanley,
     canonical_class_masks,
     command_during_lane_loss,
+    far_path_signed_curvature_per_m,
     connect_yellow_centerline,
     compute_departure_guard_pure_pursuit_weight,
     effective_target_offsets,
     fuse_lane_center_paths,
     fused_stanley_pursuit,
+    guard_unconfirmed_yellow_reversal,
     latency_compensated_lookahead,
     lead_compensated_steering_command,
     offset_lane_target,
@@ -26,14 +28,209 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
     path_heading_change_per_m,
     predict_path_in_delayed_vehicle_frame,
     pursuit_requests_command_reversal,
+    select_path_when_yellow_missing,
     smooth_target_path,
     steering_term_requests_command_reversal,
     update_heading_recovery_latch,
+    update_curve_reversal_confirmation,
+    usable_forward_path,
     white_boundary_to_target_offset,
+    yellow_curve_reversal_request_sign,
 )
 
 
 class CanonicalStanleyPursuitTest(unittest.TestCase):
+    def test_unconfirmed_yellow_reversal_can_only_unwind_to_zero(self):
+        guarded = guard_unconfirmed_yellow_reversal(
+            -24.0,
+            last_angle_command=18.0,
+            minimum_current_command=10.0,
+            yellow_reference=True,
+            confirmed=False,
+            confirmed_sign=0.0,
+            far_reference_command_sign=-1.0,
+        )
+        self.assertEqual(guarded, 0.0)
+
+    def test_confirmed_far_yellow_reversal_is_allowed(self):
+        guarded = guard_unconfirmed_yellow_reversal(
+            -24.0,
+            last_angle_command=18.0,
+            minimum_current_command=10.0,
+            yellow_reference=True,
+            confirmed=True,
+            confirmed_sign=-1.0,
+            far_reference_command_sign=-1.0,
+        )
+        self.assertEqual(guarded, -24.0)
+
+    def test_white_command_is_not_changed_by_yellow_reversal_guard(self):
+        guarded = guard_unconfirmed_yellow_reversal(
+            -24.0,
+            last_angle_command=18.0,
+            minimum_current_command=10.0,
+            yellow_reference=False,
+            confirmed=False,
+            confirmed_sign=0.0,
+            far_reference_command_sign=float("nan"),
+        )
+        self.assertEqual(guarded, -24.0)
+
+    def test_same_direction_far_yellow_holds_inward_steering(self):
+        guarded = guard_unconfirmed_yellow_reversal(
+            -24.0,
+            last_angle_command=18.0,
+            minimum_current_command=10.0,
+            yellow_reference=True,
+            confirmed=False,
+            confirmed_sign=0.0,
+            far_reference_command_sign=1.0,
+        )
+        self.assertEqual(guarded, 18.0)
+
+    def test_far_path_curvature_keeps_turn_direction(self):
+        x = np.linspace(0.0, 0.70, 32)
+        left_curve = np.column_stack((x, 0.8 * x * x))
+        right_curve = np.column_stack((x, -0.8 * x * x))
+
+        self.assertGreater(
+            far_path_signed_curvature_per_m(
+                left_curve, near_x_m=0.45, far_x_m=0.60
+            ),
+            0.0,
+        )
+        self.assertLess(
+            far_path_signed_curvature_per_m(
+                right_curve, near_x_m=0.45, far_x_m=0.60
+            ),
+            0.0,
+        )
+
+    def test_curve_reversal_requires_pursuit_and_far_yellow_agreement(self):
+        common = {
+            "last_angle_command": 18.0,
+            "minimum_current_command": 10.0,
+            "pure_pursuit_activation_rad": 0.12,
+            "far_curvature_activation_per_m": 0.12,
+            "yellow_reference": True,
+        }
+        self.assertEqual(
+            yellow_curve_reversal_request_sign(
+                pure_pursuit_rad=0.30,
+                far_signed_curvature_per_m=0.40,
+                **common,
+            ),
+            -1.0,
+        )
+        self.assertEqual(
+            yellow_curve_reversal_request_sign(
+                pure_pursuit_rad=0.30,
+                far_signed_curvature_per_m=-0.40,
+                **common,
+            ),
+            0.0,
+        )
+
+    def test_white_reference_cannot_trigger_curve_reversal(self):
+        request = yellow_curve_reversal_request_sign(
+            last_angle_command=18.0,
+            pure_pursuit_rad=0.30,
+            far_signed_curvature_per_m=0.40,
+            minimum_current_command=10.0,
+            pure_pursuit_activation_rad=0.12,
+            far_curvature_activation_per_m=0.12,
+            yellow_reference=False,
+        )
+        self.assertEqual(request, 0.0)
+
+    def test_curve_reversal_requires_two_matching_frames(self):
+        sign, count, active = update_curve_reversal_confirmation(
+            0.0, 0, request_sign=-1.0, confirmation_frames=2
+        )
+        self.assertEqual((sign, count, active), (-1.0, 1, False))
+        sign, count, active = update_curve_reversal_confirmation(
+            sign, count, request_sign=-1.0, confirmation_frames=2
+        )
+        self.assertEqual((sign, count, active), (-1.0, 2, True))
+        self.assertEqual(
+            update_curve_reversal_confirmation(
+                sign, count, request_sign=0.0, confirmation_frames=2
+            ),
+            (0.0, 0, False),
+        )
+
+    def test_yellow_loss_prefers_remembered_yellow_over_white(self):
+        remembered = np.asarray([[0.1, 0.2], [0.3, 0.2], [0.5, 0.2]])
+        white = np.asarray([[0.1, -0.2], [0.3, -0.2], [0.5, -0.2]])
+
+        selected, source = select_path_when_yellow_missing(
+            remembered_yellow_target=remembered,
+            white_target=white,
+            yellow_seen=True,
+            prefer_remembered_yellow=True,
+        )
+
+        self.assertIs(selected, remembered)
+        self.assertEqual(source, "yellow_memory")
+
+    def test_exhausted_yellow_memory_holds_instead_of_using_white(self):
+        white = np.asarray([[0.1, -0.2], [0.3, -0.2], [0.5, -0.2]])
+
+        selected, source = select_path_when_yellow_missing(
+            remembered_yellow_target=None,
+            white_target=white,
+            yellow_seen=True,
+            prefer_remembered_yellow=True,
+        )
+
+        self.assertIsNone(selected)
+        self.assertEqual(source, "none")
+
+    def test_white_can_initialize_path_before_yellow_is_seen(self):
+        white = np.asarray([[0.1, -0.2], [0.3, -0.2], [0.5, -0.2]])
+
+        selected, source = select_path_when_yellow_missing(
+            remembered_yellow_target=None,
+            white_target=white,
+            yellow_seen=False,
+            prefer_remembered_yellow=True,
+        )
+
+        self.assertIs(selected, white)
+        self.assertEqual(source, "white")
+
+    def test_remembered_yellow_expires_after_points_pass_vehicle(self):
+        path = np.asarray(
+            [[-0.2, 0.1], [0.01, 0.1], [0.10, 0.1], [0.20, 0.1]]
+        )
+        self.assertIsNone(usable_forward_path(path))
+
+        path = np.vstack((path, [[0.30, 0.1]]))
+        usable = usable_forward_path(path)
+        self.assertIsNotNone(usable)
+        self.assertEqual(usable.shape, (3, 2))
+        self.assertTrue(np.all(usable[:, 0] >= 0.02))
+
+    def test_tracked_path_does_not_restore_itself_after_exhaustion(self):
+        path = np.asarray([[0.03, 0.0], [0.08, 0.0], [0.13, 0.0]])
+
+        preserved = predict_path_in_delayed_vehicle_frame(
+            path,
+            speed_mps=1.0,
+            curvature_per_m=0.0,
+            latency_sec=0.20,
+        )
+        exhausted = predict_path_in_delayed_vehicle_frame(
+            path,
+            speed_mps=1.0,
+            curvature_per_m=0.0,
+            latency_sec=0.20,
+            preserve_path_if_exhausted=False,
+        )
+
+        self.assertEqual(preserved.shape, (3, 2))
+        self.assertLess(exhausted.shape[0], 3)
+
     def test_curve_steering_multiplier_ignores_straight_paths(self):
         self.assertEqual(
             amplify_curve_steering_command(

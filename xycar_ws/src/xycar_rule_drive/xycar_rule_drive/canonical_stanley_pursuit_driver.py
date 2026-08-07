@@ -111,6 +111,7 @@ def predict_path_in_delayed_vehicle_frame(
     speed_mps: float,
     curvature_per_m: float,
     latency_sec: float,
+    preserve_path_if_exhausted: bool = True,
 ) -> np.ndarray:
     """Transform a current path into the predicted delayed vehicle frame."""
     points = np.asarray(path, dtype=np.float64)
@@ -144,7 +145,9 @@ def predict_path_in_delayed_vehicle_frame(
     )
     visible = predicted[:, 0] >= 0.02
     if int(np.count_nonzero(visible)) < 3:
-        return points.copy()
+        if preserve_path_if_exhausted:
+            return points.copy()
+        return predicted[visible]
     return predicted[visible]
 
 
@@ -477,6 +480,44 @@ def smooth_target_path(
     return result
 
 
+def usable_forward_path(
+    path: np.ndarray | None,
+    *,
+    minimum_forward_m: float = 0.02,
+    minimum_points: int = 3,
+) -> np.ndarray | None:
+    """Keep only remembered path points that are still ahead of the vehicle."""
+    if path is None:
+        return None
+    points = np.asarray(path, dtype=np.float64)
+    if points.ndim != 2 or points.shape[1] != 2:
+        return None
+    points = points[np.all(np.isfinite(points), axis=1)]
+    points = points[points[:, 0] >= float(minimum_forward_m)]
+    if points.shape[0] < max(3, int(minimum_points)):
+        return None
+    return points[np.argsort(points[:, 0])]
+
+
+def select_path_when_yellow_missing(
+    *,
+    remembered_yellow_target: np.ndarray | None,
+    white_target: np.ndarray | None,
+    yellow_seen: bool,
+    prefer_remembered_yellow: bool,
+) -> tuple[np.ndarray | None, str]:
+    """Select a loss fallback without silently changing lane references."""
+    if bool(prefer_remembered_yellow) and bool(yellow_seen):
+        if remembered_yellow_target is not None:
+            return remembered_yellow_target, "yellow_memory"
+        # Once yellow established the reference, an exhausted memory must
+        # fall through to last-command hold instead of jumping to white.
+        return None, "none"
+    if white_target is not None:
+        return white_target, "white"
+    return None, "none"
+
+
 def median_path_lateral_difference(
     left_path: np.ndarray,
     right_path: np.ndarray,
@@ -805,6 +846,123 @@ def _path_heading_at(
     start_y = _path_lateral_at(path, start_x)
     end_y = _path_lateral_at(path, end_x)
     return math.atan2(end_y - start_y, end_x - start_x)
+
+
+def far_path_signed_curvature_per_m(
+    path: np.ndarray,
+    *,
+    near_x_m: float,
+    far_x_m: float,
+    minimum_span_m: float = 0.10,
+    preview_window_m: float = 0.20,
+) -> float:
+    """Return signed far-path curvature, or NaN when preview is too short."""
+    points = np.asarray(path, dtype=np.float64)
+    if points.ndim != 2 or points.shape[0] < 3 or points.shape[1] != 2:
+        return float("nan")
+    path_near = float(np.min(points[:, 0]))
+    path_far = float(np.max(points[:, 0]))
+    far_x = min(float(far_x_m), path_far)
+    near_x = max(
+        float(near_x_m),
+        path_near,
+        far_x - max(float(minimum_span_m), float(preview_window_m)),
+    )
+    if far_x - near_x < max(1.0e-4, float(minimum_span_m)):
+        return float("nan")
+    near_heading = _path_heading_at(points, near_x)
+    far_heading = _path_heading_at(points, far_x)
+    heading_delta = math.atan2(
+        math.sin(far_heading - near_heading),
+        math.cos(far_heading - near_heading),
+    )
+    return heading_delta / (far_x - near_x)
+
+
+def yellow_curve_reversal_request_sign(
+    *,
+    last_angle_command: float,
+    pure_pursuit_rad: float,
+    far_signed_curvature_per_m: float,
+    minimum_current_command: float,
+    pure_pursuit_activation_rad: float,
+    far_curvature_activation_per_m: float,
+    yellow_reference: bool,
+) -> float:
+    """Request a reversal only when pursuit and the far yellow curve agree."""
+    if (
+        not bool(yellow_reference)
+        or abs(float(last_angle_command))
+        < max(0.0, float(minimum_current_command))
+        or not math.isfinite(float(far_signed_curvature_per_m))
+        or abs(float(pure_pursuit_rad))
+        < max(0.0, float(pure_pursuit_activation_rad))
+        or abs(float(far_signed_curvature_per_m))
+        < max(0.0, float(far_curvature_activation_per_m))
+    ):
+        return 0.0
+    pursuit_command_sign = -math.copysign(1.0, float(pure_pursuit_rad))
+    far_curve_command_sign = -math.copysign(
+        1.0, float(far_signed_curvature_per_m)
+    )
+    if pursuit_command_sign != far_curve_command_sign:
+        return 0.0
+    if float(last_angle_command) * far_curve_command_sign >= 0.0:
+        return 0.0
+    return far_curve_command_sign
+
+
+def update_curve_reversal_confirmation(
+    confirmed_sign: float,
+    frame_count: int,
+    *,
+    request_sign: float,
+    confirmation_frames: int,
+) -> tuple[float, int, bool]:
+    """Require the same far-yellow reversal request for consecutive frames."""
+    request = (
+        math.copysign(1.0, float(request_sign)) if request_sign else 0.0
+    )
+    previous = (
+        math.copysign(1.0, float(confirmed_sign)) if confirmed_sign else 0.0
+    )
+    if not request:
+        return 0.0, 0, False
+    count = int(frame_count) + 1 if request == previous else 1
+    required = max(1, int(confirmation_frames))
+    return request, count, count >= required
+
+
+def guard_unconfirmed_yellow_reversal(
+    raw_command: float,
+    *,
+    last_angle_command: float,
+    minimum_current_command: float,
+    yellow_reference: bool,
+    confirmed: bool,
+    confirmed_sign: float,
+    far_reference_command_sign: float,
+) -> float:
+    """Unwind toward zero instead of taking an unconfirmed outward turn."""
+    raw = float(raw_command)
+    previous = float(last_angle_command)
+    if (
+        not bool(yellow_reference)
+        or abs(previous) < max(0.0, float(minimum_current_command))
+        or raw * previous >= 0.0
+    ):
+        return raw
+    expected_sign = (
+        math.copysign(1.0, float(confirmed_sign)) if confirmed_sign else 0.0
+    )
+    if bool(confirmed) and expected_sign and raw * expected_sign > 0.0:
+        return raw
+    far_sign = float(far_reference_command_sign)
+    if not math.isfinite(far_sign):
+        return previous
+    if far_sign and far_sign * previous > 0.0:
+        return previous
+    return 0.0
 
 
 def compute_departure_guard_pure_pursuit_weight(
@@ -1159,6 +1317,7 @@ class CanonicalStanleyPursuitDriver(Node):
         self.declare_parameter("avoidance_obstacle_length_m", 0.55)
         self.declare_parameter("avoidance_obstacle_width_m", 0.28)
         self.declare_parameter("white_fallback_enabled", True)
+        self.declare_parameter("prefer_remembered_yellow_on_loss", True)
         self.declare_parameter("lane_half_width_m", 0.20)
         self.declare_parameter("white_fallback_max_gap_m", 0.25)
         self.declare_parameter("white_fallback_min_span_m", 0.18)
@@ -1191,6 +1350,36 @@ class CanonicalStanleyPursuitDriver(Node):
             "curve_steering_multiplier_activation_command", 20.0
         )
         self.declare_parameter("curve_steering_multiplier", 1.0)
+        self.declare_parameter(
+            "curve_steering_yellow_reference_only", False
+        )
+        self.declare_parameter(
+            "yellow_curve_reversal_preview_enabled", False
+        )
+        self.declare_parameter(
+            "yellow_curve_reversal_preview_near_x_m", 0.45
+        )
+        self.declare_parameter(
+            "yellow_curve_reversal_preview_far_x_m", 0.90
+        )
+        self.declare_parameter(
+            "yellow_curve_reversal_preview_window_m", 0.20
+        )
+        self.declare_parameter(
+            "yellow_curve_reversal_preview_curvature_per_m", 0.12
+        )
+        self.declare_parameter(
+            "yellow_curve_reversal_preview_pursuit_rad", 0.12
+        )
+        self.declare_parameter(
+            "yellow_curve_reversal_preview_minimum_command", 10.0
+        )
+        self.declare_parameter(
+            "yellow_curve_reversal_preview_confirmation_frames", 2
+        )
+        self.declare_parameter(
+            "yellow_curve_reversal_preview_pursuit_weight", 0.75
+        )
         self.declare_parameter("straight_pure_pursuit_weight", 0.10)
         self.declare_parameter("straight_stanley_gain", 0.65)
         self.declare_parameter("straight_stanley_softening_mps", 0.65)
@@ -1436,6 +1625,7 @@ class CanonicalStanleyPursuitDriver(Node):
         self.latest_path: np.ndarray | None = None
         self.latest_yellow_path: np.ndarray | None = None
         self.latest_white_path: np.ndarray | None = None
+        self.has_seen_yellow = False
         self.latest_header = None
         self.latest_terms: SteeringTerms | None = None
         self.latest_path_info: ConnectedPath | None = None
@@ -1448,6 +1638,11 @@ class CanonicalStanleyPursuitDriver(Node):
         self.last_raw_command_time: float | None = None
         self.heading_recovery_command_sign = 0.0
         self.heading_recovery_miss_count = 0
+        self.yellow_curve_reversal_sign = 0.0
+        self.yellow_curve_reversal_frames = 0
+        self.latest_far_signed_curvature_per_m = float("nan")
+        self.yellow_curve_reversal_guard_active = False
+        self.yellow_curve_reversal_preview_active = False
         self.turn_transition_recovery_sign = 0.0
         self.turn_transition_recovery_until = 0.0
         self.turn_transition_armed_sign = 0.0
@@ -1723,6 +1918,7 @@ class CanonicalStanleyPursuitDriver(Node):
                 white_connected = white_candidate
         if yellow_connected is not None:
             self.latest_yellow_path = yellow_connected.points
+            self.has_seen_yellow = True
         if white_connected is not None:
             self.latest_white_path = white_connected.points
 
@@ -1737,6 +1933,20 @@ class CanonicalStanleyPursuitDriver(Node):
                 target_left_offset_m=target_left_offset_m,
             )
             if yellow_connected is not None
+            else None
+        )
+        remembered_yellow = (
+            usable_forward_path(self.latest_yellow_path)
+            if yellow_connected is None
+            else None
+        )
+        remembered_yellow_target = (
+            offset_lane_target(
+                remembered_yellow,
+                target_right_offset_m=target_right_offset_m,
+                target_left_offset_m=target_left_offset_m,
+            )
+            if remembered_yellow is not None
             else None
         )
         white_target = (
@@ -1783,14 +1993,18 @@ class CanonicalStanleyPursuitDriver(Node):
             target_path = yellow_target
             connected = yellow_connected
             path_source = "yellow"
-        elif white_target is not None:
-            target_path = white_target
-            connected = white_connected
-            path_source = "white"
         else:
-            target_path = None
-            connected = None
-            path_source = "none"
+            target_path, path_source = select_path_when_yellow_missing(
+                remembered_yellow_target=remembered_yellow_target,
+                white_target=white_target,
+                yellow_seen=self.has_seen_yellow,
+                prefer_remembered_yellow=bool(
+                    self.get_parameter(
+                        "prefer_remembered_yellow_on_loss"
+                    ).value
+                ),
+            )
+            connected = white_connected if path_source == "white" else None
 
         if target_path is not None:
             target_path, bypass_active = self.apply_sitl_bypass_path(
@@ -1823,7 +2037,7 @@ class CanonicalStanleyPursuitDriver(Node):
             white,
             yellow,
             connected,
-            self.latest_path if connected is not None else None,
+            self.latest_path if target_path is not None else None,
             path_source,
         )
         if bool(self.get_parameter("command_on_canonical").value):
@@ -1861,12 +2075,14 @@ class CanonicalStanleyPursuitDriver(Node):
         def advance(path: np.ndarray | None) -> np.ndarray | None:
             if path is None:
                 return None
-            return predict_path_in_delayed_vehicle_frame(
+            predicted = predict_path_in_delayed_vehicle_frame(
                 path,
                 speed_mps=speed_mps,
                 curvature_per_m=curvature,
                 latency_sec=dt,
+                preserve_path_if_exhausted=False,
             )
+            return usable_forward_path(predicted)
 
         self.latest_yellow_path = advance(self.latest_yellow_path)
         self.latest_white_path = advance(self.latest_white_path)
@@ -2184,6 +2400,19 @@ class CanonicalStanleyPursuitDriver(Node):
                 ).value
             ),
         )
+        yellow_reference = self.latest_path_source in (
+            "yellow",
+            "fused",
+            "yellow_memory",
+        )
+        source_allowed = (
+            not bool(
+                self.get_parameter(
+                    "curve_steering_yellow_reference_only"
+                ).value
+            )
+            or yellow_reference
+        )
         return amplify_curve_steering_command(
             raw_command,
             curve_active=curve_active,
@@ -2191,7 +2420,7 @@ class CanonicalStanleyPursuitDriver(Node):
                 self.get_parameter(
                     "curve_steering_multiplier_enabled"
                 ).value
-            ),
+            ) and source_allowed,
             activation_command=float(
                 self.get_parameter(
                     "curve_steering_multiplier_activation_command"
@@ -2203,6 +2432,165 @@ class CanonicalStanleyPursuitDriver(Node):
             command_min=self.angle_command_min,
             command_max=self.angle_command_max,
         )
+
+    def apply_yellow_curve_reversal_preview(
+        self,
+        raw_command: float,
+        terms: SteeringTerms,
+    ) -> tuple[float, SteeringTerms]:
+        if not bool(
+            self.get_parameter(
+                "yellow_curve_reversal_preview_enabled"
+            ).value
+        ):
+            self.yellow_curve_reversal_sign = 0.0
+            self.yellow_curve_reversal_frames = 0
+            self.latest_far_signed_curvature_per_m = float("nan")
+            self.yellow_curve_reversal_guard_active = False
+            self.yellow_curve_reversal_preview_active = False
+            return raw_command, terms
+        yellow_reference = self.latest_path_source in (
+            "yellow",
+            "fused",
+            "yellow_memory",
+        )
+        minimum_current_command = float(
+            self.get_parameter(
+                "yellow_curve_reversal_preview_minimum_command"
+            ).value
+        )
+        far_curvature = far_path_signed_curvature_per_m(
+            self.latest_path,
+            near_x_m=float(
+                self.get_parameter(
+                    "yellow_curve_reversal_preview_near_x_m"
+                ).value
+            ),
+            far_x_m=float(
+                self.get_parameter(
+                    "yellow_curve_reversal_preview_far_x_m"
+                ).value
+            ),
+            preview_window_m=float(
+                self.get_parameter(
+                    "yellow_curve_reversal_preview_window_m"
+                ).value
+            ),
+        )
+        self.latest_far_signed_curvature_per_m = far_curvature
+        self.yellow_curve_reversal_guard_active = False
+        self.yellow_curve_reversal_preview_active = False
+        far_activation = float(
+            self.get_parameter(
+                "yellow_curve_reversal_preview_curvature_per_m"
+            ).value
+        )
+        far_reference_command_sign = (
+            float("nan")
+            if not math.isfinite(far_curvature)
+            else (
+                -math.copysign(1.0, far_curvature)
+                if abs(far_curvature) >= far_activation
+                else 0.0
+            )
+        )
+        request_sign = yellow_curve_reversal_request_sign(
+            last_angle_command=self.last_angle_command,
+            pure_pursuit_rad=terms.pure_pursuit_rad,
+            far_signed_curvature_per_m=far_curvature,
+            minimum_current_command=minimum_current_command,
+            pure_pursuit_activation_rad=float(
+                self.get_parameter(
+                    "yellow_curve_reversal_preview_pursuit_rad"
+                ).value
+            ),
+            far_curvature_activation_per_m=far_activation,
+            yellow_reference=yellow_reference,
+        )
+        (
+            self.yellow_curve_reversal_sign,
+            self.yellow_curve_reversal_frames,
+            confirmed,
+        ) = update_curve_reversal_confirmation(
+            self.yellow_curve_reversal_sign,
+            self.yellow_curve_reversal_frames,
+            request_sign=request_sign,
+            confirmation_frames=int(
+                self.get_parameter(
+                    "yellow_curve_reversal_preview_confirmation_frames"
+                ).value
+            ),
+        )
+        guarded_raw = guard_unconfirmed_yellow_reversal(
+            raw_command,
+            last_angle_command=self.last_angle_command,
+            minimum_current_command=minimum_current_command,
+            yellow_reference=yellow_reference,
+            confirmed=confirmed,
+            confirmed_sign=self.yellow_curve_reversal_sign,
+            far_reference_command_sign=far_reference_command_sign,
+        )
+        guarded_terms = terms
+        if guarded_raw != raw_command:
+            self.yellow_curve_reversal_guard_active = True
+            guarded_curvature = interpolate_clamped(
+                guarded_raw,
+                self.command_inputs,
+                self.command_curvatures,
+            )
+            guarded_terms = SteeringTerms(
+                pure_pursuit_rad=terms.pure_pursuit_rad,
+                stanley_rad=terms.stanley_rad,
+                fused_rad=math.atan(
+                    float(self.get_parameter("wheel_base_m").value)
+                    * guarded_curvature
+                ),
+                cross_track_error_m=terms.cross_track_error_m,
+                heading_error_rad=terms.heading_error_rad,
+                target_x_m=terms.target_x_m,
+                target_y_m=terms.target_y_m,
+            )
+        if not confirmed:
+            return guarded_raw, guarded_terms
+        pursuit_weight = clamp(
+            float(
+                self.get_parameter(
+                    "yellow_curve_reversal_preview_pursuit_weight"
+                ).value
+            ),
+            0.0,
+            1.0,
+        )
+        preview_fused = (
+            pursuit_weight * terms.pure_pursuit_rad
+            + (1.0 - pursuit_weight) * terms.stanley_rad
+        )
+        preview_curvature = math.tan(preview_fused) / max(
+            1.0e-3, float(self.get_parameter("wheel_base_m").value)
+        )
+        preview_command = interpolate_clamped(
+            preview_curvature,
+            self.curvature_inputs,
+            self.curvature_commands,
+        )
+        preview_command = clamp(
+            preview_command,
+            self.angle_command_min,
+            self.angle_command_max,
+        )
+        if preview_command * self.yellow_curve_reversal_sign <= 0.0:
+            return guarded_raw, guarded_terms
+        preview_terms = SteeringTerms(
+            pure_pursuit_rad=terms.pure_pursuit_rad,
+            stanley_rad=terms.stanley_rad,
+            fused_rad=preview_fused,
+            cross_track_error_m=terms.cross_track_error_m,
+            heading_error_rad=terms.heading_error_rad,
+            target_x_m=terms.target_x_m,
+            target_y_m=terms.target_y_m,
+        )
+        self.yellow_curve_reversal_preview_active = True
+        return preview_command, preview_terms
 
     def speed_for_steering(self, angle_command: float) -> float:
         cruise = float(self.get_parameter("cruise_speed_command").value)
@@ -2235,9 +2623,16 @@ class CanonicalStanleyPursuitDriver(Node):
         self.issue_command(now)
 
     def issue_command(self, now: float) -> None:
+        self.latest_far_signed_curvature_per_m = float("nan")
+        self.yellow_curve_reversal_guard_active = False
+        self.yellow_curve_reversal_preview_active = False
         if self.path_valid and self.latest_path is not None:
             raw_angle, terms = self.steering_command_for_path(self.latest_path)
             raw_angle = self.amplify_curve_steering(raw_angle)
+            raw_angle, terms = self.apply_yellow_curve_reversal_preview(
+                raw_angle,
+                terms,
+            )
             controller_raw_angle = raw_angle
             (
                 raw_angle,
@@ -2385,8 +2780,8 @@ class CanonicalStanleyPursuitDriver(Node):
         debug = image.copy()
         debug[white > 0] = (255, 255, 255)
         debug[yellow > 0] = (0, 220, 255)
+        height, width = debug.shape[:2]
         if connected is not None:
-            height, width = debug.shape[:2]
             yellow_pixels = []
             for forward, lateral in connected.points:
                 column = int(
@@ -2414,35 +2809,35 @@ class CanonicalStanleyPursuitDriver(Node):
                     2,
                     cv2.LINE_AA,
                 )
-            target_pixels = []
-            if target_path is not None:
-                for forward, lateral in target_path:
-                    column = int(
-                        round(
-                            width * 0.5
-                            - float(lateral) * width / self.lateral_range_m
-                        )
+        target_pixels = []
+        if target_path is not None:
+            for forward, lateral in target_path:
+                column = int(
+                    round(
+                        width * 0.5
+                        - float(lateral) * width / self.lateral_range_m
                     )
-                    row = int(
-                        round(
-                            height
-                            - 1
-                            - float(forward)
-                            * (height - 1)
-                            / self.forward_range_m
-                        )
-                    )
-                    target_pixels.append((column, row))
-            if len(target_pixels) >= 2:
-                cv2.polylines(
-                    debug,
-                    [np.asarray(target_pixels, dtype=np.int32)],
-                    False,
-                    (255, 180, 0),
-                    2,
-                    cv2.LINE_AA,
                 )
-        status = path_source.upper() if connected is not None else "HOLD"
+                row = int(
+                    round(
+                        height
+                        - 1
+                        - float(forward)
+                        * (height - 1)
+                        / self.forward_range_m
+                    )
+                )
+                target_pixels.append((column, row))
+        if len(target_pixels) >= 2:
+            cv2.polylines(
+                debug,
+                [np.asarray(target_pixels, dtype=np.int32)],
+                False,
+                (255, 180, 0),
+                2,
+                cv2.LINE_AA,
+            )
+        status = path_source.upper() if target_path is not None else "HOLD"
         cv2.putText(
             debug,
             f"{status} steer={self.last_angle_command:.1f} "
@@ -2474,13 +2869,22 @@ class CanonicalStanleyPursuitDriver(Node):
             float(terms.fused_rad if terms is not None else 0.0),
             float(self.last_angle_command),
             float(self.last_speed_command),
-            {"yellow": 1.0, "white": 2.0, "fused": 3.0}.get(
+            {
+                "yellow": 1.0,
+                "white": 2.0,
+                "fused": 3.0,
+                "yellow_memory": 4.0,
+            }.get(
                 self.latest_path_source, 0.0
             ),
             float(terms.cross_track_error_m if terms is not None else 0.0),
             float(terms.heading_error_rad if terms is not None else 0.0),
             float(terms.target_x_m if terms is not None else 0.0),
             float(terms.target_y_m if terms is not None else 0.0),
+            float(self.latest_far_signed_curvature_per_m),
+            1.0 if self.yellow_curve_reversal_guard_active else 0.0,
+            1.0 if self.yellow_curve_reversal_preview_active else 0.0,
+            float(self.yellow_curve_reversal_frames),
         ]
         self.diagnostics_pub.publish(message)
 

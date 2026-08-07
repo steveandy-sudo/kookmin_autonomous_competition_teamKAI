@@ -6,6 +6,7 @@ canonical_stanley_pursuit_driver:
     # separation and temporal consistency checks still reject unrelated edges.
     extend_fused_path_to_white: true
     temporal_path_ego_compensation_enabled: true
+    prefer_remembered_yellow_on_loss: true
 
     # The 2026-07-24 bags measured about 0.37 s from camera exposure to yaw
     # response. Start below that estimate and validate at speed 4, 6, then 8.
@@ -20,9 +21,26 @@ canonical_stanley_pursuit_driver:
     curve_detection_near_x_m: 0.15
     curve_detection_far_x_m: 0.60
     curve_detection_segment_count: 3
-    curve_steering_multiplier_enabled: false
-    curve_steering_multiplier_activation_command: 20.0
-    curve_steering_multiplier: 1.5
+    # The 2026-08-07 bags under-steered the first half of the S curve. Boost
+    # only yellow-referenced curve commands; never amplify a white fallback.
+    curve_steering_multiplier_enabled: true
+    curve_steering_multiplier_activation_command: 10.0
+    curve_steering_multiplier: 1.20
+    curve_steering_yellow_reference_only: true
+
+    # Begin the second S-curve steering only when the far yellow-centerline
+    # curvature and Pure Pursuit request the same reversal for two frames.
+    yellow_curve_reversal_preview_enabled: true
+    yellow_curve_reversal_preview_near_x_m: 0.45
+    # Use the farthest available 20 cm segment up to 0.90 m. This leaves time
+    # for two-frame confirmation and the measured steering response delay.
+    yellow_curve_reversal_preview_far_x_m: 0.90
+    yellow_curve_reversal_preview_window_m: 0.20
+    yellow_curve_reversal_preview_curvature_per_m: 0.12
+    yellow_curve_reversal_preview_pursuit_rad: 0.12
+    yellow_curve_reversal_preview_minimum_command: 10.0
+    yellow_curve_reversal_preview_confirmation_frames: 2
+    yellow_curve_reversal_preview_pursuit_weight: 0.75
 
     # Real-track baseline after integrated rule-drive tuning.
     target_right_offset_m: 0.0
