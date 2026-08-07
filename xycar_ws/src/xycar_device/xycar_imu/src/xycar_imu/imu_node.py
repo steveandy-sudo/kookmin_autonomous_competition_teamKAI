@@ -11,9 +11,8 @@ import time
 # from time import time
 from sensor_msgs.msg import Imu
 from sensor_msgs.msg import MagneticField
+from transforms3d.euler import euler2quat as quaternion_from_euler
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
-
-from xycar_imu.orientation import ros_quaternion_from_euler
 
 degrees2rad = math.pi / 180.0
 
@@ -195,15 +194,11 @@ class RazorImuDriver(Node):
                     mag_msg.magnetic_field.z = -float(words[11]) * 1e-7
                     # check frame orientation and units
 
-            qx, qy, qz, qw = ros_quaternion_from_euler(
-                roll,
-                pitch,
-                yaw,
-            )
-            imu_msg.orientation.x = qx
-            imu_msg.orientation.y = qy
-            imu_msg.orientation.z = qz
-            imu_msg.orientation.w = qw
+            q = quaternion_from_euler(roll, pitch, yaw)
+            imu_msg.orientation.x = q[0]
+            imu_msg.orientation.y = q[1]
+            imu_msg.orientation.z = q[2]
+            imu_msg.orientation.w = q[3]
             imu_msg.header.stamp = self.get_clock().now().to_msg()
             pub_imu.publish(imu_msg)
 

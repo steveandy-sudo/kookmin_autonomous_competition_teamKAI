@@ -27,6 +27,7 @@ from xycar_perception.canonical_road import (
     make_canonical_road_image,
     make_canonical_road_image_from_masks,
 )
+from xycar_perception.lightweight_lane_segmenter import LightweightLaneSegmenter
 from xycar_perception.yolo_lane_segmenter import YoloLaneSegmenter
 
 
@@ -103,6 +104,11 @@ class CameraPerceptionNode(Node):
         self.declare_parameter("yolo_yellow_class_id", 1)
         self.declare_parameter("yolo_cpu_threads", 0)
         self.declare_parameter("yolo_retina_masks", True)
+        self.declare_parameter("semantic_model_path", "")
+        self.declare_parameter("semantic_device", "cpu")
+        self.declare_parameter("semantic_input_width", 256)
+        self.declare_parameter("semantic_input_height", 144)
+        self.declare_parameter("semantic_cpu_threads", 1)
         self.declare_parameter(
             "yolo_debug_image_topic", "/perception/yolo_debug_image"
         )
@@ -293,9 +299,9 @@ class CameraPerceptionNode(Node):
         self.lane_segmentation_backend = str(
             self.get_parameter("lane_segmentation_backend").value
         ).strip().lower()
-        if self.lane_segmentation_backend not in ("color", "yolo"):
+        if self.lane_segmentation_backend not in ("color", "yolo", "semantic"):
             raise ValueError(
-                "lane_segmentation_backend must be either color or yolo"
+                "lane_segmentation_backend must be color, yolo, or semantic"
             )
         self.base_frame_id = str(self.get_parameter("base_frame_id").value)
         self.source_name = str(self.get_parameter("source_name").value)
@@ -644,7 +650,7 @@ class CameraPerceptionNode(Node):
                     self.canonical_persistent_prediction_enabled
                 ),
                 allow_unpaired_yellow=(
-                    self.lane_segmentation_backend == "yolo"
+                    self.lane_segmentation_backend in ("yolo", "semantic")
                     and self.canonical_yolo_allow_unpaired_yellow
                 ),
                 line_width_px=self.canonical_line_width_px,
@@ -655,6 +661,7 @@ class CameraPerceptionNode(Node):
         )
         self.load_calib_yaml()
         self.yolo_lane_segmenter = None
+        self.semantic_lane_segmenter = None
         if self.lane_segmentation_backend == "yolo":
             self.yolo_lane_segmenter = YoloLaneSegmenter(
                 str(self.get_parameter("yolo_model_path").value),
@@ -689,6 +696,28 @@ class CameraPerceptionNode(Node):
                 f"device={self.yolo_lane_segmenter.device}, "
                 f"image_size={self.yolo_lane_segmenter.image_size}, "
                 f"cpu_threads={self.yolo_lane_segmenter.cpu_threads}"
+            )
+        elif self.lane_segmentation_backend == "semantic":
+            self.semantic_lane_segmenter = LightweightLaneSegmenter(
+                str(self.get_parameter("semantic_model_path").value),
+                device=str(self.get_parameter("semantic_device").value),
+                input_width=int(
+                    self.get_parameter("semantic_input_width").value
+                ),
+                input_height=int(
+                    self.get_parameter("semantic_input_height").value
+                ),
+                cpu_threads=int(
+                    self.get_parameter("semantic_cpu_threads").value
+                ),
+            )
+            self.get_logger().info(
+                "semantic lane segmentation loaded: "
+                f"{self.semantic_lane_segmenter.model_path}, "
+                f"input={self.semantic_lane_segmenter.input_width}x"
+                f"{self.semantic_lane_segmenter.input_height}, "
+                f"device={self.semantic_lane_segmenter.device}, "
+                f"cpu_threads={self.semantic_lane_segmenter.cpu_threads}"
             )
 
         self.road_segments_pub = self.create_publisher(
@@ -1009,12 +1038,12 @@ class CameraPerceptionNode(Node):
         roi_bottom = max(roi_top + 1, min(height - 1, self.roi_bottom_row))
         roi_bottom = max(roi_top + 1, roi_bottom - self.bev_bottom_ignore_px)
 
-        if self.lane_segmentation_backend == "yolo":
+        if self.lane_segmentation_backend in ("yolo", "semantic"):
             if (
                 self.current_yolo_bev_white_mask is None
                 or self.current_yolo_bev_yellow_mask is None
             ):
-                raise RuntimeError("YOLO BEV masks were not generated")
+                raise RuntimeError("learned lane BEV masks were not generated")
             white_mask = self.current_yolo_bev_white_mask.copy()
             yellow_mask = self.current_yolo_bev_yellow_mask.copy()
         else:
@@ -1121,7 +1150,10 @@ class CameraPerceptionNode(Node):
             yellow_max_component_thickness_px=(
                 self.canonical_yellow_max_component_thickness_px
             ),
-            geometry_filter_enabled=self.canonical_geometry_filter_enabled,
+            geometry_filter_enabled=(
+                self.canonical_geometry_filter_enabled
+                and self.lane_segmentation_backend != "semantic"
+            ),
             white_min_line_span_px=self.canonical_white_min_line_span_px,
             yellow_min_line_span_px=self.canonical_yellow_min_line_span_px,
             min_line_elongation=self.canonical_min_line_elongation,
@@ -1140,14 +1172,14 @@ class CameraPerceptionNode(Node):
                 self.canonical_geometry_redraw_fitted_lines
             ),
             yellow_geometry_filter_enabled=(
-                self.lane_segmentation_backend != "yolo"
+                self.lane_segmentation_backend not in ("yolo", "semantic")
                 or self.canonical_yolo_yellow_geometry_filter_enabled
             ),
             top_ignore_m=self.canonical_top_ignore_m,
             bottom_ignore_m=self.canonical_bottom_ignore_m,
             return_stages=True,
         )
-        if self.lane_segmentation_backend == "yolo":
+        if self.lane_segmentation_backend in ("yolo", "semantic"):
             canonical_stages = make_canonical_road_image_from_masks(
                 white_mask,
                 yellow_mask,
@@ -1457,6 +1489,18 @@ class CameraPerceptionNode(Node):
                         self.yolo_debug_image_pub.get_subscription_count() > 0
                     ),
                 )
+            semantic_segmenter = getattr(self, "semantic_lane_segmenter", None)
+            if semantic_segmenter is not None:
+                (
+                    self.current_yolo_bev_white_mask,
+                    self.current_yolo_bev_yellow_mask,
+                    self.current_yolo_debug_image,
+                ) = semantic_segmenter.predict(
+                    image,
+                    render_debug=(
+                        self.yolo_debug_image_pub.get_subscription_count() > 0
+                    ),
+                )
             return image
 
         rectified = self.rectify_image(image)
@@ -1542,6 +1586,48 @@ class CameraPerceptionNode(Node):
                 self.current_yolo_bev_yellow_mask, valid_mask
             )
             self.current_yolo_debug_image = yolo_debug
+        semantic_segmenter = getattr(self, "semantic_lane_segmenter", None)
+        if semantic_segmenter is not None:
+            source_white, source_yellow, semantic_debug = (
+                semantic_segmenter.predict_low_resolution(
+                    rectified,
+                    render_debug=(
+                        self.yolo_debug_image_pub.get_subscription_count() > 0
+                    ),
+                )
+            )
+            source_to_rectified = np.array(
+                [
+                    [width / semantic_segmenter.input_width, 0.0, 0.0],
+                    [0.0, height / semantic_segmenter.input_height, 0.0],
+                    [0.0, 0.0, 1.0],
+                ],
+                dtype=np.float64,
+            )
+            low_resolution_homography = self.M @ source_to_rectified
+            self.current_yolo_bev_white_mask = cv2.warpPerspective(
+                source_white,
+                low_resolution_homography,
+                output_shape,
+                flags=cv2.INTER_NEAREST,
+                borderMode=cv2.BORDER_CONSTANT,
+                borderValue=0,
+            )
+            self.current_yolo_bev_yellow_mask = cv2.warpPerspective(
+                source_yellow,
+                low_resolution_homography,
+                output_shape,
+                flags=cv2.INTER_NEAREST,
+                borderMode=cv2.BORDER_CONSTANT,
+                borderValue=0,
+            )
+            self.current_yolo_bev_white_mask = cv2.bitwise_and(
+                self.current_yolo_bev_white_mask, valid_mask
+            )
+            self.current_yolo_bev_yellow_mask = cv2.bitwise_and(
+                self.current_yolo_bev_yellow_mask, valid_mask
+            )
+            self.current_yolo_debug_image = semantic_debug
 
         border = (self.bev_border_gray,) * 3
         return cv2.warpPerspective(

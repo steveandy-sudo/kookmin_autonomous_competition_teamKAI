@@ -139,7 +139,7 @@ class CanonicalDebugRecorder(Node):
 
         qos = QoSProfile(
             depth=100,
-            reliability=ReliabilityPolicy.RELIABLE,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.VOLATILE,
         )
         self._topic_subscriptions = []

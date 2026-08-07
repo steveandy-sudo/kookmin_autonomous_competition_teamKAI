@@ -30,9 +30,11 @@ from my_rule.perception.camera_input import (
 )
 from my_rule.perception.object_perception import (
     DetectionRecord,
+    apply_class_aliases,
     filter_detections,
     green_hsv_evidence_in_box,
     normalize_class_name,
+    parse_class_aliases,
 )
 
 
@@ -43,7 +45,11 @@ class ObjectDetectionNode(Node):
         super().__init__("my_rule_object_detection_node")
         package_share = Path(get_package_share_directory("my_rule"))
         defaults = {
-            "model_path": str(package_share / "models" / "my_rule_objects.pt"),
+            "model_path": str(
+                package_share
+                / "models"
+                / "kookmin_objects_best_20260804.pt"
+            ),
             "image_topic": "/wide_camera_mjpeg/image_raw/compressed",
             "use_compressed_image": True,
             "detections_topic": "/my_rule/object_detections",
@@ -68,6 +74,9 @@ class ObjectDetectionNode(Node):
             "yellow_confidence": 0.50,
             "green_confidence": 0.50,
             "yellow_centerline_confidence": 0.45,
+            # A non-empty identity alias makes rclpy infer STRING_ARRAY;
+            # launch YAML can then replace it with model-specific aliases.
+            "class_aliases": ["car=car"],
             "startup_signal_hsv_enabled": True,
             "startup_signal_hsv_rate_hz": 20.0,
             "startup_signal_box_timeout_sec": 1.0,
@@ -120,6 +129,9 @@ class ObjectDetectionNode(Node):
                 "yellow_centerline_confidence"
             ),
         }
+        self.class_aliases = parse_class_aliases(
+            self.get_parameter("class_aliases").value
+        )
         self.rectifier: CameraRectifier | None = None
         if bool(self.get_parameter("enable_rectify").value):
             camera_yaml = str(self.get_parameter("camera_yaml").value)
@@ -170,15 +182,18 @@ class ObjectDetectionNode(Node):
                 normalize_class_name(value)
                 for value in list(model_names)
             }
+        canonical_names = {
+            self.class_aliases.get(name, name) for name in names
+        }
         required = {
             normalize_class_name(value)
             for value in self.get_parameter("required_classes").value
         }
-        missing = sorted(required - names)
+        missing = sorted(required - canonical_names)
         if missing:
             raise RuntimeError(
                 f"object model is missing required classes {missing}; "
-                f"available={sorted(names)}"
+                f"raw={sorted(names)}, canonical={sorted(canonical_names)}"
             )
 
         qos = QoSProfile(
@@ -232,7 +247,8 @@ class ObjectDetectionNode(Node):
         self.get_logger().info(
             f"object YOLO ready: model={model_path}, rate={rate_hz:.1f}Hz, "
             f"device={self.get_parameter('device').value}, "
-            f"classes={sorted(names)}"
+            f"raw_classes={sorted(names)}, "
+            f"canonical_classes={sorted(canonical_names)}"
         )
 
     def parameter_float(self, name: str) -> float:
@@ -472,7 +488,10 @@ class ObjectDetectionNode(Node):
                             ymax=int(max(0, min(height, round(ymax)))),
                         )
                     )
-        accepted = filter_detections(records, self.thresholds)
+        accepted = filter_detections(
+            apply_class_aliases(records, self.class_aliases),
+            self.thresholds,
+        )
         self.update_startup_signal_box(accepted, width, height)
         output = ObjectDetectionArray()
         output.header = message.header

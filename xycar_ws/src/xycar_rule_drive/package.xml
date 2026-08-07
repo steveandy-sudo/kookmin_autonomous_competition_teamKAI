@@ -13,14 +13,19 @@
   <exec_depend>kaiev26_msgs</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>my_rule</exec_depend>
+  <exec_depend>my_rule_msgs</exec_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>rosbag2_py</exec_depend>
   <exec_depend>rviz2</exec_depend>
+  <exec_depend>python3-pygame</exec_depend>
   <exec_depend>xycar_cam</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>cv_bridge</exec_depend>
   <exec_depend>xycar_perception</exec_depend>
+  <exec_depend>wide_camera</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

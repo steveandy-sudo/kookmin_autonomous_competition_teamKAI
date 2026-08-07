@@ -33,9 +33,9 @@ class RewardWeights:
     full_speed_curvature: float = 0.18
     minimum_speed_curvature: float = 0.90
     # Measured conversion is approximately 0.080612 m/s per command.
-    # Straight target 24 leaves room above the required mean command 17;
-    # even the sharp-curve target remains command 17.
-    straight_target_speed_mps: float = 1.934688
+    # Straight target command 25 at the measured 0.080612 m/s per command.
+    # The full-course legacy objective still slows sharp curves to command 17.
+    straight_target_speed_mps: float = 2.015300
     curve_target_speed_mps: float = 1.370404
     reverse_progress: float = 4.0
     collision: float = 50.0
@@ -75,6 +75,38 @@ def lap_time_objective_weights(
         off_track=300.0,
         stuck=100.0,
         lap_complete=300.0,
+    )
+
+
+def straight_high_speed_objective_weights(
+    *,
+    target_speed_command: float = 25.0,
+    speed_gain_mps_per_command: float = 0.080612,
+) -> RewardWeights:
+    """Reward fast, centered straight driving while strongly rejecting weave."""
+    target_speed_mps = max(
+        0.0,
+        float(target_speed_command) * float(speed_gain_mps_per_command),
+    )
+    return RewardWeights(
+        progress=8.0,
+        cross_track=3.0,
+        heading=2.0,
+        steering_rate=0.40,
+        steering_magnitude=0.08,
+        safe_speed=8.0,
+        unsafe_speed=1.5,
+        curve_overspeed=0.0,
+        time_efficiency=0.04,
+        large_oscillation=2.0,
+        straight_curvature_threshold=0.16,
+        straight_target_speed_mps=target_speed_mps,
+        curve_target_speed_mps=target_speed_mps,
+        reverse_progress=8.0,
+        collision=100.0,
+        off_track=100.0,
+        stuck=30.0,
+        lap_complete=0.0,
     )
 
 

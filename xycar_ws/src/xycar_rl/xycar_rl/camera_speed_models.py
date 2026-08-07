@@ -12,7 +12,7 @@ from xycar_rl.models import ResNet18Encoder, checkpoint_payload
 DEFAULT_MIN_SPEED_COMMAND = 4.0
 # This is the actor's normalization range, not a deployment speed cap.
 # The runtime can use the full learned output when deployment_speed_cap <= 0.
-DEFAULT_MAX_SPEED_COMMAND = 24.0
+DEFAULT_MAX_SPEED_COMMAND = 25.0
 
 
 def normalize_speed_command(

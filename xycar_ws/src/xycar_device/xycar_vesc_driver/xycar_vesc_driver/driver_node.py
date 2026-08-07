@@ -195,6 +195,7 @@ class XycarVescDriver(Node):
             "speed_command_min": -50.0,
             "speed_command_max": 100.0,
             "angle_to_steering_gain": -0.0068,
+            "steering_center_trim_command": 0.0,
             "speed_to_mps_gain": 0.08,
             "speed_to_erpm_gain": 4614.0,
             "speed_to_erpm_offset": 0.0,
@@ -210,7 +211,8 @@ class XycarVescDriver(Node):
             "expected_firmware_major": 2,
             "expected_firmware_minor": 18,
             "allow_firmware_mismatch": False,
-            "acceleration_limit_mps2": 0.3,
+            "acceleration_slew_enabled": True,
+            "acceleration_limit_mps2": 0.6,
             "deceleration_limit_mps2": 1.5,
             "low_voltage_limit": 7.5,
             "low_voltage_stop": 6.0,
@@ -242,6 +244,7 @@ class XycarVescDriver(Node):
             "speed_command_min",
             "speed_command_max",
             "angle_to_steering_gain",
+            "steering_center_trim_command",
             "speed_to_mps_gain",
             "speed_to_erpm_gain",
             "speed_to_erpm_offset",
@@ -257,6 +260,7 @@ class XycarVescDriver(Node):
             "expected_firmware_major",
             "expected_firmware_minor",
             "allow_firmware_mismatch",
+            "acceleration_slew_enabled",
             "acceleration_limit_mps2",
             "deceleration_limit_mps2",
             "low_voltage_limit",
@@ -510,13 +514,16 @@ class XycarVescDriver(Node):
         )
 
         if ready:
-            self._applied_speed_mps = slew(
-                self._applied_speed_mps,
-                desired_speed,
-                dt,
-                float(self.acceleration_limit_mps2),
-                float(self.deceleration_limit_mps2),
-            )
+            if bool(self.acceleration_slew_enabled):
+                self._applied_speed_mps = slew(
+                    self._applied_speed_mps,
+                    desired_speed,
+                    dt,
+                    float(self.acceleration_limit_mps2),
+                    float(self.deceleration_limit_mps2),
+                )
+            else:
+                self._applied_speed_mps = desired_speed
             if (
                 self._guard.state == LIMITED
                 and abs(self._applied_speed_mps) > abs(desired_speed)
@@ -529,8 +536,11 @@ class XycarVescDriver(Node):
 
         steering_rad = angle_cmd * float(self.angle_to_steering_gain)
         self._applied_steering_rad = steering_rad
+        servo_steering_rad = (
+            angle_cmd + float(self.steering_center_trim_command)
+        ) * float(self.angle_to_steering_gain)
         servo_position = clamp(
-            float(self.steering_to_servo_gain) * steering_rad
+            float(self.steering_to_servo_gain) * servo_steering_rad
             + float(self.steering_to_servo_offset),
             float(self.servo_min),
             float(self.servo_max),
@@ -556,6 +566,8 @@ class XycarVescDriver(Node):
             float(self._applied_speed_mps),
             float(self._applied_speed_mps * curvature),
             float(curvature),
+            float(self.steering_center_trim_command),
+            float(servo_position),
         ]
         self._debug_pub.publish(debug)
 
@@ -708,6 +720,9 @@ class XycarVescDriver(Node):
             "telemetry_age_sec": f"{telemetry_age:.3f}",
             "target_speed_cmd": f"{self._target_speed_cmd:.3f}",
             "applied_speed_mps": f"{self._applied_speed_mps:.3f}",
+            "acceleration_slew_enabled": str(
+                bool(self.acceleration_slew_enabled)
+            ),
             "parser_crc_errors": str(self._parser.crc_errors),
             "parser_frame_errors": str(self._parser.frame_errors),
             "serial_error": self._last_serial_error,

@@ -23,8 +23,14 @@ def test_real_profile_enables_measured_delay_compensation():
     assert parameters["use_sim_time"] is False
     assert parameters["extend_fused_path_to_white"] is True
     assert parameters["temporal_path_ego_compensation_enabled"] is True
-    assert parameters["control_latency_preview_sec"] == 0.30
+    assert parameters["control_latency_preview_sec"] == 0.35
+    assert parameters["curve_detection_near_x_m"] == 0.15
+    assert parameters["curve_detection_far_x_m"] == 0.60
+    assert parameters["curve_detection_segment_count"] == 3
+    assert parameters["curve_steering_multiplier_enabled"] is False
+    assert parameters["curve_steering_multiplier_activation_command"] == 20.0
+    assert parameters["curve_steering_multiplier"] == 1.5
     assert parameters["steering_lead_time_sec"] == 0.08
     assert parameters["steering_max_lead_command"] == 6.0
-    assert parameters["cruise_speed_command"] == 8.0
-    assert parameters["minimum_speed_command"] == 6.0
+    assert parameters["cruise_speed_command"] == 16.0
+    assert parameters["minimum_speed_command"] == 8.0

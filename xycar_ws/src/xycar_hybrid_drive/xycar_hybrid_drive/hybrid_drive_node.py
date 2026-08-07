@@ -14,10 +14,16 @@ from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image, LaserScan
 from std_msgs.msg import Float32MultiArray, String
 import torch
+from tf2_msgs.msg import TFMessage
 
 from il_data_tools.runtime_preprocessing import preprocess_bgr_image
 from xycar_rl.camera_speed_models import denormalize_speed_command
 from xycar_rl.policy_loader import load_camera_speed_policy
+from xycar_rl.steering_stabilizer import (
+    AdaptiveSteeringStabilizer,
+    SteeringStabilizerConfig,
+)
+from xycar_rl.track_geometry import TrackReference
 from xycar_rule_drive.canonical_stanley_pursuit_driver import (
     CanonicalStanleyPursuitDriver,
     path_heading_change_per_m,
@@ -33,6 +39,11 @@ from .mode_manager import (
     DriveMode,
     HybridModeManager,
     ModeManagerConfig,
+)
+from .three_level_curve_rule import (
+    ContinuousCurveController,
+    ThreeLevelCurveController,
+    cad_pure_pursuit_curve_command,
 )
 
 
@@ -98,6 +109,131 @@ class HybridDriveNode(CanonicalStanleyPursuitDriver):
         self.policy_input_height = int(
             self.get_parameter("hybrid_policy_input_height").value
         )
+        self.model_steering_stabilizer = AdaptiveSteeringStabilizer(
+            SteeringStabilizerConfig(
+                straight_alpha=float(
+                    self.get_parameter(
+                        "hybrid_model_straight_steering_alpha"
+                    ).value
+                ),
+                curve_alpha=float(
+                    self.get_parameter(
+                        "hybrid_model_straight_steering_alpha"
+                    ).value
+                ),
+                straight_threshold=1.0,
+                curve_threshold=1.0,
+                straight_rate_limit=float(
+                    self.get_parameter(
+                        "hybrid_model_straight_rate_limit"
+                    ).value
+                ),
+                curve_rate_limit=float(
+                    self.get_parameter(
+                        "hybrid_model_straight_rate_limit"
+                    ).value
+                ),
+                deadband=float(
+                    self.get_parameter(
+                        "hybrid_model_straight_deadband"
+                    ).value
+                ),
+                zero_crossing_threshold=float(
+                    self.get_parameter(
+                        "hybrid_model_zero_crossing_threshold"
+                    ).value
+                ),
+                turn_in_anticipation_gain=0.0,
+                turn_in_anticipation_threshold=1.0,
+            )
+        )
+        self.model_transition_stabilizer = AdaptiveSteeringStabilizer(
+            SteeringStabilizerConfig(
+                straight_alpha=float(
+                    self.get_parameter(
+                        "hybrid_model_transition_steering_alpha"
+                    ).value
+                ),
+                curve_alpha=float(
+                    self.get_parameter(
+                        "hybrid_model_transition_steering_alpha"
+                    ).value
+                ),
+                straight_threshold=1.0,
+                curve_threshold=1.0,
+                straight_rate_limit=float(
+                    self.get_parameter(
+                        "hybrid_model_transition_rate_limit"
+                    ).value
+                ),
+                curve_rate_limit=float(
+                    self.get_parameter(
+                        "hybrid_model_transition_rate_limit"
+                    ).value
+                ),
+                deadband=float(
+                    self.get_parameter(
+                        "hybrid_model_straight_deadband"
+                    ).value
+                ),
+                zero_crossing_threshold=float(
+                    self.get_parameter(
+                        "hybrid_model_zero_crossing_threshold"
+                    ).value
+                ),
+                turn_in_anticipation_gain=0.0,
+                turn_in_anticipation_threshold=1.0,
+            )
+        )
+        self.curve_three_level_controller = ThreeLevelCurveController(
+            full_lock_command=float(
+                self.get_parameter("hybrid_curve_full_lock_command").value
+            ),
+            zero_band_command=float(
+                self.get_parameter("hybrid_curve_zero_band_command").value
+            ),
+            duty_scale=float(
+                self.get_parameter("hybrid_curve_pulse_duty_scale").value
+            ),
+            minimum_zero_frames=int(
+                self.get_parameter(
+                    "hybrid_curve_minimum_zero_frames"
+                ).value
+            ),
+            maximum_zero_frames=int(
+                self.get_parameter(
+                    "hybrid_curve_maximum_zero_frames"
+                ).value
+            ),
+            forced_pulse_min_command=float(
+                self.get_parameter(
+                    "hybrid_curve_forced_pulse_min_command"
+                ).value
+            ),
+            stable_pulse_min_command=float(
+                self.get_parameter(
+                    "hybrid_curve_stable_pulse_min_command"
+                ).value
+            ),
+            stable_pulse_frames=int(
+                self.get_parameter(
+                    "hybrid_curve_stable_pulse_frames"
+                ).value
+            ),
+        )
+        self.curve_continuous_controller = ContinuousCurveController(
+            alpha=float(
+                self.get_parameter("hybrid_curve_continuous_alpha").value
+            ),
+            rate_limit_command=float(
+                self.get_parameter(
+                    "hybrid_curve_continuous_rate_limit_command"
+                ).value
+            ),
+            maximum_command=float(
+                self.get_parameter("hybrid_curve_full_lock_command").value
+            ),
+        )
 
         self.mode_manager = HybridModeManager(
             ModeManagerConfig(
@@ -109,6 +245,16 @@ class HybridDriveNode(CanonicalStanleyPursuitDriver):
                 curve_exit_per_m=float(
                     self.get_parameter(
                         "hybrid_curve_exit_curvature_per_m"
+                    ).value
+                ),
+                curve_entry_path_angle_rad=float(
+                    self.get_parameter(
+                        "hybrid_curve_entry_path_angle_rad"
+                    ).value
+                ),
+                curve_exit_path_angle_rad=float(
+                    self.get_parameter(
+                        "hybrid_curve_exit_path_angle_rad"
                     ).value
                 ),
                 curve_entry_angle_command=float(
@@ -126,6 +272,16 @@ class HybridDriveNode(CanonicalStanleyPursuitDriver):
                 ),
                 curve_exit_frames=int(
                     self.get_parameter("hybrid_curve_exit_frames").value
+                ),
+                curve_min_duration_sec=float(
+                    self.get_parameter(
+                        "hybrid_curve_min_duration_sec"
+                    ).value
+                ),
+                straight_min_duration_sec=float(
+                    self.get_parameter(
+                        "hybrid_straight_min_duration_sec"
+                    ).value
                 ),
                 cone_entry_confidence=float(
                     self.get_parameter(
@@ -174,6 +330,31 @@ class HybridDriveNode(CanonicalStanleyPursuitDriver):
             0.0, 0.0, 0.0, (), (), "none"
         )
         self.last_mode_log_sec = 0.0
+        self.sim_track_reference: TrackReference | None = None
+        self.sim_track_projection = None
+        self.sim_track_vehicle_pose: tuple[float, float, float] | None = None
+        self.sim_route_curve_command_sign = 0
+        if bool(
+            self.get_parameter("hybrid_sim_track_mode_override").value
+        ):
+            world_path = Path(
+                str(
+                    self.get_parameter(
+                        "hybrid_sim_track_world_path"
+                    ).value
+                )
+            ).expanduser().resolve()
+            self.sim_track_reference = TrackReference.from_sdf(
+                world_path,
+                target_right_offset_m=float(
+                    self.get_parameter("target_right_offset_m").value
+                ),
+                reverse_direction=bool(
+                    self.get_parameter(
+                        "hybrid_sim_track_reverse_direction"
+                    ).value
+                ),
+            )
 
         self.mode_pub = self.create_publisher(
             String,
@@ -202,6 +383,17 @@ class HybridDriveNode(CanonicalStanleyPursuitDriver):
                 self.on_scan,
                 latest_sensor_qos(),
             )
+        if self.sim_track_reference is not None:
+            self.create_subscription(
+                TFMessage,
+                str(
+                    self.get_parameter(
+                        "hybrid_sim_track_pose_topic"
+                    ).value
+                ),
+                self.on_sim_track_pose,
+                20,
+            )
 
         mode = "DRIVE" if self.drive_enabled else "SHADOW"
         self.get_logger().info(
@@ -218,7 +410,7 @@ class HybridDriveNode(CanonicalStanleyPursuitDriver):
             / "src"
             / "xycar_rl"
             / "models"
-            / "final_rule_td3_bc_uncapped_avg17_20260723"
+            / "straight_speed25_recovery_v3_20260805"
             / "camera_speed_td3_bc_best.pth"
         )
         self.declare_parameter(
@@ -231,22 +423,87 @@ class HybridDriveNode(CanonicalStanleyPursuitDriver):
         self.declare_parameter("hybrid_policy_input_width", 160)
         self.declare_parameter("hybrid_policy_input_height", 90)
         self.declare_parameter("hybrid_model_min_speed_command", 4.0)
-        self.declare_parameter("hybrid_model_max_speed_command", 24.0)
-        self.declare_parameter("hybrid_model_speed_cap", 8.0)
+        self.declare_parameter("hybrid_model_max_speed_command", 25.0)
+        self.declare_parameter("hybrid_model_speed_cap", 25.0)
         self.declare_parameter("hybrid_model_steering_gain", 1.0)
         self.declare_parameter("hybrid_model_steering_sign", 1.0)
+        self.declare_parameter("hybrid_model_stabilizer_enabled", True)
+        self.declare_parameter("hybrid_model_straight_steering_alpha", 0.20)
+        self.declare_parameter("hybrid_model_straight_rate_limit", 0.05)
+        self.declare_parameter("hybrid_model_straight_deadband", 0.02)
+        self.declare_parameter("hybrid_model_zero_crossing_threshold", 0.12)
         self.declare_parameter("hybrid_model_timeout_sec", 0.35)
+        self.declare_parameter("hybrid_model_transition_neutral_sec", 0.0)
+        self.declare_parameter("hybrid_model_transition_fast_sec", 0.55)
+        self.declare_parameter("hybrid_model_transition_steering_alpha", 0.65)
+        self.declare_parameter("hybrid_model_transition_rate_limit", 0.25)
+        self.declare_parameter("hybrid_model_transition_steering_cap", 15.0)
         self.declare_parameter("hybrid_skip_model_in_curve", True)
         self.declare_parameter("hybrid_temporal_reset_gap_sec", 0.25)
         self.declare_parameter("hybrid_canonical_timeout_sec", 0.50)
         self.declare_parameter("hybrid_curve_entry_curvature_per_m", 0.16)
         self.declare_parameter("hybrid_curve_exit_curvature_per_m", 0.10)
+        self.declare_parameter("hybrid_curve_entry_path_angle_rad", 0.12)
+        self.declare_parameter("hybrid_curve_exit_path_angle_rad", 0.11)
         self.declare_parameter("hybrid_curve_entry_angle_command", 10.0)
         self.declare_parameter("hybrid_curve_exit_angle_command", 6.0)
         self.declare_parameter("hybrid_curve_entry_frames", 1)
-        self.declare_parameter("hybrid_curve_exit_frames", 3)
+        self.declare_parameter("hybrid_curve_exit_frames", 1)
+        self.declare_parameter("hybrid_curve_min_duration_sec", 1.2)
+        self.declare_parameter("hybrid_straight_min_duration_sec", 0.0)
         self.declare_parameter("hybrid_curve_near_x_m", 0.15)
         self.declare_parameter("hybrid_curve_far_x_m", 1.35)
+        self.declare_parameter("hybrid_curve_three_level_enabled", False)
+        self.declare_parameter("hybrid_curve_continuous_alpha", 0.65)
+        self.declare_parameter(
+            "hybrid_curve_continuous_rate_limit_command", 8.0
+        )
+        self.declare_parameter("hybrid_curve_full_lock_command", 42.0)
+        self.declare_parameter("hybrid_curve_zero_band_command", 2.0)
+        self.declare_parameter("hybrid_curve_pulse_duty_scale", 0.75)
+        self.declare_parameter("hybrid_curve_minimum_zero_frames", 1)
+        self.declare_parameter("hybrid_curve_maximum_zero_frames", 1)
+        self.declare_parameter("hybrid_curve_forced_pulse_min_command", 8.0)
+        self.declare_parameter("hybrid_curve_stable_pulse_min_command", 5.0)
+        self.declare_parameter("hybrid_curve_stable_pulse_frames", 2)
+        self.declare_parameter("hybrid_curve_speed_command", 25.0)
+        self.declare_parameter("hybrid_sim_track_mode_override", False)
+        self.declare_parameter("hybrid_sim_track_curve_feedback_enabled", False)
+        self.declare_parameter("hybrid_sim_track_curve_feedback_cte_gain", 1.5)
+        self.declare_parameter(
+            "hybrid_sim_track_curve_feedback_heading_gain", 1.5
+        )
+        self.declare_parameter(
+            "hybrid_sim_track_curve_feedback_lookahead_m", 0.60
+        )
+        self.declare_parameter("hybrid_sim_track_curve_feedback_deadband", 0.08)
+        self.declare_parameter("hybrid_sim_track_curve_feedback_min_command", 12.0)
+        self.declare_parameter("hybrid_sim_track_world_path", "")
+        self.declare_parameter("hybrid_sim_track_reverse_direction", True)
+        self.declare_parameter(
+            "hybrid_sim_track_pose_topic",
+            "/world/kookmin_xycar_track/dynamic_pose/info",
+        )
+        self.declare_parameter(
+            "hybrid_sim_track_curvature_threshold_per_m",
+            0.10,
+        )
+        self.declare_parameter(
+            "hybrid_sim_track_curve_preview_m",
+            0.80,
+        )
+        self.declare_parameter(
+            "hybrid_sim_track_curve_exit_lookahead_m",
+            0.75,
+        )
+        self.declare_parameter(
+            "hybrid_sim_track_curve_exit_heading_guard_rad",
+            0.12,
+        )
+        self.declare_parameter(
+            "hybrid_sim_track_curve_exit_cte_guard_m",
+            0.15,
+        )
         self.declare_parameter("hybrid_cone_enabled", True)
         self.declare_parameter("hybrid_scan_topic", "/scan")
         self.declare_parameter("hybrid_cone_entry_confidence", 0.35)
@@ -390,21 +647,22 @@ class HybridDriveNode(CanonicalStanleyPursuitDriver):
             or cone_about_to_enter
         ):
             return False
+        route_curve = self._route_curve_override()
+        if route_curve is not None:
+            return not route_curve
         curvature = self._path_curvature()
-        curve_now = self.path_valid and (
-            curvature
-            >= float(
-                self.get_parameter(
-                    "hybrid_curve_entry_curvature_per_m"
-                ).value
-            )
-            or abs(float(rule_angle))
-            >= float(
-                self.get_parameter(
-                    "hybrid_curve_entry_angle_command"
-                ).value
-            )
+        path_turn_angle = self._path_turn_angle()
+        curve_now = self.mode_manager.curve_entry_detected(
+            self.path_valid,
+            curvature,
+            path_turn_angle,
         )
+        if self.mode_manager.mode == DriveMode.LANE_RULE_CURVE:
+            return self.mode_manager.straight_detected(
+                self.path_valid,
+                curvature,
+                path_turn_angle,
+            )
         return not curve_now
 
     def _update_policy_candidate(
@@ -444,6 +702,52 @@ class HybridDriveNode(CanonicalStanleyPursuitDriver):
                 1.0,
             )
         )
+        if bool(
+            self.get_parameter("hybrid_model_stabilizer_enabled").value
+        ):
+            fast_duration = max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "hybrid_model_transition_fast_sec"
+                    ).value
+                ),
+            )
+            fast_transition = self.mode_manager.mode == DriveMode.LANE_RULE_CURVE
+            if (
+                self.mode_manager.mode == DriveMode.MODEL_STRAIGHT
+                and self.mode_manager.mode_started_sec > 0.0
+                and now - self.mode_manager.mode_started_sec < fast_duration
+            ):
+                fast_transition = True
+            if fast_transition:
+                normalized_angle = self.model_transition_stabilizer.update(
+                    normalized_angle
+                )
+                transition_cap = max(
+                    0.0,
+                    float(
+                        self.get_parameter(
+                            "hybrid_model_transition_steering_cap"
+                        ).value
+                    ),
+                ) / max(
+                    1.0,
+                    max(abs(self.angle_command_min), abs(self.angle_command_max)),
+                )
+                normalized_angle = float(
+                    np.clip(
+                        normalized_angle,
+                        -transition_cap,
+                        transition_cap,
+                    )
+                )
+                self.model_steering_stabilizer.reset(normalized_angle)
+            else:
+                normalized_angle = self.model_steering_stabilizer.update(
+                    normalized_angle
+                )
+                self.model_transition_stabilizer.reset(normalized_angle)
         learned_speed = denormalize_speed_command(
             float(action[1]),
             self.policy_min_speed,
@@ -461,6 +765,134 @@ class HybridDriveNode(CanonicalStanleyPursuitDriver):
         self.policy_speed_command = learned_speed
         self.last_policy_wall_sec = now
         self.last_policy_stamp_ns = stamp_ns
+
+    def on_sim_track_pose(self, message: TFMessage) -> None:
+        if self.sim_track_reference is None or not message.transforms:
+            return
+        transform = message.transforms[0].transform
+        rotation = transform.rotation
+        yaw = math.atan2(
+            2.0
+            * (
+                rotation.w * rotation.z
+                + rotation.x * rotation.y
+            ),
+            1.0
+            - 2.0
+            * (
+                rotation.y * rotation.y
+                + rotation.z * rotation.z
+            ),
+        )
+        hint = (
+            self.sim_track_projection.segment_index
+            if self.sim_track_projection is not None
+            else None
+        )
+        self.sim_track_projection = self.sim_track_reference.project(
+            transform.translation.x,
+            transform.translation.y,
+            yaw,
+            hint_segment_index=hint,
+        )
+        self.sim_track_vehicle_pose = (
+            float(transform.translation.x),
+            float(transform.translation.y),
+            float(yaw),
+        )
+
+    def _route_curve_override(self) -> bool | None:
+        track = self.sim_track_reference
+        projection = self.sim_track_projection
+        if track is None or projection is None:
+            return None
+        if (
+            self.mode_manager.mode == DriveMode.MODEL_STRAIGHT
+            and self.mode_manager.mode_started_sec > 0.0
+            and time.monotonic() - self.mode_manager.mode_started_sec
+            < float(
+                self.get_parameter(
+                    "hybrid_straight_min_duration_sec"
+                ).value
+            )
+        ):
+            self.sim_route_curve_command_sign = 0
+            return False
+        threshold = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "hybrid_sim_track_curvature_threshold_per_m"
+                ).value
+            ),
+        )
+        progress_m = float(projection.progress_m)
+        preview_distance = max(
+            0.12,
+            float(
+                self.get_parameter(
+                    "hybrid_sim_track_curve_preview_m"
+                ).value
+            ),
+        )
+        offset_start = 0.0
+        if self.mode_manager.mode == DriveMode.LANE_RULE_CURVE:
+            offset_start = min(
+                preview_distance,
+                max(
+                    0.0,
+                    float(
+                        self.get_parameter(
+                            "hybrid_sim_track_curve_exit_lookahead_m"
+                        ).value
+                    ),
+                ),
+            )
+        sample_offsets = np.linspace(offset_start, preview_distance, 12)
+        curvatures = [
+            track.curvature_at(
+                progress_m + float(offset),
+                sample_distance_m=0.30,
+            )
+            for offset in sample_offsets
+        ]
+        strongest = max(curvatures, key=abs)
+        route_curve = abs(strongest) > threshold
+        if (
+            not route_curve
+            and self.mode_manager.mode == DriveMode.LANE_RULE_CURVE
+        ):
+            current_curvature = track.curvature_at(
+                progress_m,
+                sample_distance_m=0.30,
+            )
+            heading_guard = max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "hybrid_sim_track_curve_exit_heading_guard_rad"
+                    ).value
+                ),
+            )
+            cte_guard = max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "hybrid_sim_track_curve_exit_cte_guard_m"
+                    ).value
+                ),
+            )
+            recovery_required = (
+                abs(float(projection.heading_error_rad)) > heading_guard
+                or abs(float(projection.cross_track_error_m)) > cte_guard
+            )
+            if recovery_required:
+                route_curve = True
+                strongest = current_curvature
+        self.sim_route_curve_command_sign = (
+            (-1 if strongest > 0.0 else 1) if route_curve else 0
+        )
+        return route_curve
 
     def on_scan(self, message: LaserScan) -> None:
         self.cone_generation += 1
@@ -499,6 +931,8 @@ class HybridDriveNode(CanonicalStanleyPursuitDriver):
             else float("inf")
         )
         curvature = self._path_curvature()
+        path_turn_angle = self._path_turn_angle()
+        route_curve = self._route_curve_override()
         decision = self.mode_manager.update(
             now_sec=now,
             canonical_generation=self.canonical_generation,
@@ -511,7 +945,9 @@ class HybridDriveNode(CanonicalStanleyPursuitDriver):
                 )
             ),
             path_curvature_per_m=curvature,
+            path_turn_angle_rad=path_turn_angle,
             rule_angle_command=float(rule_angle),
+            route_curve_override=route_curve,
             cone_confidence=float(self.latest_cone_command.confidence),
             cone_age_sec=cone_age,
             cone_cluster_count=len(self.latest_cone_command.clusters),
@@ -591,6 +1027,8 @@ class HybridDriveNode(CanonicalStanleyPursuitDriver):
             rule_angle,
             rule_speed,
             curvature,
+            path_turn_angle,
+            route_curve,
             policy_age,
             cone_age,
         )
@@ -609,13 +1047,79 @@ class HybridDriveNode(CanonicalStanleyPursuitDriver):
         cone_age: float,
     ) -> tuple[float, float]:
         if mode == DriveMode.MODEL_STRAIGHT:
+            self.curve_three_level_controller.reset()
+            self.curve_continuous_controller.reset()
+            if (
+                self.mode_manager.mode_started_sec > 0.0
+                and time.monotonic() - self.mode_manager.mode_started_sec
+                < float(
+                    self.get_parameter(
+                        "hybrid_model_transition_neutral_sec"
+                    ).value
+                )
+            ):
+                return 0.0, float(
+                    self.get_parameter("hybrid_curve_speed_command").value
+                )
             if policy_age <= float(
                 self.get_parameter("hybrid_model_timeout_sec").value
             ):
                 return self.policy_angle_command, self.policy_speed_command
-            return rule_angle, rule_speed
+            return 0.0, 0.0
         if mode == DriveMode.LANE_RULE_CURVE:
-            return rule_angle, rule_speed
+            self.model_steering_stabilizer.reset()
+            self.model_transition_stabilizer.reset()
+            if (
+                bool(
+                    self.get_parameter(
+                        "hybrid_sim_track_curve_feedback_enabled"
+                    ).value
+                )
+                and self.sim_track_projection is not None
+            ):
+                lookahead_m = max(
+                    0.0,
+                    float(
+                        self.get_parameter(
+                            "hybrid_sim_track_curve_feedback_lookahead_m"
+                        ).value
+                    ),
+                )
+                target, _ = self.sim_track_reference.sample_at_progress(
+                    float(self.sim_track_projection.progress_m) + lookahead_m
+                )
+                if self.sim_track_vehicle_pose is not None:
+                    vehicle_x, vehicle_y, vehicle_yaw = (
+                        self.sim_track_vehicle_pose
+                    )
+                    rule_angle = cad_pure_pursuit_curve_command(
+                        vehicle_x=vehicle_x,
+                        vehicle_y=vehicle_y,
+                        vehicle_yaw_rad=vehicle_yaw,
+                        target_x=float(target[0]),
+                        target_y=float(target[1]),
+                        cross_track_error_m=float(
+                            self.sim_track_projection.cross_track_error_m
+                        ),
+                        maximum_command=float(
+                            self.get_parameter(
+                                "hybrid_curve_full_lock_command"
+                            ).value
+                        ),
+                    )
+            if bool(
+                self.get_parameter("hybrid_curve_three_level_enabled").value
+            ):
+                rule_angle = self.curve_three_level_controller.update(rule_angle)
+            else:
+                self.curve_three_level_controller.reset()
+                rule_angle = self.curve_continuous_controller.update(rule_angle)
+            return rule_angle, max(
+                0.0,
+                float(
+                    self.get_parameter("hybrid_curve_speed_command").value
+                ),
+            )
 
         command = self.latest_cone_command
         exit_timeout = float(
@@ -652,6 +1156,12 @@ class HybridDriveNode(CanonicalStanleyPursuitDriver):
         )
         return float(curvature) if math.isfinite(curvature) else 0.0
 
+    def _path_turn_angle(self) -> float:
+        terms = self.latest_terms
+        if terms is None or not math.isfinite(terms.pure_pursuit_rad):
+            return 0.0
+        return float(terms.pure_pursuit_rad)
+
     def _publish_hybrid_status(
         self,
         mode: DriveMode,
@@ -661,13 +1171,16 @@ class HybridDriveNode(CanonicalStanleyPursuitDriver):
         rule_angle: float,
         rule_speed: float,
         curvature: float,
+        path_turn_angle: float,
+        route_curve: bool | None,
         policy_age: float,
         cone_age: float,
     ) -> None:
         status = String()
         status.data = (
             f"{mode.name} | {reason} | angle={angle:.2f} speed={speed:.2f} "
-            f"| curve={curvature:.3f}/m | cone={self.latest_cone_command.confidence:.2f}"
+            f"| curve={curvature:.3f}/m turn={path_turn_angle:.3f}rad "
+            f"route={route_curve} | cone={self.latest_cone_command.confidence:.2f}"
         )
         self.mode_pub.publish(status)
         debug = Float32MultiArray()
@@ -689,6 +1202,8 @@ class HybridDriveNode(CanonicalStanleyPursuitDriver):
             float(curvature),
             float(policy_age),
             float(cone_age),
+            float(path_turn_angle),
+            -1.0 if route_curve is None else float(route_curve),
         ]
         self.hybrid_debug_pub.publish(debug)
 

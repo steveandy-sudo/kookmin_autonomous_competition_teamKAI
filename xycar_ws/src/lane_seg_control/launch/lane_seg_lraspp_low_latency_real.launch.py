@@ -23,8 +23,17 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("cpu_threads", default_value="4"),
-            DeclareLaunchArgument("max_output_rate_hz", default_value="7.0"),
+            DeclareLaunchArgument("max_output_rate_hz", default_value="15.0"),
             DeclareLaunchArgument("debug_rate_hz", default_value="0.0"),
+            DeclareLaunchArgument(
+                "direct_model_rectify_enabled", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "direct_model_rectify_oversample", default_value="3"
+            ),
+            DeclareLaunchArgument(
+                "publish_intermediate_topics", default_value="false"
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(canonical_launch),
                 launch_arguments={
@@ -33,11 +42,19 @@ def generate_launch_description():
                     ),
                     "use_compressed_image": "true",
                     "enable_rectify": "true",
+                    "direct_model_rectify_enabled": LaunchConfiguration(
+                        "direct_model_rectify_enabled"
+                    ),
+                    "direct_model_rectify_oversample": LaunchConfiguration(
+                        "direct_model_rectify_oversample"
+                    ),
                     "camera_yaml": camera_yaml,
                     "rect_balance": "0.3",
                     "max_input_age_sec": "0.35",
                     "direct_canonical_enabled": "true",
-                    "publish_intermediate_topics": "false",
+                    "publish_intermediate_topics": LaunchConfiguration(
+                        "publish_intermediate_topics"
+                    ),
                     "pipeline_qos_depth": "1",
                     "cpu_threads": LaunchConfiguration("cpu_threads"),
                     "max_output_rate_hz": LaunchConfiguration(

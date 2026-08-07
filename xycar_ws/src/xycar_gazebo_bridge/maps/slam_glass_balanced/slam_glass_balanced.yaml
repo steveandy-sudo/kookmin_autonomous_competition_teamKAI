@@ -1,7 +1,0 @@
-image: slam_glass_balanced.pgm
-mode: trinary
-resolution: 0.05
-origin: [-4.88, -3.82, 0.0]
-negate: 0
-occupied_thresh: 0.65
-free_thresh: 0.25

@@ -4,12 +4,56 @@ xycar_hybrid_drive:
     hybrid_device: auto
     hybrid_policy_cpu_threads: 4
     hybrid_opencv_threads: 1
-    hybrid_model_speed_cap: 8.0
+    hybrid_model_speed_cap: 25.0
+    hybrid_model_stabilizer_enabled: true
+    hybrid_skip_model_in_curve: true
+    hybrid_model_straight_steering_alpha: 0.20
+    hybrid_model_straight_rate_limit: 0.05
+    hybrid_model_straight_deadband: 0.02
+    hybrid_model_zero_crossing_threshold: 0.12
+    hybrid_model_transition_neutral_sec: 0.0
+    hybrid_model_transition_fast_sec: 0.55
+    hybrid_model_transition_steering_alpha: 0.65
+    hybrid_model_transition_rate_limit: 0.25
+    hybrid_model_transition_steering_cap: 15.0
     hybrid_cone_speed_cap: 9.5
     cruise_speed_command: 8.0
     minimum_speed_command: 6.0
     lane_loss_speed_command: 4.0
     hybrid_curve_entry_curvature_per_m: 0.16
     hybrid_curve_exit_curvature_per_m: 0.10
+    hybrid_curve_entry_path_angle_rad: 0.12
+    hybrid_curve_exit_path_angle_rad: 0.11
+    hybrid_curve_entry_angle_command: 10.0
+    hybrid_curve_exit_angle_command: 6.0
     hybrid_curve_entry_frames: 1
-    hybrid_curve_exit_frames: 3
+    hybrid_curve_exit_frames: 1
+    hybrid_curve_min_duration_sec: 1.2
+    hybrid_straight_min_duration_sec: 0.5
+    # Continuous rule steering is faster and smoother than full-lock pulsing.
+    hybrid_curve_three_level_enabled: false
+    hybrid_curve_continuous_alpha: 1.0
+    hybrid_curve_continuous_rate_limit_command: 42.0
+    hybrid_curve_full_lock_command: 42.0
+    hybrid_curve_zero_band_command: 2.0
+    hybrid_curve_pulse_duty_scale: 0.75
+    hybrid_curve_minimum_zero_frames: 1
+    hybrid_curve_maximum_zero_frames: 1
+    hybrid_curve_forced_pulse_min_command: 8.0
+    hybrid_curve_stable_pulse_min_command: 5.0
+    hybrid_curve_stable_pulse_frames: 2
+    hybrid_curve_speed_command: 25.0
+    hybrid_sim_track_mode_override: false
+    hybrid_sim_track_curve_feedback_enabled: false
+    hybrid_sim_track_curve_feedback_cte_gain: 1.5
+    hybrid_sim_track_curve_feedback_heading_gain: 1.5
+    hybrid_sim_track_curve_feedback_lookahead_m: 1.20
+    hybrid_sim_track_curve_feedback_deadband: 0.08
+    hybrid_sim_track_curve_feedback_min_command: 12.0
+    hybrid_sim_track_reverse_direction: true
+    hybrid_sim_track_curvature_threshold_per_m: 0.10
+    hybrid_sim_track_curve_preview_m: 1.10
+    hybrid_sim_track_curve_exit_lookahead_m: 1.05
+    hybrid_sim_track_curve_exit_heading_guard_rad: 0.12
+    hybrid_sim_track_curve_exit_cte_guard_m: 0.15
+    target_right_offset_m: 0.0

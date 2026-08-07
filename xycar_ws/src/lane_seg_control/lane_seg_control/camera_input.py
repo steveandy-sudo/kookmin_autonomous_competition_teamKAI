@@ -80,8 +80,21 @@ class CameraRectifier:
         self.map1: np.ndarray | None = None
         self.map2: np.ndarray | None = None
         self.map_size: tuple[int, int] | None = None
+        self.scaled_maps: dict[
+            tuple[int, int, int, int],
+            tuple[np.ndarray, np.ndarray],
+        ] = {}
 
-    def build_maps(self, width: int, height: int) -> None:
+    def rectification_parameters(
+        self,
+        width: int,
+        height: int,
+    ) -> tuple[
+        tuple[int, int],
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+    ]:
         size = (int(width), int(height))
         camera_matrix = scale_camera_matrix(
             self.matrix,
@@ -96,7 +109,7 @@ class CameraRectifier:
             distortion = np.zeros((4, 1), dtype=np.float64)
             count = min(4, self.distortion.size)
             distortion[:count, 0] = self.distortion[:count]
-            self.rectified_matrix = (
+            rectified_matrix = (
                 cv2.fisheye.estimateNewCameraMatrixForUndistortRectify(
                     camera_matrix,
                     distortion,
@@ -106,31 +119,88 @@ class CameraRectifier:
                     new_size=size,
                 )
             )
-            self.map1, self.map2 = cv2.fisheye.initUndistortRectifyMap(
+        else:
+            distortion = self.distortion
+            rectified_matrix, _ = cv2.getOptimalNewCameraMatrix(
                 camera_matrix,
                 distortion,
-                rotation,
-                self.rectified_matrix,
-                size,
-                cv2.CV_32FC1,
-            )
-        else:
-            self.rectified_matrix, _ = cv2.getOptimalNewCameraMatrix(
-                camera_matrix,
-                self.distortion,
                 size,
                 alpha=self.balance,
                 newImgSize=size,
             )
-            self.map1, self.map2 = cv2.initUndistortRectifyMap(
+        return size, camera_matrix, distortion, rectified_matrix
+
+    def build_maps(self, width: int, height: int) -> None:
+        size, camera_matrix, distortion, rectified_matrix = (
+            self.rectification_parameters(width, height)
+        )
+        rotation = np.eye(3, dtype=np.float64)
+        if (
+            "fisheye" in self.distortion_model
+            or "equidistant" in self.distortion_model
+        ):
+            self.map1, self.map2 = cv2.fisheye.initUndistortRectifyMap(
                 camera_matrix,
-                self.distortion,
+                distortion,
                 rotation,
-                self.rectified_matrix,
+                rectified_matrix,
                 size,
                 cv2.CV_32FC1,
             )
+        else:
+            self.map1, self.map2 = cv2.initUndistortRectifyMap(
+                camera_matrix,
+                distortion,
+                rotation,
+                rectified_matrix,
+                size,
+                cv2.CV_32FC1,
+            )
+        self.rectified_matrix = rectified_matrix
         self.map_size = size
+
+    def build_scaled_maps(
+        self,
+        source_width: int,
+        source_height: int,
+        output_width: int,
+        output_height: int,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        source_size, camera_matrix, distortion, rectified_matrix = (
+            self.rectification_parameters(source_width, source_height)
+        )
+        output_size = (int(output_width), int(output_height))
+        if output_size[0] <= 0 or output_size[1] <= 0:
+            raise ValueError(f"invalid rectified output size: {output_size}")
+
+        scaled_rectified_matrix = rectified_matrix.copy()
+        scaled_rectified_matrix[0, :3] *= (
+            output_size[0] / float(source_size[0])
+        )
+        scaled_rectified_matrix[1, :3] *= (
+            output_size[1] / float(source_size[1])
+        )
+        rotation = np.eye(3, dtype=np.float64)
+        if (
+            "fisheye" in self.distortion_model
+            or "equidistant" in self.distortion_model
+        ):
+            return cv2.fisheye.initUndistortRectifyMap(
+                camera_matrix,
+                distortion,
+                rotation,
+                scaled_rectified_matrix,
+                output_size,
+                cv2.CV_32FC1,
+            )
+        return cv2.initUndistortRectifyMap(
+            camera_matrix,
+            distortion,
+            rotation,
+            scaled_rectified_matrix,
+            output_size,
+            cv2.CV_32FC1,
+        )
 
     def rectify(self, image: np.ndarray) -> np.ndarray:
         height, width = image.shape[:2]
@@ -143,6 +213,32 @@ class CameraRectifier:
             image,
             self.map1,
             self.map2,
+            interpolation=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT,
+        )
+
+    def rectify_to_size(
+        self,
+        image: np.ndarray,
+        output_width: int,
+        output_height: int,
+    ) -> np.ndarray:
+        """Rectify directly into a smaller model frame with one remap."""
+        source_height, source_width = image.shape[:2]
+        key = (
+            int(source_width),
+            int(source_height),
+            int(output_width),
+            int(output_height),
+        )
+        maps = self.scaled_maps.get(key)
+        if maps is None:
+            maps = self.build_scaled_maps(*key)
+            self.scaled_maps[key] = maps
+        return cv2.remap(
+            image,
+            maps[0],
+            maps[1],
             interpolation=cv2.INTER_LINEAR,
             borderMode=cv2.BORDER_CONSTANT,
         )

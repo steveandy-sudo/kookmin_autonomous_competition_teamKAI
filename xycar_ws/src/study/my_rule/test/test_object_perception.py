@@ -2,10 +2,12 @@ import numpy as np
 
 from my_rule.perception.object_perception import (
     DetectionRecord,
+    apply_class_aliases,
     detection_side_counts,
     filter_detections,
     green_hsv_evidence_in_box,
     normalize_class_name,
+    parse_class_aliases,
 )
 
 
@@ -24,6 +26,31 @@ def record(name, confidence, xmin=10, ymin=10, xmax=30, ymax=30):
 def test_object_class_names_are_normalized_without_aliasing():
     assert normalize_class_name("Traffic Cone") == "traffic_cone"
     assert normalize_class_name("yellow-centerline") == "yellow_centerline"
+
+
+def test_model_specific_classes_map_to_mission_classes():
+    aliases = parse_class_aliases(
+        ["green_3=green", "red_car=car", "green_car=car"]
+    )
+    mapped = apply_class_aliases(
+        [
+            record("Green 3", 0.8),
+            record("red-car", 0.9),
+            record("cone", 0.7),
+        ],
+        aliases,
+    )
+
+    assert [item.class_name for item in mapped] == ["green", "car", "cone"]
+
+
+def test_invalid_class_alias_is_rejected():
+    try:
+        parse_class_aliases(["green_3"])
+    except ValueError as exc:
+        assert "source=target" in str(exc)
+    else:
+        raise AssertionError("invalid alias must raise ValueError")
 
 
 def test_detection_record_exposes_box_geometry():

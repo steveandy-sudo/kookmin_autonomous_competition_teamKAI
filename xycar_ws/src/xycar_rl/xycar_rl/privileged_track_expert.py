@@ -54,7 +54,7 @@ class PrivilegedTrackExpert:
         track: TrackReference,
         *,
         min_speed_command: float = 4.0,
-        max_speed_command: float = 10.0,
+        max_speed_command: float = 25.0,
         action_min_speed_command: float | None = None,
         action_max_speed_command: float | None = None,
         max_steering_command: float = 42.0,

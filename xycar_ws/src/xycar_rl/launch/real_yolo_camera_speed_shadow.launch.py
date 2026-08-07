@@ -40,7 +40,7 @@ def generate_launch_description():
             DeclareLaunchArgument("yolo_cpu_threads", default_value="4"),
             DeclareLaunchArgument("lane_rate_hz", default_value="15.0"),
             DeclareLaunchArgument("drive_enabled", default_value="false"),
-            DeclareLaunchArgument("deployment_speed_cap", default_value="3.0"),
+            DeclareLaunchArgument("deployment_speed_cap", default_value="0.0"),
             DeclareLaunchArgument("steering_output_sign", default_value="1.0"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(perception_launch),

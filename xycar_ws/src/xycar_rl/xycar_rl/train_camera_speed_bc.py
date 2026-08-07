@@ -263,7 +263,15 @@ def parse_args(argv=None):
         default=DEFAULT_MIN_SPEED_COMMAND,
         help="Minimum stable command; 4 is the previously validated full-lap speed.",
     )
-    parser.add_argument("--max-speed-command", type=float, default=10.0)
+    parser.add_argument(
+        "--max-speed-command",
+        type=float,
+        default=DEFAULT_MAX_SPEED_COMMAND,
+        help=(
+            "Actor normalization ceiling, not a deployment cap. "
+            "The current high-speed contract uses 24."
+        ),
+    )
     parser.add_argument(
         "--speed-target-source",
         choices=["heuristic", "recorded"],

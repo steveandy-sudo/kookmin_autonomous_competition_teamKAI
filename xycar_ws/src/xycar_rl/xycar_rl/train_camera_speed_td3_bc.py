@@ -16,13 +16,21 @@ from torch.utils.data import DataLoader, Subset, WeightedRandomSampler
 from xycar_rl.camera_speed_models import (
     DEFAULT_MAX_SPEED_COMMAND,
     DEFAULT_MIN_SPEED_COMMAND,
+    expand_actor_speed_range,
     load_camera_speed_actor,
 )
-from xycar_rl.reward import RewardWeights, lap_time_objective_weights
+from xycar_rl.reward import (
+    RewardWeights,
+    lap_time_objective_weights,
+    straight_high_speed_objective_weights,
+)
 from xycar_rl.td3_bc import CameraSpeedTD3BCAgent, TD3BCConfig
 from xycar_rl.train_camera_speed_bc import grouped_split
 from xycar_rl.train_td3_bc import resolve_device
-from xycar_rl.transition_dataset import CameraSpeedTransitionDataset
+from xycar_rl.transition_dataset import (
+    CameraSpeedTransitionDataset,
+    find_transition_csvs,
+)
 
 
 def parse_args(argv=None):
@@ -64,11 +72,27 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--reward-objective",
-        choices=["legacy", "lap_time"],
+        choices=["legacy", "lap_time", "straight_high_speed"],
         default="legacy",
         help="Reward contract used when --recompute-rewards is enabled.",
     )
     parser.add_argument("--target-right-offset-m", type=float, default=0.0)
+    parser.add_argument(
+        "--straight-only",
+        action="store_true",
+        help="Train only on transitions whose current and guarded preview are straight.",
+    )
+    parser.add_argument("--straight-curvature-threshold", type=float, default=0.10)
+    parser.add_argument("--straight-guard-distance-m", type=float, default=0.80)
+    parser.add_argument(
+        "--straight-bc-target-speed-command",
+        type=float,
+        default=0.0,
+        help=(
+            "Override successful straight BC speed targets; zero preserves "
+            "the recorded command."
+        ),
+    )
     parser.add_argument("--off-track-threshold-m", type=float, default=0.38)
     parser.add_argument("--lane-margin-start-m", type=float, default=0.24)
     parser.add_argument(
@@ -82,6 +106,14 @@ def parse_args(argv=None):
         help=(
             "Freeze the approved encoder and steering head, and train only "
             "RangeExpandedCameraSpeedActor.speed_extension."
+        ),
+    )
+    parser.add_argument(
+        "--expand-speed-range",
+        action="store_true",
+        help=(
+            "Wrap the initial actor in a range-expanded speed head when its "
+            "stored range differs from --min/--max-speed-command."
         ),
     )
     parser.add_argument(
@@ -117,8 +149,10 @@ def validation_metrics(agent, loader) -> dict[str, float]:
         return {
             "validation_steering_mse": float("nan"),
             "validation_speed_mse": float("nan"),
+            "validation_steering_abs_mean": float("nan"),
         }
     squared_error = np.zeros(2, dtype=np.float64)
+    steering_abs_sum = 0.0
     count = 0
     agent.actor.eval()
     for batch in loader:
@@ -135,11 +169,15 @@ def validation_metrics(agent, loader) -> dict[str, float]:
         squared_error += (
             torch.sum((prediction - action) ** 2, dim=0).detach().cpu().numpy()
         )
+        steering_abs_sum += float(torch.sum(torch.abs(prediction[:, 0])).cpu())
         count += int(action.shape[0])
     agent.actor.train()
     return {
         "validation_steering_mse": float(squared_error[0] / max(1, count)),
         "validation_speed_mse": float(squared_error[1] / max(1, count)),
+        "validation_steering_abs_mean": float(
+            steering_abs_sum / max(1, count)
+        ),
     }
 
 
@@ -262,6 +300,15 @@ def transition_root(path: str | Path) -> Path:
     raise FileNotFoundError(f"focus transition path has no transitions.csv: {resolved}")
 
 
+def transition_roots(paths: list[str | Path]) -> set[Path]:
+    if not paths:
+        return set()
+    return {
+        csv_path.parent.resolve()
+        for csv_path in find_transition_csvs(paths)
+    }
+
+
 def export_scripted_actor(
     path: Path,
     actor: torch.nn.Module,
@@ -313,7 +360,7 @@ def write_milestone_manifest(
                 "ros2 launch xycar_rl real_shadow.launch.py \\",
                 "  policy_kind:=camera_speed_td3_bc \\",
                 f"  checkpoint_path:=$MODEL_DIR/{item['checkpoint']} \\",
-                "  min_speed_command:=4.0 max_speed_command:=24.0 \\",
+                "  min_speed_command:=4.0 max_speed_command:=25.0 \\",
                 "  deployment_speed_cap:=0.0 \\",
                 "  adaptive_steering_enabled:=false \\",
                 "  steering_temporal_alpha:=1.0 speed_temporal_alpha:=1.0 \\",
@@ -351,6 +398,35 @@ def main(argv=None) -> None:
     actor, initial_payload = load_camera_speed_actor(
         policy_checkpoint.expanduser().resolve(), device=device
     )
+    source_range = (
+        float(initial_payload.get("min_speed_command", args.min_speed_command)),
+        float(initial_payload.get("max_speed_command", args.max_speed_command)),
+    )
+    target_range = (
+        float(args.min_speed_command),
+        float(args.max_speed_command),
+    )
+    model_type = str(
+        initial_payload.get("model_type", "camera_speed_resnet18")
+    )
+    if source_range != target_range:
+        if args.resume_checkpoint is not None:
+            raise ValueError(
+                f"resume checkpoint speed range {source_range} != {target_range}"
+            )
+        if not args.expand_speed_range:
+            raise ValueError(
+                "initial policy and transition action ranges differ: "
+                f"{source_range} != {target_range}; pass --expand-speed-range"
+            )
+        actor = expand_actor_speed_range(
+            actor,
+            source_min_speed_command=source_range[0],
+            source_max_speed_command=source_range[1],
+            target_min_speed_command=target_range[0],
+            target_max_speed_command=target_range[1],
+        )
+        model_type = f"{model_type}_range_expanded"
     if args.speed_extension_only and args.freeze_encoder:
         raise ValueError(
             "--speed-extension-only already freezes the encoder; "
@@ -369,15 +445,17 @@ def main(argv=None) -> None:
             raise ValueError("--freeze-encoder requires a range-expanded actor")
         freeze_encoder()
     temporal_frames = int(getattr(actor, "temporal_frames", 1))
-    model_type = str(initial_payload.get("model_type", "camera_speed_resnet18"))
-    reward_weights = (
-        lap_time_objective_weights(
+    if args.reward_objective == "lap_time":
+        reward_weights = lap_time_objective_weights(
             lane_margin_start_m=args.lane_margin_start_m,
             lane_departure_threshold_m=args.off_track_threshold_m,
         )
-        if args.reward_objective == "lap_time"
-        else RewardWeights()
-    )
+    elif args.reward_objective == "straight_high_speed":
+        reward_weights = straight_high_speed_objective_weights(
+            target_speed_command=args.max_speed_command,
+        )
+    else:
+        reward_weights = RewardWeights()
     dataset = CameraSpeedTransitionDataset(
         args.transitions,
         min_speed_command=args.min_speed_command,
@@ -388,6 +466,14 @@ def main(argv=None) -> None:
         target_right_offset_m=args.target_right_offset_m,
         reward_weights=reward_weights,
         bc_successful_episodes_only=args.bc_successful_episodes_only,
+        straight_only=args.straight_only,
+        straight_curvature_threshold=args.straight_curvature_threshold,
+        straight_guard_distance_m=args.straight_guard_distance_m,
+        bc_speed_target_command=(
+            args.straight_bc_target_speed_command
+            if args.straight_bc_target_speed_command > 0.0
+            else None
+        ),
     )
     train_indices, validation_indices = grouped_split(
         dataset, args.validation_ratio, args.seed
@@ -399,9 +485,7 @@ def main(argv=None) -> None:
     }
     generator = torch.Generator().manual_seed(args.seed)
     train_subset = Subset(dataset, train_indices)
-    focus_roots = {
-        transition_root(path) for path in args.focus_transitions
-    }
+    focus_roots = transition_roots(args.focus_transitions)
     focus_repeat = max(1.0, float(args.focus_repeat))
     if focus_roots:
         sample_weights = [
@@ -433,15 +517,6 @@ def main(argv=None) -> None:
     validation_loader = DataLoader(
         Subset(dataset, validation_indices), shuffle=False, **loader_args
     )
-    expected_range = (
-        float(initial_payload.get("min_speed_command", args.min_speed_command)),
-        float(initial_payload.get("max_speed_command", args.max_speed_command)),
-    )
-    if expected_range != (args.min_speed_command, args.max_speed_command):
-        raise ValueError(
-            "initial policy and transition action ranges differ: "
-            f"{expected_range} != {(args.min_speed_command, args.max_speed_command)}"
-        )
     config = TD3BCConfig(
         gamma=args.gamma,
         tau=args.tau,
@@ -474,6 +549,8 @@ def main(argv=None) -> None:
         "output_dir": str(output_dir),
         "device": str(device),
         "dataset_rows": len(dataset),
+        "dataset_rows_before_straight_filter": dataset.original_row_count,
+        "dataset_rows_after_straight_filter": dataset.straight_row_count,
         "train_rows": len(train_indices),
         "validation_rows": len(validation_indices),
         "td3_bc": asdict(config),
@@ -494,6 +571,7 @@ def main(argv=None) -> None:
         "q_scale",
         "validation_steering_mse",
         "validation_speed_mse",
+        "validation_steering_abs_mean",
         "elapsed_sec",
     ]
     best_metric = float("inf")
@@ -534,6 +612,10 @@ def main(argv=None) -> None:
             selection_metric = (
                 row["validation_steering_mse"] + row["validation_speed_mse"]
             )
+            if args.straight_only:
+                selection_metric += 0.10 * row[
+                    "validation_steering_abs_mean"
+                ]
             if selection_metric < best_metric:
                 best_metric = selection_metric
                 save_checkpoint(
@@ -614,6 +696,7 @@ def main(argv=None) -> None:
                     "epoch",
                     "min_speed_command",
                     "max_speed_command",
+                    "speed_range_expansion",
                     "metrics",
                     "actor_state_dict",
                     "update_count",

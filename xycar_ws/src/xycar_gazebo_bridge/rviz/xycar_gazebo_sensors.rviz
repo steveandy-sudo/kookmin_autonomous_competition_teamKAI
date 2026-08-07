@@ -111,7 +111,7 @@ Visualization Manager:
       Use rainbow: false
       Value: true
     - Class: rviz_default_plugins/Camera
-      Enabled: true
+      Enabled: false
       Far Plane Distance: 100
       Image Rendering: background and overlay
       Name: Camera
@@ -122,8 +122,11 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /image_raw
-      Value: true
+      Value: false
       Visibility:
+        Canonical Road Image: true
+        Canonical White Mask: true
+        Canonical Yellow Mask: true
         Grid: true
         Image: true
         LaserScan: true
@@ -149,7 +152,7 @@ Visualization Manager:
         Value: /image_raw
       Value: false
     - Class: rviz_default_plugins/Image
-      Enabled: true
+      Enabled: false
       Max Value: 1
       Median window: 5
       Min Value: 0
@@ -161,9 +164,9 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /perception/debug_image
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/Image
-      Enabled: true
+      Enabled: false
       Max Value: 1
       Median window: 5
       Min Value: 0
@@ -175,9 +178,9 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /perception/canonical_road_image
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/Image
-      Enabled: true
+      Enabled: false
       Max Value: 1
       Median window: 5
       Min Value: 0
@@ -189,9 +192,9 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /perception/canonical_white_mask
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/Image
-      Enabled: true
+      Enabled: false
       Max Value: 1
       Median window: 5
       Min Value: 0
@@ -203,7 +206,7 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /perception/canonical_yellow_mask
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/Image
       Enabled: false
       Max Value: 1
@@ -222,8 +225,7 @@ Visualization Manager:
       Enabled: true
       Name: Perception Markers
       Namespaces:
-        centerline: true
-        road_segments: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -235,9 +237,8 @@ Visualization Manager:
       Enabled: true
       Name: Rule Drive Markers
       Namespaces:
-        rule_control_point: true
-        rule_lookahead: true
-        rule_target_path: true
+        connected_yellow_path: true
+        fused_lookahead: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -314,7 +315,7 @@ Window Geometry:
     collapsed: false
   Perception Debug Image:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd00000001000000000000021d000002c2fc0200000008fb00000030004c0065006700610063007900200048006f00750067006800200044006500620075006700200049006d006100670065000000003d0000010a0000002800fffffffb0000002c00500065007200630065007000740069006f006e00200044006500620075006700200049006d006100670065010000003d0000015e0000002800fffffffb0000000a0049006d00610067006500000001d6000000c50000002800fffffffb0000000c00430061006d00650072006101000001a10000015e0000002800fffffffb000000100044006900730070006c0061007900730000000130000000c9000000c900fffffffb0000001200530065006c0065006300740069006f006e000000027d000000ea0000005c00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007300000002040000007d0000005c00fffffffb0000000a00560069006500770073000000025a0000010d000000a400ffffff00000250000002c200000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd00000001000000000000021d000002c2fc020000000bfb00000030004c0065006700610063007900200048006f00750067006800200044006500620075006700200049006d006100670065000000003d0000010a0000002800fffffffb0000002c00500065007200630065007000740069006f006e00200044006500620075006700200049006d006100670065000000003d000000a10000002800fffffffb0000000a0049006d00610067006500000001d6000000c50000002800fffffffb0000000c00430061006d00650072006100000000e4000000a00000002800fffffffb000000100044006900730070006c0061007900730000000130000000c9000000c900fffffffb0000001200530065006c0065006300740069006f006e000000027d000000ea0000005c00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007300000002040000007d0000005c00fffffffb0000000a00560069006500770073000000025a0000010d000000a400fffffffb0000002800430061006e006f006e006900630061006c0020005700680069007400650020004d00610073006b000000018a000000790000002800fffffffb0000002800430061006e006f006e006900630061006c00200052006f0061006400200049006d0061006700650000000209000000780000002800fffffffb0000002a00430061006e006f006e006900630061006c002000590065006c006c006f00770020004d00610073006b0000000287000000780000002800ffffff00000473000002c200000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Selection:
     collapsed: false
   Tool Properties:
