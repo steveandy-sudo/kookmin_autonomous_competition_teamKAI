@@ -1,4 +1,7 @@
+import pytest
+
 from xycar_map_nav.space_drive_gate_core import SpaceDriveGateController
+from xycar_map_nav.space_drive_gate_core import steering_speed_limit
 
 
 def test_space_toggles_continuous_fixed_speed_and_stop():
@@ -70,6 +73,7 @@ def test_speed_and_angle_are_clamped():
         speed_command=20.0,
         maximum_speed_command=10.0,
         maximum_abs_angle_command=42.0,
+        adaptive_steering_speed_enabled=False,
     )
     controller.toggle()
     output = controller.command(
@@ -102,3 +106,52 @@ def test_default_hard_limit_allows_command_30():
         candidate_speed_command=30.0,
     )
     assert output.speed_command == 30.0
+
+
+def test_steering_speed_limit_holds_cap_then_slows_to_8():
+    common = dict(
+        speed_cap_command=10.0,
+        turn_speed_command=8.0,
+        slowdown_start_angle_command=20.0,
+        full_slowdown_angle_command=42.0,
+    )
+    assert steering_speed_limit(0.0, **common) == 10.0
+    assert steering_speed_limit(20.0, **common) == 10.0
+    assert steering_speed_limit(31.0, **common) == 9.0
+    assert steering_speed_limit(-42.0, **common) == 8.0
+
+
+def test_integrated_gate_applies_steering_speed_limit():
+    controller = SpaceDriveGateController(speed_command=10.0)
+    controller.toggle()
+    output = controller.command(
+        candidate_fresh=True,
+        candidate_angle_command=31.0,
+        candidate_speed_command=10.0,
+    )
+    assert output.speed_command == pytest.approx(9.0)
+
+
+def test_lower_cone_or_avoidance_speed_still_wins():
+    controller = SpaceDriveGateController(speed_command=10.0)
+    controller.toggle()
+    output = controller.command(
+        candidate_fresh=True,
+        candidate_angle_command=31.0,
+        candidate_speed_command=6.0,
+    )
+    assert output.speed_command == 6.0
+
+
+def test_adaptive_steering_speed_can_be_disabled():
+    controller = SpaceDriveGateController(
+        speed_command=10.0,
+        adaptive_steering_speed_enabled=False,
+    )
+    controller.toggle()
+    output = controller.command(
+        candidate_fresh=True,
+        candidate_angle_command=42.0,
+        candidate_speed_command=10.0,
+    )
+    assert output.speed_command == 10.0

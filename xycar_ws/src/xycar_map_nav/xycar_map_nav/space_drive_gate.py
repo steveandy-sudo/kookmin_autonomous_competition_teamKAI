@@ -167,6 +167,24 @@ class SpaceDriveGate(Node):
                 self.get_parameter("maximum_abs_angle_command").value
             ),
             steering_only=bool(self.get_parameter("steering_only").value),
+            adaptive_steering_speed_enabled=bool(
+                self.get_parameter(
+                    "adaptive_steering_speed_enabled"
+                ).value
+            ),
+            turn_speed_command=float(
+                self.get_parameter("turn_speed_command").value
+            ),
+            slowdown_start_angle_command=float(
+                self.get_parameter(
+                    "slowdown_start_angle_command"
+                ).value
+            ),
+            full_slowdown_angle_command=float(
+                self.get_parameter(
+                    "full_slowdown_angle_command"
+                ).value
+            ),
         )
         self.candidate = (0.0, 0.0)
         self.candidate_time = float("-inf")
@@ -252,6 +270,10 @@ class SpaceDriveGate(Node):
         self.declare_parameter("maximum_speed_command", 30.0)
         self.declare_parameter("maximum_abs_angle_command", 42.0)
         self.declare_parameter("steering_only", False)
+        self.declare_parameter("adaptive_steering_speed_enabled", True)
+        self.declare_parameter("turn_speed_command", 8.0)
+        self.declare_parameter("slowdown_start_angle_command", 20.0)
+        self.declare_parameter("full_slowdown_angle_command", 42.0)
         self.declare_parameter("candidate_timeout_sec", 0.40)
         self.declare_parameter("publish_rate_hz", 20.0)
 

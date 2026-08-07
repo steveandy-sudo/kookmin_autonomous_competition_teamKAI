@@ -51,6 +51,10 @@ bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh
 | 터미널 입력 항목 | 기본값 | 역할 |
 | --- | ---: | --- |
 | 주행 속도 상한 | 3 | 전체 RULE 속도 상한 |
+| 조향각 기반 속도 가감속 | Y | 조향각에 따른 자동 감속 ON/OFF |
+| 감속 시작 절대 조향각 | 20 | 이 값 이하에서는 속도 상한 유지 |
+| 최저속도 도달 절대 조향각 | 42 | 이 값부터 설정한 코너 속도 유지 |
+| 최대 조향 시 속도 | 8 | 최저속도 도달각 이상에서 사용할 command |
 | 곡선 Lookahead distance | 0.30 | Pure Pursuit가 앞을 보는 거리 |
 | 곡선 Stanley 비율 | 20 | 곡선에서 Stanley 혼합 비율 |
 | Pure Pursuit 제어점 X | -0.08 | PP 계산 기준점의 차량 전후 위치 |
@@ -68,6 +72,10 @@ bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh
 
 ```text
 3
+Y
+20
+42
+8
 0.30
 20
 -0.08
@@ -119,7 +127,9 @@ bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh
 
 ### 6.1 조향각에 따른 속도 조절
 
-RULE 조향 명령의 절댓값을 기준으로 다음 속도 곡선을 시험한다.
+통합 SPACE 게이트에 조향각 속도 조절이 연결되어 있다. 실행 시작 시 ON/OFF,
+감속 시작각, 최저속도 도달각과 최대 조향 시 속도를 입력한다. 기본값은
+다음과 같다.
 
 - `|조향각| <= 20`: 입력한 속도 상한 유지
 - `20 < |조향각| < 42`: 입력 상한에서 command 8까지 선형 감속

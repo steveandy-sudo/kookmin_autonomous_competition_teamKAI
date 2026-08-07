@@ -30,6 +30,10 @@ STRAIGHT_STANLEY_GAIN="${STRAIGHT_STANLEY_GAIN:-}"
 STRAIGHT_STANLEY_SOFTENING_MPS="${STRAIGHT_STANLEY_SOFTENING_MPS:-}"
 OPPOSED_STANLEY_PERCENT="${OPPOSED_STANLEY_PERCENT:-}"
 CONTROL_LATENCY_PREVIEW_SEC="${CONTROL_LATENCY_PREVIEW_SEC:-}"
+ADAPTIVE_STEERING_SPEED_ENABLED="${ADAPTIVE_STEERING_SPEED_ENABLED:-}"
+STEERING_TURN_SPEED_COMMAND="${STEERING_TURN_SPEED_COMMAND:-}"
+STEERING_SLOWDOWN_START_ANGLE="${STEERING_SLOWDOWN_START_ANGLE:-}"
+STEERING_FULL_SLOWDOWN_ANGLE="${STEERING_FULL_SLOWDOWN_ANGLE:-}"
 STEERING_ONLY="${XYCAR_STEERING_ONLY:-false}"
 SENSOR_LOG="/tmp/xycar_hybrid_sensors_$(date +%Y%m%d_%H%M%S).log"
 SENSOR_PID=""
@@ -67,6 +71,28 @@ prompt_float() {
   printf -v "$variable_name" '%.3f' "$value"
 }
 
+prompt_bool() {
+  local variable_name="$1"
+  local prompt="$2"
+  local default_value="$3"
+  local value="${!variable_name:-}"
+  if [[ -z "$value" ]]; then
+    read -r -p "$prompt [Y/n]: " value
+    value="${value:-$default_value}"
+  fi
+  case "${value,,}" in
+    y|yes|true|1) printf -v "$variable_name" '%s' true ;;
+    n|no|false|0) printf -v "$variable_name" '%s' false ;;
+    *)
+      problem \
+        "ON/OFF 입력 오류" \
+        "'$value'은 $prompt 응답으로 사용할 수 없습니다." \
+        "켜려면 y, 끄려면 n을 입력하세요."
+      exit 2
+      ;;
+  esac
+}
+
 if [[ "$STEERING_ONLY" == "true" ]]; then
   SPEED_COMMAND=0.0
 elif [[ -z "$SPEED_COMMAND" ]]; then
@@ -85,6 +111,31 @@ if [[ "$STEERING_ONLY" != "true" ]]; then
   fi
 fi
 SPEED_COMMAND="$(awk -v speed="$SPEED_COMMAND" 'BEGIN { printf "%.3f", speed }')"
+
+prompt_bool ADAPTIVE_STEERING_SPEED_ENABLED \
+  "조향각 기반 속도 가감속 사용" true
+if [[ "$ADAPTIVE_STEERING_SPEED_ENABLED" == "true" ]]; then
+  prompt_float STEERING_SLOWDOWN_START_ANGLE \
+    "속도 감속을 시작할 절대 조향각" 20.0 0.0 42.0
+  prompt_float STEERING_FULL_SLOWDOWN_ANGLE \
+    "최저속도에 도달할 절대 조향각" 42.0 0.0 42.0
+  prompt_float STEERING_TURN_SPEED_COMMAND \
+    "최대 조향 시 속도 command" 8.0 0.0 30.0
+  if ! awk \
+    -v start="$STEERING_SLOWDOWN_START_ANGLE" \
+    -v full="$STEERING_FULL_SLOWDOWN_ANGLE" \
+    'BEGIN { exit !(full >= start) }'; then
+    problem \
+      "조향 감속 각도 오류" \
+      "최저속도 도달각이 감속 시작각보다 작습니다." \
+      "예: 시작각 20, 도달각 42"
+    exit 2
+  fi
+else
+  STEERING_SLOWDOWN_START_ANGLE=20.000
+  STEERING_FULL_SLOWDOWN_ANGLE=42.000
+  STEERING_TURN_SPEED_COMMAND=8.000
+fi
 
 if [[ "$RUN_MODE" != "rule" ]]; then
   problem \
@@ -306,6 +357,11 @@ wait_for_message /vehicle/vesc_state VESC
 echo
 echo "========== 모든 센서 정상 =========="
 echo "속도 상한: $SPEED_COMMAND | 시작 목표: WP$START_WAYPOINT"
+if [[ "$ADAPTIVE_STEERING_SPEED_ENABLED" == "true" ]]; then
+  echo "조향 감속: ${STEERING_SLOWDOWN_START_ANGLE}도부터 ${STEERING_FULL_SLOWDOWN_ANGLE}도까지 command ${STEERING_TURN_SPEED_COMMAND}으로 감속"
+else
+  echo "조향 감속: OFF"
+fi
 if [[ "$STEERING_ONLY" == "true" ]]; then
   echo "조향 전용: ON | 최종 속도 command는 항상 0.0"
 fi
@@ -323,6 +379,8 @@ export STANLEY_GAIN STANLEY_SOFTENING_MPS
 export STRAIGHT_STANLEY_PERCENT STRAIGHT_STANLEY_GAIN
 export STRAIGHT_STANLEY_SOFTENING_MPS OPPOSED_STANLEY_PERCENT
 export CONTROL_LATENCY_PREVIEW_SEC
+export ADAPTIVE_STEERING_SPEED_ENABLED STEERING_TURN_SPEED_COMMAND
+export STEERING_SLOWDOWN_START_ANGLE STEERING_FULL_SLOWDOWN_ANGLE
 
 "$WORKSPACE/src/xycar_map_nav/scripts/run_space_hybrid_test.sh" \
   "$SPEED_COMMAND" "$START_WAYPOINT" "$RUN_MODE" "$MODEL_PROFILE" \

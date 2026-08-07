@@ -30,6 +30,10 @@ STRAIGHT_STANLEY_GAIN="${STRAIGHT_STANLEY_GAIN:-}"
 STRAIGHT_STANLEY_SOFTENING_MPS="${STRAIGHT_STANLEY_SOFTENING_MPS:-}"
 OPPOSED_STANLEY_PERCENT="${OPPOSED_STANLEY_PERCENT:-}"
 CONTROL_LATENCY_PREVIEW_SEC="${CONTROL_LATENCY_PREVIEW_SEC:-}"
+ADAPTIVE_STEERING_SPEED_ENABLED="${ADAPTIVE_STEERING_SPEED_ENABLED:-}"
+STEERING_TURN_SPEED_COMMAND="${STEERING_TURN_SPEED_COMMAND:-}"
+STEERING_SLOWDOWN_START_ANGLE="${STEERING_SLOWDOWN_START_ANGLE:-}"
+STEERING_FULL_SLOWDOWN_ANGLE="${STEERING_FULL_SLOWDOWN_ANGLE:-}"
 CONTROL_LOG="/tmp/xycar_hybrid_control_$(date +%Y%m%d_%H%M%S).log"
 RUN_CONFIG_FILE="${XYCAR_HYBRID_RUN_CONFIG_FILE:-/tmp/xycar_hybrid_run_config.yaml}"
 CONE_SPEED_COMMAND="6.0"
@@ -98,6 +102,27 @@ prompt_float() {
   printf -v "$variable_name" '%.3f' "$value"
 }
 
+prompt_bool() {
+  local variable_name="$1"
+  local prompt="$2"
+  local default_value="$3"
+  local value="${!variable_name:-}"
+  if [[ -z "$value" ]]; then
+    if [[ -t 0 ]]; then
+      read -r -p "$prompt [Y/n]: " value
+    fi
+    value="${value:-$default_value}"
+  fi
+  case "${value,,}" in
+    y|yes|true|1) printf -v "$variable_name" '%s' true ;;
+    n|no|false|0) printf -v "$variable_name" '%s' false ;;
+    *)
+      echo "ERROR: $prompt must be y or n." >&2
+      exit 2
+      ;;
+  esac
+}
+
 if [[ "$CONE_AS_VEHICLE_OBSTACLE" == "true" ]]; then
   AVOIDANCE_TARGET_LABEL=cone
   AVOIDANCE_DISPLAY_CONFIDENCE="$CONE_AS_VEHICLE_MIN_CONFIDENCE"
@@ -120,6 +145,28 @@ elif [[ ! "$SPEED_COMMAND" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
     exit 2
 fi
 SPEED_COMMAND="$(awk -v speed="$SPEED_COMMAND" 'BEGIN { printf "%.3f", speed }')"
+
+prompt_bool ADAPTIVE_STEERING_SPEED_ENABLED \
+  "Adaptive steering speed" true
+if [[ "$ADAPTIVE_STEERING_SPEED_ENABLED" == "true" ]]; then
+  prompt_float STEERING_SLOWDOWN_START_ANGLE \
+    "Steering slowdown start angle" 20.0 0.0 42.0
+  prompt_float STEERING_FULL_SLOWDOWN_ANGLE \
+    "Steering full slowdown angle" 42.0 0.0 42.0
+  prompt_float STEERING_TURN_SPEED_COMMAND \
+    "Full-steering speed command" 8.0 0.0 30.0
+  if ! awk \
+    -v start="$STEERING_SLOWDOWN_START_ANGLE" \
+    -v full="$STEERING_FULL_SLOWDOWN_ANGLE" \
+    'BEGIN { exit !(full >= start) }'; then
+    echo "ERROR: full slowdown angle must be >= start angle." >&2
+    exit 2
+  fi
+else
+  STEERING_SLOWDOWN_START_ANGLE=20.000
+  STEERING_FULL_SLOWDOWN_ANGLE=42.000
+  STEERING_TURN_SPEED_COMMAND=8.000
+fi
 
 if [[ -z "$START_WAYPOINT" ]]; then
   if [[ -t 0 ]]; then
@@ -242,6 +289,10 @@ test_profile: "$TEST_PROFILE"
 enable_rviz: $ENABLE_RVIZ
 start_cone: $START_CONE
 steering_only: $STEERING_ONLY
+adaptive_steering_speed_enabled: $ADAPTIVE_STEERING_SPEED_ENABLED
+turn_speed_command: $STEERING_TURN_SPEED_COMMAND
+slowdown_start_angle_command: $STEERING_SLOWDOWN_START_ANGLE
+full_slowdown_angle_command: $STEERING_FULL_SLOWDOWN_ANGLE
 vehicle_yolo_min_confidence: $VEHICLE_YOLO_MIN_CONFIDENCE
 cone_as_vehicle_obstacle: $CONE_AS_VEHICLE_OBSTACLE
 cone_as_vehicle_min_confidence: $CONE_AS_VEHICLE_MIN_CONFIDENCE
@@ -351,6 +402,11 @@ else
   echo "Priority: CONE > YOLO+LiDAR AVOIDANCE > RULE."
 fi
 echo "Selected speed limit: $SPEED_COMMAND"
+if [[ "$ADAPTIVE_STEERING_SPEED_ENABLED" == "true" ]]; then
+  echo "Steering speed: <=${STEERING_SLOWDOWN_START_ANGLE}deg cap, to ${STEERING_FULL_SLOWDOWN_ANGLE}deg linear, then command ${STEERING_TURN_SPEED_COMMAND}"
+else
+  echo "Steering speed: OFF"
+fi
 if [[ "$STEERING_ONLY" == "true" ]]; then
   echo "Steering-only: enabled (/xycar_motor speed is always 0.0)"
 fi
@@ -469,6 +525,10 @@ ros2 run xycar_map_nav space_drive_gate --ros-args \
   -p speed_command:="$SPEED_COMMAND" \
   -p maximum_speed_command:=30.0 \
   -p steering_only:="$STEERING_ONLY" \
+  -p adaptive_steering_speed_enabled:="$ADAPTIVE_STEERING_SPEED_ENABLED" \
+  -p turn_speed_command:="$STEERING_TURN_SPEED_COMMAND" \
+  -p slowdown_start_angle_command:="$STEERING_SLOWDOWN_START_ANGLE" \
+  -p full_slowdown_angle_command:="$STEERING_FULL_SLOWDOWN_ANGLE" \
   -p avoidance_target_label:="$AVOIDANCE_TARGET_LABEL" \
   -p avoidance_yolo_min_confidence:="$AVOIDANCE_DISPLAY_CONFIDENCE" \
   -p avoidance_entry_distance_m:="$VEHICLE_AVOIDANCE_ENTRY_DISTANCE_M" \
