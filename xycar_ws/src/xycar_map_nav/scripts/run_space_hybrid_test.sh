@@ -58,6 +58,9 @@ VEHICLE_LIDAR_SECTOR_MEMORY_SEC="${VEHICLE_LIDAR_SECTOR_MEMORY_SEC:-0.50}"
 VEHICLE_LIDAR_ASSOCIATION_ANGLE_MARGIN_DEG="${VEHICLE_LIDAR_ASSOCIATION_ANGLE_MARGIN_DEG:-2.0}"
 VEHICLE_LIDAR_ASSOCIATION_DISTANCE_TOLERANCE_M="${VEHICLE_LIDAR_ASSOCIATION_DISTANCE_TOLERANCE_M:-0.35}"
 RULE_PERCEPTION_BACKEND="${XYCAR_RULE_PERCEPTION_BACKEND:-canonical}"
+LANE_PERCEPTION_LAUNCH="${XYCAR_LANE_PERCEPTION_LAUNCH:-lane_seg_lraspp_low_latency_real.launch.py}"
+CANONICAL_FORWARD_RANGE_M="${XYCAR_CANONICAL_FORWARD_RANGE_M:-}"
+PERCEPTION_MAX_OUTPUT_RATE_HZ="${XYCAR_PERCEPTION_MAX_OUTPUT_RATE_HZ:-15.0}"
 DIRECT_BEV_MODEL_PATH="${DIRECT_BEV_MODEL_PATH:-$WORKSPACE/src/lane_seg_control/models/best_512.onnx}"
 DIRECT_BEV_IMAGE_SIZE="${DIRECT_BEV_IMAGE_SIZE:-512}"
 DIRECT_BEV_CONFIDENCE="${DIRECT_BEV_CONFIDENCE:-0.20}"
@@ -146,6 +149,29 @@ fi
 
 case "$RULE_PERCEPTION_BACKEND" in
   canonical)
+    if [[ ! -f "$WORKSPACE/src/lane_seg_control/launch/$LANE_PERCEPTION_LAUNCH" ]]; then
+      echo "ERROR: lane perception launch not found: $LANE_PERCEPTION_LAUNCH" >&2
+      exit 2
+    fi
+    if [[ -z "$CANONICAL_FORWARD_RANGE_M" ]]; then
+      if [[ "$LANE_PERCEPTION_LAUNCH" == "lane_seg_far_centerline_extended_real.launch.py" ]]; then
+        CANONICAL_FORWARD_RANGE_M=2.5
+      else
+        CANONICAL_FORWARD_RANGE_M=1.5
+      fi
+    fi
+    if [[ ! "$CANONICAL_FORWARD_RANGE_M" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
+      ! awk -v value="$CANONICAL_FORWARD_RANGE_M" \
+        'BEGIN { exit !(value >= 0.5 && value <= 5.0) }'; then
+      echo "ERROR: canonical forward range must be from 0.5 to 5.0m." >&2
+      exit 2
+    fi
+    if [[ ! "$PERCEPTION_MAX_OUTPUT_RATE_HZ" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
+      ! awk -v value="$PERCEPTION_MAX_OUTPUT_RATE_HZ" \
+        'BEGIN { exit !(value >= 1.0 && value <= 30.0) }'; then
+      echo "ERROR: perception output rate must be from 1.0 to 30.0Hz." >&2
+      exit 2
+    fi
     START_CANONICAL_PERCEPTION=true
     START_CANONICAL_RULE=true
     START_DIRECT_BEV_RULE=false
@@ -293,6 +319,9 @@ cat >"$run_config_tmp" <<EOF
 recorded_at: "$(date --iso-8601=seconds)"
 run_mode: "rule"
 rule_perception_backend: "$RULE_PERCEPTION_BACKEND"
+lane_perception_launch: "$LANE_PERCEPTION_LAUNCH"
+canonical_forward_range_m: $CANONICAL_FORWARD_RANGE_M
+perception_max_output_rate_hz: $PERCEPTION_MAX_OUTPUT_RATE_HZ
 direct_bev_model_path: "$DIRECT_BEV_MODEL_PATH"
 direct_bev_image_size: $DIRECT_BEV_IMAGE_SIZE
 direct_bev_confidence: $DIRECT_BEV_CONFIDENCE
@@ -484,6 +513,7 @@ if [[ "$CONE_AS_VEHICLE_OBSTACLE" == "true" ]]; then
   echo "Cone substitute: enabled, YOLO>=${CONE_AS_VEHICLE_MIN_CONFIDENCE} (slalom disabled)"
 fi
 echo "Avoidance speed cap: $VEHICLE_AVOIDANCE_SPEED_LIMIT_COMMAND | RViz: $ENABLE_RVIZ"
+echo "Lane perception: $LANE_PERCEPTION_LAUNCH | forward=${CANONICAL_FORWARD_RANGE_M}m | max=${PERCEPTION_MAX_OUTPUT_RATE_HZ}Hz"
 echo "Run settings: $RUN_CONFIG_FILE"
 echo "Control detail log: $CONTROL_LOG"
 
@@ -494,6 +524,7 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   force_rule_only:=true \
   enable_rviz:="$ENABLE_RVIZ" \
   start_perception:="$START_CANONICAL_PERCEPTION" \
+  lane_perception_launch:="$LANE_PERCEPTION_LAUNCH" \
   start_rule:="$START_CANONICAL_RULE" \
   start_direct_bev_rule:="$START_DIRECT_BEV_RULE" \
   direct_bev_model_path:="$DIRECT_BEV_MODEL_PATH" \
@@ -524,7 +555,8 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   curve_steering_multiplier_activation_command:="$CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND" \
   curve_steering_multiplier:="$CURVE_STEERING_MULTIPLIER" \
   target_left_offset_m:="$LEFT_OFFSET_M" \
-  perception_max_output_rate_hz:=15.0 \
+  perception_max_output_rate_hz:="$PERCEPTION_MAX_OUTPUT_RATE_HZ" \
+  canonical_forward_range_m:="$CANONICAL_FORWARD_RANGE_M" \
   maximum_speed_command:=30.0 \
   start_cone:="$START_CONE" \
   start_object_detection:=true \
