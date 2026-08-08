@@ -15,7 +15,7 @@ def generate_launch_description():
         [
             FindPackageShare("lane_seg_control"),
             "launch",
-            "lane_seg_lraspp_low_latency_real.launch.py",
+            LaunchConfiguration("lane_perception_launch"),
         ]
     )
     direct_bev_launch = PathJoinSubstitution(
@@ -85,6 +85,15 @@ def generate_launch_description():
             DeclareLaunchArgument("force_rule_only", default_value="true"),
             DeclareLaunchArgument("enable_rviz", default_value="false"),
             DeclareLaunchArgument("start_perception", default_value="true"),
+            DeclareLaunchArgument(
+                "lane_perception_launch",
+                default_value="lane_seg_lraspp_low_latency_real.launch.py",
+                description=(
+                    "lane_seg_control perception launch; use "
+                    "lane_seg_row_centerline_low_latency_real.launch.py "
+                    "for the yellow-only row-coordinate candidate"
+                ),
+            ),
             DeclareLaunchArgument("start_rule", default_value="true"),
             DeclareLaunchArgument(
                 "start_direct_bev_rule", default_value="false"
@@ -193,6 +202,9 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "perception_max_output_rate_hz", default_value="15.0"
+            ),
+            DeclareLaunchArgument(
+                "canonical_forward_range_m", default_value="1.5"
             ),
             DeclareLaunchArgument(
                 "direct_model_rectify_enabled", default_value="true"
@@ -336,6 +348,9 @@ def generate_launch_description():
                     ),
                     "debug_rate_hz": "0.0",
                     "publish_intermediate_topics": "true",
+                    "canonical_forward_range_m": LaunchConfiguration(
+                        "canonical_forward_range_m"
+                    ),
                 }.items(),
             ),
             IncludeLaunchDescription(
@@ -482,6 +497,12 @@ def generate_launch_description():
                         ),
                         "minimum_speed_command": ParameterValue(
                             speed_command, value_type=float
+                        ),
+                        "canonical_forward_range_m": ParameterValue(
+                            LaunchConfiguration(
+                                "canonical_forward_range_m"
+                            ),
+                            value_type=float,
                         ),
                         "lookahead_distance_m": ParameterValue(
                             LaunchConfiguration("lookahead_distance_m"),
