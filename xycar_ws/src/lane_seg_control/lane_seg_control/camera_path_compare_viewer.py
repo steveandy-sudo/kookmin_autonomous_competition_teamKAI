@@ -11,6 +11,9 @@ from kaiev26_msgs.msg import Centerline
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
+from xycar_rule_drive.canonical_stanley_pursuit_driver import (
+    path_heading_change_per_m,
+)
 
 
 def camera_to_bev_matrix(
@@ -58,19 +61,35 @@ class CameraPathCompareViewer(Node):
         self.declare_parameter(
             "output_topic", "/comparison/camera_path_overlay"
         )
+        self.declare_parameter("match_tolerance_sec", 0.15)
         self.bridge = CvBridge()
+        self.match_tolerance_ns = int(
+            max(
+                0.0,
+                float(self.get_parameter("match_tolerance_sec").value),
+            )
+            * 1_000_000_000
+        )
         self.images = {}
         self.seg_paths = {}
         self.row_paths = {}
         self.new_paths = {}
+        self.latest_stamps = {}
 
         sensor_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
             reliability=ReliabilityPolicy.BEST_EFFORT,
         )
+        output_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
         self.output_pub = self.create_publisher(
-            Image, str(self.get_parameter("output_topic").value), sensor_qos
+            Image,
+            str(self.get_parameter("output_topic").value),
+            output_qos,
         )
         self.create_subscription(
             Image,
@@ -139,8 +158,34 @@ class CameraPathCompareViewer(Node):
         while len(cache) > maximum:
             cache.pop(min(cache))
 
+    def reset_on_stamp_rewind(self, stream: str, stamp: int) -> None:
+        previous = self.latest_stamps.get(stream)
+        # A looping rosbag jumps back by many seconds. Clear every synchronized
+        # cache so the first frames of the next loop are not discarded behind
+        # timestamps retained from the end of the previous loop.
+        if previous is not None and stamp + 1_000_000_000 < previous:
+            self.images.clear()
+            self.seg_paths.clear()
+            self.row_paths.clear()
+            self.new_paths.clear()
+            self.latest_stamps.clear()
+            self.get_logger().info("rosbag timestamp rewind: comparison cache reset")
+        self.latest_stamps[stream] = max(
+            stamp,
+            self.latest_stamps.get(stream, stamp),
+        )
+
+    def closest_entry(self, cache, stamp):
+        if not cache:
+            return None
+        closest_stamp = min(cache, key=lambda value: abs(value - stamp))
+        if abs(closest_stamp - stamp) > self.match_tolerance_ns:
+            return None
+        return cache[closest_stamp]
+
     def on_seg_path(self, message: Centerline) -> None:
         stamp = self.stamp_ns(message)
+        self.reset_on_stamp_rewind("seg", stamp)
         self.seg_paths[stamp] = (
             self.message_path(message),
             str(message.source),
@@ -150,6 +195,7 @@ class CameraPathCompareViewer(Node):
 
     def on_row_path(self, message: Centerline) -> None:
         stamp = self.stamp_ns(message)
+        self.reset_on_stamp_rewind("row", stamp)
         self.row_paths[stamp] = (
             self.message_path(message),
             str(message.source),
@@ -159,6 +205,7 @@ class CameraPathCompareViewer(Node):
 
     def on_new_path(self, message: Centerline) -> None:
         stamp = self.stamp_ns(message)
+        self.reset_on_stamp_rewind("new", stamp)
         self.new_paths[stamp] = (
             self.message_path(message),
             str(message.source),
@@ -216,25 +263,49 @@ class CameraPathCompareViewer(Node):
             cv2.LINE_AA,
         )
 
+    @staticmethod
+    def curve_status(path: np.ndarray | None) -> tuple[str, float, float]:
+        if path is None or len(path) < 3:
+            return "WAIT", float("nan"), 0.0
+        reach_m = float(np.max(path[:, 0]))
+        curvature = path_heading_change_per_m(
+            path,
+            near_x_m=0.20,
+            far_x_m=1.20,
+            segment_count=1,
+        )
+        if not np.isfinite(curvature):
+            return "SHORT", curvature, reach_m
+        label = "CURVE" if curvature > 0.16 else "STRAIGHT"
+        if label == "CURVE" and reach_m >= 1.0:
+            label = "CURVE/PREVIEW"
+        return label, curvature, reach_m
+
     def on_image(self, message: Image) -> None:
         frame = self.bridge.imgmsg_to_cv2(message, desired_encoding="bgr8")
         stamp = self.stamp_ns(message)
+        self.reset_on_stamp_rewind("image", stamp)
         self.images[stamp] = (frame, message.header)
         self.trim_cache(self.images)
         self.try_render(stamp)
 
     def try_render(self, stamp: int) -> None:
-        if not (
-            stamp in self.images
-            and stamp in self.seg_paths
-            and stamp in self.row_paths
-            and stamp in self.new_paths
-        ):
+        image_entry = self.closest_entry(self.images, stamp)
+        if image_entry is None:
             return
-        frame, header = self.images.pop(stamp)
-        seg_path, seg_source = self.seg_paths.pop(stamp)
-        row_path, row_source = self.row_paths.pop(stamp)
-        new_path, new_source = self.new_paths.pop(stamp)
+        frame, header = image_entry
+        seg_path, seg_source = self.closest_entry(
+            self.seg_paths, stamp
+        ) or (None, "WAIT")
+        row_path, row_source = self.closest_entry(
+            self.row_paths, stamp
+        ) or (None, "WAIT")
+        new_path, new_source = self.closest_entry(
+            self.new_paths, stamp
+        ) or (None, "WAIT")
+        seg_curve, seg_curvature, seg_reach = self.curve_status(seg_path)
+        row_curve, row_curvature, row_reach = self.curve_status(row_path)
+        new_curve, new_curvature, new_reach = self.curve_status(new_path)
         height, width = frame.shape[:2]
         seg_points = self.project_path(
             seg_path,
@@ -267,35 +338,37 @@ class CameraPathCompareViewer(Node):
         self.draw_path(overlay, seg_points, (255, 190, 40), "SEG")
         self.draw_path(overlay, row_points, (0, 160, 255), "ROW")
         self.draw_path(overlay, new_points, (70, 245, 70), "NEW")
-        cv2.rectangle(overlay, (0, 0), (width, 60), (20, 20, 20), -1)
+        # Keep the curve classification readable in RViz even when the image
+        # panel is scaled down alongside the other comparison views.
+        cv2.rectangle(overlay, (0, 0), (width, 126), (20, 20, 20), -1)
         cv2.putText(
             overlay,
-            f"SEG 1.5m {seg_source}",
-            (10, 18),
+            f"SEG {seg_curve} k={seg_curvature:.2f} reach={seg_reach:.2f}m {seg_source}",
+            (14, 34),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.45,
+            0.80,
             (255, 190, 40),
-            1,
+            2,
             cv2.LINE_AA,
         )
         cv2.putText(
             overlay,
-            f"ROW 1.5m {row_source}",
-            (10, 36),
+            f"ROW {row_curve} k={row_curvature:.2f} reach={row_reach:.2f}m {row_source}",
+            (14, 74),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.45,
+            0.80,
             (0, 160, 255),
-            1,
+            2,
             cv2.LINE_AA,
         )
         cv2.putText(
             overlay,
-            f"NEW 2.5m {new_source}",
-            (10, 54),
+            f"XBIN {new_curve} k={new_curvature:.2f} reach={new_reach:.2f}m {new_source}",
+            (14, 114),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.45,
+            0.80,
             (70, 245, 70),
-            1,
+            2,
             cv2.LINE_AA,
         )
         output = self.bridge.cv2_to_imgmsg(overlay, encoding="bgr8")

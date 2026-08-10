@@ -18,9 +18,18 @@ canonical_stanley_pursuit_driver:
     # control still uses its independent straight Stanley parameters.
     lookahead_distance_m: 0.30
     pure_pursuit_weight: 0.80
-    curve_detection_near_x_m: 0.15
-    curve_detection_far_x_m: 0.60
-    curve_detection_segment_count: 3
+    # Use the net heading change over a long baseline. Taking the maximum of
+    # three short segments classified straight-path fitting noise as a curve.
+    curve_detection_near_x_m: 0.20
+    curve_detection_far_x_m: 1.20
+    curve_detection_segment_count: 1
+    # A confirmed far curve temporarily moves the PP target forward. A short
+    # or noisy path cannot activate this preview.
+    adaptive_curve_lookahead_enabled: true
+    adaptive_curve_lookahead_m: 0.75
+    adaptive_curve_minimum_path_reach_m: 1.00
+    adaptive_curve_confirmation_frames: 2
+    adaptive_curve_release_frames: 2
     # The 2026-08-07 bags under-steered the first half of the S curve. Boost
     # only yellow-referenced curve commands; never amplify a white fallback.
     curve_steering_multiplier_enabled: true

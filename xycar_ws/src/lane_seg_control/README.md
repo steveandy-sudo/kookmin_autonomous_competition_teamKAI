@@ -1,8 +1,9 @@
 # lane_seg_control
 
-KookminTY real-car and Gazebo lane segmentation pipeline. The current runtime
-uses the packaged LR-ASPP MobileNetV3-Small TorchScript model; the legacy YOLO
-model is not part of the active driving path.
+KookminTY real-car and Gazebo lane segmentation pipeline. The integrated
+real-car drive defaults to the packaged 2.5 m Xbin far-yellow-centerline
+profile. The LR-ASPP MobileNetV3-Small and row-coordinate profiles remain
+available for controlled comparisons.
 
 Pipeline:
 
@@ -72,12 +73,13 @@ ros2 launch lane_seg_control \
   lane_seg_row_centerline_low_latency_real.launch.py
 ```
 
-Use it in the integrated real-car stack without changing the default LR-ASPP
-profile:
+Use it in the integrated real-car stack by overriding the default Xbin
+profile and its 2.5 m controller range:
 
 ```bash
 ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   lane_perception_launch:=lane_seg_row_centerline_low_latency_real.launch.py \
+  canonical_forward_range_m:=1.5 \
   drive_enabled:=false
 ```
 
@@ -88,6 +90,10 @@ environment variable:
 XYCAR_LANE_PERCEPTION_LAUNCH=lane_seg_row_centerline_low_latency_real.launch.py \
   ./install/xycar_map_nav/share/xycar_map_nav/scripts/run_space_hybrid_test.sh
 ```
+
+The interactive script automatically pairs this override with the 1.5 m
+controller range. With no perception override, it starts the Xbin 2.5 m
+profile.
 
 Train a replacement from a Roboflow YOLO segmentation export whose class 1 is
 `yellow_centerline`:

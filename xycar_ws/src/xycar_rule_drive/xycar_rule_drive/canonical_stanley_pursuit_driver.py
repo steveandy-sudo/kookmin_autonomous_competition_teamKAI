@@ -933,6 +933,28 @@ def update_curve_reversal_confirmation(
     return request, count, count >= required
 
 
+def update_curve_preview_latch(
+    active: bool,
+    evidence_frames: int,
+    miss_frames: int,
+    *,
+    curve_evidence: bool,
+    confirmation_frames: int,
+    release_frames: int,
+) -> tuple[bool, int, int]:
+    """Debounce a far-path curve before changing the pursuit target."""
+    if bool(curve_evidence):
+        evidence = int(evidence_frames) + 1
+        confirmed = bool(active) or evidence >= max(
+            1, int(confirmation_frames)
+        )
+        return confirmed, evidence, 0
+    misses = int(miss_frames) + 1
+    if bool(active) and misses < max(1, int(release_frames)):
+        return True, 0, misses
+    return False, 0, misses
+
+
 def guard_unconfirmed_yellow_reversal(
     raw_command: float,
     *,
@@ -1345,6 +1367,15 @@ class CanonicalStanleyPursuitDriver(Node):
         self.declare_parameter("curve_detection_near_x_m", 0.16)
         self.declare_parameter("curve_detection_far_x_m", 0.30)
         self.declare_parameter("curve_detection_segment_count", 1)
+        self.declare_parameter("adaptive_curve_lookahead_enabled", False)
+        self.declare_parameter("adaptive_curve_lookahead_m", 0.75)
+        self.declare_parameter(
+            "adaptive_curve_minimum_path_reach_m", 1.0
+        )
+        self.declare_parameter(
+            "adaptive_curve_confirmation_frames", 2
+        )
+        self.declare_parameter("adaptive_curve_release_frames", 2)
         self.declare_parameter("curve_steering_multiplier_enabled", False)
         self.declare_parameter(
             "curve_steering_multiplier_activation_command", 20.0
@@ -1643,6 +1674,13 @@ class CanonicalStanleyPursuitDriver(Node):
         self.latest_far_signed_curvature_per_m = float("nan")
         self.yellow_curve_reversal_guard_active = False
         self.yellow_curve_reversal_preview_active = False
+        self.adaptive_curve_preview_active = False
+        self.adaptive_curve_evidence_frames = 0
+        self.adaptive_curve_miss_frames = 0
+        self.latest_curve_detection_per_m = float("nan")
+        self.latest_active_lookahead_m = float(
+            self.get_parameter("lookahead_distance_m").value
+        )
         self.turn_transition_recovery_sign = 0.0
         self.turn_transition_recovery_until = 0.0
         self.turn_transition_armed_sign = 0.0
@@ -2117,11 +2155,74 @@ class CanonicalStanleyPursuitDriver(Node):
                 curvature_per_m=active_curvature,
                 latency_sec=latency_sec,
             )
+        base_lookahead_m = float(
+            self.get_parameter("lookahead_distance_m").value
+        )
+        curve_detection = path_heading_change_per_m(
+            delayed_path,
+            near_x_m=float(
+                self.get_parameter("curve_detection_near_x_m").value
+            ),
+            far_x_m=float(
+                self.get_parameter("curve_detection_far_x_m").value
+            ),
+            segment_count=int(
+                self.get_parameter("curve_detection_segment_count").value
+            ),
+        )
+        self.latest_curve_detection_per_m = curve_detection
+        minimum_reach_m = float(
+            self.get_parameter(
+                "adaptive_curve_minimum_path_reach_m"
+            ).value
+        )
+        curve_evidence = (
+            bool(
+                self.get_parameter(
+                    "adaptive_curve_lookahead_enabled"
+                ).value
+            )
+            and float(np.max(delayed_path[:, 0])) >= minimum_reach_m
+            and math.isfinite(curve_detection)
+            and curve_detection
+            > float(
+                self.get_parameter(
+                    "straight_path_curvature_threshold"
+                ).value
+            )
+        )
+        (
+            self.adaptive_curve_preview_active,
+            self.adaptive_curve_evidence_frames,
+            self.adaptive_curve_miss_frames,
+        ) = update_curve_preview_latch(
+            self.adaptive_curve_preview_active,
+            self.adaptive_curve_evidence_frames,
+            self.adaptive_curve_miss_frames,
+            curve_evidence=curve_evidence,
+            confirmation_frames=int(
+                self.get_parameter(
+                    "adaptive_curve_confirmation_frames"
+                ).value
+            ),
+            release_frames=int(
+                self.get_parameter("adaptive_curve_release_frames").value
+            ),
+        )
+        active_lookahead_m = base_lookahead_m
+        if self.adaptive_curve_preview_active:
+            active_lookahead_m = max(
+                base_lookahead_m,
+                float(
+                    self.get_parameter(
+                        "adaptive_curve_lookahead_m"
+                    ).value
+                ),
+            )
+        self.latest_active_lookahead_m = active_lookahead_m
         terms = fused_stanley_pursuit(
             delayed_path,
-            lookahead_m=float(
-                self.get_parameter("lookahead_distance_m").value
-            ),
+            lookahead_m=active_lookahead_m,
             wheelbase_m=float(self.get_parameter("wheel_base_m").value),
             pure_pursuit_control_x_m=float(
                 self.get_parameter("pure_pursuit_control_x_m").value
@@ -2885,6 +2986,9 @@ class CanonicalStanleyPursuitDriver(Node):
             1.0 if self.yellow_curve_reversal_guard_active else 0.0,
             1.0 if self.yellow_curve_reversal_preview_active else 0.0,
             float(self.yellow_curve_reversal_frames),
+            float(self.latest_curve_detection_per_m),
+            1.0 if self.adaptive_curve_preview_active else 0.0,
+            float(self.latest_active_lookahead_m),
         ]
         self.diagnostics_pub.publish(message)
 

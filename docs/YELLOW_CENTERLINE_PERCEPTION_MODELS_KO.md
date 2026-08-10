@@ -139,8 +139,9 @@ shadow 주행으로 확인해야 한다.
 | Xbin far centerline | 약 9.8Hz | `RUNNING / RULE` | 없음 |
 
 Row 모델은 통합 제한 15Hz를 모두 사용했다. Xbin 확장형은 전체 스택에서
-약 9.8Hz로 낮아졌다. 고속 조향 반응을 우선하면 Row를 먼저 시험하고,
-S자 선행 곡선 인식 이득이 속도 저하보다 큰지 확인할 때 Xbin을 비교한다.
+약 9.8Hz로 낮아졌다. 하지만 현재 실차 속도에서는 Xbin의 추가 선행 인지
+거리가 프레임 간 이동 거리 증가보다 충분히 컸으므로, 통합 주행 기본값은
+Xbin 2.5m로 변경했다.
 
 ## 7. 통합 주행 모델 선택
 
@@ -153,7 +154,7 @@ S자 선행 곡선 인식 이득이 속도 저하보다 큰지 확인할 때 Xbi
 선택된 launch, 전방 범위, 최대 Hz는 시작 터미널과
 `/tmp/xycar_hybrid_run_config.yaml`에 기록된다.
 
-### Row 모델
+### 기본값: Xbin 2.5m 모델
 
 ```bash
 cd /home/xytron/kookmin_ty/yellow_center_curve_test/xycar_ws
@@ -164,23 +165,23 @@ export ROS_DOMAIN_ID=7
 unset ROS_NAMESPACE
 
 export XYCAR_RULE_PERCEPTION_BACKEND=canonical
-export XYCAR_LANE_PERCEPTION_LAUNCH=lane_seg_row_centerline_low_latency_real.launch.py
 export XYCAR_PERCEPTION_MAX_OUTPUT_RATE_HZ=15.0
 export XYCAR_ENABLE_RVIZ=true
 
 bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh
 ```
 
-Row 모델은 전방 범위 1.5m가 자동 적용된다.
+모델 관련 환경변수를 생략하면 Xbin 확장 launch와 전방 범위 2.5m가 자동
+적용된다.
 
-### Xbin 2.5m 모델
+### Row 1.5m 비교 실행
 
 ```bash
-export XYCAR_LANE_PERCEPTION_LAUNCH=lane_seg_far_centerline_extended_real.launch.py
+export XYCAR_LANE_PERCEPTION_LAUNCH=lane_seg_row_centerline_low_latency_real.launch.py
 ```
 
-Xbin 확장 launch를 선택하면 전방 범위 2.5m가 자동 적용된다. 나머지
-명령은 Row 모델과 동일하다.
+Row launch를 선택하면 전방 범위 1.5m가 자동 적용된다. 나머지 명령은
+기본 Xbin 실행과 동일하다.
 
 ## 8. 검증 결과와 실차 시험 순서
 
@@ -191,10 +192,10 @@ Xbin 확장 launch를 선택하면 전방 범위 2.5m가 자동 적용된다. �
 
 실차에서는 다음 순서를 사용한다.
 
-1. Row 모델, 속도 0, RViz로 노란 canonical과 조향 방향 확인
-2. Row 모델, 속도 6~8로 S자 진입 및 반대 조향 시점 확인
-3. 동일 위치와 속도에서 Xbin 2.5m shadow 비교
-4. Xbin의 먼 중앙선이 안정적일 때만 저속 실제 주행
+1. Xbin 모델, 속도 0, RViz로 노란 canonical과 조향 방향 확인
+2. Xbin 모델, 속도 6~8로 S자 진입 및 반대 조향 시점 확인
+3. 필요하면 동일 위치와 속도에서 Row 1.5m를 비교
+4. 먼 중앙선이 안정적인 것을 확인한 뒤 저속 실제 주행
 5. 모델별 rosbag을 별도로 저장해 조향 전환 시점과 경로 유효율 비교
 
 현재 측정은 rosbag shadow 검증이다. 실제 바퀴를 구동한 결과는 아니므로

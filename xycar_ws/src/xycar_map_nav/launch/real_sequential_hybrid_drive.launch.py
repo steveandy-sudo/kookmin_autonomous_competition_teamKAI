@@ -87,11 +87,10 @@ def generate_launch_description():
             DeclareLaunchArgument("start_perception", default_value="true"),
             DeclareLaunchArgument(
                 "lane_perception_launch",
-                default_value="lane_seg_lraspp_low_latency_real.launch.py",
+                default_value="lane_seg_far_centerline_extended_real.launch.py",
                 description=(
-                    "lane_seg_control perception launch; use "
-                    "lane_seg_row_centerline_low_latency_real.launch.py "
-                    "for the yellow-only row-coordinate candidate"
+                    "lane_seg_control perception launch; defaults to the "
+                    "2.5m yellow Xbin candidate"
                 ),
             ),
             DeclareLaunchArgument("start_rule", default_value="true"),
@@ -161,13 +160,28 @@ def generate_launch_description():
                 "control_latency_preview_sec", default_value="0.35"
             ),
             DeclareLaunchArgument(
-                "curve_detection_near_x_m", default_value="0.15"
+                "curve_detection_near_x_m", default_value="0.20"
             ),
             DeclareLaunchArgument(
-                "curve_detection_far_x_m", default_value="0.60"
+                "curve_detection_far_x_m", default_value="1.20"
             ),
             DeclareLaunchArgument(
-                "curve_detection_segment_count", default_value="3"
+                "curve_detection_segment_count", default_value="1"
+            ),
+            DeclareLaunchArgument(
+                "adaptive_curve_lookahead_enabled", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "adaptive_curve_lookahead_m", default_value="0.75"
+            ),
+            DeclareLaunchArgument(
+                "adaptive_curve_minimum_path_reach_m", default_value="1.0"
+            ),
+            DeclareLaunchArgument(
+                "adaptive_curve_confirmation_frames", default_value="2"
+            ),
+            DeclareLaunchArgument(
+                "adaptive_curve_release_frames", default_value="2"
             ),
             DeclareLaunchArgument(
                 "straight_path_curvature_threshold", default_value="0.16"
@@ -204,7 +218,7 @@ def generate_launch_description():
                 "perception_max_output_rate_hz", default_value="15.0"
             ),
             DeclareLaunchArgument(
-                "canonical_forward_range_m", default_value="1.5"
+                "canonical_forward_range_m", default_value="2.5"
             ),
             DeclareLaunchArgument(
                 "direct_model_rectify_enabled", default_value="true"
@@ -565,6 +579,36 @@ def generate_launch_description():
                         "curve_detection_segment_count": ParameterValue(
                             LaunchConfiguration(
                                 "curve_detection_segment_count"
+                            ),
+                            value_type=int,
+                        ),
+                        "adaptive_curve_lookahead_enabled": ParameterValue(
+                            LaunchConfiguration(
+                                "adaptive_curve_lookahead_enabled"
+                            ),
+                            value_type=bool,
+                        ),
+                        "adaptive_curve_lookahead_m": ParameterValue(
+                            LaunchConfiguration(
+                                "adaptive_curve_lookahead_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "adaptive_curve_minimum_path_reach_m": ParameterValue(
+                            LaunchConfiguration(
+                                "adaptive_curve_minimum_path_reach_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "adaptive_curve_confirmation_frames": ParameterValue(
+                            LaunchConfiguration(
+                                "adaptive_curve_confirmation_frames"
+                            ),
+                            value_type=int,
+                        ),
+                        "adaptive_curve_release_frames": ParameterValue(
+                            LaunchConfiguration(
+                                "adaptive_curve_release_frames"
                             ),
                             value_type=int,
                         ),

@@ -31,6 +31,26 @@ def _rule_parameters():
     return merged
 
 
+def _camera_yaml_path():
+    filename = "wide_camera_fisheye_1280x1024_20260708.yaml"
+    installed = (
+        Path(get_package_share_directory("xycar_perception"))
+        / "config"
+        / filename
+    )
+    if installed.is_file():
+        return str(installed)
+    source_tree = (
+        Path(__file__).resolve().parents[2]
+        / "xycar_perception"
+        / "config"
+        / filename
+    )
+    if source_tree.is_file():
+        return str(source_tree)
+    return str(installed)
+
+
 def _perception_parameters(
     *,
     model_path,
@@ -44,14 +64,9 @@ def _perception_parameters(
     dst_bottom_y_ratio,
     white_confidence,
     white_fit_enabled,
+    max_output_rate_hz,
 ):
-    camera_yaml = PathJoinSubstitution(
-        [
-            FindPackageShare("xycar_perception"),
-            "config",
-            "wide_camera_fisheye_1280x1024_20260708.yaml",
-        ]
-    )
+    camera_yaml = _camera_yaml_path()
     return {
         "model_path": model_path,
         "image_topic": "/wide_camera_mjpeg/image_raw/compressed",
@@ -72,7 +87,10 @@ def _perception_parameters(
         "opencv_threads": 1,
         "output_qos_depth": 1,
         "debug_rate_hz": 0.0,
-        "max_output_rate_hz": 20.0,
+        "max_output_rate_hz": ParameterValue(
+            max_output_rate_hz,
+            value_type=float,
+        ),
         "output_native_resolution": False,
         "publish_intermediate_topics": True,
         "processed_image_topic": f"{topic_prefix}/source_image",
@@ -113,12 +131,20 @@ def _perception_parameters(
     }
 
 
-def _controller_parameters(*, topic_prefix, forward_range_m, speed_command):
+def _controller_parameters(
+    *,
+    topic_prefix,
+    forward_range_m,
+    speed_command,
+    input_topic_prefix=None,
+    control_latency_preview_sec=None,
+):
+    input_prefix = input_topic_prefix or topic_prefix
     parameters = _rule_parameters()
     parameters.update(
         {
             "use_sim_time": False,
-            "canonical_topic": f"{topic_prefix}/canonical",
+            "canonical_topic": f"{input_prefix}/canonical",
             "drive_enabled": False,
             "steering_only": False,
             "motor_topic": f"{topic_prefix}/disabled_motor",
@@ -139,6 +165,11 @@ def _controller_parameters(*, topic_prefix, forward_range_m, speed_command):
             "target_right_offset_m": 0.0,
         }
     )
+    if control_latency_preview_sec is not None:
+        parameters["control_latency_preview_sec"] = ParameterValue(
+            control_latency_preview_sec,
+            value_type=float,
+        )
     return parameters
 
 
@@ -171,6 +202,15 @@ def generate_launch_description():
     bag_path = LaunchConfiguration("bag_path")
     rate = LaunchConfiguration("rate")
     speed_command = LaunchConfiguration("speed_command")
+    comparison_speed_command = LaunchConfiguration(
+        "comparison_speed_command"
+    )
+    control_latency_preview_sec = LaunchConfiguration(
+        "control_latency_preview_sec"
+    )
+    perception_max_output_rate_hz = LaunchConfiguration(
+        "perception_max_output_rate_hz"
+    )
 
     seg_prefix = "/comparison/seg"
     row_prefix = "/comparison/row"
@@ -190,10 +230,22 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("rate", default_value="0.5"),
             DeclareLaunchArgument("speed_command", default_value="8.0"),
+            DeclareLaunchArgument(
+                "comparison_speed_command", default_value="16.0"
+            ),
+            DeclareLaunchArgument(
+                "control_latency_preview_sec", default_value="0.20"
+            ),
+            DeclareLaunchArgument(
+                "perception_max_output_rate_hz", default_value="15.0"
+            ),
             DeclareLaunchArgument("start_bag", default_value="true"),
             DeclareLaunchArgument("enable_rviz", default_value="true"),
             DeclareLaunchArgument(
                 "enable_steering_graph", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "enable_speed_steering_graph", default_value="true"
             ),
             ExecuteProcess(
                 cmd=[
@@ -228,6 +280,7 @@ def generate_launch_description():
                         dst_bottom_y_ratio=2.0 / 3.0,
                         white_confidence=0.50,
                         white_fit_enabled=True,
+                        max_output_rate_hz=perception_max_output_rate_hz,
                     )
                 ],
             ),
@@ -249,6 +302,7 @@ def generate_launch_description():
                         dst_bottom_y_ratio=2.0 / 3.0,
                         white_confidence=0.99,
                         white_fit_enabled=False,
+                        max_output_rate_hz=perception_max_output_rate_hz,
                     )
                 ],
             ),
@@ -270,6 +324,7 @@ def generate_launch_description():
                         dst_bottom_y_ratio=0.8,
                         white_confidence=0.99,
                         white_fit_enabled=False,
+                        max_output_rate_hz=perception_max_output_rate_hz,
                     )
                 ],
             ),
@@ -283,6 +338,9 @@ def generate_launch_description():
                         topic_prefix=seg_prefix,
                         forward_range_m=1.5,
                         speed_command=speed_command,
+                        control_latency_preview_sec=(
+                            control_latency_preview_sec
+                        ),
                     )
                 ],
             ),
@@ -296,6 +354,9 @@ def generate_launch_description():
                         topic_prefix=row_prefix,
                         forward_range_m=1.5,
                         speed_command=speed_command,
+                        control_latency_preview_sec=(
+                            control_latency_preview_sec
+                        ),
                     )
                 ],
             ),
@@ -309,6 +370,26 @@ def generate_launch_description():
                         topic_prefix=new_prefix,
                         forward_range_m=2.5,
                         speed_command=speed_command,
+                        control_latency_preview_sec=(
+                            control_latency_preview_sec
+                        ),
+                    )
+                ],
+            ),
+            Node(
+                package="xycar_rule_drive",
+                executable="canonical_stanley_pursuit_driver",
+                name="new_far_speed_comparison_rule_shadow",
+                output="screen",
+                parameters=[
+                    _controller_parameters(
+                        topic_prefix="/comparison/new_speed_comparison",
+                        input_topic_prefix=new_prefix,
+                        forward_range_m=2.5,
+                        speed_command=comparison_speed_command,
+                        control_latency_preview_sec=(
+                            control_latency_preview_sec
+                        ),
                     )
                 ],
             ),
@@ -329,6 +410,28 @@ def generate_launch_description():
                         "current_label": "ROW 1.5m",
                         "third_label": "NEW 2.5m",
                         "window_name": "SEG vs ROW vs NEW CENTERLINE",
+                        "history_sec": 20.0,
+                    }
+                ],
+            ),
+            Node(
+                package="lane_seg_control",
+                executable="steering_compare_viewer",
+                name="speed_steering_compare",
+                condition=IfCondition(
+                    LaunchConfiguration("enable_speed_steering_graph")
+                ),
+                output="screen",
+                parameters=[
+                    {
+                        "base_topic": f"{new_prefix}/rule_candidate",
+                        "current_topic": (
+                            "/comparison/new_speed_comparison/"
+                            "rule_candidate"
+                        ),
+                        "base_label": "XBIN SPEED 8",
+                        "current_label": "XBIN SPEED 16",
+                        "window_name": "XBIN STEERING: SPEED 8 vs 16",
                         "history_sec": 20.0,
                     }
                 ],

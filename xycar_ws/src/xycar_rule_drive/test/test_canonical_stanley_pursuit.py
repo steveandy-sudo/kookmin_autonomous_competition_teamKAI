@@ -33,6 +33,7 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
     steering_term_requests_command_reversal,
     update_heading_recovery_latch,
     update_curve_reversal_confirmation,
+    update_curve_preview_latch,
     usable_forward_path,
     white_boundary_to_target_offset,
     yellow_curve_reversal_request_sign,
@@ -40,6 +41,41 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
 
 
 class CanonicalStanleyPursuitTest(unittest.TestCase):
+    def test_curve_preview_requires_two_consecutive_frames(self):
+        state = update_curve_preview_latch(
+            False,
+            0,
+            0,
+            curve_evidence=True,
+            confirmation_frames=2,
+            release_frames=2,
+        )
+        self.assertEqual(state, (False, 1, 0))
+        state = update_curve_preview_latch(
+            *state,
+            curve_evidence=True,
+            confirmation_frames=2,
+            release_frames=2,
+        )
+        self.assertEqual(state, (True, 2, 0))
+
+    def test_curve_preview_releases_after_two_misses(self):
+        state = (True, 2, 0)
+        state = update_curve_preview_latch(
+            *state,
+            curve_evidence=False,
+            confirmation_frames=2,
+            release_frames=2,
+        )
+        self.assertEqual(state, (True, 0, 1))
+        state = update_curve_preview_latch(
+            *state,
+            curve_evidence=False,
+            confirmation_frames=2,
+            release_frames=2,
+        )
+        self.assertEqual(state, (False, 0, 2))
+
     def test_unconfirmed_yellow_reversal_can_only_unwind_to_zero(self):
         guarded = guard_unconfirmed_yellow_reversal(
             -24.0,
