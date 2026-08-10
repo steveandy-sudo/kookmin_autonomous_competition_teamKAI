@@ -15,9 +15,17 @@ if [[ ! -f "$WORKSPACE/install/setup.bash" ]] || \
 fi
 export XYCAR_WS="$WORKSPACE"
 SPEED_COMMAND="${1:-}"
+CURVATURE_SPEED_CONTROL_ENABLED="${CURVATURE_SPEED_CONTROL_ENABLED:-}"
+CURVE_SPEED_COMMAND="${CURVE_SPEED_COMMAND:-}"
+DEGRADED_PATH_SPEED_COMMAND="${DEGRADED_PATH_SPEED_COMMAND:-}"
+CURVE_SPEED_EXIT_THRESHOLD_PER_M="${CURVE_SPEED_EXIT_THRESHOLD_PER_M:-0.12}"
+CURVE_SPEED_CONFIRMATION_FRAMES="${CURVE_SPEED_CONFIRMATION_FRAMES:-2}"
+CURVE_SPEED_RELEASE_FRAMES="${CURVE_SPEED_RELEASE_FRAMES:-3}"
+DEGRADED_PATH_MINIMUM_SPAN_M="${DEGRADED_PATH_MINIMUM_SPAN_M:-0.60}"
 LOOKAHEAD_DISTANCE="${2:-}"
 STANLEY_PERCENT="${3:-}"
-LEFT_OFFSET_CM="${4:-}"
+LEFT_OFFSET_CM="${4:-${LEFT_OFFSET_CM:-0}}"
+STRAIGHT_RIGHT_OFFSET_CM="${STRAIGHT_RIGHT_OFFSET_CM:-5.0}"
 PURE_PURSUIT_CONTROL_X_M="${PURE_PURSUIT_CONTROL_X_M:-}"
 STANLEY_CONTROL_X_M="${STANLEY_CONTROL_X_M:-}"
 STANLEY_GAIN="${STANLEY_GAIN:-}"
@@ -27,6 +35,13 @@ STRAIGHT_STANLEY_GAIN="${STRAIGHT_STANLEY_GAIN:-}"
 STRAIGHT_STANLEY_SOFTENING_MPS="${STRAIGHT_STANLEY_SOFTENING_MPS:-}"
 OPPOSED_STANLEY_PERCENT="${OPPOSED_STANLEY_PERCENT:-}"
 CONTROL_LATENCY_PREVIEW_SEC="${CONTROL_LATENCY_PREVIEW_SEC:-}"
+STRAIGHT_PATH_CURVATURE_THRESHOLD="${STRAIGHT_PATH_CURVATURE_THRESHOLD:-0.16}"
+STEERING_CURRENT_WEIGHT="${STEERING_CURRENT_WEIGHT:-0.40}"
+STEERING_CURVE_CURRENT_WEIGHT="${STEERING_CURVE_CURRENT_WEIGHT:-0.70}"
+STEERING_RATE_LIMIT_CMD_PER_SEC="${STEERING_RATE_LIMIT_CMD_PER_SEC:-180.0}"
+STEERING_CURVE_RATE_LIMIT_CMD_PER_SEC="${STEERING_CURVE_RATE_LIMIT_CMD_PER_SEC:-300.0}"
+STEERING_LEAD_TIME_SEC="${STEERING_LEAD_TIME_SEC:-0.08}"
+STEERING_MAX_LEAD_COMMAND="${STEERING_MAX_LEAD_COMMAND:-6.0}"
 CURVE_DETECTION_NEAR_X_M="${CURVE_DETECTION_NEAR_X_M:-0.20}"
 CURVE_DETECTION_FAR_X_M="${CURVE_DETECTION_FAR_X_M:-1.20}"
 CURVE_DETECTION_SEGMENT_COUNT="${CURVE_DETECTION_SEGMENT_COUNT:-1}"
@@ -210,6 +225,29 @@ elif [[ ! "$SPEED_COMMAND" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
 fi
 SPEED_COMMAND="$(awk -v speed="$SPEED_COMMAND" 'BEGIN { printf "%.3f", speed }')"
 
+if [[ "$STEERING_ONLY" == "true" ]]; then
+  CURVATURE_SPEED_CONTROL_ENABLED=false
+  CURVE_SPEED_COMMAND=0.000
+  DEGRADED_PATH_SPEED_COMMAND=0.000
+else
+  prompt_bool CURVATURE_SPEED_CONTROL_ENABLED \
+    "Separate straight/curve speed" true
+  if [[ "$CURVATURE_SPEED_CONTROL_ENABLED" == "true" ]]; then
+    curve_default="$(awk -v speed="$SPEED_COMMAND" \
+      'BEGIN { printf "%.3f", (speed < 10.0 ? speed : 10.0) }')"
+    prompt_float CURVE_SPEED_COMMAND \
+      "Confirmed curve speed command" "$curve_default" 3.0 "$SPEED_COMMAND"
+    degraded_default="$(awk -v curve="$CURVE_SPEED_COMMAND" \
+      'BEGIN { printf "%.3f", (curve < 8.0 ? curve : 8.0) }')"
+    prompt_float DEGRADED_PATH_SPEED_COMMAND \
+      "Short/remembered path speed command" "$degraded_default" 3.0 \
+      "$CURVE_SPEED_COMMAND"
+  else
+    CURVE_SPEED_COMMAND="$SPEED_COMMAND"
+    DEGRADED_PATH_SPEED_COMMAND="$SPEED_COMMAND"
+  fi
+fi
+
 prompt_float CONE_SENSOR_PRESENCE_TIMEOUT_SEC \
   "Cone sensor-loss hold [s]" 0.5 0.1 10.0
 
@@ -289,6 +327,20 @@ prompt_float OPPOSED_STANLEY_PERCENT \
   "Opposed-term Stanley percentage" 70.0 0.0 100.0
 prompt_float CONTROL_LATENCY_PREVIEW_SEC \
   "Control latency preview [s]" 0.35 0.0 2.0
+prompt_float STRAIGHT_PATH_CURVATURE_THRESHOLD \
+  "Straight/curve curvature threshold [rad/m]" 0.16 0.0 5.0
+prompt_float STEERING_CURRENT_WEIGHT \
+  "Straight steering current weight" 0.40 0.0 1.0
+prompt_float STEERING_CURVE_CURRENT_WEIGHT \
+  "Curve steering current weight" 0.70 0.0 1.0
+prompt_float STEERING_RATE_LIMIT_CMD_PER_SEC \
+  "Straight steering rate [command/s]" 180.0 0.0 1000.0
+prompt_float STEERING_CURVE_RATE_LIMIT_CMD_PER_SEC \
+  "Curve steering rate [command/s]" 300.0 0.0 1000.0
+prompt_float STEERING_LEAD_TIME_SEC \
+  "Steering lead time [s]" 0.08 0.0 1.0
+prompt_float STEERING_MAX_LEAD_COMMAND \
+  "Maximum steering lead command" 6.0 0.0 42.0
 
 STRAIGHT_PURE_PURSUIT_WEIGHT="$(awk \
   -v stanley="$STRAIGHT_STANLEY_PERCENT" \
@@ -296,12 +348,6 @@ STRAIGHT_PURE_PURSUIT_WEIGHT="$(awk \
 OPPOSED_STANLEY_WEIGHT="$(awk -v stanley="$OPPOSED_STANLEY_PERCENT" \
   'BEGIN { printf "%.6f", stanley / 100.0 }')"
 
-if [[ -z "$LEFT_OFFSET_CM" ]]; then
-  if [[ -t 0 ]]; then
-    read -r -p "Left target correction [cm, default 12]: " LEFT_OFFSET_CM
-  fi
-  LEFT_OFFSET_CM="${LEFT_OFFSET_CM:-12}"
-fi
 LEFT_OFFSET_CM="${LEFT_OFFSET_CM/,/.}"
 if [[ ! "$LEFT_OFFSET_CM" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
   ! awk -v value="$LEFT_OFFSET_CM" \
@@ -312,6 +358,17 @@ fi
 LEFT_OFFSET_CM="$(awk -v value="$LEFT_OFFSET_CM" \
   'BEGIN { printf "%.1f", value }')"
 LEFT_OFFSET_M="$(awk -v value="$LEFT_OFFSET_CM" \
+  'BEGIN { printf "%.6f", value / 100.0 }')"
+STRAIGHT_RIGHT_OFFSET_CM="${STRAIGHT_RIGHT_OFFSET_CM/,/.}"
+if [[ ! "$STRAIGHT_RIGHT_OFFSET_CM" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
+  ! awk -v value="$STRAIGHT_RIGHT_OFFSET_CM" \
+    'BEGIN { exit !(value >= 0.0 && value <= 20.0) }'; then
+  echo "ERROR: straight right correction must be from 0 to 20cm." >&2
+  exit 2
+fi
+STRAIGHT_RIGHT_OFFSET_CM="$(awk -v value="$STRAIGHT_RIGHT_OFFSET_CM" \
+  'BEGIN { printf "%.1f", value }')"
+STRAIGHT_RIGHT_OFFSET_M="$(awk -v value="$STRAIGHT_RIGHT_OFFSET_CM" \
   'BEGIN { printf "%.6f", value / 100.0 }')"
 
 run_config_tmp="${RUN_CONFIG_FILE}.tmp.$$"
@@ -328,6 +385,13 @@ direct_bev_confidence: $DIRECT_BEV_CONFIDENCE
 direct_bev_yellow_confidence: $DIRECT_BEV_YELLOW_CONFIDENCE
 direct_bev_path_timeout_sec: $DIRECT_BEV_PATH_TIMEOUT_SEC
 speed_command: $SPEED_COMMAND
+curvature_speed_control_enabled: $CURVATURE_SPEED_CONTROL_ENABLED
+curve_speed_command: $CURVE_SPEED_COMMAND
+degraded_path_speed_command: $DEGRADED_PATH_SPEED_COMMAND
+curve_speed_exit_threshold_per_m: $CURVE_SPEED_EXIT_THRESHOLD_PER_M
+curve_speed_confirmation_frames: $CURVE_SPEED_CONFIRMATION_FRAMES
+curve_speed_release_frames: $CURVE_SPEED_RELEASE_FRAMES
+degraded_path_minimum_span_m: $DEGRADED_PATH_MINIMUM_SPAN_M
 lookahead_distance_m: $LOOKAHEAD_DISTANCE
 stanley_percent: $STANLEY_PERCENT
 pure_pursuit_weight: $PURE_PURSUIT_WEIGHT
@@ -342,6 +406,13 @@ straight_stanley_softening_mps: $STRAIGHT_STANLEY_SOFTENING_MPS
 opposed_stanley_percent: $OPPOSED_STANLEY_PERCENT
 opposed_stanley_weight: $OPPOSED_STANLEY_WEIGHT
 control_latency_preview_sec: $CONTROL_LATENCY_PREVIEW_SEC
+straight_path_curvature_threshold: $STRAIGHT_PATH_CURVATURE_THRESHOLD
+steering_current_weight: $STEERING_CURRENT_WEIGHT
+steering_curve_current_weight: $STEERING_CURVE_CURRENT_WEIGHT
+steering_rate_limit_cmd_per_sec: $STEERING_RATE_LIMIT_CMD_PER_SEC
+steering_curve_rate_limit_cmd_per_sec: $STEERING_CURVE_RATE_LIMIT_CMD_PER_SEC
+steering_lead_time_sec: $STEERING_LEAD_TIME_SEC
+steering_max_lead_command: $STEERING_MAX_LEAD_COMMAND
 curve_detection_near_x_m: $CURVE_DETECTION_NEAR_X_M
 curve_detection_far_x_m: $CURVE_DETECTION_FAR_X_M
 curve_detection_segment_count: $CURVE_DETECTION_SEGMENT_COUNT
@@ -350,6 +421,8 @@ curve_steering_multiplier_activation_command: $CURVE_STEERING_MULTIPLIER_ACTIVAT
 curve_steering_multiplier: $CURVE_STEERING_MULTIPLIER
 target_left_offset_cm: $LEFT_OFFSET_CM
 target_left_offset_m: $LEFT_OFFSET_M
+straight_target_right_offset_cm: $STRAIGHT_RIGHT_OFFSET_CM
+straight_target_right_offset_m: $STRAIGHT_RIGHT_OFFSET_M
 cone_speed_command: $CONE_SPEED_COMMAND
 cone_sensor_presence_timeout_sec: $CONE_SENSOR_PRESENCE_TIMEOUT_SEC
 test_profile: "$TEST_PROFILE"
@@ -486,6 +559,12 @@ else
   echo "Priority: CONE > YOLO+LiDAR AVOIDANCE > RULE."
 fi
 echo "Selected speed limit: $SPEED_COMMAND"
+if [[ "$CURVATURE_SPEED_CONTROL_ENABLED" == "true" ]]; then
+  echo "Path speed: straight $SPEED_COMMAND, curve $CURVE_SPEED_COMMAND, degraded $DEGRADED_PATH_SPEED_COMMAND"
+  echo "Curve speed latch: enter ${CURVE_SPEED_CONFIRMATION_FRAMES} frames, release ${CURVE_SPEED_RELEASE_FRAMES} frames, exit ${CURVE_SPEED_EXIT_THRESHOLD_PER_M}rad/m"
+else
+  echo "Path speed: OFF"
+fi
 if [[ "$ADAPTIVE_STEERING_SPEED_ENABLED" == "true" ]]; then
   echo "Steering speed: <=${STEERING_SLOWDOWN_START_ANGLE}deg cap, to ${STEERING_FULL_SLOWDOWN_ANGLE}deg linear, then command ${STEERING_TURN_SPEED_COMMAND}"
 else
@@ -499,9 +578,13 @@ echo "Control points: PP X=${PURE_PURSUIT_CONTROL_X_M}m, Stanley X=${STANLEY_CON
 echo "Curve Stanley: gain=$STANLEY_GAIN, soft=${STANLEY_SOFTENING_MPS}m/s"
 echo "Straight Stanley: ${STRAIGHT_STANLEY_PERCENT}%, gain=$STRAIGHT_STANLEY_GAIN, soft=${STRAIGHT_STANLEY_SOFTENING_MPS}m/s"
 echo "Opposed Stanley: ${OPPOSED_STANLEY_PERCENT}%, latency preview=${CONTROL_LATENCY_PREVIEW_SEC}s"
+echo "Straight/curve threshold: ${STRAIGHT_PATH_CURVATURE_THRESHOLD}rad/m"
+echo "Steering smoothing: straight ${STEERING_CURRENT_WEIGHT}/${STEERING_RATE_LIMIT_CMD_PER_SEC}, curve ${STEERING_CURVE_CURRENT_WEIGHT}/${STEERING_CURVE_RATE_LIMIT_CMD_PER_SEC}"
+echo "Steering lead: ${STEERING_LEAD_TIME_SEC}s, max ${STEERING_MAX_LEAD_COMMAND} command"
 echo "Curve detection: ${CURVE_DETECTION_NEAR_X_M}-${CURVE_DETECTION_FAR_X_M}m, ${CURVE_DETECTION_SEGMENT_COUNT} segments"
 echo "Curve steering multiplier: ${CURVE_STEERING_MULTIPLIER_ENABLED}, |angle|>=${CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND} x${CURVE_STEERING_MULTIPLIER}, clamp +/-42"
 echo "Left target correction: ${LEFT_OFFSET_CM}cm"
+echo "Straight-only right correction: ${STRAIGHT_RIGHT_OFFSET_CM}cm"
 echo "Cone speed command: $CONE_SPEED_COMMAND"
 echo "Cone sensor-loss hold: ${CONE_SENSOR_PRESENCE_TIMEOUT_SEC}s"
 if [[ "$VEHICLE_AVOIDANCE_IMMEDIATE_ON_YOLO" == "true" ]]; then
@@ -535,6 +618,14 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   direct_bev_command_rate_hz:="$DIRECT_BEV_COMMAND_RATE_HZ" \
   direct_bev_path_timeout_sec:="$DIRECT_BEV_PATH_TIMEOUT_SEC" \
   speed_command:="$SPEED_COMMAND" \
+  curvature_speed_control_enabled:="$CURVATURE_SPEED_CONTROL_ENABLED" \
+  curve_speed_command:="$CURVE_SPEED_COMMAND" \
+  degraded_path_speed_command:="$DEGRADED_PATH_SPEED_COMMAND" \
+  curve_speed_exit_threshold_per_m:="$CURVE_SPEED_EXIT_THRESHOLD_PER_M" \
+  curve_speed_confirmation_frames:="$CURVE_SPEED_CONFIRMATION_FRAMES" \
+  curve_speed_release_frames:="$CURVE_SPEED_RELEASE_FRAMES" \
+  degraded_path_minimum_span_m:="$DEGRADED_PATH_MINIMUM_SPAN_M" \
+  selector_minimum_speed_command:=3.0 \
   cone_speed_command:="$CONE_SPEED_COMMAND" \
   cone_sensor_presence_timeout_sec:="$CONE_SENSOR_PRESENCE_TIMEOUT_SEC" \
   lookahead_distance_m:="$LOOKAHEAD_DISTANCE" \
@@ -548,6 +639,13 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   straight_stanley_softening_mps:="$STRAIGHT_STANLEY_SOFTENING_MPS" \
   opposed_stanley_weight:="$OPPOSED_STANLEY_WEIGHT" \
   control_latency_preview_sec:="$CONTROL_LATENCY_PREVIEW_SEC" \
+  straight_path_curvature_threshold:="$STRAIGHT_PATH_CURVATURE_THRESHOLD" \
+  steering_current_weight:="$STEERING_CURRENT_WEIGHT" \
+  steering_curve_current_weight:="$STEERING_CURVE_CURRENT_WEIGHT" \
+  steering_rate_limit_cmd_per_sec:="$STEERING_RATE_LIMIT_CMD_PER_SEC" \
+  steering_curve_rate_limit_cmd_per_sec:="$STEERING_CURVE_RATE_LIMIT_CMD_PER_SEC" \
+  steering_lead_time_sec:="$STEERING_LEAD_TIME_SEC" \
+  steering_max_lead_command:="$STEERING_MAX_LEAD_COMMAND" \
   curve_detection_near_x_m:="$CURVE_DETECTION_NEAR_X_M" \
   curve_detection_far_x_m:="$CURVE_DETECTION_FAR_X_M" \
   curve_detection_segment_count:="$CURVE_DETECTION_SEGMENT_COUNT" \
@@ -555,6 +653,7 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   curve_steering_multiplier_activation_command:="$CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND" \
   curve_steering_multiplier:="$CURVE_STEERING_MULTIPLIER" \
   target_left_offset_m:="$LEFT_OFFSET_M" \
+  straight_target_right_offset_m:="$STRAIGHT_RIGHT_OFFSET_M" \
   perception_max_output_rate_hz:="$PERCEPTION_MAX_OUTPUT_RATE_HZ" \
   canonical_forward_range_m:="$CANONICAL_FORWARD_RANGE_M" \
   maximum_speed_command:=30.0 \

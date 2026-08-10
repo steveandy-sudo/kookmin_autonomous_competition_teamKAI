@@ -53,12 +53,20 @@ canonical_stanley_pursuit_driver:
 
     # Real-track baseline after integrated rule-drive tuning.
     target_right_offset_m: 0.0
-    target_left_offset_m: 0.12
+    target_left_offset_m: 0.0
+    straight_target_right_offset_m: 0.05
 
     # Safe first real-car defaults. The launch arguments can raise these only
     # after shadow output and curve completion have been checked.
     cruise_speed_command: 16.0
     minimum_speed_command: 8.0
+    curvature_speed_control_enabled: true
+    curve_speed_command: 10.0
+    degraded_path_speed_command: 8.0
+    curve_speed_exit_threshold_per_m: 0.12
+    curve_speed_confirmation_frames: 2
+    curve_speed_release_frames: 3
+    degraded_path_minimum_span_m: 0.60
     curve_slowdown_angle_command: 18.0
     lane_loss_speed_command: 4.0
     command_rate_hz: 10.0

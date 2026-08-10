@@ -24,6 +24,9 @@ STATUS_PATTERN = re.compile(
     r"state=(?P<state>\S+)\s+source=(?P<source>\S+)\s+"
     r"mode_label=(?P<label>\S+).*?reason=(?P<reason>.*)$"
 )
+RULE_DIAGNOSTICS_CURVE_SPEED_MODE_INDEX = 37
+RULE_DIAGNOSTICS_DEGRADED_SPEED_MODE_INDEX = 38
+RULE_DIAGNOSTICS_CLASSIFIED_SPEED_INDEX = 39
 
 
 def active_drive_mode(source: str, mode_label: str) -> str:
@@ -190,6 +193,8 @@ class SpaceDriveGate(Node):
         self.has_started = False
         self.last_display_key = ""
         self.avoidance_debug: list[float] | None = None
+        self.rule_path_speed_mode = "UNKNOWN"
+        self.rule_path_speed_command = float("nan")
         self.rl_message_times: deque[float] = deque(maxlen=30)
         self.stdin_is_tty = sys.stdin.isatty()
         self.original_terminal_settings = None
@@ -225,6 +230,12 @@ class SpaceDriveGate(Node):
             self._on_avoidance_debug,
             10,
         )
+        self.create_subscription(
+            Float32MultiArray,
+            str(self.get_parameter("rule_diagnostics_topic").value),
+            self._on_rule_diagnostics,
+            10,
+        )
         self.motor_pub = self.create_publisher(
             Float32MultiArray,
             str(self.get_parameter("motor_topic").value),
@@ -250,6 +261,9 @@ class SpaceDriveGate(Node):
         self.declare_parameter("rl_candidate_topic", "/rl/policy_motor_shadow")
         self.declare_parameter(
             "avoidance_debug_topic", "/hybrid/avoidance_debug"
+        )
+        self.declare_parameter(
+            "rule_diagnostics_topic", "/rule_drive/diagnostics"
         )
         self.declare_parameter("avoidance_target_label", "vehicle")
         self.declare_parameter("avoidance_yolo_min_confidence", 0.45)
@@ -290,6 +304,30 @@ class SpaceDriveGate(Node):
     def _on_avoidance_debug(self, message: Float32MultiArray) -> None:
         self.avoidance_debug = [float(value) for value in message.data]
 
+    def _on_rule_diagnostics(self, message: Float32MultiArray) -> None:
+        if len(message.data) <= RULE_DIAGNOSTICS_CLASSIFIED_SPEED_INDEX:
+            return
+        if (
+            float(
+                message.data[RULE_DIAGNOSTICS_DEGRADED_SPEED_MODE_INDEX]
+            )
+            > 0.5
+        ):
+            mode = "DEGRADED"
+        elif (
+            float(message.data[RULE_DIAGNOSTICS_CURVE_SPEED_MODE_INDEX])
+            > 0.5
+        ):
+            mode = "CURVE"
+        else:
+            mode = "STRAIGHT"
+        if mode != self.rule_path_speed_mode:
+            self.last_display_key = ""
+        self.rule_path_speed_mode = mode
+        self.rule_path_speed_command = float(
+            message.data[RULE_DIAGNOSTICS_CLASSIFIED_SPEED_INDEX]
+        )
+
     def _rl_rate_hz(self, now: float) -> float:
         if not self.rl_message_times or now - self.rl_message_times[-1] > 1.0:
             return 0.0
@@ -322,7 +360,8 @@ class SpaceDriveGate(Node):
         arm_state = "RUN" if self.controller.armed else "STOP"
         drive_mode = active_drive_mode(self.source, self.mode_label)
         key = (
-            f"{arm_state}:{drive_mode}:{self.selector_state}:{output.reason}"
+            f"{arm_state}:{drive_mode}:{self.selector_state}:{output.reason}:"
+            f"{self.rule_path_speed_mode}"
         )
         if key == self.last_display_key:
             return
@@ -331,9 +370,15 @@ class SpaceDriveGate(Node):
             if drive_mode == "MODEL"
             else ""
         )
+        path_speed = ""
+        if drive_mode == "RULE" and self.rule_path_speed_mode != "UNKNOWN":
+            path_speed = (
+                f" | PATH={self.rule_path_speed_mode}"
+                f"({self.rule_path_speed_command:.1f})"
+            )
         self.get_logger().info(
             f"[{arm_state}] MODE={drive_mode}{model_hz} | "
-            f"SPEED={output.speed_command:.1f}"
+            f"SPEED={output.speed_command:.1f}{path_speed}"
         )
         if drive_mode.startswith("AVOIDANCE_"):
             self.get_logger().info(

@@ -49,6 +49,13 @@ class SteeringTerms:
     target_y_m: float
 
 
+@dataclass(frozen=True)
+class SteeringSmoothingProfile:
+    curve_fraction: float
+    rate_limit_cmd_per_sec: float
+    current_weight: float
+
+
 def command_during_lane_loss(
     *,
     has_valid_command: bool,
@@ -296,6 +303,39 @@ def adaptive_smooth_steering_command(
     curve_full_command: float,
 ) -> float:
     """Smooth straights while retaining full response in a tight curve."""
+    profile = steering_smoothing_profile(
+        last_command=last_command,
+        raw_command=raw_command,
+        straight_current_weight=straight_current_weight,
+        curve_current_weight=curve_current_weight,
+        straight_rate_limit=straight_rate_limit,
+        curve_rate_limit=curve_rate_limit,
+        curve_activation_command=curve_activation_command,
+        curve_full_command=curve_full_command,
+    )
+    limited = float(last_command) + clamp(
+        float(raw_command) - float(last_command),
+        -profile.rate_limit_cmd_per_sec * max(0.0, float(dt)),
+        profile.rate_limit_cmd_per_sec * max(0.0, float(dt)),
+    )
+    return (
+        (1.0 - profile.current_weight) * float(last_command)
+        + profile.current_weight * limited
+    )
+
+
+def steering_smoothing_profile(
+    *,
+    last_command: float,
+    raw_command: float,
+    straight_current_weight: float,
+    curve_current_weight: float,
+    straight_rate_limit: float,
+    curve_rate_limit: float,
+    curve_activation_command: float,
+    curve_full_command: float,
+) -> SteeringSmoothingProfile:
+    """Return the exact magnitude-based smoothing values used this frame."""
     activation = max(0.0, float(curve_activation_command))
     full = max(activation + 1.0e-6, float(curve_full_command))
     steering_level = max(abs(float(last_command)), abs(float(raw_command)))
@@ -320,20 +360,27 @@ def adaptive_smooth_steering_command(
         (1.0 - curve_fraction) * max(0.0, float(straight_rate_limit))
         + curve_fraction * max(0.0, float(curve_rate_limit))
     )
-    limited = float(last_command) + clamp(
-        float(raw_command) - float(last_command),
-        -rate_limit * max(0.0, float(dt)),
-        rate_limit * max(0.0, float(dt)),
-    )
     current_weight = (
         (1.0 - curve_fraction)
         * clamp(float(straight_current_weight), 0.0, 1.0)
         + curve_fraction * clamp(float(curve_current_weight), 0.0, 1.0)
     )
-    return (
-        (1.0 - current_weight) * float(last_command)
-        + current_weight * limited
+    return SteeringSmoothingProfile(
+        curve_fraction=curve_fraction,
+        rate_limit_cmd_per_sec=rate_limit,
+        current_weight=current_weight,
     )
+
+
+def curve_multiplier_source_allowed(
+    path_source: str,
+    *,
+    yellow_reference_only: bool,
+) -> bool:
+    """Allow amplification only from a currently observed yellow reference."""
+    if not bool(yellow_reference_only):
+        return True
+    return str(path_source) in ("yellow", "fused")
 
 
 def offset_path_right(path: np.ndarray, right_offset_m: float) -> np.ndarray:
@@ -955,6 +1002,59 @@ def update_curve_preview_latch(
     return False, 0, misses
 
 
+def update_curve_speed_latch(
+    active: bool,
+    evidence_frames: int,
+    miss_frames: int,
+    *,
+    curve_detection_per_m: float,
+    enter_threshold_per_m: float,
+    exit_threshold_per_m: float,
+    confirmation_frames: int,
+    release_frames: int,
+) -> tuple[bool, int, int]:
+    """Debounce straight/curve speed mode with separate enter/exit limits."""
+    enter = max(0.0, float(enter_threshold_per_m))
+    exit_threshold = clamp(
+        float(exit_threshold_per_m),
+        0.0,
+        enter,
+    )
+    threshold = exit_threshold if bool(active) else enter
+    curve_evidence = (
+        math.isfinite(float(curve_detection_per_m))
+        and float(curve_detection_per_m) > threshold
+    )
+    return update_curve_preview_latch(
+        active,
+        evidence_frames,
+        miss_frames,
+        curve_evidence=curve_evidence,
+        confirmation_frames=confirmation_frames,
+        release_frames=release_frames,
+    )
+
+
+def curvature_speed_limit(
+    *,
+    straight_speed_command: float,
+    curve_speed_command: float,
+    degraded_path_speed_command: float,
+    curve_active: bool,
+    degraded_path_active: bool,
+) -> float:
+    """Return a path-state speed cap without raising any lower cap."""
+    speed = max(0.0, float(straight_speed_command))
+    if bool(curve_active):
+        speed = min(speed, max(0.0, float(curve_speed_command)))
+    if bool(degraded_path_active):
+        speed = min(
+            speed,
+            max(0.0, float(degraded_path_speed_command)),
+        )
+    return speed
+
+
 def guard_unconfirmed_yellow_reversal(
     raw_command: float,
     *,
@@ -1319,7 +1419,8 @@ class CanonicalStanleyPursuitDriver(Node):
         self.declare_parameter("path_previous_weight", 0.10)
         self.declare_parameter("min_lane_pixels", 8)
         self.declare_parameter("target_right_offset_m", 0.0)
-        self.declare_parameter("target_left_offset_m", 0.12)
+        self.declare_parameter("target_left_offset_m", 0.0)
+        self.declare_parameter("straight_target_right_offset_m", 0.0)
         self.declare_parameter("external_lateral_offset_enabled", False)
         self.declare_parameter(
             "external_lateral_offset_topic",
@@ -1364,6 +1465,13 @@ class CanonicalStanleyPursuitDriver(Node):
         self.declare_parameter("pure_pursuit_weight", 0.95)
         self.declare_parameter("straight_stanley_enabled", True)
         self.declare_parameter("straight_path_curvature_threshold", 0.16)
+        self.declare_parameter("curvature_speed_control_enabled", False)
+        self.declare_parameter("curve_speed_command", 10.0)
+        self.declare_parameter("degraded_path_speed_command", 8.0)
+        self.declare_parameter("curve_speed_exit_threshold_per_m", 0.12)
+        self.declare_parameter("curve_speed_confirmation_frames", 2)
+        self.declare_parameter("curve_speed_release_frames", 3)
+        self.declare_parameter("degraded_path_minimum_span_m", 0.60)
         self.declare_parameter("curve_detection_near_x_m", 0.16)
         self.declare_parameter("curve_detection_far_x_m", 0.30)
         self.declare_parameter("curve_detection_segment_count", 1)
@@ -1445,7 +1553,7 @@ class CanonicalStanleyPursuitDriver(Node):
         self.declare_parameter(
             "turn_transition_trigger_previous_command", 12.0
         )
-        self.declare_parameter("turn_transition_trigger_new_command", 2.0)
+        self.declare_parameter("turn_transition_trigger_new_command", 8.0)
         self.declare_parameter(
             "turn_transition_cancel_opposed_command", 24.0
         )
@@ -1681,6 +1789,28 @@ class CanonicalStanleyPursuitDriver(Node):
         self.latest_active_lookahead_m = float(
             self.get_parameter("lookahead_distance_m").value
         )
+        self.latest_straight_mode_active = False
+        self.curve_speed_mode_active = False
+        self.curve_speed_evidence_frames = 0
+        self.curve_speed_miss_frames = 0
+        self.latest_degraded_path_speed_active = False
+        self.latest_straight_right_offset_active = False
+        self.latest_classified_speed_command = float(
+            self.get_parameter("cruise_speed_command").value
+        )
+        self.last_announced_path_speed_mode: str | None = None
+        self.latest_mapped_raw_angle = float("nan")
+        self.latest_amplified_angle = float("nan")
+        self.latest_reversal_angle = float("nan")
+        self.latest_transition_angle = float("nan")
+        self.latest_lead_angle = float("nan")
+        self.latest_smoothed_angle = float("nan")
+        self.latest_smoothing_curve_fraction = float("nan")
+        self.latest_smoothing_rate_limit = float("nan")
+        self.latest_smoothing_current_weight = float("nan")
+        self.lane_loss_start_time: float | None = None
+        self.lane_loss_count = 0
+        self.latest_lane_loss_duration_sec = 0.0
         self.turn_transition_recovery_sign = 0.0
         self.turn_transition_recovery_until = 0.0
         self.turn_transition_armed_sign = 0.0
@@ -2171,6 +2301,99 @@ class CanonicalStanleyPursuitDriver(Node):
             ),
         )
         self.latest_curve_detection_per_m = curve_detection
+        self.latest_straight_mode_active = (
+            math.isfinite(curve_detection)
+            and curve_detection
+            <= max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "straight_path_curvature_threshold"
+                    ).value
+                ),
+            )
+        )
+        (
+            self.curve_speed_mode_active,
+            self.curve_speed_evidence_frames,
+            self.curve_speed_miss_frames,
+        ) = update_curve_speed_latch(
+            self.curve_speed_mode_active,
+            self.curve_speed_evidence_frames,
+            self.curve_speed_miss_frames,
+            curve_detection_per_m=curve_detection,
+            enter_threshold_per_m=float(
+                self.get_parameter(
+                    "straight_path_curvature_threshold"
+                ).value
+            ),
+            exit_threshold_per_m=float(
+                self.get_parameter(
+                    "curve_speed_exit_threshold_per_m"
+                ).value
+            ),
+            confirmation_frames=int(
+                self.get_parameter(
+                    "curve_speed_confirmation_frames"
+                ).value
+            ),
+            release_frames=int(
+                self.get_parameter("curve_speed_release_frames").value
+            ),
+        )
+        path_span_m = float(np.ptp(delayed_path[:, 0]))
+        self.latest_degraded_path_speed_active = (
+            self.latest_path_source == "yellow_memory"
+            or path_span_m
+            < max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "degraded_path_minimum_span_m"
+                    ).value
+                ),
+            )
+        )
+        self.latest_straight_right_offset_active = (
+            self.latest_straight_mode_active
+            and not self.curve_speed_mode_active
+            and not self.latest_degraded_path_speed_active
+        )
+        if self.latest_straight_right_offset_active:
+            delayed_path = offset_path_right(
+                delayed_path,
+                float(
+                    self.get_parameter(
+                        "straight_target_right_offset_m"
+                    ).value
+                ),
+            )
+        path_speed_mode = (
+            "DEGRADED"
+            if self.latest_degraded_path_speed_active
+            else "CURVE"
+            if self.curve_speed_mode_active
+            else "STRAIGHT"
+        )
+        if (
+            bool(
+                self.get_parameter(
+                    "curvature_speed_control_enabled"
+                ).value
+            )
+            and path_speed_mode != self.last_announced_path_speed_mode
+        ):
+            speed_parameter = {
+                "STRAIGHT": "cruise_speed_command",
+                "CURVE": "curve_speed_command",
+                "DEGRADED": "degraded_path_speed_command",
+            }[path_speed_mode]
+            self.get_logger().info(
+                f"[PATH_SPEED] mode={path_speed_mode} "
+                f"command={float(self.get_parameter(speed_parameter).value):.1f} "
+                f"curve={curve_detection:.3f}rad/m span={path_span_m:.2f}m"
+            )
+            self.last_announced_path_speed_mode = path_speed_mode
         minimum_reach_m = float(
             self.get_parameter(
                 "adaptive_curve_minimum_path_reach_m"
@@ -2447,6 +2670,33 @@ class CanonicalStanleyPursuitDriver(Node):
         )
 
     def smooth_steering(self, raw_command: float, now: float) -> float:
+        profile = steering_smoothing_profile(
+            last_command=self.last_angle_command,
+            raw_command=raw_command,
+            straight_current_weight=float(
+                self.get_parameter("steering_current_weight").value
+            ),
+            curve_current_weight=float(
+                self.get_parameter("steering_curve_current_weight").value
+            ),
+            straight_rate_limit=float(
+                self.get_parameter("steering_rate_limit_cmd_per_sec").value
+            ),
+            curve_rate_limit=float(
+                self.get_parameter(
+                    "steering_curve_rate_limit_cmd_per_sec"
+                ).value
+            ),
+            curve_activation_command=float(
+                self.get_parameter("steering_curve_activation_command").value
+            ),
+            curve_full_command=float(
+                self.get_parameter("steering_curve_full_command").value
+            ),
+        )
+        self.latest_smoothing_curve_fraction = profile.curve_fraction
+        self.latest_smoothing_rate_limit = profile.rate_limit_cmd_per_sec
+        self.latest_smoothing_current_weight = profile.current_weight
         if not self.has_valid_command or self.last_command_time is None:
             return raw_command
         dt = max(0.0, now - self.last_command_time)
@@ -2501,18 +2751,13 @@ class CanonicalStanleyPursuitDriver(Node):
                 ).value
             ),
         )
-        yellow_reference = self.latest_path_source in (
-            "yellow",
-            "fused",
-            "yellow_memory",
-        )
-        source_allowed = (
-            not bool(
+        source_allowed = curve_multiplier_source_allowed(
+            self.latest_path_source,
+            yellow_reference_only=bool(
                 self.get_parameter(
                     "curve_steering_yellow_reference_only"
                 ).value
-            )
-            or yellow_reference
+            ),
         )
         return amplify_curve_steering_command(
             raw_command,
@@ -2695,6 +2940,25 @@ class CanonicalStanleyPursuitDriver(Node):
 
     def speed_for_steering(self, angle_command: float) -> float:
         cruise = float(self.get_parameter("cruise_speed_command").value)
+        if bool(
+            self.get_parameter("curvature_speed_control_enabled").value
+        ):
+            self.latest_classified_speed_command = curvature_speed_limit(
+                straight_speed_command=cruise,
+                curve_speed_command=float(
+                    self.get_parameter("curve_speed_command").value
+                ),
+                degraded_path_speed_command=float(
+                    self.get_parameter(
+                        "degraded_path_speed_command"
+                    ).value
+                ),
+                curve_active=self.curve_speed_mode_active,
+                degraded_path_active=(
+                    self.latest_degraded_path_speed_active
+                ),
+            )
+            return self.latest_classified_speed_command
         minimum = float(self.get_parameter("minimum_speed_command").value)
         slowdown_angle = max(
             1.0,
@@ -2703,7 +2967,9 @@ class CanonicalStanleyPursuitDriver(Node):
             ),
         )
         curve_fraction = clamp(abs(angle_command) / slowdown_angle, 0.0, 1.0)
-        return cruise + curve_fraction * (minimum - cruise)
+        speed = cruise + curve_fraction * (minimum - cruise)
+        self.latest_classified_speed_command = max(0.0, speed)
+        return self.latest_classified_speed_command
 
     def on_timer(self) -> None:
         now = time.monotonic()
@@ -2727,13 +2993,25 @@ class CanonicalStanleyPursuitDriver(Node):
         self.latest_far_signed_curvature_per_m = float("nan")
         self.yellow_curve_reversal_guard_active = False
         self.yellow_curve_reversal_preview_active = False
+        self.latest_mapped_raw_angle = float("nan")
+        self.latest_amplified_angle = float("nan")
+        self.latest_reversal_angle = float("nan")
+        self.latest_transition_angle = float("nan")
+        self.latest_lead_angle = float("nan")
+        self.latest_smoothed_angle = float("nan")
+        self.latest_smoothing_curve_fraction = float("nan")
+        self.latest_smoothing_rate_limit = float("nan")
+        self.latest_smoothing_current_weight = float("nan")
         if self.path_valid and self.latest_path is not None:
             raw_angle, terms = self.steering_command_for_path(self.latest_path)
+            self.latest_mapped_raw_angle = raw_angle
             raw_angle = self.amplify_curve_steering(raw_angle)
+            self.latest_amplified_angle = raw_angle
             raw_angle, terms = self.apply_yellow_curve_reversal_preview(
                 raw_angle,
                 terms,
             )
+            self.latest_reversal_angle = raw_angle
             controller_raw_angle = raw_angle
             (
                 raw_angle,
@@ -2770,6 +3048,7 @@ class CanonicalStanleyPursuitDriver(Node):
                     ).value
                 ),
             )
+            self.latest_transition_angle = raw_angle
             raw_dt = (
                 0.0
                 if self.last_raw_command_time is None
@@ -2793,12 +3072,16 @@ class CanonicalStanleyPursuitDriver(Node):
                 self.angle_command_min,
                 self.angle_command_max,
             )
+            self.latest_lead_angle = compensated_angle
             self.last_raw_angle_command = controller_raw_angle
             self.last_raw_command_time = now
             angle = self.smooth_steering(compensated_angle, now)
+            self.latest_smoothed_angle = angle
             speed = self.speed_for_steering(angle)
             self.latest_terms = terms
             self.has_valid_command = True
+            self.lane_loss_start_time = None
+            self.latest_lane_loss_duration_sec = 0.0
         elif (
             self.has_valid_command
             and bool(
@@ -2807,6 +3090,13 @@ class CanonicalStanleyPursuitDriver(Node):
                 ).value
             )
         ):
+            if self.lane_loss_start_time is None:
+                self.lane_loss_start_time = now
+                self.lane_loss_count += 1
+            self.latest_lane_loss_duration_sec = max(
+                0.0,
+                now - self.lane_loss_start_time,
+            )
             angle, speed = command_during_lane_loss(
                 has_valid_command=self.has_valid_command,
                 last_angle_command=self.last_angle_command,
@@ -2828,6 +3118,7 @@ class CanonicalStanleyPursuitDriver(Node):
         else:
             angle = 0.0
             speed = 0.0
+            self.latest_lane_loss_duration_sec = 0.0
 
         if self.steering_only:
             speed = 0.0
@@ -2957,6 +3248,15 @@ class CanonicalStanleyPursuitDriver(Node):
     def publish_diagnostics(self) -> None:
         info = self.latest_path_info
         terms = self.latest_terms
+        canonical_age_sec = (
+            float("nan")
+            if self.last_canonical_command_time is None
+            else max(0.0, time.monotonic() - self.last_canonical_command_time)
+        )
+        transition_active = (
+            self.turn_transition_recovery_sign != 0.0
+            and time.monotonic() < self.turn_transition_recovery_until
+        )
         message = Float32MultiArray()
         message.data = [
             1.0 if self.lane_visible else 0.0,
@@ -2989,6 +3289,28 @@ class CanonicalStanleyPursuitDriver(Node):
             float(self.latest_curve_detection_per_m),
             1.0 if self.adaptive_curve_preview_active else 0.0,
             float(self.latest_active_lookahead_m),
+            # Appended fields keep the established indices above compatible.
+            float(self.latest_mapped_raw_angle),
+            float(self.latest_amplified_angle),
+            float(self.latest_reversal_angle),
+            float(self.latest_transition_angle),
+            float(self.latest_lead_angle),
+            float(self.latest_smoothed_angle),
+            1.0 if self.latest_straight_mode_active else 0.0,
+            float(self.latest_smoothing_current_weight),
+            float(self.latest_smoothing_rate_limit),
+            float(self.latest_smoothing_curve_fraction),
+            float(self.latest_lane_loss_duration_sec),
+            float(self.lane_loss_count),
+            float(canonical_age_sec),
+            1.0 if transition_active else 0.0,
+            1.0 if self.curve_speed_mode_active else 0.0,
+            1.0 if self.latest_degraded_path_speed_active else 0.0,
+            float(self.latest_classified_speed_command),
+            1.0 if self.latest_straight_right_offset_active else 0.0,
+            float(
+                self.get_parameter("straight_target_right_offset_m").value
+            ),
         ]
         self.diagnostics_pub.publish(message)
 

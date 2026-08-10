@@ -124,6 +124,30 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("scan_topic", default_value="/scan"),
             DeclareLaunchArgument("speed_command", default_value="16.0"),
+            DeclareLaunchArgument(
+                "curvature_speed_control_enabled", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "curve_speed_command", default_value="10.0"
+            ),
+            DeclareLaunchArgument(
+                "degraded_path_speed_command", default_value="8.0"
+            ),
+            DeclareLaunchArgument(
+                "curve_speed_exit_threshold_per_m", default_value="0.12"
+            ),
+            DeclareLaunchArgument(
+                "curve_speed_confirmation_frames", default_value="2"
+            ),
+            DeclareLaunchArgument(
+                "curve_speed_release_frames", default_value="3"
+            ),
+            DeclareLaunchArgument(
+                "degraded_path_minimum_span_m", default_value="0.60"
+            ),
+            DeclareLaunchArgument(
+                "selector_minimum_speed_command", default_value="3.0"
+            ),
             DeclareLaunchArgument("cone_speed_command", default_value="6.0"),
             DeclareLaunchArgument(
                 "cone_sensor_presence_timeout_sec", default_value="0.5"
@@ -199,6 +223,12 @@ def generate_launch_description():
                 "steering_curve_rate_limit_cmd_per_sec", default_value="300.0"
             ),
             DeclareLaunchArgument(
+                "steering_lead_time_sec", default_value="0.08"
+            ),
+            DeclareLaunchArgument(
+                "steering_max_lead_command", default_value="6.0"
+            ),
+            DeclareLaunchArgument(
                 "curve_steering_multiplier_enabled", default_value="false"
             ),
             DeclareLaunchArgument(
@@ -209,7 +239,10 @@ def generate_launch_description():
                 "curve_steering_multiplier", default_value="1.5"
             ),
             DeclareLaunchArgument(
-                "target_left_offset_m", default_value="0.12"
+                "target_left_offset_m", default_value="0.0"
+            ),
+            DeclareLaunchArgument(
+                "straight_target_right_offset_m", default_value="0.05"
             ),
             DeclareLaunchArgument(
                 "maximum_speed_command", default_value="30.0"
@@ -400,7 +433,30 @@ def generate_launch_description():
                         "/hybrid/avoidance_lateral_offset"
                     ),
                     "cruise_speed_command": speed_command,
-                    "minimum_speed_command": speed_command,
+                    "minimum_speed_command": LaunchConfiguration(
+                        "curve_speed_command"
+                    ),
+                    "curvature_speed_control_enabled": LaunchConfiguration(
+                        "curvature_speed_control_enabled"
+                    ),
+                    "curve_speed_command": LaunchConfiguration(
+                        "curve_speed_command"
+                    ),
+                    "degraded_path_speed_command": LaunchConfiguration(
+                        "degraded_path_speed_command"
+                    ),
+                    "curve_speed_exit_threshold_per_m": LaunchConfiguration(
+                        "curve_speed_exit_threshold_per_m"
+                    ),
+                    "curve_speed_confirmation_frames": LaunchConfiguration(
+                        "curve_speed_confirmation_frames"
+                    ),
+                    "curve_speed_release_frames": LaunchConfiguration(
+                        "curve_speed_release_frames"
+                    ),
+                    "degraded_path_minimum_span_m": LaunchConfiguration(
+                        "degraded_path_minimum_span_m"
+                    ),
                     "command_rate_hz": LaunchConfiguration(
                         "direct_bev_command_rate_hz"
                     ),
@@ -425,6 +481,9 @@ def generate_launch_description():
                     ),
                     "target_left_offset_m": LaunchConfiguration(
                         "target_left_offset_m"
+                    ),
+                    "straight_target_right_offset_m": LaunchConfiguration(
+                        "straight_target_right_offset_m"
                     ),
                     "straight_path_curvature_threshold": LaunchConfiguration(
                         "straight_path_curvature_threshold"
@@ -510,7 +569,48 @@ def generate_launch_description():
                             speed_command, value_type=float
                         ),
                         "minimum_speed_command": ParameterValue(
-                            speed_command, value_type=float
+                            LaunchConfiguration("curve_speed_command"),
+                            value_type=float,
+                        ),
+                        "curvature_speed_control_enabled": ParameterValue(
+                            LaunchConfiguration(
+                                "curvature_speed_control_enabled"
+                            ),
+                            value_type=bool,
+                        ),
+                        "curve_speed_command": ParameterValue(
+                            LaunchConfiguration("curve_speed_command"),
+                            value_type=float,
+                        ),
+                        "degraded_path_speed_command": ParameterValue(
+                            LaunchConfiguration(
+                                "degraded_path_speed_command"
+                            ),
+                            value_type=float,
+                        ),
+                        "curve_speed_exit_threshold_per_m": ParameterValue(
+                            LaunchConfiguration(
+                                "curve_speed_exit_threshold_per_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "curve_speed_confirmation_frames": ParameterValue(
+                            LaunchConfiguration(
+                                "curve_speed_confirmation_frames"
+                            ),
+                            value_type=int,
+                        ),
+                        "curve_speed_release_frames": ParameterValue(
+                            LaunchConfiguration(
+                                "curve_speed_release_frames"
+                            ),
+                            value_type=int,
+                        ),
+                        "degraded_path_minimum_span_m": ParameterValue(
+                            LaunchConfiguration(
+                                "degraded_path_minimum_span_m"
+                            ),
+                            value_type=float,
                         ),
                         "canonical_forward_range_m": ParameterValue(
                             LaunchConfiguration(
@@ -612,6 +712,42 @@ def generate_launch_description():
                             ),
                             value_type=int,
                         ),
+                        "straight_path_curvature_threshold": ParameterValue(
+                            LaunchConfiguration(
+                                "straight_path_curvature_threshold"
+                            ),
+                            value_type=float,
+                        ),
+                        "steering_current_weight": ParameterValue(
+                            LaunchConfiguration("steering_current_weight"),
+                            value_type=float,
+                        ),
+                        "steering_curve_current_weight": ParameterValue(
+                            LaunchConfiguration(
+                                "steering_curve_current_weight"
+                            ),
+                            value_type=float,
+                        ),
+                        "steering_rate_limit_cmd_per_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "steering_rate_limit_cmd_per_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "steering_curve_rate_limit_cmd_per_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "steering_curve_rate_limit_cmd_per_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "steering_lead_time_sec": ParameterValue(
+                            LaunchConfiguration("steering_lead_time_sec"),
+                            value_type=float,
+                        ),
+                        "steering_max_lead_command": ParameterValue(
+                            LaunchConfiguration("steering_max_lead_command"),
+                            value_type=float,
+                        ),
                         "curve_steering_multiplier_enabled": ParameterValue(
                             LaunchConfiguration(
                                 "curve_steering_multiplier_enabled"
@@ -636,6 +772,12 @@ def generate_launch_description():
                         "target_right_offset_m": 0.0,
                         "target_left_offset_m": ParameterValue(
                             LaunchConfiguration("target_left_offset_m"),
+                            value_type=float,
+                        ),
+                        "straight_target_right_offset_m": ParameterValue(
+                            LaunchConfiguration(
+                                "straight_target_right_offset_m"
+                            ),
                             value_type=float,
                         ),
                         "external_lateral_offset_enabled": True,
@@ -740,7 +882,10 @@ def generate_launch_description():
                         ),
                         "scan_topic": scan_topic,
                         "minimum_speed_command": ParameterValue(
-                            speed_command, value_type=float
+                            LaunchConfiguration(
+                                "selector_minimum_speed_command"
+                            ),
+                            value_type=float,
                         ),
                         "maximum_speed_command": ParameterValue(
                             LaunchConfiguration("maximum_speed_command"),

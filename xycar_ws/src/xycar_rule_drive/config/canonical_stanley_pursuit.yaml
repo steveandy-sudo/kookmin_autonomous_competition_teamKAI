@@ -23,10 +23,11 @@ canonical_stanley_pursuit_driver:
     path_point_count: 32
     path_previous_weight: 0.10
     min_lane_pixels: 8
-    # Real-car target: follow 15 cm left of the observed yellow reference.
-    # White fallback reconstructs this exact same lateral target.
+    # Keep the shared target centered. Real driving may add a straight-only
+    # right correction without changing curve geometry.
     target_right_offset_m: 0.0
-    target_left_offset_m: 0.12
+    target_left_offset_m: 0.0
+    straight_target_right_offset_m: 0.0
     # A yellow dash can leave the camera during a tight turn. While the outer
     # white boundary remains visible, reconstruct the yellow centerline from
     # the measured 40 cm yellow-to-white distance.
@@ -116,7 +117,7 @@ canonical_stanley_pursuit_driver:
     turn_transition_hold_sec: 0.25
     turn_transition_minimum_recovery_command: 18.0
     turn_transition_trigger_previous_command: 12.0
-    turn_transition_trigger_new_command: 2.0
+    turn_transition_trigger_new_command: 8.0
     turn_transition_cancel_opposed_command: 24.0
     # When heading correction and pursuit oppose each other at a curve exit,
     # use Stanley to release the old turn before lateral error grows.

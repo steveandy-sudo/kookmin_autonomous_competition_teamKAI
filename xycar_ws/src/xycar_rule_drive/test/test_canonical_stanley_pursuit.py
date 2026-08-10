@@ -15,6 +15,8 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
     far_path_signed_curvature_per_m,
     connect_yellow_centerline,
     compute_departure_guard_pure_pursuit_weight,
+    curve_multiplier_source_allowed,
+    curvature_speed_limit,
     effective_target_offsets,
     fuse_lane_center_paths,
     fused_stanley_pursuit,
@@ -31,9 +33,11 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
     select_path_when_yellow_missing,
     smooth_target_path,
     steering_term_requests_command_reversal,
+    steering_smoothing_profile,
     update_heading_recovery_latch,
     update_curve_reversal_confirmation,
     update_curve_preview_latch,
+    update_curve_speed_latch,
     usable_forward_path,
     white_boundary_to_target_offset,
     yellow_curve_reversal_request_sign,
@@ -41,6 +45,90 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
 
 
 class CanonicalStanleyPursuitTest(unittest.TestCase):
+    def test_curvature_speed_limit_uses_the_lowest_path_cap(self):
+        common = {
+            "straight_speed_command": 16.0,
+            "curve_speed_command": 10.0,
+            "degraded_path_speed_command": 8.0,
+        }
+        self.assertEqual(
+            curvature_speed_limit(
+                **common,
+                curve_active=False,
+                degraded_path_active=False,
+            ),
+            16.0,
+        )
+        self.assertEqual(
+            curvature_speed_limit(
+                **common,
+                curve_active=True,
+                degraded_path_active=False,
+            ),
+            10.0,
+        )
+        self.assertEqual(
+            curvature_speed_limit(
+                **common,
+                curve_active=True,
+                degraded_path_active=True,
+            ),
+            8.0,
+        )
+
+    def test_curve_speed_mode_requires_two_frames_and_hysteresis(self):
+        state = update_curve_speed_latch(
+            False,
+            0,
+            0,
+            curve_detection_per_m=0.20,
+            enter_threshold_per_m=0.16,
+            exit_threshold_per_m=0.12,
+            confirmation_frames=2,
+            release_frames=3,
+        )
+        self.assertEqual(state, (False, 1, 0))
+        state = update_curve_speed_latch(
+            *state,
+            curve_detection_per_m=0.20,
+            enter_threshold_per_m=0.16,
+            exit_threshold_per_m=0.12,
+            confirmation_frames=2,
+            release_frames=3,
+        )
+        self.assertEqual(state, (True, 2, 0))
+        state = update_curve_speed_latch(
+            *state,
+            curve_detection_per_m=0.14,
+            enter_threshold_per_m=0.16,
+            exit_threshold_per_m=0.12,
+            confirmation_frames=2,
+            release_frames=3,
+        )
+        self.assertEqual(state, (True, 3, 0))
+
+    def test_curve_speed_mode_releases_after_three_straight_frames(self):
+        state = (True, 2, 0)
+        for expected_misses in (1, 2):
+            state = update_curve_speed_latch(
+                *state,
+                curve_detection_per_m=0.10,
+                enter_threshold_per_m=0.16,
+                exit_threshold_per_m=0.12,
+                confirmation_frames=2,
+                release_frames=3,
+            )
+            self.assertEqual(state, (True, 0, expected_misses))
+        state = update_curve_speed_latch(
+            *state,
+            curve_detection_per_m=0.10,
+            enter_threshold_per_m=0.16,
+            exit_threshold_per_m=0.12,
+            confirmation_frames=2,
+            release_frames=3,
+        )
+        self.assertEqual(state, (False, 0, 3))
+
     def test_curve_preview_requires_two_consecutive_frames(self):
         state = update_curve_preview_latch(
             False,
@@ -307,6 +395,55 @@ class CanonicalStanleyPursuitTest(unittest.TestCase):
             ),
             -19.9,
         )
+
+    def test_curve_multiplier_excludes_remembered_yellow(self):
+        self.assertTrue(
+            curve_multiplier_source_allowed(
+                "yellow", yellow_reference_only=True
+            )
+        )
+        self.assertTrue(
+            curve_multiplier_source_allowed(
+                "fused", yellow_reference_only=True
+            )
+        )
+        self.assertFalse(
+            curve_multiplier_source_allowed(
+                "yellow_memory", yellow_reference_only=True
+            )
+        )
+        self.assertFalse(
+            curve_multiplier_source_allowed(
+                "white", yellow_reference_only=True
+            )
+        )
+
+    def test_smoothing_profile_reports_straight_and_reversal_values(self):
+        common = {
+            "straight_current_weight": 0.40,
+            "curve_current_weight": 0.70,
+            "straight_rate_limit": 180.0,
+            "curve_rate_limit": 300.0,
+            "curve_activation_command": 12.0,
+            "curve_full_command": 24.0,
+        }
+        straight = steering_smoothing_profile(
+            last_command=0.0,
+            raw_command=6.0,
+            **common,
+        )
+        self.assertEqual(straight.curve_fraction, 0.0)
+        self.assertEqual(straight.current_weight, 0.40)
+        self.assertEqual(straight.rate_limit_cmd_per_sec, 180.0)
+
+        reversal = steering_smoothing_profile(
+            last_command=20.0,
+            raw_command=-20.0,
+            **common,
+        )
+        self.assertEqual(reversal.curve_fraction, 1.0)
+        self.assertEqual(reversal.current_weight, 0.70)
+        self.assertEqual(reversal.rate_limit_cmd_per_sec, 300.0)
 
     def test_external_lateral_offset_combines_with_static_target(self):
         right, left = effective_target_offsets(

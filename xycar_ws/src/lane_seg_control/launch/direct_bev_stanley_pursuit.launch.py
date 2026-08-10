@@ -88,12 +88,36 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("cruise_speed_command", default_value="3.0"),
             DeclareLaunchArgument("minimum_speed_command", default_value="3.0"),
+            DeclareLaunchArgument(
+                "curvature_speed_control_enabled", default_value="false"
+            ),
+            DeclareLaunchArgument(
+                "curve_speed_command", default_value="3.0"
+            ),
+            DeclareLaunchArgument(
+                "degraded_path_speed_command", default_value="3.0"
+            ),
+            DeclareLaunchArgument(
+                "curve_speed_exit_threshold_per_m", default_value="0.12"
+            ),
+            DeclareLaunchArgument(
+                "curve_speed_confirmation_frames", default_value="2"
+            ),
+            DeclareLaunchArgument(
+                "curve_speed_release_frames", default_value="3"
+            ),
+            DeclareLaunchArgument(
+                "degraded_path_minimum_span_m", default_value="0.60"
+            ),
             DeclareLaunchArgument("command_rate_hz", default_value="10.0"),
             DeclareLaunchArgument("lookahead_distance_m", default_value="0.30"),
             DeclareLaunchArgument("pure_pursuit_weight", default_value="0.80"),
             DeclareLaunchArgument("stanley_gain", default_value="1.20"),
             DeclareLaunchArgument("stanley_softening_mps", default_value="0.35"),
-            DeclareLaunchArgument("target_left_offset_m", default_value="0.12"),
+            DeclareLaunchArgument("target_left_offset_m", default_value="0.0"),
+            DeclareLaunchArgument(
+                "straight_target_right_offset_m", default_value="0.0"
+            ),
             DeclareLaunchArgument("angle_command_min", default_value="-42.0"),
             DeclareLaunchArgument("angle_command_max", default_value="42.0"),
             DeclareLaunchArgument("pure_pursuit_control_x_m", default_value="-0.08"),
@@ -263,6 +287,27 @@ def generate_launch_description():
                         "minimum_speed_command": float_param(
                             "minimum_speed_command"
                         ),
+                        "curvature_speed_control_enabled": bool_param(
+                            "curvature_speed_control_enabled"
+                        ),
+                        "curve_speed_command": float_param(
+                            "curve_speed_command"
+                        ),
+                        "degraded_path_speed_command": float_param(
+                            "degraded_path_speed_command"
+                        ),
+                        "curve_speed_exit_threshold_per_m": float_param(
+                            "curve_speed_exit_threshold_per_m"
+                        ),
+                        "curve_speed_confirmation_frames": int_param(
+                            "curve_speed_confirmation_frames"
+                        ),
+                        "curve_speed_release_frames": int_param(
+                            "curve_speed_release_frames"
+                        ),
+                        "degraded_path_minimum_span_m": float_param(
+                            "degraded_path_minimum_span_m"
+                        ),
                         "lane_loss_speed_command": 0.0,
                         "hold_last_steering_on_lane_loss": False,
                         "hold_last_speed_on_lane_loss": False,
@@ -288,6 +333,9 @@ def generate_launch_description():
                         ),
                         "target_left_offset_m": float_param(
                             "target_left_offset_m"
+                        ),
+                        "straight_target_right_offset_m": float_param(
+                            "straight_target_right_offset_m"
                         ),
                         "target_right_offset_m": 0.0,
                         "external_lateral_offset_enabled": bool_param(
