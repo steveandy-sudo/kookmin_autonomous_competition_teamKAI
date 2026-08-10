@@ -1,80 +1,51 @@
-# ROS 2 / colcon generated files
+# ROS / colcon build artifacts
 build/
 install/
 log/
-log_*/
 
-# Python caches and test artifacts
-**/__pycache__/
+# Python cache
+__pycache__/
 *.py[cod]
 .pytest_cache/
-.coverage
-htmlcov/
 
-# IDE and OS-local files
+# Local agent / editor files
+.agents/
 .vscode/
 .idea/
+*.swp
 *~
-.DS_Store
 
-# Nested repository metadata
-**/.git/
-
-# Generated replay and recorded sensor data
-analysis/replay/**/*.mp4
-analysis/replay/**/*.csv
+# Gazebo / ROS runtime logs and recordings
+*.log
+*.bag
 *.db3
 *.mcap
-metadata.yaml
+*.active
+*.mp4
+*.avi
 
-# Deployment archives
-*.zip
-*.tar
-*.tar.gz
+# Imitation-learning datasets and trained weights
+datasets/
+models/
+!src/my_rule/models/
+!src/my_rule/models/model_object_0804.pt
+!src/my_lane/models/
+src/my_lane/models/*
+!src/my_lane/models/model_centerline_xbin.pt
+!src/my_lane/models/model_centerline_xbin.metrics.json
+generated/
 
-# Large model weights: publish through Git LFS or GitHub Releases
-*.pt
-!src/study/my_rule/models/my_rule_lane.pt
-!src/study/my_rule/models/my_rule_objects.pt
-*.pth
-*.onnx
-*.engine
+# Generated debug images kept locally during map fitting
+alignment/debug_*.png
+
+# Local backups
+worlds/*.before_*.sdf
+*.bak
+
+# Large local tools / external model weights
+etc/
+src/xycar_device/xycar_lidar/YDLidar-SDK/
+src/yolo_ros/
+
+# Compiled binaries copied from the real-car workspace
 *.so
-*.a
-*.o
-
-# Calibration captures and generated calibration results
-src/xycar_application/app_wide_camera_calib/calibration_images/
-src/xycar_application/app_wide_camera_calib/results/
-
-# Package-local generated output
-src/xycar_device/xycar_lidar/YDLidar-SDK/build/
-src/xycar_device/xycar_ultrasonic/log/
-
-# Legacy sample videos
-src/study/my_hough/**/*.mp4
-src/study/my_hough/
-
-# Superseded classroom demos and legacy simulators
-src/xycar_application/app_8_drive/
-src/xycar_application/app_hough_drive/
-src/xycar_application/app_path_planning/
-src/xycar_application/app_pubsub/
-src/xycar_application/app_rule_drive_sim/
-src/xycar_application/app_sensor_drive/
-src/xycar_application/app_turtlesim/
-src/xycar_application/app_web_controller/
-src/xycar_simulator/
-src/track_drive/
-
-# Upstream SDK documentation is not required to build the driver
-src/xycar_device/xycar_lidar/YDLidar-SDK/doc/
-src/xycar_device/xycar_lidar/YDLidar-SDK/README.pdf
-
-# Large vendor applications and firmware artifacts
-etc/desktop_all/
-etc/gui-shell/
-etc/icon/
-etc/motor_vesc/vesc_tool_6.05
-etc/motor_vesc/old_vesc_tool
-etc/motor_vesc/*.bin

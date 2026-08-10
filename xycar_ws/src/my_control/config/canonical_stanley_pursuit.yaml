@@ -1,0 +1,155 @@
+canonical_stanley_pursuit_driver:
+  ros__parameters:
+    use_sim_time: true
+    canonical_topic: /perception/canonical_road_image
+    motor_topic: /xycar_motor
+    shadow_motor_topic: /xycar_motor_shadow
+    target_path_topic: /rule_drive/connected_yellow_path
+    debug_image_topic: /rule_drive/canonical_debug_image
+    debug_markers_topic: /rule_drive/debug_markers
+    diagnostics_topic: /rule_drive/diagnostics
+    action_trace_topic: /rl/action_applied
+    base_frame_id: base_footprint
+    drive_enabled: true
+    steering_only: false
+
+    canonical_lateral_range_m: 1.4
+    canonical_forward_range_m: 1.5
+    # The physical gap is 30 cm; allow BEV quantization and curved projections.
+    yellow_max_gap_m: 0.38
+    yellow_min_observations: 5
+    yellow_min_span_m: 0.10
+    yellow_max_fit_residual_m: 0.08
+    path_point_count: 32
+    path_previous_weight: 0.10
+    min_lane_pixels: 8
+    # Keep the shared target centered. Real driving may add a straight-only
+    # right correction without changing curve geometry.
+    target_right_offset_m: 0.0
+    target_left_offset_m: 0.0
+    straight_target_right_offset_m: 0.0
+    # A yellow dash can leave the camera during a tight turn. While the outer
+    # white boundary remains visible, reconstruct the yellow centerline from
+    # the measured 40 cm yellow-to-white distance.
+    white_fallback_enabled: true
+    # After yellow establishes the reference, steer from its ego-compensated
+    # last path instead of switching to white during a yellow dropout.
+    prefer_remembered_yellow_on_loss: true
+    lane_half_width_m: 0.20
+    white_fallback_max_gap_m: 0.25
+    white_fallback_min_span_m: 0.18
+    # Reject another road edge before accepting a white-only fallback.
+    white_consistency_filter_enabled: true
+    white_yellow_separation_tolerance_m: 0.16
+    white_temporal_max_lateral_jump_m: 0.18
+    white_consistency_min_overlap_m: 0.12
+    # Yellow is primary. White is retained only as a complete-loss fallback.
+    yellow_prefer_min_span_m: 0.70
+    white_fallback_span_advantage_m: 0.15
+    # Use the observed yellow centerline wherever it exists.
+    yellow_fusion_weight: 1.0
+    short_yellow_fusion_weight: 1.0
+    extend_fused_path_to_white: false
+    target_path_previous_weight: 0.10
+    temporal_path_ego_compensation_enabled: false
+
+    wheel_base_m: 0.32
+    pure_pursuit_control_x_m: -0.08
+    stanley_control_x_m: 0.16
+    lookahead_distance_m: 1.50
+    # Use only the measured steering onset delay. A full 7 Hz frame preview
+    # over-rotates the short 1.5 m path and causes alternating full-lock commands.
+    control_latency_preview_sec: 0.10
+    # Pure Pursuit handles position. At high speed, keep Stanley's lateral
+    # term small so heading recovery wins over cutting back across the lane.
+    stanley_gain: 1.15
+    stanley_softening_mps: 0.35
+    pure_pursuit_weight: 0.95
+    # A nearly straight fitted path uses Stanley as the primary controller.
+    # Small left/right corrections then follow heading and cross-track error
+    # instead of repeatedly chasing a distant Pure Pursuit point.
+    straight_stanley_enabled: true
+    straight_path_curvature_threshold: 0.16
+    curve_detection_near_x_m: 0.16
+    curve_detection_far_x_m: 0.30
+    curve_detection_segment_count: 1
+    curve_steering_multiplier_enabled: false
+    curve_steering_multiplier_activation_command: 20.0
+    curve_steering_multiplier: 1.0
+    curve_steering_yellow_reference_only: false
+    yellow_curve_reversal_preview_enabled: false
+    yellow_curve_reversal_preview_near_x_m: 0.45
+    yellow_curve_reversal_preview_far_x_m: 0.90
+    yellow_curve_reversal_preview_window_m: 0.20
+    yellow_curve_reversal_preview_curvature_per_m: 0.12
+    yellow_curve_reversal_preview_pursuit_rad: 0.12
+    yellow_curve_reversal_preview_minimum_command: 10.0
+    yellow_curve_reversal_preview_confirmation_frames: 2
+    yellow_curve_reversal_preview_pursuit_weight: 0.75
+    straight_pure_pursuit_weight: 0.10
+    straight_stanley_gain: 0.65
+    straight_stanley_softening_mps: 0.65
+    # Inside the +/-10 cm straight corridor, an approach heading flips the
+    # Stanley lateral term before the vehicle crosses the yellow centerline.
+    straight_center_anticipation_m: 0.10
+    straight_center_minimum_approach_heading_rad: 0.02
+    # Reduce steering magnitude only while both lateral and heading error are
+    # small. Response returns to 100% at the corridor edge or a large heading.
+    straight_center_steering_scale: 0.70
+    straight_center_scale_heading_limit_rad: 0.20
+    # Session keyboard_speed17_05 first entered warning near 8 cm and its
+    # warning median was 12 cm. Increase near-field Stanley authority from
+    # 6 cm onward so recovery begins before the 18 cm departure boundary.
+    departure_guard_enabled: true
+    departure_guard_lateral_start_m: 0.06
+    departure_guard_lateral_full_m: 0.16
+    departure_guard_heading_start_rad: 0.10
+    departure_guard_heading_full_rad: 0.35
+    departure_guard_pure_pursuit_weight: 0.65
+    # At a real left/right transition, use the Stanley heading term strongly
+    # enough to arrest the previous turn before cross-track error grows.
+    reversal_pure_pursuit_weight: 0.45
+    reversal_activation_rad: 10.0
+    stanley_reversal_activation_rad: 10.0
+    stanley_reversal_pure_pursuit_weight: 0.30
+    heading_recovery_support_rad: 10.0
+    heading_recovery_release_frames: 3
+    turn_transition_hold_sec: 0.25
+    turn_transition_minimum_recovery_command: 18.0
+    turn_transition_trigger_previous_command: 12.0
+    turn_transition_trigger_new_command: 8.0
+    turn_transition_cancel_opposed_command: 24.0
+    # When heading correction and pursuit oppose each other at a curve exit,
+    # use Stanley to release the old turn before lateral error grows.
+    opposed_stanley_weight: 0.70
+    # Suppress small straight-line corrections, but release that smoothing in
+    # tight curves so a left/right correction is not delayed by half a second.
+    steering_current_weight: 0.40
+    steering_rate_limit_cmd_per_sec: 180.0
+    steering_curve_current_weight: 0.70
+    steering_curve_rate_limit_cmd_per_sec: 300.0
+    steering_curve_activation_command: 12.0
+    steering_curve_full_command: 24.0
+    # The real steering response starts about 0.10 s after the command. Lead
+    # only the changing part and cap it so segmentation noise cannot dominate.
+    steering_lead_time_sec: 0.0
+    steering_max_lead_command: 0.0
+    speed_gain_mps_per_cmd: 0.080612
+
+    # Command 17 is about 1.37 m/s with the measured real-car conversion.
+    cruise_speed_command: 20.0
+    minimum_speed_command: 17.0
+    curve_slowdown_angle_command: 24.0
+    command_rate_hz: 7.0
+    # Keep perception and actuation phase-locked at the real-car 7 Hz rate.
+    # The timer only republishes the lane-loss hold if images stop arriving.
+    command_on_canonical: true
+
+    # Once driving has started, total lane loss never replaces steering with zero.
+    hold_last_steering_on_lane_loss: true
+    hold_last_speed_on_lane_loss: false
+    lane_loss_speed_command: 4.0
+    angle_command_min: -42.0
+    angle_command_max: 42.0
+    steering_map_commands: [-42.0, -40.0, -35.0, -30.0, -20.0, -10.0, 0.0, 10.0, 20.0, 30.0, 35.0, 40.0, 42.0]
+    steering_map_curvatures: [1.502435, 1.383494, 1.174860, 0.922781, 0.552809, 0.194230, 0.0, -0.556883, -0.959829, -1.369323, -1.601706, -1.853397, -1.939236]

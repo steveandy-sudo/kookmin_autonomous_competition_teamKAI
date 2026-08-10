@@ -1,7 +1,7 @@
 xycar_vesc_driver:
   ros__parameters:
-    # Vehicle launch is intentionally armed by default for competition use.
-    drive_enabled: true
+    # Keep false until the serial/telemetry checks and wheels-off-ground test pass.
+    drive_enabled: false
     require_telemetry: true
 
     port: /dev/ttyMOTOR
@@ -24,6 +24,10 @@ xycar_vesc_driver:
     speed_command_min: -50.0
     speed_command_max: 100.0
     angle_to_steering_gain: -0.0068
+    # This chassis runs straight when the legacy command is about -5 (left).
+    # Apply that hardware trim only at the servo layer so ROS command 0 and
+    # odometry still mean physically straight.
+    steering_center_trim_command: -5.0
     speed_to_mps_gain: 0.08
 
     # Preserve the installed VESC/Ackermann calibration.
@@ -41,9 +45,10 @@ xycar_vesc_driver:
     expected_firmware_major: 2
     expected_firmware_minor: 18
     allow_firmware_mismatch: false
-    # 0 -> speed command 10 takes about 2.7 s. This prevents the measured
-    # launch-current spike while keeping the same eventual top speed.
-    acceleration_limit_mps2: 0.3
+    # Keep a moderate launch-current ramp. Command 0 -> 10 takes about 1.3 s;
+    # the previous conservative 0.3 m/s^2 setting took about 2.7 s.
+    acceleration_slew_enabled: true
+    acceleration_limit_mps2: 0.6
     deceleration_limit_mps2: 1.5
 
     # Match the Xytron old VESC Tool guide: linearly reduce propulsion from
@@ -56,4 +61,4 @@ xycar_vesc_driver:
     # requires inspection and /vehicle/clear_motor_fault.
     auto_recover: true
 
-    disk_path: /home/xytron
+    disk_path: /
