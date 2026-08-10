@@ -9,11 +9,14 @@ sequential_hybrid_driver:
     rl_command_topic: /rl/policy_motor_shadow
     rule_command_topic: /hybrid/rule_candidate
     cone_command_topic: /my_rule/cone_cmd
+    shortcut_command_topic: /hybrid/shortcut_candidate
+    shortcut_processing_enabled_topic: /hybrid/shortcut_processing_enabled
     scan_topic: /scan
     motor_topic: /xycar_motor
     shadow_motor_topic: /hybrid_gate/xycar_motor_shadow
     mode_topic: /hybrid_gate/mode
     status_topic: /hybrid_gate/status
+    traffic_light_status_topic: /hybrid/traffic_light_status
     diagnostics_topic: /hybrid_gate/diagnostics
 
     # Robust 20th-percentile distance in seven narrow LiDAR sectors.
@@ -57,10 +60,36 @@ sequential_hybrid_driver:
     cone_cluster_topic: /my_rule/cone_clusters
     cone_processing_enabled_topic: /my_rule/cone_processing_enabled
 
-    # One YOLO frame plus the yellow centerline side selects the opposite lane
-    # immediately. LiDAR remains distance/space telemetry, not an entry veto.
-    # Traffic-light detections are intentionally not consumed here.
+    # Exact four-lamp YOLO classes are consumed by the highest-priority
+    # traffic-light mission controller. Box area/image area is only a
+    # monocular proximity proxy; tune these two ratios from labeled real-camera
+    # images. The 0.025 threshold is calibrated from the supplied 2.5898% to
+    # 3.2400% close-signal examples; null_4 remains filtered upstream.
     object_detections_topic: /my_rule/object_detections
+    traffic_light_control_enabled: true
+    traffic_light_red_class_name: red_4
+    traffic_light_yellow_class_name: yellow_4
+    traffic_light_green_class_name: green_4
+    traffic_light_class_names:
+      [red_4, yellow_4, green_4, left_4, red, yellow, green]
+    traffic_light_min_confidence: 0.50
+    traffic_light_stop_min_box_area_ratio: 0.025
+    traffic_light_go_min_box_area_ratio: 0.025
+    traffic_light_stop_required_frames: 2
+    traffic_light_go_required_frames: 2
+
+    # left_4 must be present in two consecutive 3 Hz detector frames, then
+    # absent in two consecutive detector frames. Normal lower-priority driving
+    # continues for the configured delay measured from the first missing frame.
+    # The second missing frame is still required before ShortcutCore may start.
+    shortcut_enabled: true
+    shortcut_class_name: left_4
+    shortcut_yolo_min_confidence: 0.50
+    shortcut_yolo_required_frames: 2
+    shortcut_yolo_absence_frames: 2
+    shortcut_start_delay_sec: 0.75
+    shortcut_candidate_timeout_sec: 0.35
+    shortcut_rearm_absence_sec: 1.0
     vehicle_class_names: [obstacle_vehicle, car]
     vehicle_yolo_min_confidence: 0.45
     vehicle_yolo_required_frames: 1

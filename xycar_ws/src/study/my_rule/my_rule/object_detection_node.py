@@ -73,7 +73,11 @@ class ObjectDetectionNode(Node):
             "red_confidence": 0.50,
             "yellow_confidence": 0.50,
             "green_confidence": 0.50,
+            "red_4_confidence": 0.50,
+            "yellow_4_confidence": 0.50,
+            "green_4_confidence": 0.50,
             "yellow_centerline_confidence": 0.45,
+            "left_4_confidence": 0.50,
             # A non-empty identity alias makes rclpy infer STRING_ARRAY;
             # launch YAML can then replace it with model-specific aliases.
             "class_aliases": ["car=car"],
@@ -94,7 +98,11 @@ class ObjectDetectionNode(Node):
                 "red",
                 "yellow",
                 "green",
+                "red_4",
+                "yellow_4",
+                "green_4",
                 "yellow_centerline",
+                "left_4",
             ],
         }
         for name, value in defaults.items():
@@ -125,9 +133,13 @@ class ObjectDetectionNode(Node):
             "red": self.parameter_float("red_confidence"),
             "yellow": self.parameter_float("yellow_confidence"),
             "green": self.parameter_float("green_confidence"),
+            "red_4": self.parameter_float("red_4_confidence"),
+            "yellow_4": self.parameter_float("yellow_4_confidence"),
+            "green_4": self.parameter_float("green_4_confidence"),
             "yellow_centerline": self.parameter_float(
                 "yellow_centerline_confidence"
             ),
+            "left_4": self.parameter_float("left_4_confidence"),
         }
         self.class_aliases = parse_class_aliases(
             self.get_parameter("class_aliases").value

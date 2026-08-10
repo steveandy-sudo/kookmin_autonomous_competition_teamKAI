@@ -18,6 +18,7 @@ SPEED_COMMAND="${1:-}"
 LOOKAHEAD_DISTANCE="${2:-${LOOKAHEAD_DISTANCE:-}}"
 STANLEY_PERCENT="${3:-${STANLEY_PERCENT:-}}"
 LEFT_OFFSET_CM="${4:-${LEFT_OFFSET_CM:-}}"
+SHORTCUT_START_DELAY_SEC="${5:-${SHORTCUT_START_DELAY_SEC:-}}"
 PURE_PURSUIT_CONTROL_X_M="${PURE_PURSUIT_CONTROL_X_M:-}"
 STANLEY_CONTROL_X_M="${STANLEY_CONTROL_X_M:-}"
 STANLEY_GAIN="${STANLEY_GAIN:-}"
@@ -115,6 +116,9 @@ if [[ "$STEERING_ONLY" != "true" ]]; then
   fi
 fi
 SPEED_COMMAND="$(awk -v speed="$SPEED_COMMAND" 'BEGIN { printf "%.3f", speed }')"
+
+prompt_float SHORTCUT_START_DELAY_SEC \
+  "left_4 소실 후 지름길 시작 지연 [s]" 0.75 0.0 10.0
 
 prompt_bool ADAPTIVE_STEERING_SPEED_ENABLED \
   "조향각 기반 속도 가감속 사용" true
@@ -379,6 +383,7 @@ echo "직선 Stanley: ${STRAIGHT_STANLEY_PERCENT}% | gain=${STRAIGHT_STANLEY_GAI
 echo "상충 Stanley: ${OPPOSED_STANLEY_PERCENT}% | 지연 예측=${CONTROL_LATENCY_PREVIEW_SEC}s"
 echo "곡선 조향 배수: ${CURVE_STEERING_MULTIPLIER_ENABLED} | ${CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND} 이상 x${CURVE_STEERING_MULTIPLIER} | 최대 +/-42"
 echo "좌측 주행 보정: ${LEFT_OFFSET_CM}cm"
+echo "left_4 소실 후 지름길 시작 지연: ${SHORTCUT_START_DELAY_SEC}s"
 echo "제어기를 준비합니다. 아직 차량은 정지 상태입니다."
 echo
 
@@ -395,4 +400,4 @@ export STEERING_SLOWDOWN_START_ANGLE STEERING_FULL_SLOWDOWN_ANGLE
 
 "$WORKSPACE/src/xycar_map_nav/scripts/run_space_hybrid_test.sh" \
   "$SPEED_COMMAND" "$LOOKAHEAD_DISTANCE" "$STANLEY_PERCENT" \
-  "$LEFT_OFFSET_CM"
+  "$LEFT_OFFSET_CM" "$SHORTCUT_START_DELAY_SEC"

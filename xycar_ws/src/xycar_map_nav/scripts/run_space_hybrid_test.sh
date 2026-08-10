@@ -18,6 +18,7 @@ SPEED_COMMAND="${1:-}"
 LOOKAHEAD_DISTANCE="${2:-}"
 STANLEY_PERCENT="${3:-}"
 LEFT_OFFSET_CM="${4:-}"
+SHORTCUT_START_DELAY_SEC="${5:-${SHORTCUT_START_DELAY_SEC:-}}"
 PURE_PURSUIT_CONTROL_X_M="${PURE_PURSUIT_CONTROL_X_M:-}"
 STANLEY_CONTROL_X_M="${STANLEY_CONTROL_X_M:-}"
 STANLEY_GAIN="${STANLEY_GAIN:-}"
@@ -186,6 +187,9 @@ SPEED_COMMAND="$(awk -v speed="$SPEED_COMMAND" 'BEGIN { printf "%.3f", speed }')
 
 prompt_float CONE_SENSOR_PRESENCE_TIMEOUT_SEC \
   "Cone sensor-loss hold [s]" 0.5 0.1 10.0
+prompt_float SHORTCUT_START_DELAY_SEC \
+  "Shortcut start delay after left_4 disappears [s]" \
+  0.75 0.0 10.0
 
 prompt_bool ADAPTIVE_STEERING_SPEED_ENABLED \
   "Adaptive steering speed" true
@@ -323,6 +327,7 @@ target_left_offset_cm: $LEFT_OFFSET_CM
 target_left_offset_m: $LEFT_OFFSET_M
 cone_speed_command: $CONE_SPEED_COMMAND
 cone_sensor_presence_timeout_sec: $CONE_SENSOR_PRESENCE_TIMEOUT_SEC
+shortcut_start_delay_sec: $SHORTCUT_START_DELAY_SEC
 test_profile: "$TEST_PROFILE"
 enable_rviz: $ENABLE_RVIZ
 start_cone: $START_CONE
@@ -450,11 +455,11 @@ else
   echo "RULE perception: canonical LR-ASPP."
 fi
 if [[ "$TEST_PROFILE" == "cone_obstacle" ]]; then
-  echo "Test profile: CONE-AS-VEHICLE YOLO+LiDAR AVOIDANCE > RULE."
+  echo "Test profile: TRAFFIC LIGHT/SHORTCUT > CONE-AS-VEHICLE AVOIDANCE > RULE."
 elif [[ "$TEST_PROFILE" == "avoidance_only" ]]; then
-  echo "Test profile: YOLO+LiDAR AVOIDANCE > RULE (cone disabled)."
+  echo "Test profile: TRAFFIC LIGHT/SHORTCUT > YOLO+LiDAR AVOIDANCE > RULE (cone disabled)."
 else
-  echo "Priority: CONE > YOLO+LiDAR AVOIDANCE > RULE."
+  echo "Priority: TRAFFIC LIGHT/SHORTCUT > CONE > YOLO+LiDAR AVOIDANCE > RULE."
 fi
 echo "Selected speed limit: $SPEED_COMMAND"
 if [[ "$ADAPTIVE_STEERING_SPEED_ENABLED" == "true" ]]; then
@@ -475,6 +480,7 @@ echo "Curve steering multiplier: ${CURVE_STEERING_MULTIPLIER_ENABLED}, |angle|>=
 echo "Left target correction: ${LEFT_OFFSET_CM}cm"
 echo "Cone speed command: $CONE_SPEED_COMMAND"
 echo "Cone sensor-loss hold: ${CONE_SENSOR_PRESENCE_TIMEOUT_SEC}s"
+echo "Shortcut start delay after left_4 disappearance: ${SHORTCUT_START_DELAY_SEC}s"
 if [[ "$VEHICLE_AVOIDANCE_IMMEDIATE_ON_YOLO" == "true" ]]; then
   echo "Avoidance: YOLO>=${VEHICLE_YOLO_MIN_CONFIDENCE}, one-frame immediate entry (LiDAR distance=telemetry), offsets=L${VEHICLE_LEFT_OFFSET_M}/R${VEHICLE_RIGHT_OFFSET_M}m"
 else
@@ -506,6 +512,7 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   speed_command:="$SPEED_COMMAND" \
   cone_speed_command:="$CONE_SPEED_COMMAND" \
   cone_sensor_presence_timeout_sec:="$CONE_SENSOR_PRESENCE_TIMEOUT_SEC" \
+  shortcut_start_delay_sec:="$SHORTCUT_START_DELAY_SEC" \
   lookahead_distance_m:="$LOOKAHEAD_DISTANCE" \
   pure_pursuit_weight:="$PURE_PURSUIT_WEIGHT" \
   pure_pursuit_control_x_m:="$PURE_PURSUIT_CONTROL_X_M" \

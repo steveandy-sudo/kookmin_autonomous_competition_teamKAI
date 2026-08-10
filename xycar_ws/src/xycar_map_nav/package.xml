@@ -25,6 +25,7 @@
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>std_srvs</exec_depend>
   <exec_depend>tf2_msgs</exec_depend>
+  <exec_depend>track_drive_sve</exec_depend>
   <exec_depend>wide_camera</exec_depend>
   <exec_depend>xycar_lidar</exec_depend>
   <exec_depend>xycar_rule_drive</exec_depend>

@@ -111,6 +111,10 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "start_object_detection", default_value="true"
             ),
+            DeclareLaunchArgument("start_shortcut", default_value="true"),
+            DeclareLaunchArgument(
+                "shortcut_start_delay_sec", default_value="0.75"
+            ),
             DeclareLaunchArgument(
                 "vehicle_avoidance_enabled", default_value="true"
             ),
@@ -655,6 +659,25 @@ def generate_launch_description():
                 ],
             ),
             Node(
+                package="track_drive_sve",
+                executable="shortcut_candidate_node",
+                name="shortcut_candidate",
+                condition=IfCondition(LaunchConfiguration("start_shortcut")),
+                output="screen",
+                parameters=[
+                    {
+                        "image_topic": (
+                            "/wide_camera_mjpeg/image_raw/compressed"
+                        ),
+                        "processing_enabled_topic": (
+                            "/hybrid/shortcut_processing_enabled"
+                        ),
+                        "candidate_topic": "/hybrid/shortcut_candidate",
+                        "maximum_abs_angle_command": 42.0,
+                    }
+                ],
+            ),
+            Node(
                 package="xycar_map_nav",
                 executable="sequential_hybrid_driver",
                 name="sequential_hybrid_driver",
@@ -672,6 +695,10 @@ def generate_launch_description():
                         "force_rule_only": ParameterValue(
                             LaunchConfiguration("force_rule_only"),
                             value_type=bool,
+                        ),
+                        "shortcut_start_delay_sec": ParameterValue(
+                            LaunchConfiguration("shortcut_start_delay_sec"),
+                            value_type=float,
                         ),
                         "scan_topic": scan_topic,
                         "minimum_speed_command": ParameterValue(

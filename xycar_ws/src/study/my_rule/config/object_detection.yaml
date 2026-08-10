@@ -28,13 +28,16 @@ my_rule_object_detection_node:
     red_confidence: 0.50
     yellow_confidence: 0.50
     green_confidence: 0.50
+    red_4_confidence: 0.50
+    yellow_4_confidence: 0.50
+    green_4_confidence: 0.50
     yellow_centerline_confidence: 0.45
+    left_4_confidence: 0.50
 
-    # The 2026-08-04 detector separates traffic-light hardware variants and
-    # red/green vehicles. Convert those raw labels into stable mission names.
+    # Keep the four-lamp classes distinct for the integrated traffic-light
+    # controller. Three-lamp signals remain generic startup signal names.
     class_aliases:
-      [green_3=green, green_4=green, red_3=red, red_4=red,
-       yellow_3=yellow, yellow_4=yellow,
+      [green_3=green, red_3=red, yellow_3=yellow,
        green_car=car, red_car=car]
 
     # At the first start only, YOLO owns the complete traffic-light box and
@@ -52,4 +55,6 @@ my_rule_object_detection_node:
     startup_green_min_pixel_ratio: 0.015
     startup_green_required_frames: 2
 
-    required_classes: [car, cone, red, yellow, green]
+    required_classes:
+      [car, cone, red, yellow, green,
+       red_4, yellow_4, green_4, left_4]
