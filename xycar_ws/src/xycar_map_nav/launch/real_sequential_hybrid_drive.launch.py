@@ -123,15 +123,15 @@ def generate_launch_description():
                 "vehicle_avoidance_enabled", default_value="true"
             ),
             DeclareLaunchArgument("scan_topic", default_value="/scan"),
-            DeclareLaunchArgument("speed_command", default_value="16.0"),
+            DeclareLaunchArgument("speed_command", default_value="22.0"),
             DeclareLaunchArgument(
                 "curvature_speed_control_enabled", default_value="true"
             ),
             DeclareLaunchArgument(
-                "curve_speed_command", default_value="10.0"
+                "curve_speed_command", default_value="14.0"
             ),
             DeclareLaunchArgument(
-                "degraded_path_speed_command", default_value="8.0"
+                "degraded_path_speed_command", default_value="12.0"
             ),
             DeclareLaunchArgument(
                 "curve_speed_exit_threshold_per_m", default_value="0.12"
@@ -148,7 +148,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "selector_minimum_speed_command", default_value="3.0"
             ),
-            DeclareLaunchArgument("cone_speed_command", default_value="6.0"),
+            DeclareLaunchArgument("cone_speed_command", default_value="10.0"),
             DeclareLaunchArgument(
                 "cone_sensor_presence_timeout_sec", default_value="0.5"
             ),
@@ -196,7 +196,7 @@ def generate_launch_description():
                 "adaptive_curve_lookahead_enabled", default_value="true"
             ),
             DeclareLaunchArgument(
-                "adaptive_curve_lookahead_m", default_value="0.75"
+                "adaptive_curve_lookahead_m", default_value="0.30"
             ),
             DeclareLaunchArgument(
                 "adaptive_curve_minimum_path_reach_m", default_value="1.0"

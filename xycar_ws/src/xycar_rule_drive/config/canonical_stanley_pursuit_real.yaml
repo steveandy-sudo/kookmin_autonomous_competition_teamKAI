@@ -26,7 +26,7 @@ canonical_stanley_pursuit_driver:
     # A confirmed far curve temporarily moves the PP target forward. A short
     # or noisy path cannot activate this preview.
     adaptive_curve_lookahead_enabled: true
-    adaptive_curve_lookahead_m: 0.75
+    adaptive_curve_lookahead_m: 0.30
     adaptive_curve_minimum_path_reach_m: 1.00
     adaptive_curve_confirmation_frames: 2
     adaptive_curve_release_frames: 2
@@ -58,11 +58,11 @@ canonical_stanley_pursuit_driver:
 
     # Safe first real-car defaults. The launch arguments can raise these only
     # after shadow output and curve completion have been checked.
-    cruise_speed_command: 16.0
+    cruise_speed_command: 22.0
     minimum_speed_command: 8.0
     curvature_speed_control_enabled: true
-    curve_speed_command: 10.0
-    degraded_path_speed_command: 8.0
+    curve_speed_command: 14.0
+    degraded_path_speed_command: 12.0
     curve_speed_exit_threshold_per_m: 0.12
     curve_speed_confirmation_frames: 2
     curve_speed_release_frames: 3

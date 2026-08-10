@@ -122,14 +122,42 @@ def test_steering_speed_limit_holds_cap_then_slows_to_8():
 
 
 def test_integrated_gate_applies_steering_speed_limit():
-    controller = SpaceDriveGateController(speed_command=10.0)
+    controller = SpaceDriveGateController(speed_command=22.0)
     controller.toggle()
     output = controller.command(
         candidate_fresh=True,
         candidate_angle_command=31.0,
-        candidate_speed_command=10.0,
+        candidate_speed_command=22.0,
     )
-    assert output.speed_command == pytest.approx(9.0)
+    assert output.speed_command == pytest.approx(17.0)
+
+
+def test_curve_candidate_slows_from_14_to_12_between_20_and_42_degrees():
+    controller = SpaceDriveGateController(
+        speed_command=22.0,
+        turn_speed_command=12.0,
+    )
+    controller.toggle()
+
+    at_20 = controller.command(
+        candidate_fresh=True,
+        candidate_angle_command=20.0,
+        candidate_speed_command=14.0,
+    )
+    at_31 = controller.command(
+        candidate_fresh=True,
+        candidate_angle_command=31.0,
+        candidate_speed_command=14.0,
+    )
+    at_42 = controller.command(
+        candidate_fresh=True,
+        candidate_angle_command=42.0,
+        candidate_speed_command=14.0,
+    )
+
+    assert at_20.speed_command == 14.0
+    assert at_31.speed_command == pytest.approx(13.0)
+    assert at_42.speed_command == 12.0
 
 
 def test_lower_cone_or_avoidance_speed_still_wins():

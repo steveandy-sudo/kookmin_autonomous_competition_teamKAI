@@ -115,8 +115,8 @@ prompt_bool() {
 if [[ "$STEERING_ONLY" == "true" ]]; then
   SPEED_COMMAND=0.0
 elif [[ -z "$SPEED_COMMAND" ]]; then
-  read -r -p "주행 속도 command [3.0-30.0, 기본 16.0]: " SPEED_COMMAND
-  SPEED_COMMAND="${SPEED_COMMAND:-16.0}"
+  read -r -p "주행 속도 command [3.0-30.0, 기본 22.0]: " SPEED_COMMAND
+  SPEED_COMMAND="${SPEED_COMMAND:-22.0}"
 fi
 if [[ "$STEERING_ONLY" != "true" ]]; then
   if [[ ! "$SPEED_COMMAND" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
@@ -140,11 +140,11 @@ else
     "직선/곡선 속도 분리 사용" true
   if [[ "$CURVATURE_SPEED_CONTROL_ENABLED" == "true" ]]; then
     curve_default="$(awk -v speed="$SPEED_COMMAND" \
-      'BEGIN { printf "%.3f", (speed < 10.0 ? speed : 10.0) }')"
+      'BEGIN { printf "%.3f", (speed < 14.0 ? speed : 14.0) }')"
     prompt_float CURVE_SPEED_COMMAND \
       "곡선 확정 시 속도 command" "$curve_default" 3.0 "$SPEED_COMMAND"
     degraded_default="$(awk -v curve="$CURVE_SPEED_COMMAND" \
-      'BEGIN { printf "%.3f", (curve < 8.0 ? curve : 8.0) }')"
+      'BEGIN { printf "%.3f", (curve < 12.0 ? curve : 12.0) }')"
     prompt_float DEGRADED_PATH_SPEED_COMMAND \
       "짧거나 기억된 경로의 속도 command" "$degraded_default" 3.0 \
       "$CURVE_SPEED_COMMAND"
@@ -162,7 +162,7 @@ if [[ "$ADAPTIVE_STEERING_SPEED_ENABLED" == "true" ]]; then
   prompt_float STEERING_FULL_SLOWDOWN_ANGLE \
     "최저속도에 도달할 절대 조향각" 42.0 0.0 42.0
   prompt_float STEERING_TURN_SPEED_COMMAND \
-    "최대 조향 시 속도 command" 8.0 0.0 30.0
+    "최대 조향 시 속도 command" 12.0 0.0 30.0
   if ! awk \
     -v start="$STEERING_SLOWDOWN_START_ANGLE" \
     -v full="$STEERING_FULL_SLOWDOWN_ANGLE" \
@@ -176,7 +176,7 @@ if [[ "$ADAPTIVE_STEERING_SPEED_ENABLED" == "true" ]]; then
 else
   STEERING_SLOWDOWN_START_ANGLE=20.000
   STEERING_FULL_SLOWDOWN_ANGLE=42.000
-  STEERING_TURN_SPEED_COMMAND=8.000
+  STEERING_TURN_SPEED_COMMAND=12.000
 fi
 
 if [[ -z "$LOOKAHEAD_DISTANCE" ]]; then

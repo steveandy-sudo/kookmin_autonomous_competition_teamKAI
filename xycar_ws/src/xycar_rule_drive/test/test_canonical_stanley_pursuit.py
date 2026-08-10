@@ -47,9 +47,9 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
 class CanonicalStanleyPursuitTest(unittest.TestCase):
     def test_curvature_speed_limit_uses_the_lowest_path_cap(self):
         common = {
-            "straight_speed_command": 16.0,
-            "curve_speed_command": 10.0,
-            "degraded_path_speed_command": 8.0,
+            "straight_speed_command": 22.0,
+            "curve_speed_command": 14.0,
+            "degraded_path_speed_command": 12.0,
         }
         self.assertEqual(
             curvature_speed_limit(
@@ -57,7 +57,7 @@ class CanonicalStanleyPursuitTest(unittest.TestCase):
                 curve_active=False,
                 degraded_path_active=False,
             ),
-            16.0,
+            22.0,
         )
         self.assertEqual(
             curvature_speed_limit(
@@ -65,7 +65,7 @@ class CanonicalStanleyPursuitTest(unittest.TestCase):
                 curve_active=True,
                 degraded_path_active=False,
             ),
-            10.0,
+            14.0,
         )
         self.assertEqual(
             curvature_speed_limit(
@@ -73,7 +73,7 @@ class CanonicalStanleyPursuitTest(unittest.TestCase):
                 curve_active=True,
                 degraded_path_active=True,
             ),
-            8.0,
+            12.0,
         )
 
     def test_curve_speed_mode_requires_two_frames_and_hysteresis(self):

@@ -1466,8 +1466,8 @@ class CanonicalStanleyPursuitDriver(Node):
         self.declare_parameter("straight_stanley_enabled", True)
         self.declare_parameter("straight_path_curvature_threshold", 0.16)
         self.declare_parameter("curvature_speed_control_enabled", False)
-        self.declare_parameter("curve_speed_command", 10.0)
-        self.declare_parameter("degraded_path_speed_command", 8.0)
+        self.declare_parameter("curve_speed_command", 14.0)
+        self.declare_parameter("degraded_path_speed_command", 12.0)
         self.declare_parameter("curve_speed_exit_threshold_per_m", 0.12)
         self.declare_parameter("curve_speed_confirmation_frames", 2)
         self.declare_parameter("curve_speed_release_frames", 3)
@@ -1476,7 +1476,7 @@ class CanonicalStanleyPursuitDriver(Node):
         self.declare_parameter("curve_detection_far_x_m", 0.30)
         self.declare_parameter("curve_detection_segment_count", 1)
         self.declare_parameter("adaptive_curve_lookahead_enabled", False)
-        self.declare_parameter("adaptive_curve_lookahead_m", 0.75)
+        self.declare_parameter("adaptive_curve_lookahead_m", 0.30)
         self.declare_parameter(
             "adaptive_curve_minimum_path_reach_m", 1.0
         )
@@ -1569,7 +1569,7 @@ class CanonicalStanleyPursuitDriver(Node):
         self.declare_parameter("steering_lead_time_sec", 0.0)
         self.declare_parameter("steering_max_lead_command", 0.0)
         self.declare_parameter("speed_gain_mps_per_cmd", 0.080612)
-        self.declare_parameter("cruise_speed_command", 20.0)
+        self.declare_parameter("cruise_speed_command", 22.0)
         self.declare_parameter("minimum_speed_command", 17.0)
         self.declare_parameter("curve_slowdown_angle_command", 24.0)
         self.declare_parameter("command_rate_hz", 7.0)

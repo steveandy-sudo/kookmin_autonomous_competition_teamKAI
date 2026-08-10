@@ -54,7 +54,7 @@ STEERING_SLOWDOWN_START_ANGLE="${STEERING_SLOWDOWN_START_ANGLE:-}"
 STEERING_FULL_SLOWDOWN_ANGLE="${STEERING_FULL_SLOWDOWN_ANGLE:-}"
 CONTROL_LOG="/tmp/xycar_hybrid_control_$(date +%Y%m%d_%H%M%S).log"
 RUN_CONFIG_FILE="${XYCAR_HYBRID_RUN_CONFIG_FILE:-/tmp/xycar_hybrid_run_config.yaml}"
-CONE_SPEED_COMMAND="6.0"
+CONE_SPEED_COMMAND="10.0"
 CONE_SENSOR_PRESENCE_TIMEOUT_SEC="${CONE_SENSOR_PRESENCE_TIMEOUT_SEC:-0.5}"
 TEST_PROFILE="${XYCAR_TEST_PROFILE:-integrated}"
 ENABLE_RVIZ="${XYCAR_ENABLE_RVIZ:-false}"
@@ -212,9 +212,9 @@ esac
 
 if [[ -z "$SPEED_COMMAND" ]]; then
   if [[ -t 0 ]]; then
-    read -r -p "Driving speed command [3.0-30.0, default 16.0]: " SPEED_COMMAND
+    read -r -p "Driving speed command [3.0-30.0, default 22.0]: " SPEED_COMMAND
   fi
-  SPEED_COMMAND="${SPEED_COMMAND:-16.0}"
+  SPEED_COMMAND="${SPEED_COMMAND:-22.0}"
 fi
 if [[ "$STEERING_ONLY" == "true" ]]; then
   SPEED_COMMAND=0.0
@@ -234,11 +234,11 @@ else
     "Separate straight/curve speed" true
   if [[ "$CURVATURE_SPEED_CONTROL_ENABLED" == "true" ]]; then
     curve_default="$(awk -v speed="$SPEED_COMMAND" \
-      'BEGIN { printf "%.3f", (speed < 10.0 ? speed : 10.0) }')"
+      'BEGIN { printf "%.3f", (speed < 14.0 ? speed : 14.0) }')"
     prompt_float CURVE_SPEED_COMMAND \
       "Confirmed curve speed command" "$curve_default" 3.0 "$SPEED_COMMAND"
     degraded_default="$(awk -v curve="$CURVE_SPEED_COMMAND" \
-      'BEGIN { printf "%.3f", (curve < 8.0 ? curve : 8.0) }')"
+      'BEGIN { printf "%.3f", (curve < 12.0 ? curve : 12.0) }')"
     prompt_float DEGRADED_PATH_SPEED_COMMAND \
       "Short/remembered path speed command" "$degraded_default" 3.0 \
       "$CURVE_SPEED_COMMAND"
@@ -259,7 +259,7 @@ if [[ "$ADAPTIVE_STEERING_SPEED_ENABLED" == "true" ]]; then
   prompt_float STEERING_FULL_SLOWDOWN_ANGLE \
     "Steering full slowdown angle" 42.0 0.0 42.0
   prompt_float STEERING_TURN_SPEED_COMMAND \
-    "Full-steering speed command" 8.0 0.0 30.0
+    "Full-steering speed command" 12.0 0.0 30.0
   if ! awk \
     -v start="$STEERING_SLOWDOWN_START_ANGLE" \
     -v full="$STEERING_FULL_SLOWDOWN_ANGLE" \
@@ -270,7 +270,7 @@ if [[ "$ADAPTIVE_STEERING_SPEED_ENABLED" == "true" ]]; then
 else
   STEERING_SLOWDOWN_START_ANGLE=20.000
   STEERING_FULL_SLOWDOWN_ANGLE=42.000
-  STEERING_TURN_SPEED_COMMAND=8.000
+  STEERING_TURN_SPEED_COMMAND=12.000
 fi
 
 if [[ -z "$LOOKAHEAD_DISTANCE" ]]; then
@@ -483,6 +483,16 @@ export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-7}"
 unset ROS_NAMESPACE || true
 
 launch_pid=""
+RUN_LOCK_FILE="${XYCAR_HYBRID_RUN_LOCK_FILE:-/tmp/xycar_hybrid_run.lock}"
+
+# Keep one authoritative controller stack. A stale stack can continue
+# publishing an older speed even when this invocation records a new setting.
+exec 9>"$RUN_LOCK_FILE"
+if ! flock -n 9; then
+  echo "[문제: 통합 주행 중복 실행] 다른 통합 주행 스크립트가 아직 실행 중입니다." >&2
+  echo "[확인 방법] 기존 주행 터미널에서 Ctrl+C로 종료한 뒤 다시 실행하세요." >&2
+  exit 1
+fi
 
 control_problem() {
   local title="$1"
@@ -491,6 +501,57 @@ control_problem() {
   echo >&2
   echo "[문제: $title] $topic 데이터가 준비되지 않았습니다." >&2
   echo "[확인 방법] $action" >&2
+}
+
+check_existing_control_stack() {
+  local nodes
+  local node
+  local conflicts=()
+  nodes="$(ros2 node list 2>/dev/null || true)"
+  for node in \
+    /canonical_stanley_pursuit_driver \
+    /sequential_hybrid_driver \
+    /space_drive_gate \
+    /my_rule_object_detection_node \
+    /my_rule_cone_node; do
+    if grep -Fxq "$node" <<<"$nodes"; then
+      conflicts+=("$node")
+    fi
+  done
+  if (( ${#conflicts[@]} > 0 )); then
+    echo "[문제: 이전 주행 제어기 잔존] 새 설정을 덮어쓸 노드가 이미 실행 중입니다." >&2
+    printf '  - %s\n' "${conflicts[@]}" >&2
+    echo "[확인 방법] 기존 주행 터미널에서 Ctrl+C로 종료하고, 위 노드가 사라진 뒤 다시 실행하세요." >&2
+    return 1
+  fi
+}
+
+read_double_parameter() {
+  local node="$1"
+  local parameter="$2"
+  ros2 param get "$node" "$parameter" 2>/dev/null \
+    | awk '/value is:/ { print $NF; exit }'
+}
+
+verify_runtime_cruise_speed() {
+  local actual
+  actual="$(read_double_parameter \
+    /canonical_stanley_pursuit_driver cruise_speed_command)"
+  if [[ -z "$actual" ]]; then
+    echo "[문제: 직선 속도 확인 실패] cruise_speed_command를 읽지 못했습니다." >&2
+    echo "[확인 방법] canonical_stanley_pursuit_driver의 파라미터 서비스를 확인하세요." >&2
+    return 1
+  fi
+  if ! awk -v requested="$SPEED_COMMAND" -v actual="$actual" \
+    'BEGIN { difference=requested-actual; if (difference<0) difference=-difference; exit !(difference < 0.001) }'; then
+    echo "[문제: 직선 속도 불일치] 입력=$SPEED_COMMAND, 실제 노드=$actual" >&2
+    echo "[확인 방법] 이전 주행 노드를 모두 종료하고 이 스크립트만 다시 실행하세요." >&2
+    return 1
+  fi
+  printf '  [OK] 직선 복귀 속도 입력=%s, 실제=%0.3f\n' \
+    "$SPEED_COMMAND" "$actual"
+  printf 'runtime_cruise_speed_command: %.3f\n' "$actual" \
+    >>"$RUN_CONFIG_FILE"
 }
 
 wait_for_control_message() {
@@ -541,6 +602,8 @@ cleanup() {
   fi
 }
 trap cleanup EXIT INT TERM
+
+check_existing_control_stack
 
 echo "Starting RULE base controller with mission overrides in shadow mode."
 echo "Model and waypoint source switching are disabled."
@@ -726,6 +789,9 @@ wait_for_control_message \
   /hybrid_gate/status \
   "주행 선택기" \
   "LiDAR /scan과 sequential_hybrid_driver를 확인하세요."
+if [[ "$RULE_PERCEPTION_BACKEND" == "canonical" ]]; then
+  verify_runtime_cruise_speed
+fi
 
 echo
 echo "========== READY | MODE=RULE | SPEED=$SPEED_COMMAND | LD=$LOOKAHEAD_DISTANCE | STANLEY=$STANLEY_PERCENT% | LEFT=${LEFT_OFFSET_CM}cm =========="
