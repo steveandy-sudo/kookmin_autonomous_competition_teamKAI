@@ -28,8 +28,18 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "drive_enabled",
-                default_value="true",
+                default_value="false",
                 description="Allow non-zero motor output.",
+            ),
+            DeclareLaunchArgument(
+                "acceleration_slew_enabled",
+                default_value="true",
+                description="Ramp motor acceleration instead of applying speed immediately.",
+            ),
+            DeclareLaunchArgument(
+                "steering_center_trim_command",
+                default_value="-5.0",
+                description="Servo-only steering center trim in legacy command units.",
             ),
             Node(
                 package="xycar_vesc_driver",
@@ -43,6 +53,16 @@ def generate_launch_description() -> LaunchDescription:
                         "drive_enabled": ParameterValue(
                             LaunchConfiguration("drive_enabled"),
                             value_type=bool,
+                        ),
+                        "acceleration_slew_enabled": ParameterValue(
+                            LaunchConfiguration("acceleration_slew_enabled"),
+                            value_type=bool,
+                        ),
+                        "steering_center_trim_command": ParameterValue(
+                            LaunchConfiguration(
+                                "steering_center_trim_command"
+                            ),
+                            value_type=float,
                         ),
                     },
                 ],

@@ -1,0 +1,95 @@
+xycar_hybrid_drive:
+  ros__parameters:
+    use_sim_time: false
+
+    # The same temporal camera+speed policy used by the final RL launch.
+    hybrid_device: cpu
+    hybrid_policy_cpu_threads: 4
+    hybrid_opencv_threads: 1
+    hybrid_policy_input_width: 160
+    hybrid_policy_input_height: 90
+    # Straight-only learned policy target. The launch remains disarmed unless
+    # drive_enabled is explicitly set true.
+    hybrid_model_speed_cap: 25.0
+    hybrid_model_stabilizer_enabled: true
+    hybrid_model_straight_steering_alpha: 0.20
+    hybrid_model_straight_rate_limit: 0.05
+    hybrid_model_straight_deadband: 0.02
+    hybrid_model_zero_crossing_threshold: 0.12
+    hybrid_model_timeout_sec: 0.35
+    hybrid_model_transition_neutral_sec: 0.0
+    hybrid_model_transition_fast_sec: 0.55
+    hybrid_model_transition_steering_alpha: 0.65
+    hybrid_model_transition_rate_limit: 0.25
+    hybrid_model_transition_steering_cap: 15.0
+    hybrid_skip_model_in_curve: true
+    hybrid_temporal_reset_gap_sec: 0.25
+    hybrid_canonical_timeout_sec: 0.50
+
+    # Enter the rule controller from the visible preview, not after the car has
+    # already reached the bend. Exit needs three stable straight frames.
+    hybrid_curve_entry_curvature_per_m: 0.16
+    hybrid_curve_exit_curvature_per_m: 0.10
+    hybrid_curve_entry_path_angle_rad: 0.12
+    hybrid_curve_exit_path_angle_rad: 0.11
+    hybrid_curve_entry_angle_command: 10.0
+    hybrid_curve_exit_angle_command: 6.0
+    hybrid_curve_entry_frames: 1
+    hybrid_curve_exit_frames: 1
+    hybrid_curve_min_duration_sec: 1.2
+    hybrid_straight_min_duration_sec: 0.0
+    hybrid_curve_near_x_m: 0.15
+    hybrid_curve_far_x_m: 1.35
+    # Preserve the camera rule controller's continuous steering authority.
+    hybrid_curve_three_level_enabled: false
+    hybrid_curve_continuous_alpha: 0.65
+    hybrid_curve_continuous_rate_limit_command: 8.0
+    hybrid_curve_full_lock_command: 42.0
+    hybrid_curve_zero_band_command: 2.0
+    hybrid_curve_pulse_duty_scale: 0.75
+    hybrid_curve_minimum_zero_frames: 1
+    hybrid_curve_maximum_zero_frames: 1
+    hybrid_curve_forced_pulse_min_command: 8.0
+    hybrid_curve_stable_pulse_min_command: 5.0
+    hybrid_curve_stable_pulse_frames: 2
+    hybrid_curve_speed_command: 25.0
+    hybrid_sim_track_mode_override: false
+    hybrid_sim_track_curve_feedback_enabled: false
+    hybrid_sim_track_curve_feedback_cte_gain: 1.5
+    hybrid_sim_track_curve_feedback_heading_gain: 1.5
+    hybrid_sim_track_curve_feedback_lookahead_m: 0.60
+    hybrid_sim_track_curve_feedback_deadband: 0.08
+    hybrid_sim_track_curve_feedback_min_command: 12.0
+    hybrid_sim_track_curve_exit_heading_guard_rad: 0.12
+    hybrid_sim_track_curve_exit_cte_guard_m: 0.15
+
+    # The previous +10 cm right calibration ran too far right on the real car.
+    # Moving the reference 10 cm left returns it to the yellow centerline.
+    target_right_offset_m: 0.0
+
+    # teamkai/hwj cone corridor profile. Start capped at the measured 9.5
+    # command and raise only after the shadow and lifted-wheel checks pass.
+    hybrid_cone_enabled: true
+    hybrid_scan_topic: /scan
+    hybrid_cone_entry_confidence: 0.35
+    hybrid_cone_entry_frames: 3
+    hybrid_cone_min_duration_sec: 1.0
+    hybrid_cone_exit_timeout_sec: 0.8
+    hybrid_cone_exit_creep_timeout_sec: 1.4
+    hybrid_cone_exit_creep_speed: 8.0
+    hybrid_cone_lane_recovery_frames: 4
+    hybrid_cone_speed_cap: 9.5
+    hybrid_mode_transition_max_delta_cmd: 14.0
+
+    hybrid_cone_max_range_m: 1.6
+    hybrid_cone_min_range_m: 0.18
+    hybrid_cone_scan_angle_offset_deg: 0.0
+    hybrid_cone_dbscan_eps_m: 0.15
+    hybrid_cone_expected_corridor_width_m: 0.85
+    hybrid_cone_min_corridor_width_m: 0.68
+    hybrid_cone_max_corridor_width_m: 0.98
+    hybrid_cone_lidar_to_rear_axle_m: 0.42
+    hybrid_cone_wheelbase_m: 0.33
+    hybrid_cone_speed: 17.0
+    hybrid_cone_min_drive_speed: 9.5
+    hybrid_cone_straight_boost_speed: 21.0

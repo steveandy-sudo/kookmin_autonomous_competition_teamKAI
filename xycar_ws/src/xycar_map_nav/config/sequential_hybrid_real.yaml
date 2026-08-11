@@ -1,0 +1,118 @@
+sequential_hybrid_driver:
+  ros__parameters:
+    use_sim_time: false
+    drive_enabled: false
+    gate_arming_required: false
+    drive_armed_topic: /hybrid_gate/drive_armed
+    control_rate_hz: 20.0
+
+    rl_command_topic: /rl/policy_motor_shadow
+    rule_command_topic: /hybrid/rule_candidate
+    cone_command_topic: /my_rule/cone_cmd
+    scan_topic: /scan
+    motor_topic: /xycar_motor
+    shadow_motor_topic: /hybrid_gate/xycar_motor_shadow
+    mode_topic: /hybrid_gate/mode
+    status_topic: /hybrid_gate/status
+    diagnostics_topic: /hybrid_gate/diagnostics
+
+    # Robust 20th-percentile distance in seven narrow LiDAR sectors.
+    sector_centers_deg: [-90.0, -60.0, -30.0, 0.0, 30.0, 60.0, 90.0]
+    sector_half_angle_deg: 8.0
+    sector_distance_quantile: 0.20
+    minimum_sector_points: 4
+    minimum_sector_span_deg: 4.0
+    scan_timeout_sec: 0.35
+
+    # The base controller is fixed to RULE. Cone and vehicle avoidance are
+    # independent mission overrides; there is no waypoint source switching.
+    initial_source: RULE
+
+    start_delay_sec: 3.0
+    candidate_fresh_sec: 0.35
+    candidate_hold_sec: 0.75
+    minimum_speed_command: 3.0
+    maximum_speed_command: 30.0
+    maximum_abs_angle_command: 42.0
+
+    # Cone mode may start anywhere. While either YOLO or LiDAR still sees a
+    # cone, the selector holds the last valid cone steering command. It exits
+    # after both sensors have been absent for the timeout. One control frame is
+    # used only to apply that timeout result, so no second release delay stacks.
+    cone_entry_confidence: 0.35
+    cone_exit_confidence: 0.20
+    cone_entry_frames: 3
+    cone_exit_frames: 1
+    # cone_node publishes a physical wheel target. Convert it to the calibrated
+    # Xycar servo command used by the main real-vehicle drive manager.
+    cone_max_target_angle_deg: 42.0
+    cone_steering_actual_deg: [0.0, 4.0, 10.0, 16.0, 26.0]
+    cone_steering_command: [0.0, 10.0, 20.0, 30.0, 42.0]
+    cone_yolo_min_confidence: 0.50
+    cone_yolo_required_frames: 2
+    cone_yolo_timeout_sec: 0.75
+    cone_entry_distance_m: 3.0
+    cone_cluster_timeout_sec: 0.50
+    cone_sensor_presence_timeout_sec: 0.5
+    cone_cluster_topic: /my_rule/cone_clusters
+    cone_processing_enabled_topic: /my_rule/cone_processing_enabled
+
+    # One YOLO frame plus the yellow centerline side selects the opposite lane
+    # immediately. LiDAR remains distance/space telemetry, not an entry veto.
+    # Traffic-light detections are intentionally not consumed here.
+    object_detections_topic: /my_rule/object_detections
+    vehicle_class_names: [obstacle_vehicle, car]
+    vehicle_yolo_min_confidence: 0.45
+    vehicle_yolo_required_frames: 1
+    vehicle_yolo_timeout_sec: 1.00
+    vehicle_camera_lidar_hfov_deg: 60.0
+    vehicle_camera_lidar_padding_deg: 3.0
+    vehicle_lidar_min_points: 2
+    # A stale car box must not bind a later traffic-light pole to avoidance.
+    # The detector runs at 3 Hz, so 0.5 s still spans a normal frame interval.
+    vehicle_lidar_sector_memory_sec: 0.5
+    vehicle_preferred_side_required_frames: 1
+    # Choose obstacle left/right only when both the rule command and the raw
+    # yellow geometry indicate a straight road. Curves wait instead of using
+    # the full-height straight divider fitted for white-lane classification.
+    vehicle_side_decision_straight_only: true
+    vehicle_side_decision_max_rule_angle_command: 8.0
+    vehicle_side_decision_rule_timeout_sec: 0.25
+    yellow_straight_max_rmse_px: 3.0
+    yellow_straight_min_span_ratio: 0.20
+    vehicle_avoidance_enabled: true
+    vehicle_avoidance_immediate_on_yolo: true
+    vehicle_avoidance_entry_distance_m: 1.20
+    vehicle_minimum_side_clearance_m: 0.70
+    # Shift equally from the calibrated normal-driving centerline.
+    vehicle_left_offset_m: 0.20
+    vehicle_right_offset_m: 0.20
+    vehicle_offset_rate_mps: 0.50
+    vehicle_avoidance_speed_limit_command: 8.0
+    vehicle_minimum_avoid_sec: 0.50
+    vehicle_clear_hold_sec: 0.50
+    vehicle_return_hold_sec: 0.30
+    vehicle_return_deadband_m: 0.02
+    avoidance_offset_topic: /hybrid/avoidance_lateral_offset
+    avoidance_debug_topic: /hybrid/avoidance_debug
+    avoidance_path_request_topic: /hybrid/avoidance_path_request
+    # Xycar envelope measured from the real vehicle: 28 cm at the wheels and
+    # 55 cm from the front LiDAR edge to the rear body edge.
+    vehicle_body_width_m: 0.28
+    vehicle_body_length_m: 0.55
+
+    # Multi-ray geometry rejects isolated noise and broad walls. It is used
+    # only after the vehicle YOLO has armed avoidance.
+    lidar_obstacle_detect_distance_m: 1.50
+    lidar_obstacle_minimum_distance_m: 0.18
+    lidar_obstacle_path_half_width_m: 0.18
+    lidar_obstacle_minimum_cluster_points: 3
+    lidar_obstacle_maximum_scan_index_gap: 2
+    lidar_obstacle_maximum_cluster_gap_m: 0.16
+    lidar_obstacle_minimum_cluster_width_m: 0.09
+    lidar_obstacle_maximum_cluster_width_m: 0.70
+    lidar_obstacle_side_probe_inner_m: 0.18
+    lidar_obstacle_side_probe_outer_m: 0.55
+    lidar_obstacle_lidar_x_m: 0.065
+    lidar_obstacle_lidar_y_m: 0.0
+    lidar_obstacle_lidar_yaw_deg: 0.0

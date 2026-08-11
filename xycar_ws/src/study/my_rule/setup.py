@@ -22,7 +22,9 @@ setup(
     zip_safe=True,
     maintainer="teamkai",
     maintainer_email="teamkai@example.com",
-    description="Rule-based autonomous driving node for the Kookmin Xycar final track.",
+    description=(
+        "Integrated lane, object-semantic, and LiDAR cone driving stack."
+    ),
     license="MIT",
     tests_require=["pytest"],
     entry_points={

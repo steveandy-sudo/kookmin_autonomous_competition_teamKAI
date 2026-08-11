@@ -1,0 +1,68 @@
+{
+  "frames": 1802,
+  "duration_sec": 72.484,
+  "average_hz": 24.847,
+  "detection": {
+    "both_white": {
+      "frames": 284,
+      "percent": 15.76
+    },
+    "one_white": {
+      "frames": 1322,
+      "percent": 73.36
+    },
+    "no_white": {
+      "frames": 196,
+      "percent": 10.88
+    },
+    "yellow": {
+      "frames": 880,
+      "percent": 48.83
+    },
+    "all_three": {
+      "frames": 247,
+      "percent": 13.71
+    }
+  },
+  "yellow_component_histogram": {
+    "0": 922,
+    "1": 308,
+    "2": 522,
+    "3": 49,
+    "5": 1
+  },
+  "geometry": {
+    "frames_with_white_spacing": 284,
+    "white_spacing_m_median": 0.9878,
+    "white_spacing_m_p10": 0.5876,
+    "white_spacing_m_p90": 1.0719,
+    "yellow_center_offset_m_median": 0.0147,
+    "yellow_center_offset_abs_m_p90": 0.0558
+  },
+  "longest_missing_runs": {
+    "white_pair": {
+      "frames": 270,
+      "duration_sec": 10.016,
+      "start_sec": 11.173,
+      "end_sec": 21.189
+    },
+    "any_white": {
+      "frames": 14,
+      "duration_sec": 0.447,
+      "start_sec": 22.379,
+      "end_sec": 22.826
+    },
+    "yellow": {
+      "frames": 74,
+      "duration_sec": 3.145,
+      "start_sec": 38.797,
+      "end_sec": 41.942
+    }
+  },
+  "bag": "/home/as/xycar_kookmin_gazebo_track/analysis/track_run_02_current_bag",
+  "canonical_contract": {
+    "width_px": 256,
+    "height_px": 144,
+    "width_m": 1.4
+  }
+}

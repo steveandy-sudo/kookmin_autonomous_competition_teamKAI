@@ -136,6 +136,10 @@ class VirtualVescIntegrationTest(unittest.TestCase):
                 "-p",
                 "drive_enabled:=true",
                 "-p",
+                "acceleration_slew_enabled:=true",
+                "-p",
+                "steering_center_trim_command:=-5.0",
+                "-p",
                 "publish_tf:=false",
             ]
         )
@@ -196,7 +200,7 @@ class VirtualVescIntegrationTest(unittest.TestCase):
             self.assertLess(ramp[0], 500)
             self.assertLess(max(ramp), 3692)
             self.assertTrue(
-                any(575 <= servo <= 590 for servo in virtual.servo_commands)
+                any(535 <= servo <= 550 for servo in virtual.servo_commands)
             )
 
             self.assertTrue(

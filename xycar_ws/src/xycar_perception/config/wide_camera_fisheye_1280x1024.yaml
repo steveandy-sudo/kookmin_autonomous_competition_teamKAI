@@ -1,0 +1,63 @@
+image_width: 1280
+image_height: 1024
+camera_name: wide_camera
+camera_matrix:
+  rows: 3
+  cols: 3
+  data:
+    - 725.9760698863265
+    - 0.0
+    - 685.4283617571
+    - 0.0
+    - 725.9655676685525
+    - 497.80435337486205
+    - 0.0
+    - 0.0
+    - 1.0
+distortion_model: equidistant
+distortion_coefficients:
+  rows: 1
+  cols: 4
+  data:
+    - -0.023278262724104614
+    - 0.0040440926898205444
+    - -0.006251740223863257
+    - 0.00246793717714305
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data:
+    - 1.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+projection_matrix:
+  rows: 3
+  cols: 4
+  data:
+    - 725.9760698863265
+    - 0.0
+    - 685.4283617571
+    - 0.0
+    - 0.0
+    - 725.9655676685525
+    - 497.80435337486205
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    - 0.0
+calibration_info:
+  model: opencv_fisheye
+  board_inner_corners:
+    - 8
+    - 9
+  square_size_m: 0.07
+  used_images: 100
+  failed_images: 0
+  rms_reprojection_error_px: 0.45765194028955725

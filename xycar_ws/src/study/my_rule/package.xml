@@ -3,7 +3,7 @@
 <package format="3">
   <name>my_rule</name>
   <version>0.0.1</version>
-  <description>Integrated LR-ASPP lane, low-rate YOLO mission semantics, and LiDAR cone control for the Kookmin Xycar.</description>
+  <description>Integrated lane, object-semantic, and LiDAR cone driving stack.</description>
   <maintainer email="teamkai@example.com">teamkai</maintainer>
   <license>MIT</license>
 

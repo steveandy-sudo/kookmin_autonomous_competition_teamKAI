@@ -1,0 +1,52 @@
+xycar_lane_rule_driver:
+  ros__parameters:
+    use_sim_time: true
+    road_segments_topic: /perception/road_segments
+    centerline_topic: /perception/centerline
+    centerline_fallback_enabled: true
+    motor_topic: /xycar_motor
+    shadow_motor_topic: /xycar_motor_shadow
+    drive_enabled: true
+    steering_only: false
+    target_path_topic: /rule_drive/target_path
+    debug_markers_topic: /rule_drive/debug_markers
+    base_frame_id: base_footprint
+
+    # The map road is 0.80 m wide; the target lane is centerline-to-boundary.
+    lane_width_m: 0.40
+    min_lane_width_m: 0.12
+    max_lane_width_m: 1.20
+    target_lane: right
+    yellow_offset_fallback_enabled: true
+    lane_center_offset_m: 0.20
+    # Keep the 0.30 m-wide vehicle farther from the inside white boundary.
+    path_bias_toward_yellow_m: 0.15
+    min_segment_points: 4
+    min_target_points: 3
+    sample_count: 18
+
+    wheel_base_m: 0.32
+    # Effective control point calibrated between chassis center and rear axle.
+    control_point_x_m: -0.08
+    steering_gain_rad_per_cmd: -0.0068
+    # Invert the same measured command-to-curvature map used by the Gazebo bridge.
+    use_measured_steering_map: true
+    steering_map_commands: [-42.0, -40.0, -35.0, -30.0, -20.0, -10.0, 0.0, 10.0, 20.0, 30.0, 35.0, 40.0, 42.0]
+    steering_map_curvatures: [1.502435, 1.383494, 1.174860, 0.922781, 0.552809, 0.194230, 0.0, -0.556883, -0.959829, -1.369323, -1.601706, -1.853397, -1.939236]
+    angle_command_min: -42.0
+    angle_command_max: 42.0
+    # Follow the near-field path; farther points remain preview-only in RViz.
+    lookahead_distance_m: 0.50
+    min_lookahead_x_m: 0.25
+
+    speed_command: 4.0
+    min_speed_command: 3.0
+    slow_down_angle_cmd: 18.0
+    max_abs_angle_for_drive: 43.0
+    perception_timeout_sec: 0.40
+    command_rate_hz: 20.0
+    # After perception loss, dead-reckon the last lane path for up to 5 seconds.
+    hold_last_path_sec: 5.0
+    prediction_enabled: true
+    prediction_speed_command: 3.0
+    speed_gain_mps_per_cmd: 0.080612

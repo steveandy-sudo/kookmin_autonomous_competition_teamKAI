@@ -24,12 +24,17 @@ from rclpy.qos import (
 from sensor_msgs.msg import CompressedImage, Image
 from std_msgs.msg import Bool
 
-from my_rule.perception.camera_input import CameraRectifier, decode_compressed_bgr
+from my_rule.perception.camera_input import (
+    CameraRectifier,
+    decode_compressed_bgr,
+)
 from my_rule.perception.object_perception import (
     DetectionRecord,
+    apply_class_aliases,
     filter_detections,
     green_hsv_evidence_in_box,
     normalize_class_name,
+    parse_class_aliases,
 )
 
 
@@ -40,8 +45,13 @@ class ObjectDetectionNode(Node):
         super().__init__("my_rule_object_detection_node")
         package_share = Path(get_package_share_directory("my_rule"))
         defaults = {
-            "model_path": str(package_share / "models" / "my_rule_objects.pt"),
+            "model_path": str(
+                package_share
+                / "models"
+                / "kookmin_objects_best_20260804.pt"
+            ),
             "image_topic": "/wide_camera_mjpeg/image_raw/compressed",
+            "use_compressed_image": True,
             "detections_topic": "/my_rule/object_detections",
             "debug_topic": "/my_rule/object_detection/debug_image",
             "startup_green_topic": "/my_rule/start_signal_green",
@@ -64,6 +74,9 @@ class ObjectDetectionNode(Node):
             "yellow_confidence": 0.50,
             "green_confidence": 0.50,
             "yellow_centerline_confidence": 0.45,
+            # A non-empty identity alias makes rclpy infer STRING_ARRAY;
+            # launch YAML can then replace it with model-specific aliases.
+            "class_aliases": ["car=car"],
             "startup_signal_hsv_enabled": True,
             "startup_signal_hsv_rate_hz": 20.0,
             "startup_signal_box_timeout_sec": 1.0,
@@ -89,7 +102,7 @@ class ObjectDetectionNode(Node):
 
         self.bridge = CvBridge()
         self.lock = threading.Lock()
-        self.latest_image: CompressedImage | None = None
+        self.latest_image: CompressedImage | Image | None = None
         self.last_processed_stamp_ns: int | None = None
         self.received_count = 0
         self.processed_count = 0
@@ -116,6 +129,9 @@ class ObjectDetectionNode(Node):
                 "yellow_centerline_confidence"
             ),
         }
+        self.class_aliases = parse_class_aliases(
+            self.get_parameter("class_aliases").value
+        )
         self.rectifier: CameraRectifier | None = None
         if bool(self.get_parameter("enable_rectify").value):
             camera_yaml = str(self.get_parameter("camera_yaml").value)
@@ -141,7 +157,9 @@ class ObjectDetectionNode(Node):
             str(self.get_parameter("model_path").value)
         ).expanduser().resolve()
         if not model_path.is_file():
-            raise FileNotFoundError(f"object YOLO model not found: {model_path}")
+            raise FileNotFoundError(
+                f"object YOLO model not found: {model_path}"
+            )
         try:
             from ultralytics import YOLO
 
@@ -164,15 +182,18 @@ class ObjectDetectionNode(Node):
                 normalize_class_name(value)
                 for value in list(model_names)
             }
+        canonical_names = {
+            self.class_aliases.get(name, name) for name in names
+        }
         required = {
             normalize_class_name(value)
             for value in self.get_parameter("required_classes").value
         }
-        missing = sorted(required - names)
+        missing = sorted(required - canonical_names)
         if missing:
             raise RuntimeError(
                 f"object model is missing required classes {missing}; "
-                f"available={sorted(names)}"
+                f"raw={sorted(names)}, canonical={sorted(canonical_names)}"
             )
 
         qos = QoSProfile(
@@ -203,8 +224,13 @@ class ObjectDetectionNode(Node):
         )
         self.image_group = MutuallyExclusiveCallbackGroup()
         self.inference_group = MutuallyExclusiveCallbackGroup()
+        image_type = (
+            CompressedImage
+            if bool(self.get_parameter("use_compressed_image").value)
+            else Image
+        )
         self.create_subscription(
-            CompressedImage,
+            image_type,
             str(self.get_parameter("image_topic").value),
             self.on_image,
             qos,
@@ -221,14 +247,15 @@ class ObjectDetectionNode(Node):
         self.get_logger().info(
             f"object YOLO ready: model={model_path}, rate={rate_hz:.1f}Hz, "
             f"device={self.get_parameter('device').value}, "
-            f"classes={sorted(names)}"
+            f"raw_classes={sorted(names)}, "
+            f"canonical_classes={sorted(canonical_names)}"
         )
 
     def parameter_float(self, name: str) -> float:
         return float(self.get_parameter(name).value)
 
     @staticmethod
-    def message_stamp_ns(message: CompressedImage) -> int:
+    def message_stamp_ns(message: CompressedImage | Image) -> int:
         return (
             int(message.header.stamp.sec) * 1_000_000_000
             + int(message.header.stamp.nanosec)
@@ -242,14 +269,22 @@ class ObjectDetectionNode(Node):
             return 0.0
         return delta_ns / 1.0e9
 
-    def on_image(self, message: CompressedImage) -> None:
+    def on_image(self, message: CompressedImage | Image) -> None:
         self.received_count += 1
         with self.lock:
             self.latest_image = message
         self.process_startup_signal_hsv(message)
 
-    def decode_and_rectify(self, message: CompressedImage):
-        frame = decode_compressed_bgr(message.data)
+    def decode_and_rectify(self, message: CompressedImage | Image):
+        if isinstance(message, CompressedImage):
+            frame = decode_compressed_bgr(message.data)
+        else:
+            try:
+                frame = self.bridge.imgmsg_to_cv2(
+                    message, desired_encoding="bgr8"
+                )
+            except Exception:
+                return None
         if frame is None:
             return None
         if self.rectifier is not None:
@@ -308,7 +343,7 @@ class ObjectDetectionNode(Node):
 
     def process_startup_signal_hsv(
         self,
-        message: CompressedImage,
+        message: CompressedImage | Image,
     ) -> None:
         """Confirm startup green at camera rate inside the cached YOLO box."""
         if not bool(
@@ -429,7 +464,11 @@ class ObjectDetectionNode(Node):
                 xyxy = boxes.xyxy.detach().cpu().numpy()
                 confidences = boxes.conf.detach().cpu().numpy()
                 class_ids = boxes.cls.detach().cpu().numpy().astype(int)
-                names = getattr(result, "names", getattr(self.model, "names", {}))
+                names = getattr(
+                    result,
+                    "names",
+                    getattr(self.model, "names", {}),
+                )
                 for coordinates, score, class_id in zip(
                     xyxy, confidences, class_ids
                 ):
@@ -449,7 +488,10 @@ class ObjectDetectionNode(Node):
                             ymax=int(max(0, min(height, round(ymax)))),
                         )
                     )
-        accepted = filter_detections(records, self.thresholds)
+        accepted = filter_detections(
+            apply_class_aliases(records, self.class_aliases),
+            self.thresholds,
+        )
         self.update_startup_signal_box(accepted, width, height)
         output = ObjectDetectionArray()
         output.header = message.header

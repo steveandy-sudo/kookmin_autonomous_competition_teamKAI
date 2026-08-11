@@ -1,0 +1,48 @@
+{
+  "eval_final_straight_cmd25_raw_10w_20260805": {
+    "cte_max": 0.2805692857190144,
+    "cte_mean": 0.06339446075255682,
+    "cte_p95": 0.2236824179174901,
+    "episodes": 30,
+    "large_jumps": 0,
+    "large_oscillation_steps": 0,
+    "reasons": {
+      "straight_segment_complete": 30
+    },
+    "rows": 291,
+    "sign_flips": 26,
+    "small_sign_flips": 26,
+    "speed_max": 24.97587165236473,
+    "speed_mean": 24.746347061444805,
+    "speed_p10": 24.581599444150925,
+    "speed_p50": 24.762642472982407,
+    "speed_p90": 24.89091393351555,
+    "steering_abs_mean": 0.04471516694218085,
+    "steering_delta_max": 0.07663295976817608,
+    "steering_delta_mean": 0.01926555239849267,
+    "steering_delta_p95": 0.0482813473790884
+  },
+  "eval_final_straight_cmd25_stabilized_10w_20260805": {
+    "cte_max": 0.3274265647516242,
+    "cte_mean": 0.06587481301545675,
+    "cte_p95": 0.23342261049884688,
+    "episodes": 30,
+    "large_jumps": 0,
+    "large_oscillation_steps": 0,
+    "reasons": {
+      "straight_segment_complete": 30
+    },
+    "rows": 276,
+    "sign_flips": 17,
+    "small_sign_flips": 17,
+    "speed_max": 24.95076447725296,
+    "speed_mean": 24.752281895798184,
+    "speed_p10": 24.59241035580635,
+    "speed_p50": 24.773167058825493,
+    "speed_p90": 24.893529042601585,
+    "steering_abs_mean": 0.038680695202302835,
+    "steering_delta_max": 0.07609391212463379,
+    "steering_delta_mean": 0.015542608815930573,
+    "steering_delta_p95": 0.04294968047179282
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "configuration": {
+    "straight_controller": "RL only",
+    "straight_checkpoint": "xycar_ws/src/xycar_rl/models/straight_speed25_recovery_v3_20260805/camera_speed_td3_bc_best.pth",
+    "curve_controller": "continuous rule",
+    "curve_three_level_enabled": false,
+    "speed_command": 25.0,
+    "target_right_offset_m": 0.0,
+    "gazebo_curve_feedback": "CAD pure pursuit",
+    "gazebo_curve_lookahead_m": 1.2,
+    "real_curve_feedback": "camera canonical rule; CAD feedback disabled"
+  },
+  "straight_validation": {
+    "executed_episodes": 27,
+    "successful_episodes": 27,
+    "mean_speed_command": 24.985,
+    "large_oscillation_events": 0,
+    "source": "datasets/rl/eval_final_straight_v3_normal_30ep_10w_20260805"
+  },
+  "final_gazebo_laps": [
+    {
+      "source": "analysis/hybrid_gt_lap34_v3_pure_pursuit_20260805.json",
+      "result": "lap_complete",
+      "progress_fraction": 0.9804000829112947,
+      "mean_speed_command": 24.99039295155515,
+      "curve_speed_command": 25.0,
+      "max_abs_cte_m": 0.4981051073691734
+    },
+    {
+      "source": "analysis/hybrid_gt_lap35_v3_pure_pursuit_repeat1_20260805.json",
+      "result": "lap_complete",
+      "progress_fraction": 0.9806024982958023,
+      "motion_elapsed_sec": 12.79792476700004,
+      "mean_speed_command": 24.99339891516644,
+      "curve_speed_command": 25.0,
+      "max_abs_cte_m": 0.20257684439739568
+    },
+    {
+      "source": "analysis/hybrid_gt_lap36_v3_pure_pursuit_repeat2_20260805.json",
+      "result": "lap_complete",
+      "progress_fraction": 0.9805060580531163,
+      "motion_elapsed_sec": 12.796247551000306,
+      "mean_speed_command": 24.991619504016377,
+      "curve_speed_command": 25.0,
+      "max_abs_cte_m": 0.28482349006754026
+    }
+  ],
+  "summary": {
+    "consecutive_laps_completed": 3,
+    "consecutive_lap_attempts": 3,
+    "instrumented_motion_time_mean_sec": 12.797086159000173,
+    "instrumented_motion_time_range_sec": [
+      12.796247551000306,
+      12.79792476700004
+    ],
+    "mean_speed_command_across_laps": 24.991803790246,
+    "maximum_cte_across_laps_m": 0.4981051073691734
+  },
+  "scope_note": "Gazebo CAD pose feedback is simulation-only. Real launch uses camera-derived continuous curve rule and remains disarmed by default pending shadow and lifted-wheel checks."
+}

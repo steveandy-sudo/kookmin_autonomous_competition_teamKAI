@@ -60,6 +60,47 @@ def normalize_class_name(name: str) -> str:
     )
 
 
+def parse_class_aliases(entries: Iterable[str]) -> dict[str, str]:
+    """Parse ``source=target`` class aliases into normalized names."""
+    aliases: dict[str, str] = {}
+    for entry in entries:
+        source, separator, target = str(entry).partition("=")
+        source = normalize_class_name(source)
+        target = normalize_class_name(target)
+        if separator != "=" or not source or not target:
+            raise ValueError(
+                f"invalid class alias {entry!r}; expected source=target"
+            )
+        aliases[source] = target
+    return aliases
+
+
+def apply_class_aliases(
+    records: Iterable[DetectionRecord],
+    aliases: Mapping[str, str],
+) -> list[DetectionRecord]:
+    """Map model-specific labels to stable mission-level class names."""
+    normalized_aliases = {
+        normalize_class_name(source): normalize_class_name(target)
+        for source, target in aliases.items()
+    }
+    mapped: list[DetectionRecord] = []
+    for record in records:
+        source = normalize_class_name(record.class_name)
+        mapped.append(
+            DetectionRecord(
+                class_name=normalized_aliases.get(source, source),
+                class_id=int(record.class_id),
+                confidence=float(record.confidence),
+                xmin=int(record.xmin),
+                ymin=int(record.ymin),
+                xmax=int(record.xmax),
+                ymax=int(record.ymax),
+            )
+        )
+    return mapped
+
+
 def filter_detections(
     records: Iterable[DetectionRecord],
     thresholds: Mapping[str, float],

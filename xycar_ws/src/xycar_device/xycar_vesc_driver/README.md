@@ -25,12 +25,14 @@ The legacy conversion constants are preserved. The node directly publishes
 `/vehicle/vesc_state`, `/vehicle/system_telemetry`, `/odom`,
 `/xycar_motor_bridge/debug`, `/tf`, and `/diagnostics`.
 
-## Safety behavior
+## Safety defaults
 
-- `drive_enabled` is true for competition launch use.
+- `drive_enabled` is false.
 - firmware must be 2.18;
 - commands stop after a 0.5 second publisher timeout;
-- acceleration is slew-limited;
+- acceleration is moderately slew-limited at `0.6 m/s^2`; set
+  `acceleration_slew_enabled:=false` only when immediate application is
+  intentionally required;
 - fresh VESC telemetry is required;
 - acceleration is inhibited below 7.5 V;
 - propulsion is reduced linearly from 7.5 V to zero at 6.0 V;
@@ -53,7 +55,7 @@ colcon build --symlink-install \
 source install/setup.bash
 ```
 
-## Start
+## First start: output disabled
 
 Stop the ROS 1 motor container and dynamic bridge first. Only one process may
 own `/dev/ttyMOTOR`.
@@ -64,16 +66,16 @@ ros2 topic echo /vehicle/vesc_state
 ros2 topic echo /diagnostics
 ```
 
-The driver is armed by default. Confirm the firmware version, approximately
-50 Hz VESC telemetry, fault code zero, and correct voltage before publishing
-any non-zero command.
+Confirm the firmware version, approximately 50 Hz VESC telemetry, fault code
+zero, and correct voltage before enabling output.
 
 ## Wheels-off-ground validation
 
 Keep a physical emergency stop available.
 
 ```bash
-ros2 launch xycar_vesc_driver xycar_vesc_driver.launch.py
+ros2 launch xycar_vesc_driver xycar_vesc_driver.launch.py \
+  drive_enabled:=true
 
 ros2 topic pub --once /xycar_motor std_msgs/msg/Float32MultiArray \
   '{data: [0.0, 1.0]}'
