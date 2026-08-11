@@ -27,6 +27,17 @@ __pycache__/
 *.mp4
 *.avi
 
+# Local rosbag exports and extracted camera captures
+/rosbag2_*/
+/*-20??????T??????Z-?-???/
+/camera_*/
+
+# Local perception datasets and training/benchmark outputs
+/--- 3-4---- --.v2i.yolov8/
+/lane_model_compare_*/
+/runs/
+/yolo*.pt
+
 # Imitation-learning datasets and trained weights
 datasets/
 models/
