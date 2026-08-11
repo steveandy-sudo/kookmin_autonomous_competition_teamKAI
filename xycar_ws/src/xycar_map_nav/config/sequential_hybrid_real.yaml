@@ -45,13 +45,13 @@ sequential_hybrid_driver:
     cone_exit_frames: 1
     # cone_node publishes a physical wheel target. Convert it to the calibrated
     # Xycar servo command used by the main real-vehicle drive manager.
-    cone_max_target_angle_deg: 26.0
+    cone_max_target_angle_deg: 42.0
     cone_steering_actual_deg: [0.0, 4.0, 10.0, 16.0, 26.0]
     cone_steering_command: [0.0, 10.0, 20.0, 30.0, 42.0]
     cone_yolo_min_confidence: 0.50
     cone_yolo_required_frames: 2
     cone_yolo_timeout_sec: 0.75
-    cone_entry_distance_m: 1.0
+    cone_entry_distance_m: 3.0
     cone_cluster_timeout_sec: 0.50
     cone_sensor_presence_timeout_sec: 0.5
     cone_cluster_topic: /my_rule/cone_clusters

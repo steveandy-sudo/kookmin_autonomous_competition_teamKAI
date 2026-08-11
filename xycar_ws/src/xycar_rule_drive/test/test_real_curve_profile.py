@@ -39,5 +39,5 @@ def test_real_profile_enables_measured_delay_compensation():
     assert parameters["steering_max_lead_command"] == 6.0
     assert parameters["cruise_speed_command"] == 18.0
     assert parameters["minimum_speed_command"] == 8.0
-    assert parameters["curve_speed_command"] == 14.0
+    assert parameters["curve_speed_command"] == 16.0
     assert parameters["degraded_path_speed_command"] == 12.0

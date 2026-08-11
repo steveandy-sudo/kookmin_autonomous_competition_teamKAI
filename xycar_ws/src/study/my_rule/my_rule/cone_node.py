@@ -39,7 +39,7 @@ class ConeNode(Node):
             "processing_enabled_topic",
             "/my_rule/cone_processing_enabled",
         )
-        self.declare_parameter("max_range_m", 1.6)
+        self.declare_parameter("max_range_m", 3.0)
         self.declare_parameter("min_range_m", 0.18)
         self.declare_parameter("scan_angle_offset_deg", 0.0)
         self.declare_parameter("scan_front_min_deg", -70.0)
@@ -57,7 +57,7 @@ class ConeNode(Node):
         self.declare_parameter("group_grow_distance_m", 0.5)
         self.declare_parameter("seed_min_angle_deg", 20.0)
         self.declare_parameter("seed_max_angle_deg", 100.0)
-        self.declare_parameter("seed_max_range_m", 0.9)
+        self.declare_parameter("seed_max_range_m", 3.0)
         self.declare_parameter("allow_single_boundary_fallback", True)
         self.declare_parameter("single_boundary_min_cones", 2)
         self.declare_parameter("single_boundary_min_span_m", 0.20)
@@ -72,8 +72,12 @@ class ConeNode(Node):
         self.declare_parameter("lookahead_scale", 0.12)
         self.declare_parameter("far_preview_distance_m", 0.75)
         self.declare_parameter("far_preview_weight", 0.65)
-        self.declare_parameter("steering_gain", 1.18)
-        self.declare_parameter("max_steer_cmd", 26.0)
+        self.declare_parameter("steering_gain", 1.05)
+        self.declare_parameter("max_steer_cmd", 42.0)
+        # Keep the established speed reduction profile independent from the
+        # wider steering range.  Otherwise raising max_steer_cmd would make a
+        # given bend run faster even though only its steering headroom changed.
+        self.declare_parameter("cone_speed_full_steer_deg", 26.0)
         self.declare_parameter("cone_speed", 17.0)
         self.declare_parameter("cone_min_drive_speed", 9.0)
         self.declare_parameter("cone_speed_steer_exponent", 1.0)
@@ -536,6 +540,7 @@ class ConeNode(Node):
             # single boundary must never replace this path just because it has
             # more points; that caused left/right source flapping in S turns.
             self.midpoint_source = "paired"
+            self.active_inferred_boundary = None
             self.pending_inferred_boundary = None
             self.pending_inferred_frames = 0
             return midpoints
@@ -592,6 +597,14 @@ class ConeNode(Node):
             return desired_side
 
         if desired_side == active_side:
+            self.pending_inferred_boundary = None
+            self.pending_inferred_frames = 0
+            return active_side
+
+        # Once a usable single boundary has been selected, keep following its
+        # inward normal until a measured bilateral corridor is available.  A
+        # temporarily denser opposite boundary must not flip the inferred path.
+        if active_side in candidates:
             self.pending_inferred_boundary = None
             self.pending_inferred_frames = 0
             return active_side
@@ -706,19 +719,28 @@ class ConeNode(Node):
         half_width = expected_width * 0.5
         centerline: List[Point2] = []
         for index, (x, y) in enumerate(points):
-            before = points[max(0, index - 1)]
-            after = points[min(len(points) - 1, index + 1)]
+            # A wider local baseline makes the boundary normal less sensitive
+            # to one noisy cone while still following an S-shaped corridor.
+            before = points[max(0, index - 2)]
+            after = points[min(len(points) - 1, index + 2)]
             dx = after[0] - before[0]
             dy = after[1] - before[1]
-            if abs(dx) <= 1e-6 and abs(dy) <= 1e-6:
-                slope = 0.0
+            tangent_norm = math.hypot(dx, dy)
+            if tangent_norm <= 1e-6:
+                tangent_x, tangent_y = 1.0, 0.0
             else:
-                slope = dy / max(abs(dx), 1e-6)
-            norm = math.sqrt(1.0 + slope * slope)
+                tangent_x = dx / tangent_norm
+                tangent_y = dy / tangent_norm
             if is_left_boundary:
-                centerline.append((x + half_width * slope / norm, y - half_width / norm))
+                normal_x, normal_y = tangent_y, -tangent_x
             else:
-                centerline.append((x - half_width * slope / norm, y + half_width / norm))
+                normal_x, normal_y = -tangent_y, tangent_x
+            centerline.append(
+                (
+                    x + half_width * normal_x,
+                    y + half_width * normal_y,
+                )
+            )
         return sorted(centerline, key=lambda p: p[0])
 
     def interpolate_path(self, midpoints: Sequence[Point2]) -> List[Point2]:
@@ -975,7 +997,10 @@ class ConeNode(Node):
     ) -> float:
         minimum = float(self.get_parameter("cone_min_drive_speed").value)
         base = max(minimum, float(self.get_parameter("cone_speed").value))
-        limit = max(1.0, float(self.get_parameter("max_steer_cmd").value))
+        limit = max(
+            1.0,
+            float(self.get_parameter("cone_speed_full_steer_deg").value),
+        )
         preview_angle = 0.0
         available_distance = 0.0
         if bool(self.get_parameter("cone_preview_speed_control").value) and path:

@@ -128,7 +128,7 @@ def generate_launch_description():
                 "curvature_speed_control_enabled", default_value="true"
             ),
             DeclareLaunchArgument(
-                "curve_speed_command", default_value="14.0"
+                "curve_speed_command", default_value="16.0"
             ),
             DeclareLaunchArgument(
                 "degraded_path_speed_command", default_value="12.0"

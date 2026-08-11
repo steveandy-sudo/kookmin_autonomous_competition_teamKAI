@@ -21,11 +21,19 @@ def test_cone_requires_confirmed_yolo_lidar_entry():
     for _ in range(3):
         assert observe(latch, yolo=False) == ConeModeEvent.NONE
     for _ in range(3):
-        assert observe(latch, distance=1.2) == ConeModeEvent.NONE
+        assert observe(latch, distance=3.2) == ConeModeEvent.NONE
     assert observe(latch) == ConeModeEvent.NONE
     assert observe(latch) == ConeModeEvent.NONE
     assert observe(latch) == ConeModeEvent.STARTED
     assert latch.active
+
+
+def test_cone_accepts_lidar_cluster_within_three_meters():
+    latch = make_latch()
+
+    assert observe(latch, distance=2.8) == ConeModeEvent.NONE
+    assert observe(latch, distance=2.8) == ConeModeEvent.NONE
+    assert observe(latch, distance=2.8) == ConeModeEvent.STARTED
 
 
 def test_yolo_presence_holds_last_cone_mode_when_command_is_invalid():

@@ -18,7 +18,7 @@ class ConeModeConfig:
     entry_confidence: float = 0.35
     entry_frames: int = 3
     exit_frames: int = 1
-    entry_distance_m: float = 1.0
+    entry_distance_m: float = 3.0
 
 
 class ConeModeLatch:

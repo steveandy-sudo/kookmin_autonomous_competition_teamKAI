@@ -485,7 +485,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("cone_exit_confidence", 0.20)
         self.declare_parameter("cone_entry_frames", 3)
         self.declare_parameter("cone_exit_frames", 1)
-        self.declare_parameter("cone_max_target_angle_deg", 26.0)
+        self.declare_parameter("cone_max_target_angle_deg", 42.0)
         self.declare_parameter(
             "cone_steering_actual_deg", [0.0, 4.0, 10.0, 16.0, 26.0]
         )
@@ -495,7 +495,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("cone_yolo_min_confidence", 0.50)
         self.declare_parameter("cone_yolo_required_frames", 2)
         self.declare_parameter("cone_yolo_timeout_sec", 0.75)
-        self.declare_parameter("cone_entry_distance_m", 1.0)
+        self.declare_parameter("cone_entry_distance_m", 3.0)
         self.declare_parameter("cone_cluster_timeout_sec", 0.50)
         self.declare_parameter("cone_sensor_presence_timeout_sec", 0.5)
         self.declare_parameter("cone_cluster_topic", "/my_rule/cone_clusters")

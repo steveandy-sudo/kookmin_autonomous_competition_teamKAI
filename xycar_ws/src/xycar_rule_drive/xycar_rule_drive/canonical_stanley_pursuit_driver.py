@@ -1466,7 +1466,7 @@ class CanonicalStanleyPursuitDriver(Node):
         self.declare_parameter("straight_stanley_enabled", True)
         self.declare_parameter("straight_path_curvature_threshold", 0.16)
         self.declare_parameter("curvature_speed_control_enabled", False)
-        self.declare_parameter("curve_speed_command", 14.0)
+        self.declare_parameter("curve_speed_command", 16.0)
         self.declare_parameter("degraded_path_speed_command", 12.0)
         self.declare_parameter("curve_speed_exit_threshold_per_m", 0.12)
         self.declare_parameter("curve_speed_confirmation_frames", 2)

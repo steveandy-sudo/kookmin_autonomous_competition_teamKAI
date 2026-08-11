@@ -234,7 +234,7 @@ else
     "Separate straight/curve speed" true
   if [[ "$CURVATURE_SPEED_CONTROL_ENABLED" == "true" ]]; then
     curve_default="$(awk -v speed="$SPEED_COMMAND" \
-      'BEGIN { printf "%.3f", (speed < 14.0 ? speed : 14.0) }')"
+      'BEGIN { printf "%.3f", (speed < 16.0 ? speed : 16.0) }')"
     prompt_float CURVE_SPEED_COMMAND \
       "Confirmed curve speed command" "$curve_default" 3.0 "$SPEED_COMMAND"
     degraded_default="$(awk -v curve="$CURVE_SPEED_COMMAND" \

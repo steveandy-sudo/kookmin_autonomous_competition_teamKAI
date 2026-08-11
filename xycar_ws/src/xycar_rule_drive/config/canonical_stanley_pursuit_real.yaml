@@ -61,7 +61,7 @@ canonical_stanley_pursuit_driver:
     cruise_speed_command: 18.0
     minimum_speed_command: 8.0
     curvature_speed_control_enabled: true
-    curve_speed_command: 14.0
+    curve_speed_command: 16.0
     degraded_path_speed_command: 12.0
     curve_speed_exit_threshold_per_m: 0.12
     curve_speed_confirmation_frames: 2
