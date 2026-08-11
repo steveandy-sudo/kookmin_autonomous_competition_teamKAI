@@ -377,13 +377,13 @@ def test_immediate_yolo_rearms_during_return_without_distance_gate():
     )
     assert controller.state().mode == YoloLidarAvoidanceMode.AVOID_RIGHT
     controller.step(
-        now_sec=1.0,
+        now_sec=1.2,
         dt_sec=0.1,
         obstacle=None,
         cone_active=False,
     )
     state = controller.step(
-        now_sec=1.1,
+        now_sec=1.3,
         dt_sec=0.1,
         obstacle=None,
         cone_active=False,
@@ -391,14 +391,14 @@ def test_immediate_yolo_rearms_during_return_without_distance_gate():
     assert state.mode == YoloLidarAvoidanceMode.RETURN_CENTER
 
     controller.observe_yolo(
-        now_sec=1.2,
+        now_sec=1.4,
         detected=True,
         confidence=0.9,
         lidar_distance_m=8.0,
         preferred_mode=YoloLidarAvoidanceMode.AVOID_RIGHT,
     )
     state = controller.step(
-        now_sec=1.2,
+        now_sec=1.4,
         dt_sec=0.1,
         obstacle=None,
         cone_active=False,

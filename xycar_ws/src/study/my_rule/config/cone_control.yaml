@@ -66,7 +66,7 @@ my_rule_cone_node:
     expected_corridor_width_m: 0.85
     min_path_midpoints: 2
     min_path_span_m: 0.15
-    max_path_target_jump_m: 0.45
+    max_path_target_jump_m: 0.30
     inferred_max_path_target_jump_m: 0.25
     steering_median_window: 1
     steering_max_delta_deg: 14.0

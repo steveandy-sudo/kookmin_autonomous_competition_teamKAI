@@ -64,7 +64,7 @@ sequential_hybrid_driver:
     vehicle_class_names: [obstacle_vehicle, car]
     vehicle_yolo_min_confidence: 0.45
     vehicle_yolo_required_frames: 1
-    vehicle_yolo_timeout_sec: 2.50
+    vehicle_yolo_timeout_sec: 1.00
     vehicle_camera_lidar_hfov_deg: 60.0
     vehicle_camera_lidar_padding_deg: 3.0
     vehicle_lidar_min_points: 2
@@ -84,14 +84,13 @@ sequential_hybrid_driver:
     vehicle_avoidance_immediate_on_yolo: true
     vehicle_avoidance_entry_distance_m: 1.20
     vehicle_minimum_side_clearance_m: 0.70
-    # Keep avoidance inside the road: left is reduced by 5 cm and right by
-    # 2 cm from the previous 0.33 m real-vehicle tuning.
-    vehicle_left_offset_m: 0.28
-    vehicle_right_offset_m: 0.31
-    vehicle_offset_rate_mps: 0.35
+    # Shift equally from the calibrated normal-driving centerline.
+    vehicle_left_offset_m: 0.20
+    vehicle_right_offset_m: 0.20
+    vehicle_offset_rate_mps: 0.50
     vehicle_avoidance_speed_limit_command: 8.0
-    vehicle_minimum_avoid_sec: 0.80
-    vehicle_clear_hold_sec: 1.0
+    vehicle_minimum_avoid_sec: 0.50
+    vehicle_clear_hold_sec: 0.50
     vehicle_return_hold_sec: 0.30
     vehicle_return_deadband_m: 0.02
     avoidance_offset_topic: /hybrid/avoidance_lateral_offset

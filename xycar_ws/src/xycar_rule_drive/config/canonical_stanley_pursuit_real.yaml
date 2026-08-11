@@ -58,7 +58,7 @@ canonical_stanley_pursuit_driver:
 
     # Safe first real-car defaults. The launch arguments can raise these only
     # after shadow output and curve completion have been checked.
-    cruise_speed_command: 22.0
+    cruise_speed_command: 18.0
     minimum_speed_command: 8.0
     curvature_speed_control_enabled: true
     curve_speed_command: 14.0

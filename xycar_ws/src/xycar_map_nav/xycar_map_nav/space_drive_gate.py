@@ -277,7 +277,7 @@ class SpaceDriveGate(Node):
         self.declare_parameter("steering_only", False)
         self.declare_parameter("adaptive_steering_speed_enabled", True)
         self.declare_parameter("turn_speed_command", 12.0)
-        self.declare_parameter("slowdown_start_angle_command", 20.0)
+        self.declare_parameter("slowdown_start_angle_command", 18.0)
         self.declare_parameter("full_slowdown_angle_command", 42.0)
         self.declare_parameter("candidate_timeout_sec", 0.40)
         self.declare_parameter("publish_rate_hz", 20.0)

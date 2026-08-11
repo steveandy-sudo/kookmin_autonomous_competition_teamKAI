@@ -115,8 +115,8 @@ prompt_bool() {
 if [[ "$STEERING_ONLY" == "true" ]]; then
   SPEED_COMMAND=0.0
 elif [[ -z "$SPEED_COMMAND" ]]; then
-  read -r -p "주행 속도 command [3.0-30.0, 기본 22.0]: " SPEED_COMMAND
-  SPEED_COMMAND="${SPEED_COMMAND:-22.0}"
+  read -r -p "주행 속도 command [3.0-30.0, 기본 18.0]: " SPEED_COMMAND
+  SPEED_COMMAND="${SPEED_COMMAND:-18.0}"
 fi
 if [[ "$STEERING_ONLY" != "true" ]]; then
   if [[ ! "$SPEED_COMMAND" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
@@ -158,7 +158,7 @@ prompt_bool ADAPTIVE_STEERING_SPEED_ENABLED \
   "조향각 기반 속도 가감속 사용" true
 if [[ "$ADAPTIVE_STEERING_SPEED_ENABLED" == "true" ]]; then
   prompt_float STEERING_SLOWDOWN_START_ANGLE \
-    "속도 감속을 시작할 절대 조향각" 20.0 0.0 42.0
+    "속도 감속을 시작할 절대 조향각" 18.0 0.0 42.0
   prompt_float STEERING_FULL_SLOWDOWN_ANGLE \
     "최저속도에 도달할 절대 조향각" 42.0 0.0 42.0
   prompt_float STEERING_TURN_SPEED_COMMAND \
@@ -174,7 +174,7 @@ if [[ "$ADAPTIVE_STEERING_SPEED_ENABLED" == "true" ]]; then
     exit 2
   fi
 else
-  STEERING_SLOWDOWN_START_ANGLE=20.000
+  STEERING_SLOWDOWN_START_ANGLE=18.000
   STEERING_FULL_SLOWDOWN_ANGLE=42.000
   STEERING_TURN_SPEED_COMMAND=12.000
 fi

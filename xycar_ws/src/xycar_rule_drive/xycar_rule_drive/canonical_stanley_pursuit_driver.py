@@ -1569,7 +1569,7 @@ class CanonicalStanleyPursuitDriver(Node):
         self.declare_parameter("steering_lead_time_sec", 0.0)
         self.declare_parameter("steering_max_lead_command", 0.0)
         self.declare_parameter("speed_gain_mps_per_cmd", 0.080612)
-        self.declare_parameter("cruise_speed_command", 22.0)
+        self.declare_parameter("cruise_speed_command", 18.0)
         self.declare_parameter("minimum_speed_command", 17.0)
         self.declare_parameter("curve_slowdown_angle_command", 24.0)
         self.declare_parameter("command_rate_hz", 7.0)

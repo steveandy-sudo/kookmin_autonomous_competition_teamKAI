@@ -123,7 +123,7 @@ def generate_launch_description():
                 "vehicle_avoidance_enabled", default_value="true"
             ),
             DeclareLaunchArgument("scan_topic", default_value="/scan"),
-            DeclareLaunchArgument("speed_command", default_value="22.0"),
+            DeclareLaunchArgument("speed_command", default_value="18.0"),
             DeclareLaunchArgument(
                 "curvature_speed_control_enabled", default_value="true"
             ),
@@ -148,7 +148,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "selector_minimum_speed_command", default_value="3.0"
             ),
-            DeclareLaunchArgument("cone_speed_command", default_value="10.0"),
+            DeclareLaunchArgument("cone_speed_command", default_value="8.0"),
             DeclareLaunchArgument(
                 "cone_sensor_presence_timeout_sec", default_value="0.5"
             ),
@@ -289,7 +289,7 @@ def generate_launch_description():
                 "vehicle_yolo_required_frames", default_value="1"
             ),
             DeclareLaunchArgument(
-                "vehicle_yolo_timeout_sec", default_value="2.50"
+                "vehicle_yolo_timeout_sec", default_value="1.00"
             ),
             DeclareLaunchArgument(
                 "vehicle_camera_lidar_hfov_deg", default_value="60.0"
@@ -323,18 +323,18 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "vehicle_minimum_side_clearance_m", default_value="0.70"
             ),
-            DeclareLaunchArgument("vehicle_left_offset_m", default_value="0.28"),
-            DeclareLaunchArgument("vehicle_right_offset_m", default_value="0.31"),
+            DeclareLaunchArgument("vehicle_left_offset_m", default_value="0.20"),
+            DeclareLaunchArgument("vehicle_right_offset_m", default_value="0.20"),
             DeclareLaunchArgument(
-                "vehicle_offset_rate_mps", default_value="0.35"
+                "vehicle_offset_rate_mps", default_value="0.50"
             ),
             DeclareLaunchArgument(
                 "vehicle_avoidance_speed_limit_command", default_value="8.0"
             ),
             DeclareLaunchArgument(
-                "vehicle_minimum_avoid_sec", default_value="0.80"
+                "vehicle_minimum_avoid_sec", default_value="0.50"
             ),
-            DeclareLaunchArgument("vehicle_clear_hold_sec", default_value="1.0"),
+            DeclareLaunchArgument("vehicle_clear_hold_sec", default_value="0.50"),
             DeclareLaunchArgument("vehicle_return_hold_sec", default_value="0.30"),
             DeclareLaunchArgument(
                 "vehicle_return_deadband_m", default_value="0.02"
