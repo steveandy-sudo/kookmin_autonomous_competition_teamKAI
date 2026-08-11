@@ -127,6 +127,19 @@ class ShortcutCore:
         self.t_left_turn_active = False
         self.t_left_turn_start_time = None
 
+    def start_cruise(self, now_sec):
+        """Start at the verified lane cruise without replaying timed entry.
+
+        The semantic W1/Y1 controller owns the entry turn.  Once both selected
+        boundaries are aligned with the vehicle forward axis, the integrated
+        candidate uses this method to hand control to the already verified
+        cruise/T-exit implementation.
+        """
+        self.reset()
+        self.phase = "cruise"
+        self.phase_start_sec = float(now_sec)
+        self._log("[shortcut] semantic entry complete -> cruise")
+
     def compute(self, image, now_sec):
         """지름길 주행 명령을 반환. (angle, speed, done)"""
         if image is None:

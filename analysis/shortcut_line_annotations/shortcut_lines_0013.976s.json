@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "contract": "two white lines and two yellow lines in one BEV frame",
+  "image_width": 640,
+  "image_height": 660,
+  "bag_offset_sec": 13.975969735,
+  "timestamp_ns": 1786345385141885872,
+  "matching_policy": "match color, left-to-right rank, direction, and curvature; do not reuse absolute pixels across PCs",
+  "lines": [
+    {
+      "label": "W1",
+      "color": "white",
+      "detected": true,
+      "left_to_right_rank_within_color": 0,
+      "points_px": [
+        [
+          134.10398483276367,
+          508.1884217262268
+        ],
+        [
+          32.95836312430242,
+          388.46550941467285
+        ]
+      ],
+      "points_normalized": [
+        [
+          0.20953747630119324,
+          0.7699824571609497
+        ],
+        [
+          0.05149744238172253,
+          0.5885841051737467
+        ]
+      ],
+      "fit_x_from_y_coefficients": [
+        0.8712319168733127,
+        -0.4612958158099643
+      ],
+      "direction_dx_dy": 0.8712319168733127,
+      "curvature": 0.0,
+      "mean_lateral_ratio": 0.1305174593414579,
+      "observed_y_span_ratio": 0.181398351987203
+    },
+    {
+      "label": "W2",
+      "color": "white",
+      "detected": true,
+      "left_to_right_rank_within_color": 1,
+      "points_px": [
+        [
+          217.09554399762834,
+          543.1077826023102
+        ],
+        [
+          346.77139895302906,
+          183.94065856933594
+        ]
+      ],
+      "points_normalized": [
+        [
+          0.33921178749629427,
+          0.82289057970047
+        ],
+        [
+          0.5418303108641079,
+          0.2786979675292969
+        ]
+      ],
+      "fit_x_from_y_coefficients": [
+        -0.37232869178327077,
+        0.6455975605169477
+      ],
+      "direction_dx_dy": -0.37232869178327077,
+      "curvature": 0.0,
+      "mean_lateral_ratio": 0.4405210491802011,
+      "observed_y_span_ratio": 0.5441926121711731
+    },
+    {
+      "label": "Y1",
+      "color": "yellow",
+      "detected": true,
+      "left_to_right_rank_within_color": 0,
+      "points_px": [
+        [
+          245.62439101082936,
+          418.3969521522522
+        ],
+        [
+          227.47016498020716,
+          371.0066485404968
+        ]
+      ],
+      "points_normalized": [
+        [
+          0.3837881109544209,
+          0.6339347759882609
+        ],
+        [
+          0.3554221327815737,
+          0.5621312856674194
+        ]
+      ],
+      "fit_x_from_y_coefficients": [
+        0.39505012982097065,
+        0.1333520954022305
+      ],
+      "direction_dx_dy": 0.39505012982097065,
+      "curvature": 0.0,
+      "mean_lateral_ratio": 0.3696051218679973,
+      "observed_y_span_ratio": 0.07180349032084143
+    },
+    {
+      "label": "Y2",
+      "color": "yellow",
+      "detected": true,
+      "left_to_right_rank_within_color": 1,
+      "points_px": [
+        [
+          401.23338563101635,
+          515.6720101833344
+        ],
+        [
+          460.8847400120327,
+          238.81390810012817
+        ]
+      ],
+      "points_normalized": [
+        [
+          0.626927165048463,
+          0.7813212275505066
+        ],
+        [
+          0.720132406268801,
+          0.3618392546971639
+        ]
+      ],
+      "fit_x_from_y_coefficients": [
+        -0.22219129128803816,
+        0.8005299375086651
+      ],
+      "direction_dx_dy": -0.22219129128803816,
+      "curvature": 0.0,
+      "mean_lateral_ratio": 0.673529785658632,
+      "observed_y_span_ratio": 0.4194819728533427
+    }
+  ],
+  "selected_white": null,
+  "selected_yellow": null
+}

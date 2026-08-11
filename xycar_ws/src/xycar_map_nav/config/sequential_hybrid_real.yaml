@@ -88,6 +88,11 @@ sequential_hybrid_driver:
     shortcut_yolo_required_frames: 2
     shortcut_yolo_absence_frames: 2
     shortcut_start_delay_sec: 0.75
+    # Legacy defaults stay unchanged. The semantic launch overrides delay to
+    # zero, enables ready waiting, and applies command 4 from S through entry.
+    shortcut_wait_for_entry_ready: false
+    shortcut_entry_search_timeout_sec: 12.0
+    shortcut_entry_search_speed_command: 4.0
     shortcut_candidate_timeout_sec: 0.35
     shortcut_rearm_absence_sec: 1.0
     vehicle_class_names: [obstacle_vehicle, car]

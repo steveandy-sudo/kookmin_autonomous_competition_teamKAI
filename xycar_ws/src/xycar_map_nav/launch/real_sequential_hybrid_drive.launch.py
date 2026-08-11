@@ -4,7 +4,11 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import (
+    LaunchConfiguration,
+    PathJoinSubstitution,
+    PythonExpression,
+)
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
@@ -23,6 +27,13 @@ def generate_launch_description():
             FindPackageShare("lane_seg_control"),
             "launch",
             "direct_bev_stanley_pursuit.launch.py",
+        ]
+    )
+    shortcut_semantic_launch = PathJoinSubstitution(
+        [
+            FindPackageShare("shortcut_entry_review"),
+            "launch",
+            "shortcut_entry_semantic_control.launch.py",
         ]
     )
     rule_base = PathJoinSubstitution(
@@ -113,7 +124,37 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("start_shortcut", default_value="true"),
             DeclareLaunchArgument(
+                "shortcut_semantic_entry_enabled", default_value="false"
+            ),
+            DeclareLaunchArgument(
+                "shortcut_lane_model",
+                default_value=PathJoinSubstitution(
+                    [
+                        FindPackageShare("xycar_perception"),
+                        "models",
+                        "kookmin_lane_lraspp_mbv3s_256x144.pt",
+                    ]
+                ),
+            ),
+            DeclareLaunchArgument(
+                "shortcut_camera_yaml",
+                default_value=object_camera_yaml,
+            ),
+            DeclareLaunchArgument(
+                "shortcut_command_topic",
+                default_value="/hybrid/shortcut_candidate",
+            ),
+            DeclareLaunchArgument(
+                "shortcut_entry_speed_command", default_value="4.0"
+            ),
+            DeclareLaunchArgument(
+                "shortcut_entry_w1_path_weight", default_value="0.60"
+            ),
+            DeclareLaunchArgument(
                 "shortcut_start_delay_sec", default_value="0.75"
+            ),
+            DeclareLaunchArgument(
+                "shortcut_entry_search_timeout_sec", default_value="12.0"
             ),
             DeclareLaunchArgument(
                 "vehicle_avoidance_enabled", default_value="true"
@@ -658,11 +699,63 @@ def generate_launch_description():
                     },
                 ],
             ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(shortcut_semantic_launch),
+                condition=IfCondition(
+                    PythonExpression(
+                        [
+                            "str('",
+                            LaunchConfiguration("start_shortcut"),
+                            "').lower() in ('true','1','yes','on') and str('",
+                            LaunchConfiguration(
+                                "shortcut_semantic_entry_enabled"
+                            ),
+                            "').lower() in ('true','1','yes','on')",
+                        ]
+                    )
+                ),
+                launch_arguments={
+                    "source_topic": (
+                        "/wide_camera_mjpeg/image_raw/compressed"
+                    ),
+                    "processing_enabled_topic": (
+                        "/hybrid/shortcut_processing_enabled"
+                    ),
+                    "candidate_topic": LaunchConfiguration(
+                        "shortcut_command_topic"
+                    ),
+                    "entry_speed_command": LaunchConfiguration(
+                        "shortcut_entry_speed_command"
+                    ),
+                    "w1_path_weight": LaunchConfiguration(
+                        "shortcut_entry_w1_path_weight"
+                    ),
+                    "lane_model": LaunchConfiguration("shortcut_lane_model"),
+                    "camera_yaml": LaunchConfiguration(
+                        "shortcut_camera_yaml"
+                    ),
+                    "default_enabled": "false",
+                    "use_sim_time": "false",
+                    "show_opencv_windows": "false",
+                }.items(),
+            ),
             Node(
                 package="track_drive_sve",
                 executable="shortcut_candidate_node",
                 name="shortcut_candidate",
-                condition=IfCondition(LaunchConfiguration("start_shortcut")),
+                condition=IfCondition(
+                    PythonExpression(
+                        [
+                            "str('",
+                            LaunchConfiguration("start_shortcut"),
+                            "').lower() in ('true','1','yes','on') and str('",
+                            LaunchConfiguration(
+                                "shortcut_semantic_entry_enabled"
+                            ),
+                            "').lower() not in ('true','1','yes','on')",
+                        ]
+                    )
+                ),
                 output="screen",
                 parameters=[
                     {
@@ -672,7 +765,9 @@ def generate_launch_description():
                         "processing_enabled_topic": (
                             "/hybrid/shortcut_processing_enabled"
                         ),
-                        "candidate_topic": "/hybrid/shortcut_candidate",
+                        "candidate_topic": LaunchConfiguration(
+                            "shortcut_command_topic"
+                        ),
                         "maximum_abs_angle_command": 42.0,
                     }
                 ],
@@ -697,8 +792,48 @@ def generate_launch_description():
                             value_type=bool,
                         ),
                         "shortcut_start_delay_sec": ParameterValue(
-                            LaunchConfiguration("shortcut_start_delay_sec"),
+                            PythonExpression(
+                                [
+                                    "'0.0' if str('",
+                                    LaunchConfiguration(
+                                        "shortcut_semantic_entry_enabled"
+                                    ),
+                                    "').lower() in ('true','1','yes','on') else '",
+                                    LaunchConfiguration(
+                                        "shortcut_start_delay_sec"
+                                    ),
+                                    "'",
+                                ]
+                            ),
                             value_type=float,
+                        ),
+                        "shortcut_wait_for_entry_ready": ParameterValue(
+                            LaunchConfiguration(
+                                "shortcut_semantic_entry_enabled"
+                            ),
+                            value_type=bool,
+                        ),
+                        "shortcut_enabled": ParameterValue(
+                            LaunchConfiguration("start_shortcut"),
+                            value_type=bool,
+                        ),
+                        "shortcut_entry_ready_topic": (
+                            "/shortcut/entry/ready"
+                        ),
+                        "shortcut_entry_search_timeout_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "shortcut_entry_search_timeout_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "shortcut_entry_search_speed_command": ParameterValue(
+                            LaunchConfiguration(
+                                "shortcut_entry_speed_command"
+                            ),
+                            value_type=float,
+                        ),
+                        "shortcut_command_topic": LaunchConfiguration(
+                            "shortcut_command_topic"
                         ),
                         "scan_topic": scan_topic,
                         "minimum_speed_command": ParameterValue(

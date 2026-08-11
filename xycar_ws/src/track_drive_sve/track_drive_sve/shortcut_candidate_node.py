@@ -58,6 +58,7 @@ class ShortcutCandidateNode(Node):
         self.declare_parameter("control_rate_hz", 20.0)
         self.declare_parameter("maximum_input_age_sec", 0.35)
         self.declare_parameter("maximum_abs_angle_command", 42.0)
+        self.declare_parameter("start_in_cruise", False)
 
         self.bridge = CvBridge()
         self.core = ShortcutCore(
@@ -120,7 +121,10 @@ class ShortcutCandidateNode(Node):
     def _on_enabled(self, message: Bool) -> None:
         requested = bool(message.data)
         if requested and not self.enabled:
-            self.core.reset()
+            if bool(self.get_parameter("start_in_cruise").value):
+                self.core.start_cruise(time.monotonic())
+            else:
+                self.core.reset()
             self.completed = False
             self.enabled = True
             self.get_logger().warning("SHORTCUT candidate enabled")
