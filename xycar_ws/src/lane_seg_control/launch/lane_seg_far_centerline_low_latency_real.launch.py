@@ -32,7 +32,6 @@ def generate_launch_description():
             DeclareLaunchArgument("cpu_threads", default_value="4"),
             DeclareLaunchArgument("max_output_rate_hz", default_value="20.0"),
             DeclareLaunchArgument("debug_rate_hz", default_value="0.0"),
-            DeclareLaunchArgument("model_python_prefix", default_value=""),
             DeclareLaunchArgument(
                 "image_topic",
                 default_value="/wide_camera_mjpeg/image_raw/compressed",
@@ -63,9 +62,6 @@ def generate_launch_description():
                 PythonLaunchDescriptionSource(canonical_launch),
                 launch_arguments={
                     "model_path": model_path,
-                    "model_python_prefix": LaunchConfiguration(
-                        "model_python_prefix"
-                    ),
                     "input_width": "512",
                     "input_height": "288",
                     "image_topic": LaunchConfiguration("image_topic"),

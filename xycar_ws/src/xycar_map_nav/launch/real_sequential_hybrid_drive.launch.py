@@ -92,7 +92,6 @@ def generate_launch_description():
             DeclareLaunchArgument("force_rule_only", default_value="true"),
             DeclareLaunchArgument("enable_rviz", default_value="false"),
             DeclareLaunchArgument("start_perception", default_value="true"),
-            DeclareLaunchArgument("model_python_prefix", default_value=""),
             DeclareLaunchArgument(
                 "camera_image_topic",
                 default_value="/wide_camera_mjpeg/image_raw/compressed",
@@ -411,9 +410,6 @@ def generate_launch_description():
                 launch_arguments={
                     "max_output_rate_hz": LaunchConfiguration(
                         "perception_max_output_rate_hz"
-                    ),
-                    "model_python_prefix": LaunchConfiguration(
-                        "model_python_prefix"
                     ),
                     "image_topic": LaunchConfiguration("camera_image_topic"),
                     "use_compressed_image": LaunchConfiguration(
@@ -865,7 +861,6 @@ def generate_launch_description():
             Node(
                 package="my_rule",
                 executable="object_detection_node",
-                prefix=LaunchConfiguration("model_python_prefix"),
                 name="my_rule_object_detection_node",
                 condition=IfCondition(
                     LaunchConfiguration("start_object_detection")

@@ -135,6 +135,48 @@ RViz panel named `YOLO Object Detection (live model)` is expected to say
 Road and Planned Lane Path Image panels; the rectified camera and recorded
 waypoint lines remain visible.
 
+### Prepare the model runtime once per vehicle computer
+
+The standard real-vehicle launch uses the ROS system Python directly, just as
+the operational yellow-center branch does.  Do not activate Conda and do not
+change the launch scripts' Python executable.  On Ubuntu 22.04 with ROS 2
+Humble, install the same dependencies on each computer from the repository
+root:
+
+```bash
+sudo apt update
+sudo apt install -y \
+  python3-pip \
+  python3-torch \
+  python3-torchvision \
+  python3-opencv \
+  python3-numpy \
+  python3-yaml \
+  python3-requests \
+  python3-scipy \
+  python3-matplotlib \
+  python3-pil \
+  python3-tqdm \
+  python3-psutil \
+  python3-pandas \
+  python3-seaborn \
+  python3-cpuinfo
+
+/usr/bin/python3 -m pip install --user --no-deps \
+  -r xycar_ws/src/study/my_rule/requirements.txt \
+  'ultralytics-thop>=2.0.0'
+```
+
+`--no-deps` is intentional: Torch, TorchVision, OpenCV, and NumPy stay on the
+Ubuntu/ROS versions instead of pip replacing them with a different CUDA or
+NumPy stack.  Verify the exact interpreter used by ROS after sourcing Humble:
+
+```bash
+source /opt/ros/humble/setup.bash
+/usr/bin/python3 -c \
+  'import rclpy, cv2, torch, torchvision, ultralytics; print("model runtime OK")'
+```
+
 ### Rerun the current models from the bag
 
 On a computer whose ROS Python runtime already has Torch and Ultralytics, play
@@ -152,27 +194,6 @@ rectifiers:
 ```bash
 ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   use_sim_time:=true drive_enabled:=false enable_rviz:=true \
-  camera_image_topic:=/wide_camera/lane_rect/image_raw \
-  object_camera_image_topic:=/wide_camera/object_rect/image_raw \
-  camera_use_compressed_image:=false \
-  camera_enable_rectify:=false \
-  direct_model_rectify_enabled:=false
-```
-
-On this computer, Torch and Ultralytics are in `teamkai-yolo`.  Use the
-optional model-only Python prefix below.  The model nodes consume the shared
-raw BGR topics without loading `cv_bridge` inside conda, so no conda package or
-NumPy version is changed:
-
-```bash
-source /home/subin/anaconda3/etc/profile.d/conda.sh
-conda activate teamkai-yolo
-source /opt/ros/humble/setup.bash
-source /home/subin/kookmin_autonomous_competition_teamKAI/xycar_ws/install/setup.bash
-
-ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
-  use_sim_time:=true drive_enabled:=false enable_rviz:=true \
-  model_python_prefix:=/home/subin/anaconda3/envs/teamkai-yolo/bin/python \
   camera_image_topic:=/wide_camera/lane_rect/image_raw \
   object_camera_image_topic:=/wide_camera/object_rect/image_raw \
   camera_use_compressed_image:=false \
@@ -204,19 +225,14 @@ ros2 launch my_rule compressed_camera_republish.launch.py \
 ```
 
 Start the real drive stack in a separate terminal using the same shared-camera
-arguments.  On the machine with `teamkai-yolo`, prepare only this model/drive
-terminal as follows.  Only the two model processes use conda Python; the ROS
-drivers and shared camera decoder retain the system ROS Python:
+arguments and the standard ROS system Python:
 
 ```bash
-source /home/subin/anaconda3/etc/profile.d/conda.sh
-conda activate teamkai-yolo
 source /opt/ros/humble/setup.bash
-source /home/subin/kookmin_autonomous_competition_teamKAI/xycar_ws/install/setup.bash
+source xycar_ws/install/setup.bash
 
 ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   use_sim_time:=false drive_enabled:=false enable_rviz:=true \
-  model_python_prefix:=/home/subin/anaconda3/envs/teamkai-yolo/bin/python \
   camera_image_topic:=/wide_camera/lane_rect/image_raw \
   object_camera_image_topic:=/wide_camera/object_rect/image_raw \
   camera_use_compressed_image:=false \
@@ -227,8 +243,6 @@ ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
 Only after the camera, lane path, YOLO detections, LiDAR, and steering command
 are confirmed should the vehicle operator rerun the last command with
 `drive_enabled:=true`.  Do not set `use_sim_time:=true` during real driving.
-Keep the target computer's existing Python/conda environment; these commands
-do not install packages or modify that environment.
 
 After the 2026-08-06 BEV zero-point calibration, the default static lane target
 is 9 cm left of the perceived yellow line. This is the conservative starting
