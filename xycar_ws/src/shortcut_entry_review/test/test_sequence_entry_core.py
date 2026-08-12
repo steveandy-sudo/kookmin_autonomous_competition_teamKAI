@@ -5,7 +5,12 @@ from shortcut_entry_review.sequence_entry_core import (
     EntrySequencePhase,
     SequenceEntryConfig,
     SequenceAwareEntrySelector,
+    branch_point_distance_m,
     pixels_to_vehicle_path,
+    select_entry_handoff_condition,
+    spatial_steering_gate,
+    update_w1_steering_delay_counts,
+    w1_steering_delay_ready,
 )
 
 
@@ -47,7 +52,7 @@ def test_w1_first_frame_disables_rule_but_lone_y2_is_never_substituted():
     assert "W2/Y2 ignored" in result.reason
 
 
-def test_y1_requires_sequence_confirmation_then_tracks_left_yellow_branch():
+def test_y1_confirms_stage_but_does_not_change_w1_steering_geometry():
     selector = SequenceAwareEntrySelector()
     selector.process(*make_phase_masks(include_y1=False))
 
@@ -62,7 +67,7 @@ def test_y1_requires_sequence_confirmation_then_tracks_left_yellow_branch():
     separation = second.y1.mean_x_ratio - second.w1.mean_x_ratio
     assert 0.17 <= separation <= 0.46
     assert second.y1.direction_dx_dy > 0.15
-    assert not second.used_synthetic_y1
+    assert second.used_synthetic_y1
 
 
 def test_entry_path_uses_sixty_percent_w1_and_forty_percent_y1():
@@ -179,3 +184,146 @@ def test_bev_path_uses_vehicle_forward_and_left_positive_coordinates():
     assert np.isclose(path[0, 0], 0.0)
     assert np.isclose(path[-1, 0], 1.5)
     assert np.max(path[:, 1]) > 0.0
+
+
+def test_spatial_gate_uses_branch_distance_and_rule_speed():
+    slow = spatial_steering_gate(
+        branch_distance_m=0.40,
+        rule_speed_command=5.0,
+        speed_command_to_mps=0.04,
+        response_time_sec=0.50,
+        minimum_trigger_distance_m=0.20,
+        blend_distance_m=0.20,
+    )
+    fast = spatial_steering_gate(
+        branch_distance_m=0.40,
+        rule_speed_command=15.0,
+        speed_command_to_mps=0.04,
+        response_time_sec=0.50,
+        minimum_trigger_distance_m=0.20,
+        blend_distance_m=0.20,
+    )
+
+    assert not slow.ready
+    assert fast.ready
+    assert fast.trigger_distance_m > slow.trigger_distance_m
+
+
+def test_w1_steering_delay_requires_configured_valid_frames():
+    assert not w1_steering_delay_ready(observed_frames=3, required_frames=4)
+    assert w1_steering_delay_ready(observed_frames=4, required_frames=4)
+    assert w1_steering_delay_ready(observed_frames=0, required_frames=0)
+
+
+def test_w1_steering_delay_tolerates_short_dropouts():
+    observed, missing = update_w1_steering_delay_counts(
+        observed_frames=2,
+        missing_frames=0,
+        w1_observed=False,
+        missing_tolerance_frames=2,
+    )
+    assert (observed, missing) == (2, 1)
+
+    observed, missing = update_w1_steering_delay_counts(
+        observed_frames=observed,
+        missing_frames=missing,
+        w1_observed=True,
+        missing_tolerance_frames=2,
+    )
+    assert (observed, missing) == (3, 0)
+
+
+def test_w1_steering_delay_resets_after_dropout_tolerance():
+    observed, missing = update_w1_steering_delay_counts(
+        observed_frames=2,
+        missing_frames=2,
+        w1_observed=False,
+        missing_tolerance_frames=2,
+    )
+    assert (observed, missing) == (0, 0)
+
+
+def test_entry_handoff_prefers_geometric_alignment_after_progress():
+    condition = select_entry_handoff_condition(
+        geometric_handoff=True,
+        steering_started=True,
+        progress_m=0.50,
+        minimum_progress_m=0.50,
+        pair_track_confirmed=True,
+        y1_confirmed=True,
+        w1_visible=True,
+    )
+
+    assert condition == "forward_alignment_and_progress"
+
+
+def test_entry_handoff_accepts_confirmed_pair_after_progress():
+    condition = select_entry_handoff_condition(
+        geometric_handoff=False,
+        steering_started=True,
+        progress_m=0.55,
+        minimum_progress_m=0.50,
+        pair_track_confirmed=True,
+        y1_confirmed=True,
+        w1_visible=True,
+    )
+
+    assert condition == "pair_track_and_progress"
+
+
+def test_entry_handoff_accepts_confirmed_y1_after_w1_loss():
+    condition = select_entry_handoff_condition(
+        geometric_handoff=False,
+        steering_started=True,
+        progress_m=0.55,
+        minimum_progress_m=0.50,
+        pair_track_confirmed=False,
+        y1_confirmed=True,
+        w1_visible=False,
+    )
+
+    assert condition == "y1_confirmed_w1_lost_and_progress"
+
+
+def test_entry_handoff_requires_minimum_progress_for_all_conditions():
+    condition = select_entry_handoff_condition(
+        geometric_handoff=True,
+        steering_started=True,
+        progress_m=0.49,
+        minimum_progress_m=0.50,
+        pair_track_confirmed=True,
+        y1_confirmed=True,
+        w1_visible=False,
+    )
+
+    assert condition is None
+
+
+def test_entry_handoff_uses_active_steering_time_as_final_fallback():
+    condition = select_entry_handoff_condition(
+        geometric_handoff=False,
+        steering_started=True,
+        progress_m=0.20,
+        minimum_progress_m=0.50,
+        pair_track_confirmed=False,
+        y1_confirmed=False,
+        w1_visible=True,
+        steering_active_sec=1.50,
+        maximum_steering_sec=1.50,
+    )
+
+    assert condition == "maximum_w1_steering_time_elapsed"
+
+
+def test_branch_distance_uses_second_white_only_as_spatial_gate():
+    selector = SequenceAwareEntrySelector()
+    result = selector.process(*make_phase_masks(include_y1=False))
+
+    distance = branch_point_distance_m(
+        result.w1,
+        result.white_candidates,
+        forward_range_m=1.5,
+    )
+
+    assert np.isfinite(distance)
+    assert 0.0 <= distance <= 1.5

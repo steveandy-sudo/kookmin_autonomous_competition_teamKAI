@@ -2,6 +2,7 @@
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
+from launch.conditions import UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node, PushRosNamespace, SetRemap
@@ -64,11 +65,43 @@ def generate_launch_description():
             default_value="/hybrid/shortcut_processing_enabled",
         ),
         DeclareLaunchArgument("default_enabled", default_value="false"),
-        DeclareLaunchArgument("entry_speed_command", default_value="4.0"),
+        DeclareLaunchArgument(
+            "rule_command_topic", default_value="/hybrid/rule_candidate"
+        ),
+        DeclareLaunchArgument("speed_command_to_mps", default_value="0.04"),
+        DeclareLaunchArgument(
+            "spatial_gate_response_time_sec", default_value="0.35"
+        ),
+        DeclareLaunchArgument(
+            "spatial_gate_minimum_distance_m", default_value="0.25"
+        ),
+        DeclareLaunchArgument(
+            "spatial_gate_blend_distance_m", default_value="0.25"
+        ),
+        DeclareLaunchArgument(
+            "w1_steering_start_delay_frames", default_value="4"
+        ),
+        DeclareLaunchArgument(
+            "w1_steering_delay_missing_tolerance_frames", default_value="2"
+        ),
+        DeclareLaunchArgument("minimum_entry_progress_m", default_value="0.50"),
+        DeclareLaunchArgument(
+            "pair_track_handoff_required_frames", default_value="2"
+        ),
+        DeclareLaunchArgument("w1_loss_handoff_enabled", default_value="true"),
+        DeclareLaunchArgument(
+            "maximum_entry_steering_sec", default_value="1.5"
+        ),
+        DeclareLaunchArgument("w1_steering_hold_sec", default_value="1.0"),
+        DeclareLaunchArgument(
+            "entry_direction_hold_command", default_value="-30.0"
+        ),
+        DeclareLaunchArgument("entry_speed_command", default_value="9.0"),
         DeclareLaunchArgument("w1_path_weight", default_value="0.60"),
         DeclareLaunchArgument(
             "candidate_topic", default_value="/hybrid/shortcut_candidate"
         ),
+        DeclareLaunchArgument("handoff_to_rule", default_value="true"),
         DeclareLaunchArgument("use_sim_time", default_value="false"),
         DeclareLaunchArgument("show_opencv_windows", default_value="false"),
     ]
@@ -104,6 +137,8 @@ def generate_launch_description():
             "debug_rate_hz": "10.0",
             "pipeline_qos_depth": "1",
             "cpu_threads": "4",
+            "canonical_white_fit_enabled": "false",
+            "canonical_yellow_normalize_enabled": "false",
         }.items(),
     )
     isolated_lane = GroupAction(
@@ -137,6 +172,55 @@ def generate_launch_description():
                 "processing_enabled_topic": processing_topic,
                 "default_enabled": ParameterValue(default_enabled, value_type=bool),
                 "input_is_bev": False,
+                "rule_command_topic": LaunchConfiguration(
+                    "rule_command_topic"
+                ),
+                "speed_command_to_mps": ParameterValue(
+                    LaunchConfiguration("speed_command_to_mps"),
+                    value_type=float,
+                ),
+                "entry_speed_command": ParameterValue(
+                    LaunchConfiguration("entry_speed_command"),
+                    value_type=float,
+                ),
+                "spatial_gate_response_time_sec": ParameterValue(
+                    LaunchConfiguration("spatial_gate_response_time_sec"),
+                    value_type=float,
+                ),
+                "spatial_gate_minimum_distance_m": ParameterValue(
+                    LaunchConfiguration("spatial_gate_minimum_distance_m"),
+                    value_type=float,
+                ),
+                "spatial_gate_blend_distance_m": ParameterValue(
+                    LaunchConfiguration("spatial_gate_blend_distance_m"),
+                    value_type=float,
+                ),
+                "w1_steering_start_delay_frames": ParameterValue(
+                    LaunchConfiguration("w1_steering_start_delay_frames"),
+                    value_type=int,
+                ),
+                "w1_steering_delay_missing_tolerance_frames": ParameterValue(
+                    LaunchConfiguration(
+                        "w1_steering_delay_missing_tolerance_frames"
+                    ),
+                    value_type=int,
+                ),
+                "minimum_entry_progress_m": ParameterValue(
+                    LaunchConfiguration("minimum_entry_progress_m"),
+                    value_type=float,
+                ),
+                "pair_track_handoff_required_frames": ParameterValue(
+                    LaunchConfiguration("pair_track_handoff_required_frames"),
+                    value_type=int,
+                ),
+                "w1_loss_handoff_enabled": ParameterValue(
+                    LaunchConfiguration("w1_loss_handoff_enabled"),
+                    value_type=bool,
+                ),
+                "maximum_entry_steering_sec": ParameterValue(
+                    LaunchConfiguration("maximum_entry_steering_sec"),
+                    value_type=float,
+                ),
                 "w1_path_weight": ParameterValue(
                     LaunchConfiguration("w1_path_weight"), value_type=float
                 ),
@@ -165,12 +249,10 @@ def generate_launch_description():
                 "motor_topic": "/shortcut/entry/UNUSED_motor",
                 "target_right_offset_m": 0.0,
                 "target_left_offset_m": 0.0,
-                "cruise_speed_command": ParameterValue(
-                    LaunchConfiguration("entry_speed_command"), value_type=float
-                ),
-                "minimum_speed_command": ParameterValue(
-                    LaunchConfiguration("entry_speed_command"), value_type=float
-                ),
+                # The mux discards this private controller speed and preserves
+                # the current /hybrid/rule_candidate speed end to end.
+                "cruise_speed_command": 30.0,
+                "minimum_speed_command": 0.0,
                 "lane_loss_speed_command": 0.0,
                 "hold_last_steering_on_lane_loss": False,
                 "hold_last_speed_on_lane_loss": False,
@@ -187,6 +269,7 @@ def generate_launch_description():
         executable="shortcut_candidate_node",
         name="shortcut_legacy_cruise_candidate",
         output="screen",
+        condition=UnlessCondition(LaunchConfiguration("handoff_to_rule")),
         parameters=[
             {
                 "image_topic": LaunchConfiguration("source_topic"),
@@ -207,6 +290,24 @@ def generate_launch_description():
                 "processing_enabled_topic": processing_topic,
                 "default_enabled": ParameterValue(default_enabled, value_type=bool),
                 "candidate_topic": LaunchConfiguration("candidate_topic"),
+                "rule_command_topic": LaunchConfiguration(
+                    "rule_command_topic"
+                ),
+                "handoff_to_rule": ParameterValue(
+                    LaunchConfiguration("handoff_to_rule"), value_type=bool
+                ),
+                "w1_steering_hold_sec": ParameterValue(
+                    LaunchConfiguration("w1_steering_hold_sec"),
+                    value_type=float,
+                ),
+                "entry_direction_hold_command": ParameterValue(
+                    LaunchConfiguration("entry_direction_hold_command"),
+                    value_type=float,
+                ),
+                "entry_speed_command": ParameterValue(
+                    LaunchConfiguration("entry_speed_command"),
+                    value_type=float,
+                ),
             }
         ],
     )

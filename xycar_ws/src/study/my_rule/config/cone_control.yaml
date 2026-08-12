@@ -8,11 +8,11 @@ my_rule_cone_node:
     # testing remains active without requiring a gate publisher.
     processing_gate_enabled: false
     processing_enabled_topic: /my_rule/cone_processing_enabled
-    max_range_m: 1.6
+    max_range_m: 2.2
     min_range_m: 0.18
     scan_angle_offset_deg: 0.0
-    scan_front_min_deg: -70.0
-    scan_front_max_deg: 70.0
+    scan_front_min_deg: -94.0
+    scan_front_max_deg: 94.0
     dbscan_eps_m: 0.15
     dbscan_min_samples: 3
     sparse_dbscan_min_samples: 2
@@ -22,11 +22,11 @@ my_rule_cone_node:
     sparse_cluster_required_frames: 2
     sparse_cluster_history_frames: 3
     max_cone_diameter_m: 0.3
-    angle_bin_deg: 12.0
+    angle_bin_deg: 6.0
     group_grow_distance_m: 0.5
-    seed_min_angle_deg: 20.0
-    seed_max_angle_deg: 100.0
-    seed_max_range_m: 0.9
+    seed_min_angle_deg: 15.0
+    seed_max_angle_deg: 90.0
+    seed_max_range_m: 2.2
     allow_single_boundary_fallback: true
     single_boundary_min_cones: 2
     single_boundary_min_span_m: 0.20
@@ -41,8 +41,11 @@ my_rule_cone_node:
     lookahead_scale: 0.12
     far_preview_distance_m: 0.75
     far_preview_weight: 0.65
-    steering_gain: 1.18
-    max_steer_cmd: 26.0
+    steering_gain: 1.05
+    max_steer_cmd: 42.0
+    # Preserve the existing speed reduction curve while allowing more
+    # steering headroom in tight cone turns.
+    cone_speed_full_steer_deg: 26.0
     cone_speed: 17.0
     cone_min_drive_speed: 9.0
     cone_speed_steer_exponent: 1.0
@@ -66,7 +69,7 @@ my_rule_cone_node:
     expected_corridor_width_m: 0.85
     min_path_midpoints: 2
     min_path_span_m: 0.15
-    max_path_target_jump_m: 0.45
+    max_path_target_jump_m: 0.30
     inferred_max_path_target_jump_m: 0.25
     steering_median_window: 1
     steering_max_delta_deg: 14.0

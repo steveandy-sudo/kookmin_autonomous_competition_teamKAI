@@ -1,6 +1,7 @@
 import math
 
 import numpy as np
+import pytest
 
 from my_rule.cone_node import ConeNode
 
@@ -17,13 +18,13 @@ class _PurePursuitHarness:
 
     parameters = {
         "wheelbase_m": 0.33,
-        "max_steer_cmd": 26.0,
+        "max_steer_cmd": 42.0,
         "lookahead_min_m": 0.7,
         "lookahead_max_m": 1.45,
         "lookahead_scale": 0.12,
         "far_preview_distance_m": 0.75,
         "far_preview_weight": 0.65,
-        "steering_gain": 1.18,
+        "steering_gain": 1.05,
     }
 
     def get_parameter(self, name):
@@ -79,7 +80,8 @@ class _PathHarness:
         "far_preview_distance_m": 0.75,
         "far_preview_weight": 0.65,
         "wheelbase_m": 0.33,
-        "max_steer_cmd": 26.0,
+        "max_steer_cmd": 42.0,
+        "cone_speed_full_steer_deg": 26.0,
         "cone_speed": 17.0,
         "cone_min_drive_speed": 9.0,
         "cone_speed_steer_exponent": 1.0,
@@ -162,6 +164,44 @@ def test_single_boundary_builds_a_virtual_opposite_boundary():
         abs(midpoint[1]) < abs(boundary[1])
         for midpoint, boundary in zip(midpoints, left)
     )
+
+
+def test_single_boundary_offset_is_perpendicular_to_local_tangent():
+    harness = _GeometryHarness()
+    boundary = [
+        (0.40, 0.30),
+        (0.65, 0.36),
+        (0.90, 0.50),
+        (1.15, 0.72),
+        (1.40, 1.00),
+    ]
+    centerline = harness.offset_boundary_to_center(
+        boundary,
+        is_left_boundary=True,
+    )
+    half_width = 0.5 * harness.parameters["expected_corridor_width_m"]
+    for index, (boundary_point, center_point) in enumerate(
+        zip(boundary, centerline)
+    ):
+        before = boundary[max(0, index - 2)]
+        after = boundary[min(len(boundary) - 1, index + 2)]
+        tangent = np.asarray(after) - np.asarray(before)
+        tangent /= np.linalg.norm(tangent)
+        offset = np.asarray(center_point) - np.asarray(boundary_point)
+        assert np.linalg.norm(offset) == pytest.approx(half_width)
+        assert float(np.dot(offset, tangent)) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_single_boundary_stays_selected_until_bilateral_path_returns():
+    harness = _GeometryHarness()
+    left_candidates = {"left": (2, -0.1, [(0.5, 0.0), (0.9, 0.0)])}
+    both_candidates = {
+        **left_candidates,
+        "right": (5, -0.05, [(0.5, 0.0), (0.9, 0.0)]),
+    }
+    assert harness.select_inferred_boundary("left", left_candidates) == "left"
+    for _ in range(5):
+        assert harness.select_inferred_boundary("right", both_candidates) == "left"
 
 
 def test_deployed_speed_profile_boosts_only_a_good_straight():

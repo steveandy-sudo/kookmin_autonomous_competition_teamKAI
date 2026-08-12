@@ -17,6 +17,7 @@ setup(
         (os.path.join("share", package_name, "config"), glob(os.path.join("config", "*.yaml"))),
         (os.path.join("share", package_name, "launch"), glob(os.path.join("launch", "*.launch.py"))),
         (os.path.join("share", package_name, "models"), glob(os.path.join("models", "*"))),
+        (os.path.join("share", package_name, "rviz"), glob(os.path.join("rviz", "*.rviz"))),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -31,6 +32,8 @@ setup(
         "console_scripts": [
             "object_detection_node = my_rule.object_detection_node:main",
             "cone_node = my_rule.cone_node:main",
+            "cone_path_visualizer = my_rule.cone_path_visualizer_node:main",
+            "drive_path_visualizer = my_rule.cone_path_visualizer_node:main",
         ],
     },
 )

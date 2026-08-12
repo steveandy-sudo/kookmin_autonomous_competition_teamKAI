@@ -1,3 +1,8 @@
+import math
+
+from std_msgs.msg import Float32MultiArray
+
+from xycar_map_nav.sequential_hybrid_driver import SequentialHybridDriver
 from xycar_map_nav.shortcut_mode_latch import ShortcutModeConfig
 from xycar_map_nav.shortcut_mode_latch import ShortcutModeEvent
 from xycar_map_nav.shortcut_mode_latch import ShortcutModeLatch
@@ -76,3 +81,28 @@ def test_external_traffic_sequencer_can_start_after_left_disappears():
         now_sec=2.1,
         confidence=0.90,
     ) == ShortcutModeEvent.NONE
+
+
+class _InactiveShortcutLatch:
+    active = False
+
+
+class _ShortcutCommandReceiver:
+    shortcut_entry_search_active = True
+    shortcut_latch = _InactiveShortcutLatch()
+    shortcut_command = (0.0, 0.0, 0.0)
+    shortcut_command_time = float("-inf")
+    shortcut_phase_code = 0.0
+
+
+def test_search_phase_caches_fresh_shortcut_candidate_before_authority_switch():
+    receiver = _ShortcutCommandReceiver()
+
+    SequentialHybridDriver._on_shortcut_command(
+        receiver,
+        Float32MultiArray(data=[-18.0, 20.0, 0.0, 13.0]),
+    )
+
+    assert receiver.shortcut_command == (-18.0, 20.0, 0.0)
+    assert receiver.shortcut_phase_code == 13.0
+    assert math.isfinite(receiver.shortcut_command_time)

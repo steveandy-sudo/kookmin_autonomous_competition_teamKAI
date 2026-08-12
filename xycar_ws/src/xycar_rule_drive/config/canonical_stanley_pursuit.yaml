@@ -23,14 +23,18 @@ canonical_stanley_pursuit_driver:
     path_point_count: 32
     path_previous_weight: 0.10
     min_lane_pixels: 8
-    # Real-car target: follow 15 cm left of the observed yellow reference.
-    # White fallback reconstructs this exact same lateral target.
+    # Keep the shared target centered. Real driving may add a straight-only
+    # right correction without changing curve geometry.
     target_right_offset_m: 0.0
-    target_left_offset_m: 0.12
+    target_left_offset_m: 0.0
+    straight_target_right_offset_m: 0.0
     # A yellow dash can leave the camera during a tight turn. While the outer
     # white boundary remains visible, reconstruct the yellow centerline from
     # the measured 40 cm yellow-to-white distance.
     white_fallback_enabled: true
+    # After yellow establishes the reference, steer from its ego-compensated
+    # last path instead of switching to white during a yellow dropout.
+    prefer_remembered_yellow_on_loss: true
     lane_half_width_m: 0.20
     white_fallback_max_gap_m: 0.25
     white_fallback_min_span_m: 0.18
@@ -72,6 +76,16 @@ canonical_stanley_pursuit_driver:
     curve_steering_multiplier_enabled: false
     curve_steering_multiplier_activation_command: 20.0
     curve_steering_multiplier: 1.0
+    curve_steering_yellow_reference_only: false
+    yellow_curve_reversal_preview_enabled: false
+    yellow_curve_reversal_preview_near_x_m: 0.45
+    yellow_curve_reversal_preview_far_x_m: 0.90
+    yellow_curve_reversal_preview_window_m: 0.20
+    yellow_curve_reversal_preview_curvature_per_m: 0.12
+    yellow_curve_reversal_preview_pursuit_rad: 0.12
+    yellow_curve_reversal_preview_minimum_command: 10.0
+    yellow_curve_reversal_preview_confirmation_frames: 2
+    yellow_curve_reversal_preview_pursuit_weight: 0.75
     straight_pure_pursuit_weight: 0.10
     straight_stanley_gain: 0.65
     straight_stanley_softening_mps: 0.65
@@ -103,7 +117,7 @@ canonical_stanley_pursuit_driver:
     turn_transition_hold_sec: 0.25
     turn_transition_minimum_recovery_command: 18.0
     turn_transition_trigger_previous_command: 12.0
-    turn_transition_trigger_new_command: 2.0
+    turn_transition_trigger_new_command: 8.0
     turn_transition_cancel_opposed_command: 24.0
     # When heading correction and pursuit oppose each other at a curve exit,
     # use Stanley to release the old turn before lateral error grows.

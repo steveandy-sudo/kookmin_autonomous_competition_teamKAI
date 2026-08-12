@@ -45,6 +45,7 @@ def make_driver(*, timeout=12.0):
         "shortcut_enabled": True,
         "shortcut_wait_for_entry_ready": True,
         "shortcut_entry_search_timeout_sec": float(timeout),
+        "shortcut_candidate_timeout_sec": 0.35,
     }
     driver.get_parameter = lambda name: SimpleNamespace(value=values[name])
     driver.get_logger = lambda: FakeLogger()
@@ -53,6 +54,7 @@ def make_driver(*, timeout=12.0):
     driver.shortcut_entry_search_active = False
     driver.shortcut_entry_search_started_time = float("-inf")
     driver.shortcut_entry_ready = False
+    driver.shortcut_command_time = 10.9
     driver.drive_armed = True
     driver.traffic_light_controller = SimpleNamespace(
         left_confidence=0.85,
@@ -101,6 +103,7 @@ def test_s_speed_limit_caps_rule_speed_without_accelerating_or_reversing():
 def test_w1_ready_starts_override_only_during_live_search():
     driver = make_driver()
     driver._handle_traffic_shortcut_request(10.0)
+    driver.shortcut_command_time = 10.9
 
     with patch(
         "xycar_map_nav.sequential_hybrid_driver.time.monotonic",

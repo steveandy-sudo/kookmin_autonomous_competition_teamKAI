@@ -137,6 +137,14 @@ class SequenceEntryResult:
 
 
 @dataclass(frozen=True)
+class SpatialSteeringGate:
+    branch_distance_m: float
+    trigger_distance_m: float
+    ready: bool
+    blend: float
+
+
+@dataclass(frozen=True)
 class _Segment:
     x1: float
     y1: float
@@ -699,6 +707,134 @@ def pixels_to_vehicle_path(
     return points[np.argsort(points[:, 0])]
 
 
+def branch_point_distance_m(
+    w1: LineHypothesis | None,
+    white_candidates: tuple[LineHypothesis, ...],
+    *,
+    forward_range_m: float,
+) -> float:
+    """Estimate remaining vehicle-forward distance to the W1/W2 fork."""
+    if w1 is None:
+        return math.inf
+    best: tuple[float, float] | None = None
+    w1_slope, w1_intercept = w1.coefficients
+    for candidate in white_candidates:
+        if candidate is w1 or candidate.color != "white":
+            continue
+        slope, intercept = candidate.coefficients
+        slope_delta = w1_slope - slope
+        if abs(slope_delta) < 0.08:
+            continue
+        # W2 is the branch on the image-right side before the fork.  This is
+        # used only as a spatial trigger and never as steering geometry.
+        sample_y = min(1.0, max(0.0, max(w1.maximum_y_ratio, candidate.maximum_y_ratio)))
+        if candidate.x_ratio_at(sample_y) <= w1.x_ratio_at(sample_y):
+            continue
+        intersection_y = (intercept - w1_intercept) / slope_delta
+        if not -0.10 <= intersection_y <= 1.10:
+            continue
+        intersection_x = w1.x_ratio_at(intersection_y)
+        if not -0.15 <= intersection_x <= 1.15:
+            continue
+        distance = (1.0 - intersection_y) * float(forward_range_m)
+        if distance < -0.10 or distance > 1.10 * float(forward_range_m):
+            continue
+        score = abs(intersection_x - 0.5) + 0.15 * abs(candidate.mean_x_ratio - w1.mean_x_ratio)
+        if best is None or score < best[0]:
+            best = (score, max(0.0, distance))
+    return math.inf if best is None else float(best[1])
+
+
+def spatial_steering_gate(
+    *,
+    branch_distance_m: float,
+    rule_speed_command: float,
+    speed_command_to_mps: float,
+    response_time_sec: float,
+    minimum_trigger_distance_m: float,
+    blend_distance_m: float,
+) -> SpatialSteeringGate:
+    speed_mps = max(0.0, float(rule_speed_command)) * max(
+        0.0, float(speed_command_to_mps)
+    )
+    trigger = max(0.0, float(minimum_trigger_distance_m)) + (
+        speed_mps * max(0.0, float(response_time_sec))
+    )
+    finite = math.isfinite(float(branch_distance_m))
+    ready = bool(finite and float(branch_distance_m) <= trigger)
+    if not ready:
+        blend = 0.0
+    else:
+        blend = min(
+            1.0,
+            max(
+                0.0,
+                (trigger - float(branch_distance_m))
+                / max(1.0e-6, float(blend_distance_m)),
+            ),
+        )
+    return SpatialSteeringGate(
+        branch_distance_m=float(branch_distance_m),
+        trigger_distance_m=float(trigger),
+        ready=ready,
+        blend=float(blend),
+    )
+
+
+def w1_steering_delay_ready(
+    *, observed_frames: int, required_frames: int
+) -> bool:
+    """Return whether accumulated valid W1 observations may start steering."""
+    required = max(0, int(required_frames))
+    return required == 0 or int(observed_frames) >= required
+
+
+def update_w1_steering_delay_counts(
+    *,
+    observed_frames: int,
+    missing_frames: int,
+    w1_observed: bool,
+    missing_tolerance_frames: int,
+) -> tuple[int, int]:
+    """Accumulate W1 frames while tolerating short semantic dropouts."""
+    if w1_observed:
+        return int(observed_frames) + 1, 0
+    if int(observed_frames) <= 0:
+        return 0, 0
+    missing = int(missing_frames) + 1
+    if missing > max(0, int(missing_tolerance_frames)):
+        return 0, 0
+    return int(observed_frames), missing
+
+
+def select_entry_handoff_condition(
+    *,
+    geometric_handoff: bool,
+    steering_started: bool,
+    progress_m: float,
+    minimum_progress_m: float,
+    pair_track_confirmed: bool,
+    y1_confirmed: bool,
+    w1_visible: bool,
+    w1_loss_handoff_enabled: bool = True,
+    steering_active_sec: float = 0.0,
+    maximum_steering_sec: float = math.inf,
+) -> str | None:
+    """Choose the first satisfied semantic-entry completion condition."""
+    if not steering_started:
+        return None
+    if float(progress_m) >= float(minimum_progress_m):
+        if geometric_handoff:
+            return "forward_alignment_and_progress"
+        if pair_track_confirmed:
+            return "pair_track_and_progress"
+        if w1_loss_handoff_enabled and y1_confirmed and not w1_visible:
+            return "y1_confirmed_w1_lost_and_progress"
+    if 0.0 < float(maximum_steering_sec) <= float(steering_active_sec):
+        return "maximum_w1_steering_time_elapsed"
+    return None
+
+
 class SequenceAwareEntrySelector:
     """Lock W1 first, acquire Y1 later, and never substitute W2/Y2."""
 
@@ -978,26 +1114,9 @@ class SequenceAwareEntrySelector:
             return (), False, 0.0
         w1 = self.w1
         synthetic_separation = self.config.expected_pair_separation_ratio
-        y1 = self.y1
-        if y1 is None:
-            top = w1.minimum_y_ratio
-            bottom = w1.maximum_y_ratio
-            separation = synthetic_separation
-            blend = 0.0
-        else:
-            extension = self.config.maximum_fit_extrapolation_ratio
-            top = max(
-                0.0,
-                max(w1.minimum_y_ratio, y1.minimum_y_ratio) - extension,
-            )
-            bottom = min(
-                1.0, min(w1.maximum_y_ratio, y1.maximum_y_ratio) + extension
-            )
-            if bottom - top < self.config.minimum_vertical_span_ratio:
-                top = min(w1.minimum_y_ratio, y1.minimum_y_ratio)
-                bottom = max(w1.maximum_y_ratio, y1.maximum_y_ratio)
-            separation = y1.mean_x_ratio - w1.mean_x_ratio
-            blend = self.y1_blend
+        top = w1.minimum_y_ratio
+        bottom = w1.maximum_y_ratio
+        separation = synthetic_separation
         rows_ratio = np.linspace(
             bottom, top, int(self.config.path_sample_count)
         )
@@ -1005,15 +1124,9 @@ class SequenceAwareEntrySelector:
         separations = []
         for row_ratio in rows_ratio:
             white_x = w1.x_ratio_at(float(row_ratio))
-            synthetic_yellow_x = white_x + synthetic_separation
-            if y1 is None:
-                yellow_x = synthetic_yellow_x
-            else:
-                actual_yellow_x = y1.x_ratio_at(float(row_ratio))
-                yellow_x = (
-                    (1.0 - blend) * synthetic_yellow_x
-                    + blend * actual_yellow_x
-                )
+            # W1 is the only observed steering geometry.  Y1 confirms mission
+            # phase and handoff, while W2/Y2 never enter the steering path.
+            yellow_x = white_x + synthetic_separation
             local_separation = yellow_x - white_x
             if not (
                 self.config.minimum_pair_separation_ratio * 0.75
@@ -1035,8 +1148,8 @@ class SequenceAwareEntrySelector:
             )
             separations.append(local_separation)
         if len(points) < 3:
-            return (), y1 is None, float(separation)
-        return tuple(points), y1 is None, float(np.median(separations))
+            return (), True, float(separation)
+        return tuple(points), True, float(np.median(separations))
 
     def process(
         self,
@@ -1104,18 +1217,15 @@ class SequenceAwareEntrySelector:
             separation = 0.0
             reason = "W1 unavailable; safe stop"
         else:
-            # A short Y1 dropout keeps the last locked geometry.  Before Y1 is
-            # ever acquired, the path is offset from W1 by the annotated lane
-            # width distribution; the visible Y2 is never substituted.
             path, synthetic, separation = self._path(
                 width=width, height=height
             )
             if not path:
-                reason = "W1/Y1 geometry invalid; safe stop"
+                reason = "W1 geometry invalid; safe stop"
             elif not y1_usable or self.y1 is None:
-                reason = "W1 locked; synthetic Y1 width; W2/Y2 ignored"
+                reason = "W1 steering geometry; waiting Y1 stage; W2/Y2 ignored"
             else:
-                reason = "W1/Y1 pair tracked; W2/Y2 ignored"
+                reason = "W1 steering geometry; Y1 stage tracked; W2/Y2 ignored"
 
         if (
             self.phase in (

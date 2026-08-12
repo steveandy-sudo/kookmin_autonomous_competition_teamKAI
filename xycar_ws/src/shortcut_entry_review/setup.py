@@ -23,7 +23,7 @@ setup(
     zip_safe=True,
     maintainer="kai",
     maintainer_email="kai@example.com",
-    description="Sequence-aware shortcut-entry review and hybrid candidates",
+    description="Sequence-aware W1/Y1 shortcut review and hybrid candidate",
     license="Apache-2.0",
     tests_require=["pytest"],
     entry_points={
@@ -36,8 +36,7 @@ setup(
             "shortcut_entry_review.compressed_image_gate_node:main",
             "white_yellow_entry_review = "
             "shortcut_entry_review.white_yellow_entry_review_node:main",
-            "sequence_entry = "
-            "shortcut_entry_review.sequence_entry_node:main",
+            "sequence_entry = shortcut_entry_review.sequence_entry_node:main",
             "shortcut_candidate_mux = "
             "shortcut_entry_review.shortcut_candidate_mux_node:main",
             "evaluate_sequence_annotations = "

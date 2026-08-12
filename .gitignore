@@ -45,6 +45,12 @@ models/
 xycar_ws/src/lane_seg_control/models/*
 !xycar_ws/src/lane_seg_control/models/best_512.onnx
 !xycar_ws/src/lane_seg_control/models/kookmin_lane_lraspp_mbv3s_256x144.pt
+!xycar_ws/src/lane_seg_control/models/kookmin_yellow_row_centerline_256x144.pt
+!xycar_ws/src/lane_seg_control/models/kookmin_yellow_row_centerline_core_256x144.pt
+!xycar_ws/src/lane_seg_control/models/kookmin_yellow_row_centerline_256x144.metrics.json
+!xycar_ws/src/lane_seg_control/models/kookmin_far_centerline_xbin_512x288.pt
+!xycar_ws/src/lane_seg_control/models/kookmin_far_centerline_xbin_core_512x288.pt
+!xycar_ws/src/lane_seg_control/models/kookmin_far_centerline_xbin_512x288.metrics.json
 generated/
 
 # Generated debug images kept locally during map fitting
