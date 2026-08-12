@@ -264,14 +264,23 @@ class ShortcutW1ControlViewer(Node):
         self.control_reason = str(message.data)
 
     def prime_first_frame(self) -> None:
+        if self.camera_image is not None:
+            self.player_primed = True
+            return
         if (
             self.player_primed
-            or self.camera_image is not None
             or not bool(self.get_parameter("player_controls_enabled").value)
             or not self.play_next_client.service_is_ready()
+            or (
+                self.pending_player_call is not None
+                and not self.pending_player_call.done()
+            )
         ):
             return
-        self.player_primed = True
+        # The review bag also contains VESC and recorded RULE messages.  One
+        # play-next call is therefore not guaranteed to be a camera frame.
+        # Advance one selected message per timer tick until the first camera
+        # image arrives, then start normal 0.5x autoplay.
         self.pending_player_call = self.play_next_client.call_async(
             PlayNext.Request()
         )
