@@ -1,7 +1,9 @@
 my_rule_cone_path_visualizer:
   ros__parameters:
     path_topic: /my_rule/cone_path
-    cluster_topic: /my_rule/cone_clusters
+    # RViz orange points are fused candidates only. Raw LiDAR-only candidates
+    # remain available separately on /my_rule/cone_lidar_clusters.
+    cluster_topic: /my_rule/cone_fused_clusters
     command_topic: /my_rule/cone_cmd
     lane_path_topic: /rule_drive/connected_yellow_path
     lane_diagnostics_topic: /rule_drive/diagnostics

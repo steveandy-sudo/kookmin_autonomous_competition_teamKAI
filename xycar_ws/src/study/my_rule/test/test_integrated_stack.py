@@ -1,11 +1,16 @@
 import numpy as np
 import pytest
+from pathlib import Path
+import yaml
 
 from my_rule.drive_manager_node import interpolate_command
 from my_rule.perception.lraspp_inference import (
     masks_from_probabilities,
     prepare_model_input,
 )
+
+
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_cone_physical_angle_uses_existing_vehicle_table():
@@ -45,3 +50,13 @@ def test_lane_masks_are_disjoint_and_respect_confidence():
     assert yellow[1, 1] == 255
     assert white[0, 2] == 0
     assert not np.any((white > 0) & (yellow > 0))
+
+
+def test_cone_config_allows_launch_overrides_to_take_effect():
+    config = yaml.safe_load(
+        (PACKAGE_ROOT / "config" / "cone_control.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "/**" in config
+    assert "my_rule_cone_node" not in config

@@ -913,6 +913,8 @@ def generate_launch_description():
                     cone_config,
                     {
                         "processing_gate_enabled": True,
+                        "cone_yolo_association_enabled": True,
+                        "camera_yaml": object_camera_yaml,
                         "cone_speed": ParameterValue(
                             LaunchConfiguration("cone_speed_command"),
                             value_type=float,

@@ -213,7 +213,9 @@ class ConePathVisualizer(Node):
     def __init__(self) -> None:
         super().__init__("my_rule_cone_path_visualizer")
         self.declare_parameter("path_topic", "/my_rule/cone_path")
-        self.declare_parameter("cluster_topic", "/my_rule/cone_clusters")
+        self.declare_parameter(
+            "cluster_topic", "/my_rule/cone_fused_clusters"
+        )
         self.declare_parameter("command_topic", "/my_rule/cone_cmd")
         self.declare_parameter(
             "lane_path_topic", "/rule_drive/connected_yellow_path"
@@ -309,6 +311,7 @@ class ConePathVisualizer(Node):
         self.latest_path_frame = "rear_axle"
         self.latest_clusters: List[Point2] = []
         self.latest_cluster_frame = "laser_frame"
+        self.clusters_received_at = 0.0
         self.latest_command = (0.0, 0.0, 0.0)
         self.latest_lane_path: List[Point2] = []
         self.latest_lane_frame = "laser_frame"
@@ -355,6 +358,7 @@ class ConePathVisualizer(Node):
             for pose in message.poses
         ]
         self.latest_cluster_frame = message.header.frame_id or "laser_frame"
+        self.clusters_received_at = time.monotonic()
 
     def on_command(self, message: Float32MultiArray) -> None:
         if len(message.data) < 3:
@@ -475,7 +479,11 @@ class ConePathVisualizer(Node):
         self.append_fov(markers)
         self.append_vehicle_reference(markers)
         self.append_manual_path(markers)
-        clusters = self.transformed_clusters()
+        clusters = (
+            self.transformed_clusters()
+            if self.clusters_are_fresh()
+            else []
+        )
         if clusters:
             self.append_clusters(markers, clusters)
 
@@ -685,7 +693,9 @@ class ConePathVisualizer(Node):
         markers.markers.append(axle)
 
     def append_clusters(self, markers: MarkerArray, clusters: Sequence[Point2]) -> None:
-        marker = self.marker("cone_clusters", 4, Marker.SPHERE_LIST)
+        marker = self.marker(
+            "yolo_lidar_fused_cone_clusters", 4, Marker.SPHERE_LIST
+        )
         marker.scale.x = 0.09
         marker.scale.y = 0.09
         marker.scale.z = 0.12
@@ -831,6 +841,13 @@ class ConePathVisualizer(Node):
         return (
             self.path_received
             and time.monotonic() - self.path_received_at <= timeout
+        )
+
+    def clusters_are_fresh(self) -> bool:
+        timeout = max(0.0, float(self.get_parameter("data_timeout_sec").value))
+        return (
+            self.clusters_received_at > 0.0
+            and time.monotonic() - self.clusters_received_at <= timeout
         )
 
     def lane_path_is_fresh(self) -> bool:

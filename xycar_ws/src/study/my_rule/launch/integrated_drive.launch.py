@@ -131,7 +131,17 @@ def generate_launch_description() -> LaunchDescription:
         name="my_rule_cone_node",
         output="screen",
         parameters=[
-            PathJoinSubstitution([my_rule_share, "config", "cone_control.yaml"])
+            PathJoinSubstitution([my_rule_share, "config", "cone_control.yaml"]),
+            {
+                "cone_yolo_association_enabled": True,
+                "camera_yaml": PathJoinSubstitution(
+                    [
+                        perception_share,
+                        "config",
+                        "wide_camera_fisheye_1280x1024.yaml",
+                    ]
+                ),
+            },
         ],
     )
     manager = Node(

@@ -1,13 +1,30 @@
-my_rule_cone_node:
+/**:
   ros__parameters:
     scan_topic: /scan
     cone_cmd_topic: /my_rule/cone_cmd
     cone_cluster_topic: /my_rule/cone_clusters
+    cone_lidar_cluster_topic: /my_rule/cone_lidar_clusters
+    cone_fused_cluster_topic: /my_rule/cone_fused_clusters
     cone_path_topic: /my_rule/cone_path
     # The integrated semantic launch overrides this to true. Standalone cone
     # testing remains active without requiring a gate publisher.
     processing_gate_enabled: false
     processing_enabled_topic: /my_rule/cone_processing_enabled
+    # Real semantic launches override this to true. The latest confirmed YOLO
+    # cone boxes are cached, so LiDAR clustering remains at the native scan rate.
+    cone_yolo_association_enabled: false
+    object_detections_topic: /my_rule/object_detections
+    camera_rect_balance: 0.3
+    cone_yolo_box_timeout_sec: 0.75
+    cone_yolo_min_confidence: 0.50
+    # Preserve calibration tolerance here. The association step itself keeps
+    # only the nearest LiDAR candidate per box, which removes rear candidates
+    # without dropping near candidates at the edge of a box.
+    cone_yolo_box_padding_ratio: 0.35
+    cone_yolo_box_min_padding_px: 12.0
+    # The 2-D LiDAR measures one horizontal plane, not cone height. Match the
+    # projected camera bearing and do not reject a cone on vertical pixels.
+    cone_yolo_match_vertical: false
     max_range_m: 2.2
     min_range_m: 0.18
     scan_angle_offset_deg: 0.0

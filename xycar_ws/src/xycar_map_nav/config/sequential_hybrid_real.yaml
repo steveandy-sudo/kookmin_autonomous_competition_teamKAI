@@ -54,7 +54,7 @@ sequential_hybrid_driver:
     cone_entry_distance_m: 3.0
     cone_cluster_timeout_sec: 0.50
     cone_sensor_presence_timeout_sec: 0.5
-    cone_cluster_topic: /my_rule/cone_clusters
+    cone_cluster_topic: /my_rule/cone_fused_clusters
     cone_processing_enabled_topic: /my_rule/cone_processing_enabled
 
     # One YOLO frame plus the yellow centerline side selects the opposite lane

@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 import math
+import time
 from collections import deque
+from pathlib import Path as FilePath
 from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 import rclpy
+from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import Pose, PoseArray, PoseStamped
+from my_rule_msgs.msg import ObjectDetectionArray
 from nav_msgs.msg import Path
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
@@ -17,6 +21,14 @@ from rclpy.qos import (
 )
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Bool, Float32MultiArray
+
+from my_rule.perception.camera_input import CameraRectifier
+from my_rule.perception.lidar_camera_association import (
+    ImageBox,
+    associate_lidar_clusters_with_boxes,
+    load_lidar_camera_extrinsic,
+)
+from my_rule.perception.object_perception import normalize_class_name
 
 try:
     from scipy.interpolate import CubicSpline
@@ -30,15 +42,50 @@ Point2 = Tuple[float, float]
 class ConeNode(Node):
     def __init__(self) -> None:
         super().__init__("my_rule_cone_node")
+        perception_share = FilePath(
+            get_package_share_directory("xycar_perception")
+        )
         self.declare_parameter("scan_topic", "/scan")
         self.declare_parameter("cone_cmd_topic", "my_rule/cone_cmd")
         self.declare_parameter("cone_cluster_topic", "my_rule/cone_clusters")
+        self.declare_parameter(
+            "cone_lidar_cluster_topic", "/my_rule/cone_lidar_clusters"
+        )
+        self.declare_parameter(
+            "cone_fused_cluster_topic", "/my_rule/cone_fused_clusters"
+        )
         self.declare_parameter("cone_path_topic", "my_rule/cone_path")
         self.declare_parameter("processing_gate_enabled", False)
         self.declare_parameter(
             "processing_enabled_topic",
             "/my_rule/cone_processing_enabled",
         )
+        self.declare_parameter("cone_yolo_association_enabled", False)
+        self.declare_parameter(
+            "object_detections_topic", "/my_rule/object_detections"
+        )
+        self.declare_parameter(
+            "camera_yaml",
+            str(
+                perception_share
+                / "config"
+                / "wide_camera_fisheye_1280x1024_20260708.yaml"
+            ),
+        )
+        self.declare_parameter(
+            "lidar_camera_extrinsic_yaml",
+            str(
+                perception_share
+                / "config"
+                / "lidar_camera_extrinsic_measured.yaml"
+            ),
+        )
+        self.declare_parameter("camera_rect_balance", 0.3)
+        self.declare_parameter("cone_yolo_box_timeout_sec", 0.75)
+        self.declare_parameter("cone_yolo_min_confidence", 0.50)
+        self.declare_parameter("cone_yolo_box_padding_ratio", 0.20)
+        self.declare_parameter("cone_yolo_box_min_padding_px", 8.0)
+        self.declare_parameter("cone_yolo_match_vertical", False)
         self.declare_parameter("max_range_m", 3.0)
         self.declare_parameter("min_range_m", 0.18)
         self.declare_parameter("scan_angle_offset_deg", 0.0)
@@ -127,8 +174,51 @@ class ConeNode(Node):
         )
         self.cmd_pub = self.create_publisher(Float32MultiArray, str(self.get_parameter("cone_cmd_topic").value), 10)
         self.cluster_pub = self.create_publisher(PoseArray, str(self.get_parameter("cone_cluster_topic").value), 10)
+        self.lidar_cluster_pub = self.create_publisher(
+            PoseArray,
+            str(self.get_parameter("cone_lidar_cluster_topic").value),
+            10,
+        )
+        self.fused_cluster_pub = self.create_publisher(
+            PoseArray,
+            str(self.get_parameter("cone_fused_cluster_topic").value),
+            10,
+        )
         self.path_pub = self.create_publisher(Path, str(self.get_parameter("cone_path_topic").value), 10)
         self.scan_subscription = None
+        self.cone_yolo_boxes: List[ImageBox] = []
+        self.cone_yolo_boxes_time = float("-inf")
+        self.cone_yolo_boxes_stamp_ns = 0
+        self.cone_yolo_image_size = (0, 0)
+        self.cone_yolo_camera_matrix: Optional[np.ndarray] = None
+        self.cone_yolo_subscription = None
+        self.cone_yolo_association_enabled = bool(
+            self.get_parameter("cone_yolo_association_enabled").value
+        )
+        self.camera_rectifier: Optional[CameraRectifier] = None
+        self.rotation_camera_laser: Optional[np.ndarray] = None
+        self.translation_camera_laser: Optional[np.ndarray] = None
+        if self.cone_yolo_association_enabled:
+            self.camera_rectifier = CameraRectifier(
+                str(self.get_parameter("camera_yaml").value),
+                float(self.get_parameter("camera_rect_balance").value),
+            )
+            (
+                self.rotation_camera_laser,
+                self.translation_camera_laser,
+            ) = load_lidar_camera_extrinsic(
+                str(
+                    self.get_parameter(
+                        "lidar_camera_extrinsic_yaml"
+                    ).value
+                )
+            )
+            self.cone_yolo_subscription = self.create_subscription(
+                ObjectDetectionArray,
+                str(self.get_parameter("object_detections_topic").value),
+                self.object_detections_callback,
+                self.scan_qos,
+            )
         self.prev_path: Optional[List[Point2]] = None
         self.path_miss_count = 0
         self.path_is_held = False
@@ -177,7 +267,104 @@ class ConeNode(Node):
         )
         self.get_logger().info(
             f"cone_node ready: scan offset {offset:.1f} deg, "
-            f"path interpolation {method}, state={state}"
+            f"path interpolation {method}, state={state}, "
+            "YOLO-cluster association="
+            f"{'enabled' if self.cone_yolo_association_enabled else 'disabled'}"
+        )
+
+    def object_detections_callback(
+        self, message: ObjectDetectionArray
+    ) -> None:
+        width = int(message.image_width)
+        height = int(message.image_height)
+        if width <= 0 or height <= 0 or self.camera_rectifier is None:
+            return
+        minimum_confidence = float(
+            self.get_parameter("cone_yolo_min_confidence").value
+        )
+        boxes: List[ImageBox] = [
+            (
+                float(item.xmin),
+                float(item.ymin),
+                float(item.xmax),
+                float(item.ymax),
+            )
+            for item in message.detections
+            if (
+                normalize_class_name(item.class_name) == "cone"
+                and float(item.confidence) >= minimum_confidence
+                and int(item.xmax) > int(item.xmin)
+                and int(item.ymax) > int(item.ymin)
+            )
+        ]
+        if not boxes:
+            return
+        image_size = (width, height)
+        if (
+            self.cone_yolo_camera_matrix is None
+            or image_size != self.cone_yolo_image_size
+        ):
+            _, _, _, matrix = self.camera_rectifier.rectification_parameters(
+                width, height
+            )
+            self.cone_yolo_camera_matrix = matrix
+            self.cone_yolo_image_size = image_size
+        self.cone_yolo_boxes = boxes
+        self.cone_yolo_boxes_time = time.monotonic()
+        self.cone_yolo_boxes_stamp_ns = self.message_stamp_ns(message)
+
+    @staticmethod
+    def message_stamp_ns(message) -> int:
+        stamp = getattr(getattr(message, "header", None), "stamp", None)
+        if stamp is None:
+            return 0
+        return int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
+
+    def associate_clusters_with_yolo(
+        self,
+        clusters: Sequence[Point2],
+        scan_stamp_ns: int = 0,
+    ) -> List[Point2]:
+        if not self.cone_yolo_association_enabled:
+            return list(clusters)
+        timeout = max(
+            0.0,
+            float(self.get_parameter("cone_yolo_box_timeout_sec").value),
+        )
+        age_sec = time.monotonic() - self.cone_yolo_boxes_time
+        if scan_stamp_ns > 0 and self.cone_yolo_boxes_stamp_ns > 0:
+            stamp_delta_sec = (
+                scan_stamp_ns - self.cone_yolo_boxes_stamp_ns
+            ) / 1.0e9
+            # Prefer sensor timestamps when both devices share the ROS clock.
+            # Fall back to receipt time for drivers with unrelated clocks.
+            if abs(stamp_delta_sec) < 60.0:
+                age_sec = max(0.0, stamp_delta_sec)
+        if (
+            age_sec > timeout
+            or self.cone_yolo_camera_matrix is None
+            or self.rotation_camera_laser is None
+            or self.translation_camera_laser is None
+        ):
+            return []
+        width, height = self.cone_yolo_image_size
+        return associate_lidar_clusters_with_boxes(
+            clusters,
+            self.cone_yolo_boxes,
+            rotation_camera_laser=self.rotation_camera_laser,
+            translation_camera_laser=self.translation_camera_laser,
+            camera_matrix=self.cone_yolo_camera_matrix,
+            image_width=width,
+            image_height=height,
+            padding_ratio=float(
+                self.get_parameter("cone_yolo_box_padding_ratio").value
+            ),
+            minimum_padding_px=float(
+                self.get_parameter("cone_yolo_box_min_padding_px").value
+            ),
+            match_vertical=bool(
+                self.get_parameter("cone_yolo_match_vertical").value
+            ),
         )
 
     def processing_enabled_callback(self, msg: Bool) -> None:
@@ -197,6 +384,8 @@ class ConeNode(Node):
             self.destroy_subscription(self.scan_subscription)
             self.scan_subscription = None
         self.reset_processing_state()
+        self.publish_cluster_array(self.lidar_cluster_pub, [])
+        self.publish_cluster_array(self.fused_cluster_pub, [])
         self.publish_clusters([])
         self.publish_path([])
         self.publish_cmd(0.0, 0.0, 0.0)
@@ -236,16 +425,24 @@ class ConeNode(Node):
         points = self.scan_to_points(msg)
         clusters = self.cluster_cones(points)
         clusters = self.filter_front_clusters_by_angle(clusters)
-        self.publish_clusters(clusters)
+        self.publish_cluster_array(self.lidar_cluster_pub, clusters)
+        fused_clusters = self.associate_clusters_with_yolo(
+            clusters,
+            scan_stamp_ns=self.message_stamp_ns(msg),
+        )
+        self.publish_cluster_array(self.fused_cluster_pub, fused_clusters)
+        # Retain the historical topic as a compatibility alias, but its content
+        # is now the fused result rather than the raw LiDAR candidates.
+        self.publish_clusters(fused_clusters)
 
-        left_cones, right_cones = self.form_cone_groups(clusters)
+        left_cones, right_cones = self.form_cone_groups(fused_clusters)
         midpoints = self.calculate_midpoints(left_cones, right_cones)
         boundary_switch_pending = (
             self.pending_inferred_boundary is not None
             and self.pending_inferred_frames > 0
         )
         if not midpoints and not boundary_switch_pending:
-            fallback_midpoint = self.nearest_gate_midpoint(clusters)
+            fallback_midpoint = self.nearest_gate_midpoint(fused_clusters)
             if fallback_midpoint is not None:
                 self.midpoints_inferred = True
                 self.midpoint_source = "nearest_gate"
@@ -254,7 +451,7 @@ class ConeNode(Node):
         self.publish_path(path)
 
         if not path:
-            if self.publish_blind_recovery(len(clusters)):
+            if self.publish_blind_recovery(len(fused_clusters)):
                 return
             self.steering_history.clear()
             self.stabilized_steering = None
@@ -1071,6 +1268,13 @@ class ConeNode(Node):
         self.cmd_pub.publish(msg)
 
     def publish_clusters(self, clusters: Sequence[Point2]) -> None:
+        self.publish_cluster_array(self.cluster_pub, clusters)
+
+    def publish_cluster_array(
+        self,
+        publisher,
+        clusters: Sequence[Point2],
+    ) -> None:
         msg = PoseArray()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = "laser_frame"
@@ -1079,7 +1283,7 @@ class ConeNode(Node):
             pose.position.x = float(x)
             pose.position.y = float(y)
             msg.poses.append(pose)
-        self.cluster_pub.publish(msg)
+        publisher.publish(msg)
 
     def publish_path(self, path: Sequence[Point2]) -> None:
         msg = Path()

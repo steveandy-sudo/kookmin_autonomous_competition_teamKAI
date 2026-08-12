@@ -33,6 +33,7 @@ from my_rule.perception.camera_input import (
     CameraRectifier,
     decode_compressed_bgr,
 )
+from my_rule.perception.lidar_camera_association import project_laser_xy
 from my_rule_msgs.msg import Centerline, ObjectDetectionArray
 
 
@@ -127,32 +128,6 @@ def rear_axle_to_laser(
     result = array.copy()
     result[:, 0] -= float(lidar_to_rear_axle_m)
     return result
-
-
-def project_laser_xy(
-    points_xy: np.ndarray,
-    rotation_camera_laser: np.ndarray,
-    translation_camera_laser: np.ndarray,
-    camera_matrix: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Project ground-plane laser points into a rectified camera image."""
-    points = np.asarray(points_xy, dtype=np.float64).reshape(-1, 2)
-    if points.size == 0:
-        return np.empty((0, 2), dtype=np.float64), np.empty(0, dtype=bool)
-    points_3d = np.column_stack((points, np.zeros(points.shape[0])))
-    camera = (
-        np.asarray(rotation_camera_laser, dtype=np.float64).reshape(3, 3)
-        @ points_3d.T
-    ).T + np.asarray(translation_camera_laser, dtype=np.float64).reshape(1, 3)
-    depth = camera[:, 2]
-    valid = np.isfinite(camera).all(axis=1) & (depth > 1e-4)
-    pixels = np.full((points.shape[0], 2), np.nan, dtype=np.float64)
-    if np.any(valid):
-        normalized = camera[valid, :2] / depth[valid, np.newaxis]
-        matrix = np.asarray(camera_matrix, dtype=np.float64).reshape(3, 3)
-        pixels[valid, 0] = normalized[:, 0] * matrix[0, 0] + matrix[0, 2]
-        pixels[valid, 1] = normalized[:, 1] * matrix[1, 1] + matrix[1, 2]
-    return pixels, valid
 
 
 def metric_to_topdown_pixels(
