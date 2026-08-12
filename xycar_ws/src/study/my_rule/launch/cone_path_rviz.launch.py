@@ -47,7 +47,10 @@ def generate_launch_description() -> LaunchDescription:
                     {
                         "use_sim_time": ParameterValue(
                             use_sim_time, value_type=bool
-                        )
+                        ),
+                        # This standalone view has no hybrid controller mode
+                        # publisher, so retain its always-visible cone path.
+                        "gate_paths_by_control_mode": False,
                     },
                 ],
             ),

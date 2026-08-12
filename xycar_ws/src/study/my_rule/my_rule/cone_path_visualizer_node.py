@@ -17,11 +17,34 @@ from rclpy.qos import (
     QoSProfile,
     ReliabilityPolicy,
 )
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Float32MultiArray, String
 from visualization_msgs.msg import Marker, MarkerArray
 
 
 Point2 = Tuple[float, float]
+
+CONE_PATH_MARKERS = (
+    ("planned_waypoint_line", 5),
+    ("planned_waypoints", 6),
+    ("planned_path_endpoints", 7),
+    ("planned_path_endpoints", 8),
+    ("pure_pursuit_target", 9),
+)
+LANE_PATH_MARKERS = (
+    ("lane_planned_waypoint_line", 20),
+    ("lane_planned_waypoints", 21),
+    ("lane_control_target", 22),
+)
+
+
+def path_visibility_for_control_mode(mode: str) -> Tuple[bool, bool]:
+    """Return (show_cone_path, show_lane_path) for the active controller."""
+    normalized = str(mode).strip().upper()
+    if normalized == "CONE_RULE":
+        return True, False
+    if normalized in {"RULE", "YOLO_LIDAR_AVOIDANCE"}:
+        return False, True
+    return False, False
 
 
 def normalize_frame_id(frame_id: str) -> str:
@@ -167,6 +190,7 @@ class ConePathVisualizer(Node):
         self.declare_parameter(
             "lane_diagnostics_topic", "/rule_drive/diagnostics"
         )
+        self.declare_parameter("control_mode_topic", "/hybrid_gate/mode")
         self.declare_parameter("marker_topic", "/my_rule/cone_path_markers")
         self.declare_parameter("output_frame", "laser_frame")
         self.declare_parameter("lidar_to_rear_axle_m", 0.42)
@@ -182,6 +206,8 @@ class ConePathVisualizer(Node):
         self.declare_parameter("seed_max_range_m", 2.2)
         self.declare_parameter("publish_rate_hz", 10.0)
         self.declare_parameter("data_timeout_sec", 0.5)
+        self.declare_parameter("control_mode_timeout_sec", 0.5)
+        self.declare_parameter("gate_paths_by_control_mode", True)
         self.declare_parameter("path_point_stride", 5)
 
         input_qos = QoSProfile(
@@ -231,6 +257,12 @@ class ConePathVisualizer(Node):
             self.on_lane_diagnostics,
             input_qos,
         )
+        self.control_mode_sub = self.create_subscription(
+            String,
+            str(self.get_parameter("control_mode_topic").value),
+            self.on_control_mode,
+            input_qos,
+        )
 
         self.latest_path: List[Point2] = []
         self.latest_path_frame = "rear_axle"
@@ -245,6 +277,8 @@ class ConePathVisualizer(Node):
         self.lane_path_received_at = 0.0
         self.latest_lane_diagnostics: List[float] = []
         self.lane_diagnostics_received_at = 0.0
+        self.latest_control_mode = ""
+        self.control_mode_received_at = 0.0
         self.path_received = False
         self.path_received_at = 0.0
         self.command_received_at = 0.0
@@ -296,6 +330,16 @@ class ConePathVisualizer(Node):
         self.latest_lane_diagnostics = [float(value) for value in message.data]
         self.lane_diagnostics_received_at = time.monotonic()
 
+    def on_control_mode(self, message: String) -> None:
+        control_mode = str(message.data).strip().upper()
+        mode_changed = control_mode != self.latest_control_mode
+        self.latest_control_mode = control_mode
+        self.control_mode_received_at = time.monotonic()
+        if mode_changed:
+            # Do not wait for the next timer tick to remove the path owned by
+            # the controller that just became inactive.
+            self.publish_markers()
+
     def marker(self, namespace: str, marker_id: int, marker_type: int) -> Marker:
         marker = Marker()
         marker.header.stamp = self.get_clock().now().to_msg()
@@ -345,33 +389,77 @@ class ConePathVisualizer(Node):
         if clusters:
             self.append_clusters(markers, clusters)
 
-        cone_path = self.transformed_path()
-        if cone_path is None:
-            frame = normalize_frame_id(self.latest_path_frame)
-            if frame != self.unsupported_path_frame:
-                self.unsupported_path_frame = frame
-                self.get_logger().warn(
-                    f"cannot visualize path frame '{frame}' without a TF transform"
-                )
-        elif cone_path:
-            self.unsupported_path_frame = ""
-            self.append_path(markers, cone_path)
-            self.append_lookahead(markers, cone_path)
+        show_cone_path, show_lane_path = self.visible_paths()
+        self.append_inactive_path_deletes(
+            markers,
+            show_cone_path=show_cone_path,
+            show_lane_path=show_lane_path,
+        )
 
-        lane_path = self.transformed_lane_path()
-        if lane_path is None:
-            frame = normalize_frame_id(self.latest_lane_frame)
-            if frame != self.unsupported_lane_frame:
-                self.unsupported_lane_frame = frame
-                self.get_logger().warn(
-                    f"cannot visualize lane path frame '{frame}' without a TF transform"
-                )
-        elif lane_path:
-            self.unsupported_lane_frame = ""
-            self.append_lane_path(markers, lane_path)
-            self.append_lane_target(markers)
+        if show_cone_path:
+            cone_path = self.transformed_path()
+            if cone_path is None:
+                frame = normalize_frame_id(self.latest_path_frame)
+                if frame != self.unsupported_path_frame:
+                    self.unsupported_path_frame = frame
+                    self.get_logger().warn(
+                        "cannot visualize cone path frame "
+                        f"'{frame}' without a TF transform"
+                    )
+            elif cone_path:
+                self.unsupported_path_frame = ""
+                self.append_path(markers, cone_path)
+                self.append_lookahead(markers, cone_path)
+
+        if show_lane_path:
+            lane_path = self.transformed_lane_path()
+            if lane_path is None:
+                frame = normalize_frame_id(self.latest_lane_frame)
+                if frame != self.unsupported_lane_frame:
+                    self.unsupported_lane_frame = frame
+                    self.get_logger().warn(
+                        "cannot visualize lane path frame "
+                        f"'{frame}' without a TF transform"
+                    )
+            elif lane_path:
+                self.unsupported_lane_frame = ""
+                self.append_lane_path(markers, lane_path)
+                self.append_lane_target(markers)
 
         self.marker_pub.publish(markers)
+
+    def append_inactive_path_deletes(
+        self,
+        markers: MarkerArray,
+        *,
+        show_cone_path: bool,
+        show_lane_path: bool,
+    ) -> None:
+        marker_keys = []
+        if not show_cone_path:
+            marker_keys.extend(CONE_PATH_MARKERS)
+        if not show_lane_path:
+            marker_keys.extend(LANE_PATH_MARKERS)
+        for namespace, marker_id in marker_keys:
+            marker = self.marker(namespace, marker_id, Marker.ARROW)
+            marker.action = Marker.DELETE
+            markers.markers.append(marker)
+
+    def visible_paths(self) -> Tuple[bool, bool]:
+        if not bool(
+            self.get_parameter("gate_paths_by_control_mode").value
+        ):
+            return True, True
+        timeout = max(
+            0.0,
+            float(self.get_parameter("control_mode_timeout_sec").value),
+        )
+        if (
+            not self.latest_control_mode
+            or time.monotonic() - self.control_mode_received_at > timeout
+        ):
+            return False, False
+        return path_visibility_for_control_mode(self.latest_control_mode)
 
     def append_fov(self, markers: MarkerArray) -> None:
         minimum_range = float(self.get_parameter("min_range_m").value)
@@ -485,9 +573,9 @@ class ConePathVisualizer(Node):
         fresh = self.path_is_fresh()
         line = self.marker("planned_waypoint_line", 5, Marker.LINE_STRIP)
         line.scale.x = 0.055
-        line.color.r = 0.10 if fresh else 1.0
-        line.color.g = 1.0 if fresh else 0.72
-        line.color.b = 0.25 if fresh else 0.05
+        line.color.r = 1.0
+        line.color.g = 0.42 if fresh else 0.25
+        line.color.b = 0.05
         line.color.a = 1.0
         line.points = [make_point(x, y, 0.055) for x, y in path]
         markers.markers.append(line)
@@ -496,9 +584,9 @@ class ConePathVisualizer(Node):
         samples.scale.x = 0.045
         samples.scale.y = 0.045
         samples.scale.z = 0.045
-        samples.color.r = 0.20
-        samples.color.g = 0.90
-        samples.color.b = 1.0
+        samples.color.r = 1.0
+        samples.color.g = 0.65
+        samples.color.b = 0.12
         samples.color.a = 0.9
         stride = max(1, int(self.get_parameter("path_point_stride").value))
         sampled = list(path[::stride])
@@ -512,9 +600,9 @@ class ConePathVisualizer(Node):
         start.scale.x = 0.10
         start.scale.y = 0.10
         start.scale.z = 0.10
-        start.color.r = 0.15
-        start.color.g = 0.65
-        start.color.b = 1.0
+        start.color.r = 1.0
+        start.color.g = 0.55
+        start.color.b = 0.08
         start.color.a = 1.0
         markers.markers.append(start)
 
@@ -524,8 +612,8 @@ class ConePathVisualizer(Node):
         finish.scale.y = 0.11
         finish.scale.z = 0.11
         finish.color.r = 1.0
-        finish.color.g = 0.20
-        finish.color.b = 0.75
+        finish.color.g = 0.30
+        finish.color.b = 0.02
         finish.color.a = 1.0
         markers.markers.append(finish)
 

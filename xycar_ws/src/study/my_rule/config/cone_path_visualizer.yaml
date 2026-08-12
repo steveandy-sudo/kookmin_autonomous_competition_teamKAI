@@ -5,6 +5,7 @@ my_rule_cone_path_visualizer:
     command_topic: /my_rule/cone_cmd
     lane_path_topic: /rule_drive/connected_yellow_path
     lane_diagnostics_topic: /rule_drive/diagnostics
+    control_mode_topic: /hybrid_gate/mode
     marker_topic: /my_rule/cone_path_markers
 
     # cone_node publishes the path in rear_axle coordinates. The visualizer
@@ -28,4 +29,6 @@ my_rule_cone_path_visualizer:
 
     publish_rate_hz: 10.0
     data_timeout_sec: 0.5
+    control_mode_timeout_sec: 0.5
+    gate_paths_by_control_mode: true
     path_point_stride: 5

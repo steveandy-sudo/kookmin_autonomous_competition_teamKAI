@@ -88,6 +88,7 @@ ros2 bag play "$BAG_PATH" --clock 40 --rate 0.5 --start-paused \
   --topics \
   /wide_camera_mjpeg/image_raw/compressed \
   /scan \
+  /hybrid_gate/mode \
   /rule_drive/connected_yellow_path \
   /rule_drive/diagnostics \
   /my_rule/cone_path \
@@ -187,6 +188,9 @@ the top of the screen. The light orange sector is the LiDAR scan candidate
 range; the darker left/right sectors are the cone-group seed regions. Their
 angles and ranges come from `cone_path_visualizer.yaml`, synchronized with
 `cone_control.yaml`.
+Only the path owned by the fresh `/hybrid_gate/mode` controller is drawn:
+`RULE` and `YOLO_LIDAR_AVOIDANCE` show the lane path, while `CONE_RULE` shows
+only the orange cone path. Unknown or stale modes hide both paths.
 
 ### Real camera and LiDAR driving on the vehicle computer
 

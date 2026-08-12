@@ -3,11 +3,32 @@ import math
 import pytest
 
 from my_rule.cone_path_visualizer_node import (
+    CONE_PATH_MARKERS,
+    LANE_PATH_MARKERS,
     fov_outline_points,
+    path_visibility_for_control_mode,
     sector_triangle_points,
     select_lookahead_index,
     transform_planar_points,
 )
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected"),
+    [
+        ("CONE_RULE", (True, False)),
+        ("RULE", (False, True)),
+        ("YOLO_LIDAR_AVOIDANCE", (False, True)),
+        ("RL", (False, False)),
+        ("", (False, False)),
+    ],
+)
+def test_path_visibility_follows_active_control_mode(mode, expected):
+    assert path_visibility_for_control_mode(mode) == expected
+
+
+def test_lane_and_cone_path_marker_keys_do_not_overlap():
+    assert set(CONE_PATH_MARKERS).isdisjoint(LANE_PATH_MARKERS)
 
 
 def test_rear_axle_path_is_transformed_into_laser_frame():
