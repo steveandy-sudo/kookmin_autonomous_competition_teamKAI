@@ -42,6 +42,8 @@ def active_drive_mode(source: str, mode_label: str) -> str:
         return avoidance_modes[mode_label]
     if mode_label == "CONE_RULE" or source == "CONE_RULE":
         return "CONE"
+    if source == "SHORTCUT":
+        return "SHORTCUT"
     if source == "RULE":
         return "RULE"
     if source == "RL":

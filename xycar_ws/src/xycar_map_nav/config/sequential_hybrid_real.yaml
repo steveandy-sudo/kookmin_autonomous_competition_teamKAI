@@ -8,6 +8,8 @@ sequential_hybrid_driver:
 
     rl_command_topic: /rl/policy_motor_shadow
     rule_command_topic: /hybrid/rule_candidate
+    rule_diagnostics_topic: /rule_drive/diagnostics
+    rule_diagnostics_timeout_sec: 0.35
     cone_command_topic: /my_rule/cone_cmd
     scan_topic: /scan
     motor_topic: /xycar_motor
@@ -35,10 +37,9 @@ sequential_hybrid_driver:
     maximum_speed_command: 30.0
     maximum_abs_angle_command: 42.0
 
-    # Cone mode may start anywhere. While either YOLO or LiDAR still sees a
-    # cone, the selector holds the last valid cone steering command. It exits
-    # after both sensors have been absent for the timeout. One control frame is
-    # used only to apply that timeout result, so no second release delay stacks.
+    # Cone mode may start anywhere. Exit waits for both cone modalities to
+    # disappear and for a stable RULE path, then blends authority back instead
+    # of switching steering in one frame.
     cone_entry_confidence: 0.35
     cone_exit_confidence: 0.20
     cone_entry_frames: 3
@@ -54,6 +55,17 @@ sequential_hybrid_driver:
     cone_entry_distance_m: 3.0
     cone_cluster_timeout_sec: 0.50
     cone_sensor_presence_timeout_sec: 0.5
+    cone_mode_min_duration_sec: 1.0
+    external_cone_cmd_timeout_sec: 0.5
+    cone_mode_exit_timeout_sec: 0.8
+    cone_mode_presence_min_clusters: 2
+    cone_mode_lane_recovery_required_frames: 6
+    cone_mode_lane_recovery_hold_sec: 0.35
+    cone_mode_exit_creep_timeout_sec: 1.8
+    cone_exit_creep_speed: 8.0
+    cone_exit_creep_steer_retention: 0.70
+    cone_lane_handoff_duration_sec: 0.65
+    cone_lane_handoff_max_speed: 8.0
     cone_cluster_topic: /my_rule/cone_clusters
     cone_processing_enabled_topic: /my_rule/cone_processing_enabled
 
@@ -61,6 +73,29 @@ sequential_hybrid_driver:
     # immediately. LiDAR remains distance/space telemetry, not an entry veto.
     # Traffic-light detections are intentionally not consumed here.
     object_detections_topic: /my_rule/object_detections
+    shortcut_enabled: true
+    shortcut_class_name: left_4
+    shortcut_yolo_min_confidence: 0.40
+    shortcut_yolo_required_frames: 2
+    shortcut_yolo_absence_frames: 2
+    shortcut_wait_for_entry_ready: true
+    shortcut_entry_ready_topic: /shortcut/entry/ready
+    shortcut_entry_search_timeout_sec: 12.0
+    shortcut_candidate_timeout_sec: 0.35
+    shortcut_rearm_absence_sec: 1.0
+    shortcut_command_topic: /hybrid/shortcut_candidate
+    shortcut_processing_enabled_topic: /hybrid/shortcut_processing_enabled
+
+    traffic_light_control_enabled: true
+    traffic_light_red_class_name: red_4
+    traffic_light_yellow_class_name: yellow_4
+    traffic_light_green_class_name: green_4
+    traffic_light_min_confidence: 0.50
+    traffic_light_stop_min_box_area_ratio: 0.025
+    traffic_light_go_min_box_area_ratio: 0.025
+    traffic_light_stop_required_frames: 2
+    traffic_light_go_required_frames: 2
+    traffic_light_status_topic: /hybrid/traffic_light_status
     vehicle_class_names: [obstacle_vehicle, car]
     vehicle_yolo_min_confidence: 0.45
     vehicle_yolo_required_frames: 1

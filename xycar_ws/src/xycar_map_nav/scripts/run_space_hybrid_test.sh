@@ -56,6 +56,15 @@ CONTROL_LOG="/tmp/xycar_hybrid_control_$(date +%Y%m%d_%H%M%S).log"
 RUN_CONFIG_FILE="${XYCAR_HYBRID_RUN_CONFIG_FILE:-/tmp/xycar_hybrid_run_config.yaml}"
 CONE_SPEED_COMMAND="8.0"
 CONE_SENSOR_PRESENCE_TIMEOUT_SEC="${CONE_SENSOR_PRESENCE_TIMEOUT_SEC:-0.5}"
+SHORTCUT_W1_STEERING_START_DELAY_FRAMES="${SHORTCUT_W1_STEERING_START_DELAY_FRAMES:-4}"
+SHORTCUT_W1_STEERING_DELAY_MISSING_TOLERANCE_FRAMES="${SHORTCUT_W1_STEERING_DELAY_MISSING_TOLERANCE_FRAMES:-2}"
+SHORTCUT_MINIMUM_ENTRY_PROGRESS_M="${SHORTCUT_MINIMUM_ENTRY_PROGRESS_M:-0.50}"
+SHORTCUT_PAIR_TRACK_HANDOFF_REQUIRED_FRAMES="${SHORTCUT_PAIR_TRACK_HANDOFF_REQUIRED_FRAMES:-2}"
+SHORTCUT_W1_LOSS_HANDOFF_ENABLED="${SHORTCUT_W1_LOSS_HANDOFF_ENABLED:-true}"
+SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC="${SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC:-1.5}"
+SHORTCUT_W1_STEERING_HOLD_SEC="${SHORTCUT_W1_STEERING_HOLD_SEC:-1.0}"
+SHORTCUT_ENTRY_DIRECTION_HOLD_COMMAND="${SHORTCUT_ENTRY_DIRECTION_HOLD_COMMAND:--30.0}"
+SHORTCUT_ENTRY_SPEED_COMMAND="${SHORTCUT_ENTRY_SPEED_COMMAND:-9.0}"
 TEST_PROFILE="${XYCAR_TEST_PROFILE:-integrated}"
 ENABLE_RVIZ="${XYCAR_ENABLE_RVIZ:-false}"
 START_CONE="${XYCAR_START_CONE:-true}"
@@ -483,6 +492,7 @@ export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-7}"
 unset ROS_NAMESPACE || true
 
 launch_pid=""
+mission_log_pid=""
 RUN_LOCK_FILE="${XYCAR_HYBRID_RUN_LOCK_FILE:-/tmp/xycar_hybrid_run.lock}"
 
 # Keep one authoritative controller stack. A stale stack can continue
@@ -589,6 +599,10 @@ wait_for_control_message() {
 
 cleanup() {
   set +e
+  if [[ -n "$mission_log_pid" ]] && \
+    kill -0 -- "-$mission_log_pid" 2>/dev/null; then
+    kill -TERM -- "-$mission_log_pid" 2>/dev/null
+  fi
   if [[ -n "$launch_pid" ]] && kill -0 -- "-$launch_pid" 2>/dev/null; then
     kill -TERM -- "-$launch_pid" 2>/dev/null
     for _ in $(seq 1 30); do
@@ -619,7 +633,7 @@ if [[ "$TEST_PROFILE" == "cone_obstacle" ]]; then
 elif [[ "$TEST_PROFILE" == "avoidance_only" ]]; then
   echo "Test profile: YOLO+LiDAR AVOIDANCE > RULE (cone disabled)."
 else
-  echo "Priority: CONE > YOLO+LiDAR AVOIDANCE > RULE."
+  echo "Priority: TRAFFIC > SHORTCUT > CONE > YOLO+LiDAR AVOIDANCE > RULE."
 fi
 echo "Selected speed limit: $SPEED_COMMAND"
 if [[ "$CURVATURE_SPEED_CONTROL_ENABLED" == "true" ]]; then
@@ -648,6 +662,10 @@ echo "Curve detection: ${CURVE_DETECTION_NEAR_X_M}-${CURVE_DETECTION_FAR_X_M}m, 
 echo "Curve steering multiplier: ${CURVE_STEERING_MULTIPLIER_ENABLED}, |angle|>=${CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND} x${CURVE_STEERING_MULTIPLIER}, clamp +/-42"
 echo "Left target correction: ${LEFT_OFFSET_CM}cm"
 echo "Straight-only right correction: ${STRAIGHT_RIGHT_OFFSET_CM}cm"
+echo "Shortcut entry speed cap: ${SHORTCUT_ENTRY_SPEED_COMMAND}"
+echo "Shortcut W1 steering start delay: ${SHORTCUT_W1_STEERING_START_DELAY_FRAMES} valid frames, missing tolerance ${SHORTCUT_W1_STEERING_DELAY_MISSING_TOLERANCE_FRAMES} frames"
+echo "Shortcut handoff: progress ${SHORTCUT_MINIMUM_ENTRY_PROGRESS_M}m, pair ${SHORTCUT_PAIR_TRACK_HANDOFF_REQUIRED_FRAMES} frames, W1-loss fallback ${SHORTCUT_W1_LOSS_HANDOFF_ENABLED}"
+echo "Shortcut W1 steering maximum active time: ${SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC}s"
 echo "Cone speed command: $CONE_SPEED_COMMAND"
 echo "Cone sensor-loss hold: ${CONE_SENSOR_PRESENCE_TIMEOUT_SEC}s"
 if [[ "$VEHICLE_AVOIDANCE_IMMEDIATE_ON_YOLO" == "true" ]]; then
@@ -722,6 +740,17 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   maximum_speed_command:=30.0 \
   start_cone:="$START_CONE" \
   start_object_detection:=true \
+  start_shortcut:=true \
+  shortcut_handoff_to_rule:=true \
+  shortcut_w1_steering_start_delay_frames:="$SHORTCUT_W1_STEERING_START_DELAY_FRAMES" \
+  shortcut_w1_steering_delay_missing_tolerance_frames:="$SHORTCUT_W1_STEERING_DELAY_MISSING_TOLERANCE_FRAMES" \
+  shortcut_minimum_entry_progress_m:="$SHORTCUT_MINIMUM_ENTRY_PROGRESS_M" \
+  shortcut_pair_track_handoff_required_frames:="$SHORTCUT_PAIR_TRACK_HANDOFF_REQUIRED_FRAMES" \
+  shortcut_w1_loss_handoff_enabled:="$SHORTCUT_W1_LOSS_HANDOFF_ENABLED" \
+  shortcut_maximum_entry_steering_sec:="$SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC" \
+  shortcut_w1_steering_hold_sec:="$SHORTCUT_W1_STEERING_HOLD_SEC" \
+  shortcut_entry_direction_hold_command:="$SHORTCUT_ENTRY_DIRECTION_HOLD_COMMAND" \
+  shortcut_entry_speed_command:="$SHORTCUT_ENTRY_SPEED_COMMAND" \
   vehicle_avoidance_enabled:=true \
   vehicle_yolo_min_confidence:="$VEHICLE_YOLO_MIN_CONFIDENCE" \
   cone_as_vehicle_obstacle:="$CONE_AS_VEHICLE_OBSTACLE" \
@@ -769,6 +798,17 @@ if ! kill -0 "$launch_pid" 2>/dev/null; then
   wait "$launch_pid"
   exit 1
 fi
+
+# Keep the complete launch output in CONTROL_LOG while forwarding only
+# operator-relevant mission transitions to this terminal in real time.
+setsid bash -c '
+  log_file="$1"
+  owner_pid="$2"
+  stdbuf -oL tail --pid="$owner_pid" -n 0 -F "$log_file" 2>/dev/null |
+    stdbuf -oL grep --line-buffered -E \
+      "\\[MISSION\\]|\\[YOLO object\\]|SHORTCUT HANDOFF|SHORTCUT CONTROL SWITCHED|SHORTCUT candidate (enabled|disabled)|shortcut LR-ASPP camera input (enabled|disabled)|candidate stale|safe stop"
+' _ "$CONTROL_LOG" "$launch_pid" &
+mission_log_pid=$!
 
 echo
 echo "========== 주행 제어 준비 확인 =========="

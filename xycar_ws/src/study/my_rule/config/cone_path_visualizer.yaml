@@ -1,0 +1,34 @@
+my_rule_cone_path_visualizer:
+  ros__parameters:
+    path_topic: /my_rule/cone_path
+    cluster_topic: /my_rule/cone_clusters
+    command_topic: /my_rule/cone_cmd
+    lane_path_topic: /rule_drive/connected_yellow_path
+    lane_diagnostics_topic: /rule_drive/diagnostics
+    control_mode_topic: /hybrid_gate/mode
+    marker_topic: /my_rule/cone_path_markers
+
+    # cone_node publishes the path in rear_axle coordinates. The visualizer
+    # shifts it into laser_frame so RViz does not require a rear_axle TF.
+    output_frame: laser_frame
+    lidar_to_rear_axle_m: 0.42
+
+    lookahead_min_m: 0.7
+    lookahead_max_m: 1.45
+    lookahead_scale: 0.12
+
+    # Keep these synchronized with cone_control.yaml. The visualizer shades
+    # the exact scan-candidate and left/right seed regions used by cone_node.
+    min_range_m: 0.18
+    max_range_m: 2.2
+    scan_front_min_deg: -94.0
+    scan_front_max_deg: 94.0
+    seed_min_angle_deg: 15.0
+    seed_max_angle_deg: 90.0
+    seed_max_range_m: 2.2
+
+    publish_rate_hz: 10.0
+    data_timeout_sec: 0.5
+    control_mode_timeout_sec: 0.5
+    gate_paths_by_control_mode: true
+    path_point_stride: 5

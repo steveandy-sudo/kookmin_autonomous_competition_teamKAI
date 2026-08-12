@@ -25,6 +25,13 @@ def generate_launch_description():
             "direct_bev_stanley_pursuit.launch.py",
         ]
     )
+    shortcut_semantic_launch = PathJoinSubstitution(
+        [
+            FindPackageShare("shortcut_entry_review"),
+            "launch",
+            "shortcut_entry_semantic_control.launch.py",
+        ]
+    )
     rule_base = PathJoinSubstitution(
         [
             FindPackageShare("xycar_rule_drive"),
@@ -52,13 +59,7 @@ def generate_launch_description():
     object_config = PathJoinSubstitution(
         [FindPackageShare("my_rule"), "config", "object_detection.yaml"]
     )
-    object_model = PathJoinSubstitution(
-        [
-            FindPackageShare("my_rule"),
-            "models",
-            "kookmin_objects_best_20260804.pt",
-        ]
-    )
+    object_model = LaunchConfiguration("object_model_path")
     object_camera_yaml = PathJoinSubstitution(
         [
             FindPackageShare("xycar_perception"),
@@ -68,9 +69,9 @@ def generate_launch_description():
     )
     rviz_config = PathJoinSubstitution(
         [
-            FindPackageShare("xycar_map_nav"),
+            FindPackageShare("my_rule"),
             "rviz",
-            "avoidance_test.rviz",
+            "integrated_drive.rviz",
         ]
     )
     drive_enabled = LaunchConfiguration("drive_enabled")
@@ -118,6 +119,79 @@ def generate_launch_description():
             DeclareLaunchArgument("start_cone", default_value="true"),
             DeclareLaunchArgument(
                 "start_object_detection", default_value="true"
+            ),
+            DeclareLaunchArgument("start_shortcut", default_value="true"),
+            DeclareLaunchArgument(
+                "shortcut_handoff_to_rule", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "object_model_path",
+                default_value=PathJoinSubstitution(
+                    [
+                        FindPackageShare("my_rule"),
+                        "models",
+                        "no_red_car_best.pt",
+                    ]
+                ),
+            ),
+            DeclareLaunchArgument(
+                "shortcut_lane_model",
+                default_value=PathJoinSubstitution(
+                    [
+                        FindPackageShare("xycar_perception"),
+                        "models",
+                        "kookmin_lane_lraspp_mbv3s_256x144.pt",
+                    ]
+                ),
+            ),
+            DeclareLaunchArgument(
+                "shortcut_w1_path_weight", default_value="0.60"
+            ),
+            DeclareLaunchArgument(
+                "shortcut_speed_command_to_mps", default_value="0.04"
+            ),
+            DeclareLaunchArgument(
+                "shortcut_spatial_gate_response_time_sec",
+                default_value="0.35",
+            ),
+            DeclareLaunchArgument(
+                "shortcut_spatial_gate_minimum_distance_m",
+                default_value="0.25",
+            ),
+            DeclareLaunchArgument(
+                "shortcut_spatial_gate_blend_distance_m",
+                default_value="0.25",
+            ),
+            DeclareLaunchArgument(
+                "shortcut_w1_steering_start_delay_frames",
+                default_value="4",
+            ),
+            DeclareLaunchArgument(
+                "shortcut_w1_steering_delay_missing_tolerance_frames",
+                default_value="2",
+            ),
+            DeclareLaunchArgument(
+                "shortcut_minimum_entry_progress_m", default_value="0.50"
+            ),
+            DeclareLaunchArgument(
+                "shortcut_pair_track_handoff_required_frames",
+                default_value="2",
+            ),
+            DeclareLaunchArgument(
+                "shortcut_w1_loss_handoff_enabled", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "shortcut_maximum_entry_steering_sec", default_value="1.5"
+            ),
+            DeclareLaunchArgument(
+                "shortcut_w1_steering_hold_sec", default_value="1.0"
+            ),
+            DeclareLaunchArgument(
+                "shortcut_entry_direction_hold_command",
+                default_value="-30.0",
+            ),
+            DeclareLaunchArgument(
+                "shortcut_entry_speed_command", default_value="9.0"
             ),
             DeclareLaunchArgument(
                 "vehicle_avoidance_enabled", default_value="true"
@@ -536,9 +610,25 @@ def generate_launch_description():
                 }.items(),
             ),
             Node(
+                package="my_rule",
+                executable="drive_path_visualizer",
+                name="my_rule_cone_path_visualizer",
+                condition=IfCondition(LaunchConfiguration("enable_rviz")),
+                output="screen",
+                parameters=[
+                    PathJoinSubstitution(
+                        [
+                            FindPackageShare("my_rule"),
+                            "config",
+                            "cone_path_visualizer.yaml",
+                        ]
+                    )
+                ],
+            ),
+            Node(
                 package="rviz2",
                 executable="rviz2",
-                name="rviz2_avoidance_test",
+                name="rviz2_integrated_drive",
                 condition=IfCondition(LaunchConfiguration("enable_rviz")),
                 output="screen",
                 arguments=["-d", rviz_config],
@@ -861,6 +951,74 @@ def generate_launch_description():
                     },
                 ],
             ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(shortcut_semantic_launch),
+                condition=IfCondition(LaunchConfiguration("start_shortcut")),
+                launch_arguments={
+                    "source_topic": (
+                        "/wide_camera_mjpeg/image_raw/compressed"
+                    ),
+                    "processing_enabled_topic": (
+                        "/hybrid/shortcut_processing_enabled"
+                    ),
+                    "candidate_topic": "/hybrid/shortcut_candidate",
+                    "rule_command_topic": "/hybrid/rule_candidate",
+                    "handoff_to_rule": LaunchConfiguration(
+                        "shortcut_handoff_to_rule"
+                    ),
+                    "w1_path_weight": LaunchConfiguration(
+                        "shortcut_w1_path_weight"
+                    ),
+                    "lane_model": LaunchConfiguration(
+                        "shortcut_lane_model"
+                    ),
+                    "camera_yaml": object_camera_yaml,
+                    "speed_command_to_mps": LaunchConfiguration(
+                        "shortcut_speed_command_to_mps"
+                    ),
+                    "spatial_gate_response_time_sec": LaunchConfiguration(
+                        "shortcut_spatial_gate_response_time_sec"
+                    ),
+                    "spatial_gate_minimum_distance_m": LaunchConfiguration(
+                        "shortcut_spatial_gate_minimum_distance_m"
+                    ),
+                    "spatial_gate_blend_distance_m": LaunchConfiguration(
+                        "shortcut_spatial_gate_blend_distance_m"
+                    ),
+                    "w1_steering_start_delay_frames": LaunchConfiguration(
+                        "shortcut_w1_steering_start_delay_frames"
+                    ),
+                    "w1_steering_delay_missing_tolerance_frames": (
+                        LaunchConfiguration(
+                            "shortcut_w1_steering_delay_missing_tolerance_frames"
+                        )
+                    ),
+                    "minimum_entry_progress_m": LaunchConfiguration(
+                        "shortcut_minimum_entry_progress_m"
+                    ),
+                    "pair_track_handoff_required_frames": LaunchConfiguration(
+                        "shortcut_pair_track_handoff_required_frames"
+                    ),
+                    "w1_loss_handoff_enabled": LaunchConfiguration(
+                        "shortcut_w1_loss_handoff_enabled"
+                    ),
+                    "maximum_entry_steering_sec": LaunchConfiguration(
+                        "shortcut_maximum_entry_steering_sec"
+                    ),
+                    "w1_steering_hold_sec": LaunchConfiguration(
+                        "shortcut_w1_steering_hold_sec"
+                    ),
+                    "entry_direction_hold_command": LaunchConfiguration(
+                        "shortcut_entry_direction_hold_command"
+                    ),
+                    "entry_speed_command": LaunchConfiguration(
+                        "shortcut_entry_speed_command"
+                    ),
+                    "default_enabled": "false",
+                    "use_sim_time": "false",
+                    "show_opencv_windows": "false",
+                }.items(),
+            ),
             Node(
                 package="xycar_map_nav",
                 executable="sequential_hybrid_driver",
@@ -880,6 +1038,22 @@ def generate_launch_description():
                             LaunchConfiguration("force_rule_only"),
                             value_type=bool,
                         ),
+                        "shortcut_enabled": ParameterValue(
+                            LaunchConfiguration("start_shortcut"),
+                            value_type=bool,
+                        ),
+                        "shortcut_command_topic": (
+                            "/hybrid/shortcut_candidate"
+                        ),
+                        "shortcut_processing_enabled_topic": (
+                            "/hybrid/shortcut_processing_enabled"
+                        ),
+                        "shortcut_entry_ready_topic": (
+                            "/shortcut/entry/ready"
+                        ),
+                        "shortcut_yolo_min_confidence": 0.40,
+                        "shortcut_yolo_required_frames": 2,
+                        "shortcut_yolo_absence_frames": 2,
                         "scan_topic": scan_topic,
                         "minimum_speed_command": ParameterValue(
                             LaunchConfiguration(
