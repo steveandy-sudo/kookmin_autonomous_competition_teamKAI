@@ -86,6 +86,7 @@ def generate_launch_description():
                 condition=IfCondition(start_perception),
                 launch_arguments={
                     "cpu_threads": perception_cpu_threads,
+                    "device": device,
                 }.items(),
             ),
             IncludeLaunchDescription(

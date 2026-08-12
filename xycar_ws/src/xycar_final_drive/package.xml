@@ -10,10 +10,14 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
   <exec_depend>lane_seg_control</exec_depend>
+  <exec_depend>wide_camera</exec_depend>
+  <exec_depend>xycar_lidar</exec_depend>
   <exec_depend>xycar_rl</exec_depend>
   <exec_depend>xycar_rule_drive</exec_depend>
   <exec_depend>xycar_hybrid_drive</exec_depend>
+  <exec_depend>xycar_vesc_driver</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

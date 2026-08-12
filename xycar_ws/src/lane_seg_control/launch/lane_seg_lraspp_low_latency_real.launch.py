@@ -23,6 +23,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("cpu_threads", default_value="4"),
+            DeclareLaunchArgument("device", default_value="cpu"),
             DeclareLaunchArgument("max_output_rate_hz", default_value="15.0"),
             DeclareLaunchArgument("debug_rate_hz", default_value="0.0"),
             DeclareLaunchArgument(
@@ -57,6 +58,7 @@ def generate_launch_description():
                     ),
                     "pipeline_qos_depth": "1",
                     "cpu_threads": LaunchConfiguration("cpu_threads"),
+                    "device": LaunchConfiguration("device"),
                     "max_output_rate_hz": LaunchConfiguration(
                         "max_output_rate_hz"
                     ),

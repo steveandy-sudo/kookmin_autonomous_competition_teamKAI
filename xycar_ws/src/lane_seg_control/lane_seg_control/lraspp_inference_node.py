@@ -122,6 +122,7 @@ class LrasppInferenceNode(Node):
         self.declare_parameter("diagnostics_topic", "/lane_seg/diagnostics")
         self.declare_parameter("input_width", 256)
         self.declare_parameter("input_height", 144)
+        self.declare_parameter("device", "cpu")
         self.declare_parameter("white_class_id", 1)
         self.declare_parameter("yellow_class_id", 2)
         self.declare_parameter("white_confidence", 0.5)
@@ -265,6 +266,20 @@ class LrasppInferenceNode(Node):
         import torch
 
         self.torch = torch
+        requested_device = str(self.get_parameter("device").value).strip()
+        if not requested_device:
+            raise ValueError("device must not be empty")
+        try:
+            self.device = torch.device(requested_device)
+        except (RuntimeError, ValueError) as exc:
+            raise ValueError(
+                f"invalid Torch device {requested_device!r}"
+            ) from exc
+        if self.device.type == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError(
+                f"CUDA device {requested_device!r} was requested but "
+                "torch.cuda.is_available() is false"
+            )
         cpu_threads = max(1, int(self.get_parameter("cpu_threads").value))
         opencv_threads = max(1, int(self.get_parameter("opencv_threads").value))
         torch.set_num_threads(cpu_threads)
@@ -281,10 +296,14 @@ class LrasppInferenceNode(Node):
             raise FileNotFoundError(
                 f"LR-ASPP TorchScript model not found: {model_path}"
             )
-        model = torch.jit.load(str(model_path), map_location="cpu").eval()
+        model = torch.jit.load(
+            str(model_path), map_location=self.device
+        ).eval()
         self.model = torch.jit.optimize_for_inference(model)
         warmup = torch.zeros(
-            (1, 3, self.input_height, self.input_width), dtype=torch.float32
+            (1, 3, self.input_height, self.input_width),
+            dtype=torch.float32,
+            device=self.device,
         )
         with torch.inference_mode():
             output = self.model(warmup)
@@ -396,6 +415,7 @@ class LrasppInferenceNode(Node):
             f"input={self.input_width}x{self.input_height}, classes="
             f"background/white/yellow=0/{self.white_class_id}/{self.yellow_class_id}, "
             f"thresholds={self.white_confidence:.2f}/{self.yellow_confidence:.2f}, "
+            f"device={self.device}, "
             f"threads=torch:{cpu_threads},opencv:{opencv_threads}, "
             f"output={'native' if self.output_native_resolution else 'model'}, "
             f"source={'compressed' if self.use_compressed_image else 'raw'}, "
@@ -663,7 +683,7 @@ class LrasppInferenceNode(Node):
             frame, self.input_width, self.input_height
         )
         try:
-            tensor = self.torch.from_numpy(model_input)
+            tensor = self.torch.from_numpy(model_input).to(self.device)
             with self.torch.inference_mode():
                 logits = self.model(tensor)
                 probabilities = self.torch.softmax(logits, dim=1)[0].cpu().numpy()

@@ -114,6 +114,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument("input_width", default_value="256"),
         DeclareLaunchArgument("input_height", default_value="144"),
+        DeclareLaunchArgument("device", default_value="cpu"),
         DeclareLaunchArgument("use_compressed_image", default_value="false"),
         DeclareLaunchArgument("enable_rectify", default_value="false"),
         DeclareLaunchArgument(
@@ -261,6 +262,7 @@ def generate_launch_description():
                 "yellow_mask_topic": yellow_topic,
                 "input_width": _as_int("input_width"),
                 "input_height": _as_int("input_height"),
+                "device": LaunchConfiguration("device"),
                 "white_class_id": 1,
                 "yellow_class_id": 2,
                 "white_confidence": _as_float("white_confidence"),

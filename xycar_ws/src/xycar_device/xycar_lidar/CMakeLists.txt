@@ -23,6 +23,10 @@ find_package(std_srvs REQUIRED)
 ############## YDLIDAR SDK START#####################################
 #find ydlidar_sdk package
 find_package(ydlidar_sdk REQUIRED)
+find_library(YDLIDAR_SDK_LIBRARY NAMES ydlidar_sdk)
+if(NOT YDLIDAR_SDK_LIBRARY)
+  message(FATAL_ERROR "YDLidar SDK library was not found")
+endif()
 ############## YDLIDAR SDK END#####################################
 
 #Include directories
@@ -52,7 +56,9 @@ ament_target_dependencies(${PROJECT_NAME}_node
     )
 
 target_link_libraries(${PROJECT_NAME}_node
-    ${YDLIDAR_SDK_LIBRARIES})
+    ${YDLIDAR_SDK_LIBRARY}
+    pthread
+    rt)
 
 #---------------------------------------------------------------------------------------
 # generate excutable and add libraries
@@ -78,7 +84,7 @@ install(TARGETS
     ${PROJECT_NAME}_node ${PROJECT_NAME}_client
     DESTINATION lib/${PROJECT_NAME})
 
-install(DIRECTORY launch params startup config
+install(DIRECTORY launch params startup
     DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
@@ -87,4 +93,3 @@ if(BUILD_TESTING)
 endif()
 
 ament_package()
-
