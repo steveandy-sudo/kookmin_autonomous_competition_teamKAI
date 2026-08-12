@@ -28,6 +28,7 @@
   <exec_depend>track_drive_sve</exec_depend>
   <exec_depend>xycar_perception</exec_depend>
   <exec_depend>xycar_rule_drive</exec_depend>
+  <exec_depend>xycar_msgs</exec_depend>
   <exec_depend>visualization_msgs</exec_depend>
 
   <test_depend>ament_pytest</test_depend>

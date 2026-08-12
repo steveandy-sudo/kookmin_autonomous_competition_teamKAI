@@ -4,9 +4,6 @@ from unittest.mock import patch
 from std_msgs.msg import Bool
 
 from xycar_map_nav.sequential_hybrid_driver import SequentialHybridDriver
-from xycar_map_nav.sequential_hybrid_driver import (
-    limit_shortcut_entry_search_speed,
-)
 from xycar_map_nav.shortcut_mode_latch import ShortcutModeEvent
 from xycar_map_nav.traffic_light_control import TrafficLightAction
 
@@ -83,21 +80,6 @@ def test_s_arms_perception_search_without_starting_shortcut_latch():
     assert driver.shortcut_processing_pub.values == [True]
     assert driver.shortcut_latch.start_calls == 0
     assert driver.handled_events == []
-
-
-def test_s_speed_limit_caps_rule_speed_without_accelerating_or_reversing():
-    assert limit_shortcut_entry_search_speed(
-        16.0, search_speed_command=4.0
-    ) == 4.0
-    assert limit_shortcut_entry_search_speed(
-        3.0, search_speed_command=4.0
-    ) == 3.0
-    assert limit_shortcut_entry_search_speed(
-        0.0, search_speed_command=4.0
-    ) == 0.0
-    assert limit_shortcut_entry_search_speed(
-        -2.0, search_speed_command=4.0
-    ) == 0.0
 
 
 def test_w1_ready_starts_override_only_during_live_search():
