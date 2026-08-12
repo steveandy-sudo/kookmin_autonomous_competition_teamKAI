@@ -80,7 +80,7 @@ Visualization Manager:
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
-      Name: Lane + Cone Planned Paths
+      Name: Manual + Planned Paths
       Namespaces:
         accepted_scan_sector: true
         accepted_scan_sector_fill: true
@@ -89,6 +89,8 @@ Visualization Manager:
         lane_control_target: true
         lane_planned_waypoint_line: true
         lane_planned_waypoints: true
+        manual_driven_path: true
+        manual_vehicle_position: true
         planned_path_endpoints: true
         planned_waypoint_line: true
         planned_waypoints: true

@@ -5,7 +5,9 @@ import pytest
 from my_rule.cone_path_visualizer_node import (
     CONE_PATH_MARKERS,
     LANE_PATH_MARKERS,
+    MANUAL_PATH_MARKERS,
     fov_outline_points,
+    odom_trace_in_vehicle_frame,
     path_visibility_for_control_mode,
     sector_triangle_points,
     select_lookahead_index,
@@ -29,6 +31,19 @@ def test_path_visibility_follows_active_control_mode(mode, expected):
 
 def test_lane_and_cone_path_marker_keys_do_not_overlap():
     assert set(CONE_PATH_MARKERS).isdisjoint(LANE_PATH_MARKERS)
+    assert set(MANUAL_PATH_MARKERS).isdisjoint(CONE_PATH_MARKERS)
+    assert set(MANUAL_PATH_MARKERS).isdisjoint(LANE_PATH_MARKERS)
+
+
+def test_odom_trace_is_expressed_in_current_vehicle_frame():
+    transformed = odom_trace_in_vehicle_frame(
+        [(1.0, 1.0), (2.0, 1.0), (2.0, 2.0)],
+        current_position=(2.0, 1.0),
+        current_yaw=math.pi / 2.0,
+    )
+    expected = [(-0.0, 1.0), (0.0, 0.0), (1.0, 0.0)]
+    for actual, wanted in zip(transformed, expected):
+        assert actual == pytest.approx(wanted)
 
 
 def test_rear_axle_path_is_transformed_into_laser_frame():

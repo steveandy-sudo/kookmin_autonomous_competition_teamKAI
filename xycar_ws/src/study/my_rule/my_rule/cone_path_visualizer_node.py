@@ -8,7 +8,7 @@ from typing import List, Optional, Sequence, Tuple
 import rclpy
 from geometry_msgs.msg import Point, PoseArray
 from kaiev26_msgs.msg import Centerline
-from nav_msgs.msg import Path
+from nav_msgs.msg import Odometry, Path
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import (
@@ -34,6 +34,10 @@ LANE_PATH_MARKERS = (
     ("lane_planned_waypoint_line", 20),
     ("lane_planned_waypoints", 21),
     ("lane_control_target", 22),
+)
+MANUAL_PATH_MARKERS = (
+    ("manual_driven_path", 40),
+    ("manual_vehicle_position", 41),
 )
 
 
@@ -171,6 +175,33 @@ def make_point(x: float, y: float, z: float = 0.0) -> Point:
     return point
 
 
+def yaw_from_quaternion(z: float, w: float) -> float:
+    """Return planar yaw for an odometry quaternion with zero roll/pitch."""
+    return 2.0 * math.atan2(float(z), float(w))
+
+
+def odom_trace_in_vehicle_frame(
+    points: Sequence[Point2],
+    current_position: Point2,
+    current_yaw: float,
+) -> List[Point2]:
+    """Express an odom-frame trace relative to the current vehicle pose."""
+    current_x, current_y = current_position
+    cosine = math.cos(float(current_yaw))
+    sine = math.sin(float(current_yaw))
+    transformed: List[Point2] = []
+    for world_x, world_y in points:
+        delta_x = float(world_x) - float(current_x)
+        delta_y = float(world_y) - float(current_y)
+        transformed.append(
+            (
+                cosine * delta_x + sine * delta_y,
+                -sine * delta_x + cosine * delta_y,
+            )
+        )
+    return transformed
+
+
 class ConePathVisualizer(Node):
     """Convert lane/cone planner outputs into one RViz-friendly MarkerArray.
 
@@ -191,6 +222,7 @@ class ConePathVisualizer(Node):
             "lane_diagnostics_topic", "/rule_drive/diagnostics"
         )
         self.declare_parameter("control_mode_topic", "/hybrid_gate/mode")
+        self.declare_parameter("manual_odometry_topic", "/odom")
         self.declare_parameter("marker_topic", "/my_rule/cone_path_markers")
         self.declare_parameter("output_frame", "laser_frame")
         self.declare_parameter("lidar_to_rear_axle_m", 0.42)
@@ -209,6 +241,9 @@ class ConePathVisualizer(Node):
         self.declare_parameter("control_mode_timeout_sec", 0.5)
         self.declare_parameter("gate_paths_by_control_mode", True)
         self.declare_parameter("path_point_stride", 5)
+        self.declare_parameter("manual_path_enabled", True)
+        self.declare_parameter("manual_path_min_spacing_m", 0.03)
+        self.declare_parameter("manual_path_max_points", 10000)
 
         input_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -263,6 +298,12 @@ class ConePathVisualizer(Node):
             self.on_control_mode,
             input_qos,
         )
+        self.manual_odometry_sub = self.create_subscription(
+            Odometry,
+            str(self.get_parameter("manual_odometry_topic").value),
+            self.on_manual_odometry,
+            input_qos,
+        )
 
         self.latest_path: List[Point2] = []
         self.latest_path_frame = "rear_axle"
@@ -284,13 +325,18 @@ class ConePathVisualizer(Node):
         self.command_received_at = 0.0
         self.unsupported_path_frame = ""
         self.unsupported_lane_frame = ""
+        self.manual_path: List[Point2] = []
+        self.manual_current_position: Optional[Point2] = None
+        self.manual_current_yaw = 0.0
+        self.manual_last_stamp_ns: Optional[int] = None
 
         rate = max(1.0, float(self.get_parameter("publish_rate_hz").value))
         self.timer = self.create_timer(1.0 / rate, self.publish_markers)
         self.get_logger().info(
             "lane/cone RViz visualizer ready: "
             f"lane={self.get_parameter('lane_path_topic').value}, "
-            f"cone={self.get_parameter('path_topic').value} -> "
+            f"cone={self.get_parameter('path_topic').value}, "
+            f"manual={self.get_parameter('manual_odometry_topic').value} -> "
             f"{self.get_parameter('marker_topic').value}"
         )
 
@@ -340,6 +386,49 @@ class ConePathVisualizer(Node):
             # the controller that just became inactive.
             self.publish_markers()
 
+    def on_manual_odometry(self, message: Odometry) -> None:
+        if not bool(self.get_parameter("manual_path_enabled").value):
+            return
+        stamp_ns = (
+            int(message.header.stamp.sec) * 1_000_000_000
+            + int(message.header.stamp.nanosec)
+        )
+        if (
+            self.manual_last_stamp_ns is not None
+            and stamp_ns < self.manual_last_stamp_ns
+        ):
+            # A backwards timestamp means bag replay restarted or looped.
+            self.manual_path.clear()
+        self.manual_last_stamp_ns = stamp_ns
+
+        position = (
+            float(message.pose.pose.position.x),
+            float(message.pose.pose.position.y),
+        )
+        orientation = message.pose.pose.orientation
+        self.manual_current_position = position
+        self.manual_current_yaw = yaw_from_quaternion(
+            orientation.z, orientation.w
+        )
+
+        spacing = max(
+            0.0,
+            float(self.get_parameter("manual_path_min_spacing_m").value),
+        )
+        if self.manual_path:
+            distance = math.hypot(
+                position[0] - self.manual_path[-1][0],
+                position[1] - self.manual_path[-1][1],
+            )
+            if distance < spacing:
+                return
+        self.manual_path.append(position)
+        maximum = max(
+            2, int(self.get_parameter("manual_path_max_points").value)
+        )
+        if len(self.manual_path) > maximum:
+            del self.manual_path[: len(self.manual_path) - maximum]
+
     def marker(self, namespace: str, marker_id: int, marker_type: int) -> Marker:
         marker = Marker()
         marker.header.stamp = self.get_clock().now().to_msg()
@@ -385,6 +474,7 @@ class ConePathVisualizer(Node):
 
         self.append_fov(markers)
         self.append_vehicle_reference(markers)
+        self.append_manual_path(markers)
         clusters = self.transformed_clusters()
         if clusters:
             self.append_clusters(markers, clusters)
@@ -427,6 +517,43 @@ class ConePathVisualizer(Node):
                 self.append_lane_target(markers)
 
         self.marker_pub.publish(markers)
+
+    def append_manual_path(self, markers: MarkerArray) -> None:
+        if (
+            not bool(self.get_parameter("manual_path_enabled").value)
+            or self.manual_current_position is None
+            or not self.manual_path
+        ):
+            for namespace, marker_id in MANUAL_PATH_MARKERS:
+                marker = self.marker(namespace, marker_id, Marker.ARROW)
+                marker.action = Marker.DELETE
+                markers.markers.append(marker)
+            return
+
+        relative_path = odom_trace_in_vehicle_frame(
+            self.manual_path,
+            self.manual_current_position,
+            self.manual_current_yaw,
+        )
+        line = self.marker("manual_driven_path", 40, Marker.LINE_STRIP)
+        line.scale.x = 0.055
+        line.color.r = 0.10
+        line.color.g = 1.0
+        line.color.b = 0.20
+        line.color.a = 1.0
+        line.points = [make_point(x, y, 0.115) for x, y in relative_path]
+        markers.markers.append(line)
+
+        current = self.marker("manual_vehicle_position", 41, Marker.SPHERE)
+        current.pose.position = make_point(0.0, 0.0, 0.13)
+        current.scale.x = 0.11
+        current.scale.y = 0.11
+        current.scale.z = 0.08
+        current.color.r = 0.05
+        current.color.g = 1.0
+        current.color.b = 0.15
+        current.color.a = 1.0
+        markers.markers.append(current)
 
     def append_inactive_path_deletes(
         self,

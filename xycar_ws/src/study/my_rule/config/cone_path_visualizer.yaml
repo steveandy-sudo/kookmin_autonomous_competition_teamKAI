@@ -6,6 +6,7 @@ my_rule_cone_path_visualizer:
     lane_path_topic: /rule_drive/connected_yellow_path
     lane_diagnostics_topic: /rule_drive/diagnostics
     control_mode_topic: /hybrid_gate/mode
+    manual_odometry_topic: /odom
     marker_topic: /my_rule/cone_path_markers
 
     # cone_node publishes the path in rear_axle coordinates. The visualizer
@@ -32,3 +33,9 @@ my_rule_cone_path_visualizer:
     control_mode_timeout_sec: 0.5
     gate_paths_by_control_mode: true
     path_point_stride: 5
+
+    # Accumulate the actual manually driven odometry path. It is transformed
+    # into the current vehicle view and drawn in green for bag/live review.
+    manual_path_enabled: true
+    manual_path_min_spacing_m: 0.03
+    manual_path_max_points: 10000
