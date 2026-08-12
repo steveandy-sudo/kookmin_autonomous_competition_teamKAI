@@ -25,6 +25,186 @@ ros2 launch xycar_final_drive final.launch.py
 모터 안전 게이트와 하드웨어 검증 절차는
 [`xycar_final_drive` README](src/xycar_final_drive/README.md)를 따른다.
 
+## Jetson 이식 시 변경한 내용
+
+`jetson_final` 브랜치는 검증 브랜치
+`agent/yellow-center-curve-test`의 최신 상태를 Jetson Orin NX 실차용으로
+정리한 브랜치다.
+
+- 저장소 자체를 ROS 2 작업공간으로 바꿨다. 기존의 중첩
+  `저장소/xycar_ws/src`를 `~/xycar_ws/src`로 이동하고 내부 상대경로,
+  스크립트와 `.gitignore`를 함께 수정했다.
+- [`final.launch.py`](src/xycar_final_drive/launch/final.launch.py)를 추가해
+  카메라, LiDAR, ROS 2 VESC, GPU 인지와 하이브리드 주행 노드를 한 명령으로
+  실행하도록 만들었다.
+- LR-ASPP 인지 노드에 `device` 파라미터를 추가했다. 모델, warm-up tensor와
+  입력 tensor를 지정 장치로 옮기며, `cuda`를 요청했는데 CUDA를 사용할 수
+  없으면 조용히 CPU로 바꾸지 않고 오류로 중단한다.
+- `final.launch.py`에서는 LR-ASPP와 RL 정책의 기본 장치를 `cuda`로 지정했다.
+- Jetson aarch64에 사용자 prefix로 설치한 YDLidar SDK 1.2.7의 실제
+  `ydlidar_sdk` 라이브러리를 찾고 연결하도록 LiDAR CMake 설정을 수정했다.
+- 최종 모터 경로는 호스트의 native ROS 2 VESC 드라이버다. 현재 대회
+  실행 경로에는 ROS 1 컨테이너나 `ros1_bridge`가 없다.
+- 판단 publisher와 VESC 출력을 각각 막는 이중 안전 게이트를 추가했다.
+  두 게이트는 모두 기본 `false`다.
+- 모델과 보정 파일은 절대 사용자 경로가 아니라 ROS 패키지 share 경로로
+  찾도록 구성했다.
+
+## 빌드 및 실행 명령
+
+Jetson CUDA PyTorch가 설치된 전용 Python 환경과 YDLidar SDK prefix를
+사용해 빌드한다.
+
+```bash
+cd ~/xycar_ws
+```
+
+```bash
+source /opt/ros/humble/setup.bash
+```
+
+```bash
+source ~/kookmin_ty/venvs/xycar-jp621/bin/activate
+```
+
+```bash
+export CMAKE_PREFIX_PATH="$HOME/kookmin_ty/ydlidar-sdk-v1.2.7-install${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+```
+
+```bash
+python -m colcon build --packages-up-to xycar_final_drive --symlink-install
+```
+
+```bash
+source install/setup.bash
+```
+
+대회 스택 실행 명령은 다음 하나다.
+
+```bash
+ros2 launch xycar_final_drive final.launch.py
+```
+
+이 기본 명령은 모든 장치와 인지·판단 노드를 시작하지만 모터 명령 발행과
+VESC 비영점 출력은 모두 차단한다. 장치가 없는 개발 환경에서 GPU 경로만
+검증할 때는 다음과 같이 하드웨어 시작을 끈다.
+
+```bash
+ros2 launch xycar_final_drive final.launch.py start_camera:=false start_lidar:=false start_vesc:=false command_drive_enabled:=false vesc_drive_enabled:=false device:=cuda
+```
+
+## 코드 내부 작동 흐름
+
+```text
+wide_camera
+  /wide_camera_mjpeg/image_raw/compressed
+    → LR-ASPP 차선 분할 + 어안 보정 + canonical 변환 (CUDA)
+      /perception/canonical_road_image
+        → hybrid_drive
+          1순위: LiDAR cone rule
+          2순위: canonical lane curve rule
+          3순위: learned model straight
+            → /xycar_motor_shadow (항상 확인용)
+            → /xycar_motor (command_drive_enabled=true일 때만)
+              → native ROS 2 xycar_vesc_driver
+                → /dev/ttyMOTOR (vesc_drive_enabled=true일 때만 비영점 출력)
+```
+
+`driver_mode`는 `hybrid`, `rule`, `rl` 중 하나만 실행한다. 기본 `hybrid`는
+다음 우선순위를 사용한다.
+
+1. `/scan`에서 유효한 콘 통로가 검출되면 LiDAR cone rule을 사용한다.
+2. canonical 경로가 곡선 진입 조건을 만족하면 Stanley/Pure Pursuit rule을
+   사용한다.
+3. 그 외 직선 구간에서는 카메라+속도 temporal learned policy를 사용한다.
+
+인지 입력 또는 정책 출력이 timeout을 넘으면 오래된 결과를 정상 명령으로
+계속 사용하지 않는다. VESC는 별도로 명령 watchdog, telemetry, firmware,
+저전압과 fault를 검사한다.
+
+## 현재 대회 launch 주요 파라미터
+
+아래 값은 별도 인자를 주지 않았을 때 `final.launch.py`가 실제로 사용하는
+기본값이다.
+
+### 실행 및 안전
+
+| 파라미터 | 기본값 | 의미 |
+|---|---:|---|
+| `start_camera` | `true` | wide camera 시작 |
+| `start_lidar` | `true` | YDLidar 시작 |
+| `start_vesc` | `true` | native ROS 2 VESC 시작 |
+| `start_drive_stack` | `true` | 인지·판단 스택 시작 |
+| `start_perception` | `true` | LR-ASPP 인지 시작 |
+| `driver_mode` | `hybrid` | `hybrid`, `rule`, `rl` 중 선택 |
+| `device` | `cuda` | LR-ASPP와 learned policy 실행 장치 |
+| `command_drive_enabled` | `false` | `/xycar_motor` 발행 허용 |
+| `vesc_drive_enabled` | `false` | VESC 비영점 출력 허용 |
+
+### 카메라 및 인지
+
+| 파라미터 | 기본값 |
+|---|---:|
+| `camera_device` | `/dev/v4l/by-id/usb-HD_USB_Camera_HD_USB_Camera-video-index0` |
+| `camera_width` × `camera_height` | `1280 × 1024` |
+| `camera_fps` | `30` |
+| LR-ASPP 모델 | `kookmin_lane_lraspp_mbv3s_256x144.pt` |
+| 모델 입력 | `256 × 144` |
+| canonical 출력 | `256 × 144` |
+| 흰색/노란색 confidence | `0.50 / 0.50` |
+| `max_output_rate_hz` | `15.0` |
+| `max_input_age_sec` | `0.35` |
+| `pipeline_qos_depth` | `1` |
+| `perception_cpu_threads` | `4` |
+| 어안 보정 파일 | `wide_camera_fisheye_1280x1024_20260708.yaml` |
+| `rect_balance` | `0.3` |
+| canonical 실제 범위 | 횡방향 `1.4 m`, 전방 `1.5 m` |
+
+### 하이브리드 판단
+
+| 파라미터 | 기본값 |
+|---|---:|
+| learned policy | `straight_speed25_recovery_v3_20260805/camera_speed_td3_bc_best.pth` |
+| policy 입력 | `160 × 90` |
+| `policy_cpu_threads` | `4` |
+| `model_speed_cap` | `20.0` |
+| `cone_speed_cap` | `9.5` |
+| model timeout | `0.35 s` |
+| canonical timeout | `0.50 s` |
+| 곡선 진입/이탈 curvature | `0.16 / 0.10 1/m` |
+| 곡선 진입/이탈 path angle | `0.12 / 0.11 rad` |
+| 곡선 모드 최소 유지 | `1.2 s` |
+| cone 진입 confidence | `0.35` |
+| cone 진입 확인 | `3 frames` |
+| cone 유효 거리 | `0.18..1.6 m` |
+| 예상 cone corridor 폭 | `0.85 m` (`0.68..0.98 m`) |
+| LiDAR→rear axle / wheelbase | `0.42 / 0.33 m` |
+
+rule 실차 프로파일은 직선 `18`, 곡선 `16`, degraded path `12`, lane loss
+`4`의 속도 명령과 `10 Hz` 명령률을 사용한다. `model_speed_cap=20.0`은
+learned-policy 직선 속도에 적용되고 `cone_speed_cap=9.5`는 cone 모드에
+적용된다. 이 두 cap이 모든 모드의 전역 속도 제한이라는 뜻은 아니다.
+
+### LiDAR 및 VESC
+
+| 파라미터 | 기본값 |
+|---|---:|
+| LiDAR port / baud | `/dev/ttyLIDAR` / `512000` |
+| LiDAR frequency / frame | `10 Hz` / `laser_frame` |
+| LiDAR angle / range | `-180..180°` / `0.1..16.0 m` |
+| VESC port / baud | `/dev/ttyMOTOR` / `115200` |
+| expected firmware | `2.18` |
+| VESC control / telemetry | `20 / 50 Hz` |
+| command / telemetry timeout | `0.5 / 0.25 s` |
+| steering trim | `-5.0 command` |
+| acceleration / deceleration limit | `0.6 / 1.5 m/s²` |
+| low-voltage limit / stop / recovery | `7.5 / 6.0 / 8.0 V` |
+| fault recovery stable time | `3.0 s` |
+
+파라미터를 바꿀 때는 launch 인자로 명시하고, 실차에서 검증한 값만 코드
+기본값으로 반영한다. 장치가 연결되지 않은 상태에서는 보정값이나 udev
+식별값을 추측해 수정하지 않는다.
+
 ## Jetson 실차 하드웨어 연결 체크리스트
 
 이 절차는 새 Jetson에 카메라, LiDAR, VESC를 처음 연결할 때 사용한다.
