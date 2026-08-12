@@ -44,8 +44,12 @@ class SequenceEntryNode(Node):
 
     def __init__(self) -> None:
         super().__init__("shortcut_sequence_entry")
-        self.declare_parameter("white_mask_topic", "/shortcut/lraspp/white_mask")
-        self.declare_parameter("yellow_mask_topic", "/shortcut/lraspp/yellow_mask")
+        self.declare_parameter(
+            "white_mask_topic", "/shortcut/lraspp/white_mask"
+        )
+        self.declare_parameter(
+            "yellow_mask_topic", "/shortcut/lraspp/yellow_mask"
+        )
         self.declare_parameter(
             "processing_enabled_topic", "/hybrid/shortcut_processing_enabled"
         )
@@ -60,6 +64,9 @@ class SequenceEntryNode(Node):
             "path_topic", "/shortcut/entry/selected_centerline"
         )
         self.declare_parameter("ready_topic", "/shortcut/entry/ready")
+        self.declare_parameter(
+            "entry_distance_topic", "/shortcut/entry/entry_distance_m"
+        )
         self.declare_parameter(
             "path_valid_topic", "/shortcut/entry/path_valid"
         )
@@ -102,6 +109,7 @@ class SequenceEntryNode(Node):
         self.last_stamp: tuple[int, int] | None = None
         self.semantic_frame_index = 0
         self.handoff_logged = False
+        self.w1_logged = False
         self.geometry = None
         self.geometry_input_size: tuple[int, int] | None = None
 
@@ -110,6 +118,11 @@ class SequenceEntryNode(Node):
         )
         self.ready_publisher = self.create_publisher(
             Bool, str(self.get_parameter("ready_topic").value), state_qos
+        )
+        self.entry_distance_publisher = self.create_publisher(
+            Float32,
+            str(self.get_parameter("entry_distance_topic").value),
+            state_qos,
         )
         self.path_valid_publisher = self.create_publisher(
             Bool, str(self.get_parameter("path_valid_topic").value), state_qos
@@ -157,6 +170,7 @@ class SequenceEntryNode(Node):
             state_qos,
         )
         self.publish_state(False, False, False, 0.0)
+        self.entry_distance_publisher.publish(Float32(data=math.nan))
         self.get_logger().info(
             "sequence W1/Y1 selector ready: timestamps are used only for mask "
             "synchronization; phase transitions use observation order"
@@ -184,8 +198,10 @@ class SequenceEntryNode(Node):
         self.last_stamp = None
         self.semantic_frame_index = 0
         self.handoff_logged = False
+        self.w1_logged = False
         self.selector.reset()
         self.publish_state(False, False, False, 0.0)
+        self.entry_distance_publisher.publish(Float32(data=math.nan))
 
     def on_white(self, message: Image) -> None:
         if not self.enabled:
@@ -244,6 +260,17 @@ class SequenceEntryNode(Node):
         yellow_stamp = stamp_key(self.yellow_message)
         if white_stamp != yellow_stamp or white_stamp == self.last_stamp:
             return
+        if self.last_stamp is not None and white_stamp < self.last_stamp:
+            # A looping/re-seeked review bag is a new observation sequence.
+            # This does not participate in W1 identity selection; it only
+            # prevents state from the end of the previous playback lap from
+            # leaking into the first frame of the next lap.
+            self.selector.reset()
+            self.semantic_frame_index = 0
+            self.handoff_logged = False
+            self.w1_logged = False
+            self.publish_state(False, False, False, 0.0)
+            self.entry_distance_publisher.publish(Float32(data=math.nan))
         try:
             white = self.bridge.imgmsg_to_cv2(
                 self.white_message, desired_encoding="mono8"
@@ -262,6 +289,14 @@ class SequenceEntryNode(Node):
         bev_white, bev_yellow = self.bev_masks(white, yellow)
         result = self.selector.process(bev_white, bev_yellow)
         self.semantic_frame_index += 1
+        if result.ready and not self.w1_logged and result.w1 is not None:
+            self.get_logger().warning(
+                "[MISSION] W1 DETECTED/LOCKED: identity acquired; "
+                "RULE control remains until spatial entry gate; "
+                f"W1_slope={result.w1.direction_dx_dy:+.3f} "
+                f"span={result.w1.vertical_span_ratio:.3f}"
+            )
+            self.w1_logged = True
         output_header = Header(
             stamp=self.white_message.header.stamp,
             frame_id=str(self.get_parameter("base_frame_id").value),
@@ -286,14 +321,8 @@ class SequenceEntryNode(Node):
                 Point(x=float(forward), y=float(lateral), z=0.0)
                 for forward, lateral in vehicle_path
             ]
-            path_message.confidence = (
-                0.55 if result.used_synthetic_y1 else 1.0
-            )
-            path_message.source = (
-                "shortcut_W1_synthetic_Y1"
-                if result.used_synthetic_y1
-                else "shortcut_W1_Y1"
-            )
+            path_message.confidence = 1.0
+            path_message.source = "shortcut_W1_fixed_lane_offset"
             self.path_publisher.publish(path_message)
 
         # Publish the path before readiness.  This preserves the requested
@@ -330,7 +359,23 @@ class SequenceEntryNode(Node):
             self.handoff_logged = True
 
         w1 = result.w1
+        w2 = result.w2
         y1 = result.y1
+        entry_distance_m = math.nan
+        if w1 is not None and w2 is not None:
+            intersection_y = self.selector._branch_intersection_y_ratio(
+                w1, w2
+            )
+            if intersection_y is not None and math.isfinite(intersection_y):
+                forward_range_m = float(
+                    self.get_parameter("forward_range_m").value
+                )
+                entry_distance_m = max(
+                    0.0, (1.0 - float(intersection_y)) * forward_range_m
+                )
+        self.entry_distance_publisher.publish(
+            Float32(data=float(entry_distance_m))
+        )
         self.diagnostics_publisher.publish(
             Float32MultiArray(
                 data=[
@@ -349,11 +394,29 @@ class SequenceEntryNode(Node):
                     ),
                     float(len(result.white_candidates)),
                     float(len(result.yellow_candidates)),
+                    # Appended fields keep the original diagnostics indices
+                    # stable while allowing the control viewer to report W2.
+                    float(w2.mean_x_ratio if w2 is not None else math.nan),
+                    float(
+                        w2.direction_dx_dy if w2 is not None else math.nan
+                    ),
+                    # Current W1/W2 fork distance in the vehicle-forward BEV
+                    # frame.  This is a spatial control gate, never a bag
+                    # timestamp, frame number, or fixed pixel coordinate.
+                    float(entry_distance_m),
                 ]
             )
         )
 
-        debug = render_sequence_debug(bev_white, bev_yellow, result)
+        # The composite viewer owns phase/candidate text.  Keep this image a
+        # clean BEV layer so labels never cover the 256x144 lane geometry.
+        debug = render_sequence_debug(
+            bev_white,
+            bev_yellow,
+            result,
+            show_candidates=False,
+            show_status=False,
+        )
         debug_message = self.bridge.cv2_to_imgmsg(debug, encoding="bgr8")
         debug_message.header = output_header
         self.debug_publisher.publish(debug_message)

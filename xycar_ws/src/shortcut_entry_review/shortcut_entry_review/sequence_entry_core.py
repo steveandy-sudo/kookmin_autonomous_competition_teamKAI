@@ -39,6 +39,13 @@ class SequenceEntryConfig:
     duplicate_distance_ratio: float = 0.045
     white_component_minimum_area_px: int = 20
     white_component_minimum_height_px: int = 10
+    white_branch_hough_threshold: int = 5
+    white_branch_minimum_length_px: int = 6
+    white_branch_minimum_vertical_span_ratio: float = 0.035
+    white_branch_maximum_gap_ratio: float = 0.045
+    white_branch_minimum_slope: float = 0.03
+    fine_duplicate_distance_ratio: float = 0.012
+    fine_duplicate_angle_tolerance_rad: float = math.radians(5.0)
     yellow_component_minimum_area_px: int = 50
     yellow_component_minimum_height_px: int = 15
     yellow_component_minimum_span_ratio: float = 0.020
@@ -46,14 +53,31 @@ class SequenceEntryConfig:
     y1_acquisition_required_frames: int = 2
     acquisition_slope_minimum: float = 0.15
     w1_acquisition_max_mean_x_ratio: float = 0.40
+    branch_w1_minimum_slope: float = 0.30
+    branch_w1_minimum_span_ratio: float = 0.03
+    branch_w2_maximum_slope: float = -0.03
+    branch_w2_minimum_span_ratio: float = 0.06
+    branch_w2_tracking_maximum_slope: float = -0.03
+    branch_w2_tracking_minimum_span_ratio: float = 0.06
+    branch_expected_mean_separation_ratio: float = 0.08
+    branch_maximum_join_distance_ratio: float = 0.14
+    branch_join_endpoint_tolerance_ratio: float = 0.02
+    branch_yellow_minimum_span_ratio: float = 0.08
+    branch_yellow_curve_fallback_slope: float = 0.30
+    branch_tracking_maximum_cost: float = 0.42
+    branch_w2_tracking_maximum_cost: float = 0.78
     temporal_max_mean_x_jump_ratio: float = 0.12
-    temporal_max_line_distance_ratio: float = 0.16
+    temporal_max_line_distance_ratio: float = 0.19
     tracking_white_max_mean_x_ratio: float = 0.42
     tracking_yellow_min_mean_x_ratio: float = 0.25
     tracking_yellow_max_mean_x_ratio: float = 0.70
-    tracking_minimum_slope: float = -1.0
+    # The 55 hand-labelled W1 frames bottom out at dx/dy=-0.174.  Keep a
+    # small margin, but reject abrupt vehicle-right fits beyond this bound.
+    tracking_minimum_slope: float = -0.20
     tracking_maximum_slope: float = 2.0
-    tracking_white_minimum_span_ratio: float = 0.030
+    # Labelled W1 spans start at 0.085; 0.05 retains margin while excluding
+    # short edge fragments created by a rejected steep-right stripe.
+    tracking_white_minimum_span_ratio: float = 0.050
     tracking_yellow_minimum_span_ratio: float = 0.020
     topology_continuity_weight: float = 0.30
     topology_slope_continuity_weight: float = 0.02
@@ -97,6 +121,18 @@ class SequenceEntryConfig:
             raise ValueError("expected pair separation must be inside limits")
         if not 0.5 <= self.w1_path_weight < 1.0:
             raise ValueError("W1 path weight must be in [0.5, 1.0)")
+        if self.branch_expected_mean_separation_ratio <= 0.0:
+            raise ValueError("expected W1/W2 separation must be positive")
+        if self.branch_w1_minimum_span_ratio <= 0.0:
+            raise ValueError("W1 branch minimum span must be positive")
+        if self.branch_w2_minimum_span_ratio <= 0.0:
+            raise ValueError("W2 branch minimum span must be positive")
+        if self.branch_w2_tracking_minimum_span_ratio <= 0.0:
+            raise ValueError("W2 tracking minimum span must be positive")
+        if self.branch_maximum_join_distance_ratio <= 0.0:
+            raise ValueError("W1/W2 maximum join distance must be positive")
+        if self.branch_join_endpoint_tolerance_ratio < 0.0:
+            raise ValueError("W1/W2 endpoint tolerance cannot be negative")
 
 
 @dataclass(frozen=True)
@@ -130,6 +166,7 @@ class SequenceEntryResult:
     white_candidates: tuple[LineHypothesis, ...]
     yellow_candidates: tuple[LineHypothesis, ...]
     w1: LineHypothesis | None
+    w2: LineHypothesis | None
     y1: LineHypothesis | None
     path_pixels: tuple[tuple[float, float], ...]
     used_synthetic_y1: bool
@@ -421,6 +458,105 @@ def _component_hypotheses(
     return output
 
 
+def _filled_white_branch_hypotheses(
+    mask: np.ndarray,
+    config: SequenceEntryConfig,
+) -> list[LineHypothesis]:
+    """Extract short W1 arms through the centre of the semantic mask.
+
+    The ordinary extractor intentionally starts from Canny edges.  That is a
+    good source for the long continuing W2 boundary, but it can miss a short
+    fork arm whose *centre* is visible while its two jagged edges point in
+    different directions.  Running a small Hough transform on the filled mask
+    supplies only positive-heading W1 alternatives; negative micro-segments
+    are deliberately excluded because they can look like a false W2 inside
+    an isolated white blob.
+    """
+    height, width = mask.shape
+    minimum_span_px = max(
+        int(config.white_branch_minimum_length_px),
+        int(round(height * config.white_branch_minimum_vertical_span_ratio)),
+    )
+    lines = cv2.HoughLinesP(
+        mask,
+        1.0,
+        np.pi / 720.0,
+        threshold=int(config.white_branch_hough_threshold),
+        minLineLength=minimum_span_px,
+        maxLineGap=max(
+            4,
+            int(round(height * config.white_branch_maximum_gap_ratio)),
+        ),
+    )
+    if lines is None:
+        return []
+
+    output: list[LineHypothesis] = []
+    for x1, y1, x2, y2 in lines[:, 0, :]:
+        dy = float(y2 - y1)
+        if abs(dy) < minimum_span_px:
+            continue
+        pixel_slope = float(x2 - x1) / dy
+        normalized_slope = pixel_slope * height / width
+        if not (
+            config.white_branch_minimum_slope
+            <= normalized_slope
+            <= config.maximum_abs_slope
+        ):
+            continue
+        segment = _Segment(
+            float(x1),
+            float(y1),
+            float(x2),
+            float(y2),
+            float(math.hypot(x2 - x1, dy)),
+            float(pixel_slope),
+        )
+        fitted = _fit_hypothesis(
+            "white",
+            [segment],
+            width=width,
+            height=height,
+            config=config,
+            minimum_vertical_span_ratio=(
+                config.white_branch_minimum_vertical_span_ratio
+            ),
+        )
+        if fitted is not None:
+            output.append(fitted)
+    return output
+
+
+def _fine_deduplicate_hypotheses(
+    candidates: list[LineHypothesis],
+    config: SequenceEntryConfig,
+) -> list[LineHypothesis]:
+    """Remove nearly identical fits without merging the two fork arms."""
+    kept: list[LineHypothesis] = []
+    for candidate in sorted(
+        candidates,
+        key=lambda item: (
+            -item.vertical_span_ratio,
+            -item.support_length_ratio,
+            item.fit_rmse_ratio,
+            item.mean_x_ratio,
+        ),
+    ):
+        duplicate = any(
+            _line_distance_ratio(candidate, existing)
+            <= config.fine_duplicate_distance_ratio
+            and abs(
+                _line_angle(candidate.direction_dx_dy)
+                - _line_angle(existing.direction_dx_dy)
+            )
+            <= config.fine_duplicate_angle_tolerance_rad
+            for existing in kept
+        )
+        if not duplicate:
+            kept.append(candidate)
+    return kept
+
+
 def _band_track_hypotheses(
     mask: np.ndarray,
     color: str,
@@ -561,6 +697,34 @@ def _line_distance_ratio(
     )
 
 
+def _branch_join_distance_ratio(
+    first: LineHypothesis,
+    second: LineHypothesis,
+) -> float:
+    """Minimum branch distance inside their observed overlap or y-gap.
+
+    W1 and W2 are two arms of the same fork, so their fitted lines approach
+    one another where the observed segments overlap or meet.  Sampling only
+    that supported envelope avoids accepting unrelated lines merely because
+    their infinite extrapolations cross somewhere outside the BEV evidence.
+    """
+    overlap_low = max(first.minimum_y_ratio, second.minimum_y_ratio)
+    overlap_high = min(first.maximum_y_ratio, second.maximum_y_ratio)
+    if overlap_low <= overlap_high:
+        low, high = overlap_low, overlap_high
+    elif first.maximum_y_ratio < second.minimum_y_ratio:
+        low, high = first.maximum_y_ratio, second.minimum_y_ratio
+    else:
+        low, high = second.maximum_y_ratio, first.minimum_y_ratio
+    rows = np.linspace(float(low), float(high), 21)
+    return float(
+        min(
+            abs(first.x_ratio_at(row) - second.x_ratio_at(row))
+            for row in rows
+        )
+    )
+
+
 def extract_line_hypotheses(
     mask: np.ndarray,
     color: str,
@@ -658,6 +822,7 @@ def extract_line_hypotheses(
                 minimum_span_ratio=cfg.tracking_white_minimum_span_ratio,
             )
         )
+        kept.extend(_filled_white_branch_hypotheses(binary, cfg))
     elif color == "yellow":
         kept.extend(
             _component_hypotheses(
@@ -669,6 +834,7 @@ def extract_line_hypotheses(
                 minimum_span_ratio=cfg.yellow_component_minimum_span_ratio,
             )
         )
+    kept = _fine_deduplicate_hypotheses(kept, cfg)
     return tuple(sorted(kept, key=lambda item: item.mean_x_ratio))
 
 
@@ -709,12 +875,12 @@ class SequenceAwareEntrySelector:
     def reset(self) -> None:
         self.phase = EntrySequencePhase.LEFT4_ARMED
         self.w1: LineHypothesis | None = None
+        self.w2: LineHypothesis | None = None
         self.y1: LineHypothesis | None = None
         self.pending_w1: LineHypothesis | None = None
         self.pending_y1: LineHypothesis | None = None
         self.w1_confirmations = 0
         self.y1_confirmations = 0
-        self.w1_missing_frames = 0
         self.y1_missing_frames = 0
         self.y1_blend = 0.0
         self.alignment_frames = 0
@@ -745,6 +911,34 @@ class SequenceAwareEntrySelector:
                 slope_jump, 1.0
             )
         return float(score)
+
+    def _w1_tracking_score(
+        self,
+        candidate: LineHypothesis,
+        previous: LineHypothesis,
+    ) -> float:
+        """Rank an already locked W1 without an acquisition-heading prior.
+
+        Once identity is locked, W1 may rotate through a wide range of valid
+        headings.  Prefer the left branch and complete support, then use only
+        bounded polyline continuity.  This keeps the tracker on W1 instead of
+        a similarly angled edge cut from W2 while still allowing a fresh fit.
+        """
+        anchor_jump = abs(
+            candidate.x_ratio_at(0.65) - previous.x_ratio_at(0.65)
+        )
+        slope_jump = abs(
+            candidate.direction_dx_dy - previous.direction_dx_dy
+        )
+        return float(
+            candidate.mean_x_ratio
+            - 0.10 * candidate.vertical_span_ratio
+            - 0.05 * candidate.support_length_ratio
+            + self.config.topology_continuity_weight
+            * min(anchor_jump, 0.20)
+            + self.config.topology_slope_continuity_weight
+            * min(slope_jump, 1.0)
+        )
 
     def _y1_topology_score(
         self,
@@ -787,20 +981,320 @@ class SequenceAwareEntrySelector:
             <= self.config.temporal_max_line_distance_ratio
         )
 
-    def _acquire_w1(
-        self, candidates: tuple[LineHypothesis, ...]
+    def _outer_yellow_reference(
+        self,
+        candidates: tuple[LineHypothesis, ...],
     ) -> LineHypothesis | None:
+        """Return the deterministic Y2-like outer reference for the fork."""
         eligible = [
             item
             for item in candidates
-            if item.mean_x_ratio
-            <= self.config.w1_acquisition_max_mean_x_ratio
-            and item.direction_dx_dy
-            >= self.config.acquisition_slope_minimum
+            if (
+                item.vertical_span_ratio
+                >= self.config.branch_yellow_minimum_span_ratio
+            )
         ]
         if not eligible:
             return None
-        return min(eligible, key=self._w1_topology_score)
+        return max(
+            eligible,
+            key=lambda item: (
+                item.mean_x_ratio,
+                item.vertical_span_ratio,
+                item.support_length_ratio,
+            ),
+        )
+
+    @staticmethod
+    def _right_of_reference_fraction(
+        candidate: LineHypothesis,
+        reference: LineHypothesis,
+    ) -> float:
+        overlap_low = max(
+            candidate.minimum_y_ratio, reference.minimum_y_ratio
+        )
+        overlap_high = min(
+            candidate.maximum_y_ratio, reference.maximum_y_ratio
+        )
+        if overlap_low > overlap_high:
+            overlap_low = candidate.minimum_y_ratio
+            overlap_high = candidate.maximum_y_ratio
+        rows = np.linspace(float(overlap_low), float(overlap_high), 21)
+        return float(
+            np.mean(
+                [
+                    candidate.x_ratio_at(row)
+                    >= reference.x_ratio_at(row)
+                    for row in rows
+                ]
+            )
+        )
+
+    def _w2_is_inside_yellow(
+        self,
+        candidate: LineHypothesis,
+        yellow: LineHypothesis,
+    ) -> bool:
+        right_fraction = self._right_of_reference_fraction(
+            candidate, yellow
+        )
+        if right_fraction < 0.50:
+            return True
+        # A single straight fit is a poor left/right reference where the
+        # outer yellow itself bends sharply.  Only that observable geometry
+        # enables the fallback; no bag time or sequence index is involved.
+        return bool(
+            yellow.direction_dx_dy
+            >= self.config.branch_yellow_curve_fallback_slope
+        )
+
+    @staticmethod
+    def _branch_intersection_y_ratio(
+        first: LineHypothesis,
+        second: LineHypothesis,
+    ) -> float | None:
+        denominator = first.direction_dx_dy - second.direction_dx_dy
+        if abs(denominator) < 1e-8:
+            return None
+        return float(
+            (second.coefficients[1] - first.coefficients[1])
+            / denominator
+        )
+
+    @staticmethod
+    def _branch_tracking_cost(
+        candidate: LineHypothesis,
+        previous: LineHypothesis,
+    ) -> float:
+        return float(
+            2.5 * _line_distance_ratio(candidate, previous)
+            + 0.65
+            * abs(
+                candidate.direction_dx_dy - previous.direction_dx_dy
+            )
+            + 0.50
+            * abs(candidate.mean_x_ratio - previous.mean_x_ratio)
+        )
+
+    def _w2_companion(
+        self,
+        white_candidates: tuple[LineHypothesis, ...],
+        yellow_candidates: tuple[LineHypothesis, ...],
+        w1: LineHypothesis,
+    ) -> LineHypothesis | None:
+        """Find W2 only when it forms a fork left of the outer yellow line."""
+        yellow = self._outer_yellow_reference(yellow_candidates)
+        if yellow is None:
+            return None
+        eligible: list[tuple[float, LineHypothesis]] = []
+        for item in white_candidates:
+            separation = item.mean_x_ratio - w1.mean_x_ratio
+            if not (
+                w1.mean_x_ratio <= item.mean_x_ratio + 0.035
+                and item.direction_dx_dy
+                <= self.config.branch_w2_maximum_slope
+                and item.vertical_span_ratio
+                >= self.config.branch_w2_minimum_span_ratio
+                and self._w2_is_inside_yellow(item, yellow)
+            ):
+                continue
+            join_distance = _branch_join_distance_ratio(w1, item)
+            if (
+                join_distance
+                > self.config.branch_maximum_join_distance_ratio
+            ):
+                continue
+            crossing_y = self._branch_intersection_y_ratio(w1, item)
+            if crossing_y is None or not -0.20 <= crossing_y <= 1.35:
+                continue
+            # A real branch arm approaches W2 at (or just beyond) its near
+            # observed endpoint.  A positive edge fragment cut out of the
+            # thick W2 stripe crosses W2 inside its own observed span instead;
+            # accepting it is the original W2-as-W1 failure mode.
+            if (
+                crossing_y
+                < w1.maximum_y_ratio
+                - self.config.branch_join_endpoint_tolerance_ratio
+            ):
+                continue
+            score = (
+                0.45
+                * abs(
+                    separation
+                    - self.config.branch_expected_mean_separation_ratio
+                )
+                + 2.50 * join_distance
+                + 0.12 * abs(crossing_y - 0.70)
+                - 0.35
+                * (w1.vertical_span_ratio + item.vertical_span_ratio)
+                - 0.08
+                * (w1.support_length_ratio + item.support_length_ratio)
+            )
+            eligible.append((float(score), item))
+        if not eligible:
+            return None
+        return min(
+            eligible,
+            key=lambda scored: (
+                scored[0],
+                scored[1].mean_x_ratio,
+                scored[1].direction_dx_dy,
+            ),
+        )[1]
+
+    def _acquire_w1_w2_pair(
+        self,
+        white_candidates: tuple[LineHypothesis, ...],
+        yellow_candidates: tuple[LineHypothesis, ...],
+    ) -> tuple[LineHypothesis | None, LineHypothesis | None]:
+        """Acquire the entry only from the observed W1-W2-Y2 topology.
+
+        This is deliberately independent of timestamps and recorded mission
+        state.  The same masks always produce the same pair: a sufficiently
+        supported positive-heading W1 must join an opposite-heading W2, and
+        both must lie on the left side of the outer yellow boundary.
+        """
+        outer_yellow = self._outer_yellow_reference(yellow_candidates)
+        if outer_yellow is None:
+            return None, None
+
+        pairs: list[tuple[float, LineHypothesis, LineHypothesis]] = []
+        for w1 in white_candidates:
+            if not (
+                w1.mean_x_ratio
+                <= self.config.w1_acquisition_max_mean_x_ratio
+                and w1.direction_dx_dy
+                >= self.config.branch_w1_minimum_slope
+                and w1.vertical_span_ratio
+                >= self.config.branch_w1_minimum_span_ratio
+            ):
+                continue
+            # Initial identity acquisition is deliberately stricter than
+            # later tracking: both observed white branches must be on the
+            # image-left side of the outer yellow boundary.  This prevents an
+            # otherwise plausible fork outside the drivable corridor from
+            # being assigned the persistent W1 identity.
+            if self._right_of_reference_fraction(w1, outer_yellow) >= 0.50:
+                continue
+            w2 = self._w2_companion(
+                white_candidates, yellow_candidates, w1
+            )
+            if w2 is None:
+                continue
+            if self._right_of_reference_fraction(w2, outer_yellow) >= 0.50:
+                continue
+            join_distance = _branch_join_distance_ratio(w1, w2)
+            score = (
+                2.50 * join_distance
+                + 0.45
+                * abs(
+                    (w2.mean_x_ratio - w1.mean_x_ratio)
+                    - self.config.branch_expected_mean_separation_ratio
+                )
+                + 0.18 * abs(w1.direction_dx_dy - 0.45)
+                - 0.35
+                * (w1.vertical_span_ratio + w2.vertical_span_ratio)
+                - 0.08
+                * (w1.support_length_ratio + w2.support_length_ratio)
+            )
+            pairs.append((float(score), w1, w2))
+        if not pairs:
+            return None, None
+        _, w1, w2 = min(
+            pairs,
+            key=lambda scored: (
+                scored[0],
+                scored[1].mean_x_ratio,
+                scored[2].mean_x_ratio,
+            ),
+        )
+        return w1, w2
+
+    def _track_w2(
+        self,
+        white_candidates: tuple[LineHypothesis, ...],
+        yellow_candidates: tuple[LineHypothesis, ...],
+        w1: LineHypothesis,
+        previous: LineHypothesis | None,
+    ) -> LineHypothesis | None:
+        """Continue an acquired W2 without reapplying acquisition geometry."""
+        if previous is None:
+            return None
+        yellow = self._outer_yellow_reference(yellow_candidates)
+        if yellow is None:
+            return None
+        eligible = []
+        for item in white_candidates:
+            if not (
+                item.direction_dx_dy
+                <= self.config.branch_w2_tracking_maximum_slope
+                and item.vertical_span_ratio
+                >= self.config.branch_w2_tracking_minimum_span_ratio
+                and self._w2_is_inside_yellow(item, yellow)
+            ):
+                continue
+            if (
+                self._branch_tracking_cost(item, previous)
+                <= self.config.branch_w2_tracking_maximum_cost
+            ):
+                eligible.append(item)
+        if not eligible:
+            return None
+        return min(
+            eligible,
+            key=lambda item: (
+                self._branch_tracking_cost(item, previous)
+                - 0.65 * item.vertical_span_ratio
+                - 0.08 * item.support_length_ratio,
+                item.mean_x_ratio,
+            ),
+        )
+
+    def _track_entry_w1(
+        self,
+        candidates: tuple[LineHypothesis, ...],
+        previous: LineHypothesis | None,
+    ) -> LineHypothesis | None:
+        """Track the positive W1 arm before the W1/Y1 pair rotates."""
+        if previous is None:
+            return None
+        eligible = []
+        for item in candidates:
+            if not (
+                item.mean_x_ratio <= 0.52
+                and item.direction_dx_dy
+                >= max(
+                    self.config.white_branch_minimum_slope,
+                    self.config.tracking_minimum_slope,
+                )
+                and item.vertical_span_ratio
+                >= max(
+                    self.config.branch_w1_minimum_span_ratio,
+                    self.config.tracking_white_minimum_span_ratio,
+                )
+            ):
+                continue
+            if self._matches_previous(item, previous):
+                eligible.append(item)
+        if not eligible:
+            return None
+        # Replaying the same semantic mask must reproduce the same locked W1.
+        # Returning the identical fresh hypothesis also prevents Y1 appearing
+        # in another mask from perturbing an unchanged white observation.
+        reproduced = next(
+            (item for item in eligible if item == previous), None
+        )
+        if reproduced is not None:
+            return reproduced
+        return min(
+            eligible,
+            key=lambda item: (
+                self._w1_tracking_score(item, previous),
+                -item.vertical_span_ratio,
+                -item.support_length_ratio,
+                item.mean_x_ratio,
+            ),
+        )
 
     def _track_w1(
         self,
@@ -824,9 +1318,18 @@ class SequenceAwareEntrySelector:
         ]
         if not eligible:
             return None
+        long_tracks = [
+            item for item in eligible if item.vertical_span_ratio >= 0.15
+        ]
+        if long_tracks:
+            eligible = long_tracks
         return min(
             eligible,
-            key=lambda item: self._w1_topology_score(item, previous),
+            key=lambda item: (
+                self._branch_tracking_cost(item, previous)
+                - 0.12 * item.vertical_span_ratio,
+                item.mean_x_ratio,
+            ),
         )
 
     def _track_y1(
@@ -943,7 +1446,6 @@ class SequenceAwareEntrySelector:
         ):
             self.w1 = candidate
             self.phase = EntrySequencePhase.W1_LOCKED
-            self.w1_missing_frames = 0
 
     def _confirm_y1(self, candidate: LineHypothesis | None) -> None:
         if candidate is None:
@@ -977,66 +1479,37 @@ class SequenceAwareEntrySelector:
         if self.w1 is None:
             return (), False, 0.0
         w1 = self.w1
+        # Steering geometry is derived exclusively from the locked/tracked W1.
+        # The expected lane width contributes only a fixed lateral offset so
+        # the controller follows the lane interior instead of the painted W1
+        # itself.  Y1 remains a semantic phase/handoff observation and cannot
+        # rotate or translate the entry steering path.
         synthetic_separation = self.config.expected_pair_separation_ratio
-        y1 = self.y1
-        if y1 is None:
-            top = w1.minimum_y_ratio
-            bottom = w1.maximum_y_ratio
-            separation = synthetic_separation
-            blend = 0.0
-        else:
-            extension = self.config.maximum_fit_extrapolation_ratio
-            top = max(
-                0.0,
-                max(w1.minimum_y_ratio, y1.minimum_y_ratio) - extension,
-            )
-            bottom = min(
-                1.0, min(w1.maximum_y_ratio, y1.maximum_y_ratio) + extension
-            )
-            if bottom - top < self.config.minimum_vertical_span_ratio:
-                top = min(w1.minimum_y_ratio, y1.minimum_y_ratio)
-                bottom = max(w1.maximum_y_ratio, y1.maximum_y_ratio)
-            separation = y1.mean_x_ratio - w1.mean_x_ratio
-            blend = self.y1_blend
+        top = w1.minimum_y_ratio
+        bottom = w1.maximum_y_ratio
         rows_ratio = np.linspace(
             bottom, top, int(self.config.path_sample_count)
         )
         points = []
-        separations = []
         for row_ratio in rows_ratio:
             white_x = w1.x_ratio_at(float(row_ratio))
             synthetic_yellow_x = white_x + synthetic_separation
-            if y1 is None:
-                yellow_x = synthetic_yellow_x
-            else:
-                actual_yellow_x = y1.x_ratio_at(float(row_ratio))
-                yellow_x = (
-                    (1.0 - blend) * synthetic_yellow_x
-                    + blend * actual_yellow_x
-                )
-            local_separation = yellow_x - white_x
-            if not (
-                self.config.minimum_pair_separation_ratio * 0.75
-                <= local_separation
-                <= self.config.maximum_pair_separation_ratio * 1.25
-            ):
-                continue
             points.append(
                 (
                     float(
                         (
                             self.config.w1_path_weight * white_x
-                            + (1.0 - self.config.w1_path_weight) * yellow_x
+                            + (1.0 - self.config.w1_path_weight)
+                            * synthetic_yellow_x
                         )
                         * width
                     ),
                     float(row_ratio * height),
                 )
             )
-            separations.append(local_separation)
         if len(points) < 3:
-            return (), y1 is None, float(separation)
-        return tuple(points), y1 is None, float(np.median(separations))
+            return (), True, float(synthetic_separation)
+        return tuple(points), True, float(synthetic_separation)
 
     def process(
         self,
@@ -1052,7 +1525,12 @@ class SequenceAwareEntrySelector:
         yellows = extract_line_hypotheses(yellow, "yellow", self.config)
 
         if self.phase == EntrySequencePhase.LEFT4_ARMED:
-            self._confirm_w1(self._acquire_w1(whites))
+            acquired_w1, acquired_w2 = self._acquire_w1_w2_pair(
+                whites, yellows
+            )
+            self._confirm_w1(acquired_w1)
+            if self.w1 is not None:
+                self.w2 = acquired_w2
         else:
             # Until Y1 establishes the fork pair, position continuity alone is
             # ambiguous: as the vehicle turns, W1 moves sharply vehicle-left
@@ -1065,14 +1543,28 @@ class SequenceAwareEntrySelector:
             # polyline continuity and does not reapply the positive-heading
             # gate.
             if self.y1 is None:
-                tracked_w1 = self._acquire_w1(whites)
+                tracked_w1 = self._track_entry_w1(whites, self.w1)
             else:
                 tracked_w1 = self._track_w1(whites, self.w1)
             if tracked_w1 is not None:
                 self.w1 = tracked_w1
-                self.w1_missing_frames = 0
-            else:
-                self.w1_missing_frames += 1
+
+        if self.w1 is not None:
+            previous_w2 = self.w2
+            tracked_w2 = self._track_w2(
+                whites, yellows, self.w1, previous_w2
+            )
+            self.w2 = (
+                tracked_w2
+                if tracked_w2 is not None
+                else (
+                    self._w2_companion(whites, yellows, self.w1)
+                    if previous_w2 is not None
+                    else None
+                )
+            )
+        else:
+            self.w2 = None
 
         if self.w1 is not None and self.y1 is None:
             self._confirm_y1(self._acquire_y1(yellows, self.w1))
@@ -1090,10 +1582,11 @@ class SequenceAwareEntrySelector:
             else:
                 self.y1_missing_frames += 1
 
-        w1_usable = bool(
-            self.w1 is not None
-            and self.w1_missing_frames <= self.config.missing_hold_frames
-        )
+        # Once acquired, W1 is the persistent steering reference.  If a later
+        # semantic frame has no matching white candidate, keep using the last
+        # fitted W1 indefinitely instead of invalidating the path by a dropout
+        # frame count.  A newly matched candidate still updates the fit above.
+        w1_usable = self.w1 is not None
         y1_usable = bool(
             self.y1 is not None
             and self.y1_missing_frames <= self.config.missing_hold_frames
@@ -1112,10 +1605,11 @@ class SequenceAwareEntrySelector:
             )
             if not path:
                 reason = "W1/Y1 geometry invalid; safe stop"
-            elif not y1_usable or self.y1 is None:
-                reason = "W1 locked; synthetic Y1 width; W2/Y2 ignored"
             else:
-                reason = "W1/Y1 pair tracked; W2/Y2 ignored"
+                reason = (
+                    "W1-only steering; fixed lane-width offset; "
+                    "W2/Y2 ignored; Y1 excluded from control path"
+                )
 
         if (
             self.phase in (
@@ -1145,10 +1639,15 @@ class SequenceAwareEntrySelector:
             ready=ready,
             path_valid=path_valid,
             cruise_handoff=self.phase == EntrySequencePhase.CRUISE_HANDOFF,
-            reason=reason if ready else "left_4 armed; searching for W1",
+            reason=(
+                reason
+                if ready
+                else "left_4 armed; searching for W1/W2 fork left of yellow"
+            ),
             white_candidates=whites,
             yellow_candidates=yellows,
             w1=self.w1 if w1_usable else None,
+            w2=self.w2 if w1_usable else None,
             y1=self.y1 if y1_usable else None,
             path_pixels=path,
             used_synthetic_y1=bool(synthetic),
@@ -1160,6 +1659,9 @@ def render_sequence_debug(
     white_mask: np.ndarray,
     yellow_mask: np.ndarray,
     result: SequenceEntryResult,
+    *,
+    show_candidates: bool = True,
+    show_status: bool = True,
 ) -> np.ndarray:
     white = normalize_mask(white_mask)
     yellow = normalize_mask(yellow_mask)
@@ -1172,70 +1674,110 @@ def render_sequence_debug(
         item: LineHypothesis,
         color: tuple[int, int, int],
         thickness: int,
+        label: str | None = None,
+        label_position: str = "middle",
     ):
         y1 = int(round(item.minimum_y_ratio * height))
         y2 = int(round(item.maximum_y_ratio * height))
         x1 = int(round(item.x_ratio_at(item.minimum_y_ratio) * width))
         x2 = int(round(item.x_ratio_at(item.maximum_y_ratio) * width))
         cv2.line(output, (x1, y1), (x2, y2), color, thickness, cv2.LINE_AA)
+        if label is not None:
+            if label_position == "far":
+                label_x, label_y = x1 + 4, y1 - 4
+            elif label_position == "near":
+                label_x, label_y = x2 + 4, y2 + 12
+            else:
+                label_x = (x1 + x2) // 2 + 4
+                label_y = (y1 + y2) // 2
+            anchor = (
+                max(2, min(width - 30, label_x)),
+                max(12, min(height - 3, label_y)),
+            )
+            # A dark outline keeps labels readable without a large box that
+            # would hide the nearby fork pixels.
+            cv2.putText(
+                output,
+                label,
+                anchor,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.42,
+                (12, 12, 12),
+                3,
+                cv2.LINE_AA,
+            )
+            cv2.putText(
+                output,
+                label,
+                anchor,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.42,
+                color,
+                1,
+                cv2.LINE_AA,
+            )
 
-    for item in result.white_candidates:
-        draw_line(item, (120, 90, 90), 1)
-    for item in result.yellow_candidates:
-        draw_line(item, (40, 100, 120), 1)
+    if show_candidates:
+        for item in result.white_candidates:
+            draw_line(item, (120, 90, 90), 1)
+        for item in result.yellow_candidates:
+            draw_line(item, (40, 100, 120), 1)
     if result.w1 is not None:
-        draw_line(result.w1, (255, 0, 255), 4)
+        draw_line(result.w1, (255, 0, 255), 3, "W1", "far")
+    if result.w2 is not None:
+        draw_line(result.w2, (255, 150, 40), 3, "W2", "near")
     if result.y1 is not None:
-        draw_line(result.y1, (0, 255, 80), 4)
+        draw_line(result.y1, (0, 255, 80), 3, "Y1", "middle")
     if len(result.path_pixels) >= 2:
         pixels = np.asarray(result.path_pixels, dtype=np.int32)
-        cv2.polylines(output, [pixels], False, (255, 100, 0), 4, cv2.LINE_AA)
+        cv2.polylines(output, [pixels], False, (255, 100, 0), 3, cv2.LINE_AA)
 
     cv2.line(
         output,
         (width // 2, height - 1),
         (width // 2, max(0, height // 4)),
-        (255, 80, 80),
+        (78, 78, 78),
         1,
         cv2.LINE_AA,
     )
-    status_color = (40, 220, 70) if result.path_valid else (40, 40, 255)
-    cv2.rectangle(output, (0, 0), (width, 78), (12, 12, 12), -1)
-    cv2.putText(
-        output,
-        (
-            f"{result.phase.name}  "
-            f"{'VALID' if result.path_valid else 'WAIT/STOP'}"
-        ),
-        (10, 26),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.60,
-        status_color,
-        2,
-        cv2.LINE_AA,
-    )
-    cv2.putText(
-        output,
-        result.reason,
-        (10, 50),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.43,
-        (235, 235, 235),
-        1,
-        cv2.LINE_AA,
-    )
-    cv2.putText(
-        output,
-        (
-            f"W candidates={len(result.white_candidates)}  "
-            f"Y candidates={len(result.yellow_candidates)}  "
-            f"synthetic_Y1={int(result.used_synthetic_y1)}"
-        ),
-        (10, 70),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.40,
-        (200, 200, 200),
-        1,
-        cv2.LINE_AA,
-    )
+    if show_status:
+        status_color = (40, 220, 70) if result.path_valid else (40, 40, 255)
+        cv2.rectangle(output, (0, 0), (width, 78), (12, 12, 12), -1)
+        cv2.putText(
+            output,
+            (
+                f"{result.phase.name}  "
+                f"{'VALID' if result.path_valid else 'WAIT/STOP'}"
+            ),
+            (10, 26),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.60,
+            status_color,
+            2,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            output,
+            result.reason,
+            (10, 50),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.43,
+            (235, 235, 235),
+            1,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            output,
+            (
+                f"W candidates={len(result.white_candidates)}  "
+                f"Y candidates={len(result.yellow_candidates)}  "
+                f"synthetic_Y1={int(result.used_synthetic_y1)}"
+            ),
+            (10, 70),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.40,
+            (200, 200, 200),
+            1,
+            cv2.LINE_AA,
+        )
     return output

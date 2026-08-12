@@ -42,6 +42,12 @@ setup(
             "shortcut_entry_review.shortcut_candidate_mux_node:main",
             "evaluate_sequence_annotations = "
             "shortcut_entry_review.evaluate_sequence_annotations:main",
+            "evaluate_canonical_white_annotations = "
+            "shortcut_entry_review.evaluate_canonical_white_annotations:main",
+            "canonical_white_selection_review = "
+            "shortcut_entry_review.canonical_white_selection_review:main",
+            "shortcut_w1_control_viewer = "
+            "shortcut_entry_review.shortcut_w1_control_viewer:main",
             "left4_processing_gate = "
             "shortcut_entry_review.left4_processing_gate_node:main",
             "bev_line_annotation = "

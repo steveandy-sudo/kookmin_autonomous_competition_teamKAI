@@ -49,8 +49,8 @@ class SpaceDriveGateController:
         maximum_abs_angle_command: float = 42.0,
         steering_only: bool = False,
         adaptive_steering_speed_enabled: bool = True,
-        turn_speed_command: float = 8.0,
-        slowdown_start_angle_command: float = 20.0,
+        turn_speed_command: float = 12.0,
+        slowdown_start_angle_command: float = 18.0,
         full_slowdown_angle_command: float = 42.0,
     ) -> None:
         self.maximum_speed_command = max(0.0, float(maximum_speed_command))
@@ -115,7 +115,7 @@ class SpaceDriveGateController:
                 speed,
                 steering_speed_limit(
                     angle,
-                    speed_cap_command=self.speed_command,
+                    speed_cap_command=speed,
                     turn_speed_command=self.turn_speed_command,
                     slowdown_start_angle_command=(
                         self.slowdown_start_angle_command

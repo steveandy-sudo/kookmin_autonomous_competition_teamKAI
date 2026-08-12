@@ -90,7 +90,7 @@ def generate_launch_description():
             "full_slowdown_angle_command", default_value="42.0"
         ),
         DeclareLaunchArgument("speed_curve_exponent", default_value="1.0"),
-        DeclareLaunchArgument("target_left_offset_m", default_value="0.12"),
+        DeclareLaunchArgument("target_left_offset_m", default_value="0.0"),
         DeclareLaunchArgument("lookahead_distance_m", default_value="0.30"),
         DeclareLaunchArgument("pure_pursuit_weight", default_value="0.80"),
         DeclareLaunchArgument(

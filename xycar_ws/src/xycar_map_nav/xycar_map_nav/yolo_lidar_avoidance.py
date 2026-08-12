@@ -26,15 +26,15 @@ class YoloLidarAvoidanceMode(str, Enum):
 class YoloLidarAvoidanceConfig:
     yolo_min_confidence: float = 0.45
     yolo_required_frames: int = 2
-    yolo_timeout_sec: float = 0.75
+    yolo_timeout_sec: float = 1.00
     entry_distance_m: float = 1.20
     minimum_side_clearance_m: float = 0.70
-    left_offset_m: float = 0.28
-    right_offset_m: float = 0.31
-    offset_rate_mps: float = 0.35
+    left_offset_m: float = 0.20
+    right_offset_m: float = 0.20
+    offset_rate_mps: float = 0.50
     speed_limit_command: float = 4.0
-    minimum_avoid_sec: float = 0.80
-    clear_hold_sec: float = 1.00
+    minimum_avoid_sec: float = 0.50
+    clear_hold_sec: float = 0.50
     return_hold_sec: float = 0.30
     return_deadband_m: float = 0.02
     immediate_on_yolo: bool = False

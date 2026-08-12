@@ -32,7 +32,7 @@ my_rule_object_detection_node:
     yellow_4_confidence: 0.50
     green_4_confidence: 0.50
     yellow_centerline_confidence: 0.45
-    left_4_confidence: 0.50
+    left_4_confidence: 0.40
 
     # Keep the four-lamp classes distinct for the integrated traffic-light
     # controller. Three-lamp signals remain generic startup signal names.
@@ -56,5 +56,4 @@ my_rule_object_detection_node:
     startup_green_required_frames: 2
 
     required_classes:
-      [car, cone, red, yellow, green,
-       red_4, yellow_4, green_4, left_4]
+      [car, cone, red_4, yellow_4, green_4, left_4]

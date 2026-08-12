@@ -90,18 +90,6 @@ def limit_override_speed(
     )
 
 
-def limit_shortcut_entry_search_speed(
-    speed_command: float,
-    *,
-    search_speed_command: float,
-) -> float:
-    """Keep normal RULE steering but cap forward speed from S until W1 ready."""
-    return min(
-        max(float(speed_command), 0.0),
-        max(float(search_speed_command), 0.0),
-    )
-
-
 def is_avoidance_detection(
     *,
     class_name: str,
@@ -618,7 +606,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("cone_exit_confidence", 0.20)
         self.declare_parameter("cone_entry_frames", 3)
         self.declare_parameter("cone_exit_frames", 1)
-        self.declare_parameter("cone_max_target_angle_deg", 26.0)
+        self.declare_parameter("cone_max_target_angle_deg", 42.0)
         self.declare_parameter(
             "cone_steering_actual_deg", [0.0, 4.0, 10.0, 16.0, 26.0]
         )
@@ -628,7 +616,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("cone_yolo_min_confidence", 0.50)
         self.declare_parameter("cone_yolo_required_frames", 2)
         self.declare_parameter("cone_yolo_timeout_sec", 0.75)
-        self.declare_parameter("cone_entry_distance_m", 1.0)
+        self.declare_parameter("cone_entry_distance_m", 3.0)
         self.declare_parameter("cone_cluster_timeout_sec", 0.50)
         self.declare_parameter("cone_sensor_presence_timeout_sec", 0.5)
         self.declare_parameter("cone_cluster_topic", "/my_rule/cone_clusters")
@@ -641,7 +629,7 @@ class SequentialHybridDriver(Node):
         )
         self.declare_parameter("shortcut_enabled", True)
         self.declare_parameter("shortcut_class_name", "left_4")
-        self.declare_parameter("shortcut_yolo_min_confidence", 0.50)
+        self.declare_parameter("shortcut_yolo_min_confidence", 0.40)
         self.declare_parameter("shortcut_yolo_required_frames", 2)
         self.declare_parameter("shortcut_yolo_absence_frames", 2)
         self.declare_parameter("shortcut_start_delay_sec", 0.75)
@@ -650,7 +638,6 @@ class SequentialHybridDriver(Node):
             "shortcut_entry_ready_topic", "/shortcut/entry/ready"
         )
         self.declare_parameter("shortcut_entry_search_timeout_sec", 12.0)
-        self.declare_parameter("shortcut_entry_search_speed_command", 4.0)
         self.declare_parameter("shortcut_candidate_timeout_sec", 0.35)
         self.declare_parameter("shortcut_rearm_absence_sec", 1.0)
         self.declare_parameter(
@@ -691,7 +678,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("cone_as_vehicle_obstacle", False)
         self.declare_parameter("cone_as_vehicle_min_confidence", 0.50)
         self.declare_parameter("vehicle_yolo_required_frames", 1)
-        self.declare_parameter("vehicle_yolo_timeout_sec", 0.75)
+        self.declare_parameter("vehicle_yolo_timeout_sec", 1.00)
         self.declare_parameter("vehicle_camera_lidar_hfov_deg", 60.0)
         self.declare_parameter("vehicle_camera_lidar_padding_deg", 3.0)
         self.declare_parameter(
@@ -725,12 +712,12 @@ class SequentialHybridDriver(Node):
         )
         self.declare_parameter("vehicle_avoidance_entry_distance_m", 1.20)
         self.declare_parameter("vehicle_minimum_side_clearance_m", 0.70)
-        self.declare_parameter("vehicle_left_offset_m", 0.28)
-        self.declare_parameter("vehicle_right_offset_m", 0.31)
-        self.declare_parameter("vehicle_offset_rate_mps", 0.35)
+        self.declare_parameter("vehicle_left_offset_m", 0.20)
+        self.declare_parameter("vehicle_right_offset_m", 0.20)
+        self.declare_parameter("vehicle_offset_rate_mps", 0.50)
         self.declare_parameter("vehicle_avoidance_speed_limit_command", 4.0)
-        self.declare_parameter("vehicle_minimum_avoid_sec", 0.80)
-        self.declare_parameter("vehicle_clear_hold_sec", 1.0)
+        self.declare_parameter("vehicle_minimum_avoid_sec", 0.50)
+        self.declare_parameter("vehicle_clear_hold_sec", 0.50)
         self.declare_parameter("vehicle_return_hold_sec", 0.30)
         self.declare_parameter("vehicle_return_deadband_m", 0.02)
         self.declare_parameter(
@@ -824,7 +811,7 @@ class SequentialHybridDriver(Node):
         self.drive_armed = armed if self.gate_arming_required else True
 
     def _on_shortcut_entry_ready(self, message: Bool) -> None:
-        """Start the shortcut override only after sequence-selected W1 exists."""
+        """Start override at the spatial gate, not at early W1 identity lock."""
         self.shortcut_entry_ready = bool(message.data)
         if (
             not self.shortcut_entry_ready
@@ -846,7 +833,8 @@ class SequentialHybridDriver(Node):
             return
         if self._shortcut_entry_search_expired(now):
             self._cancel_shortcut_entry_search(
-                "SHORTCUT W1 ready arrived after search timeout; RULE retained"
+                "SHORTCUT spatial control gate arrived after search timeout; "
+                "RULE retained"
             )
             return
         event = self.shortcut_latch.start(
@@ -997,6 +985,10 @@ class SequentialHybridDriver(Node):
             ),
         )
         self.latest_traffic_light_frame = traffic_frame
+        previous_left_frames = self.traffic_light_controller.left_frames
+        previous_left_absence = (
+            self.traffic_light_controller.left_absence_frames
+        )
         if (
             self.drive_armed
             and bool(
@@ -1015,6 +1007,39 @@ class SequentialHybridDriver(Node):
             self.traffic_light_decision = (
                 self.traffic_light_controller.latest_decision
             )
+        left_threshold = float(
+            self.get_parameter("shortcut_yolo_min_confidence").value
+        )
+        left_seen = traffic_frame.left.confidence >= left_threshold
+        left_frames = self.traffic_light_controller.left_frames
+        left_absence = self.traffic_light_controller.left_absence_frames
+        if left_seen and left_frames != previous_left_frames:
+            required = int(
+                self.get_parameter("shortcut_yolo_required_frames").value
+            )
+            self.get_logger().warning(
+                "[MISSION] left_4 DETECTED: "
+                f"conf={traffic_frame.left.confidence:.3f} "
+                f"threshold={left_threshold:.2f} "
+                f"confirm={left_frames}/{required}"
+            )
+            if left_frames >= required:
+                self.get_logger().warning(
+                    "[MISSION] left_4 CONFIRMED; keep RULE driving until "
+                    "two detector frames are absent"
+                )
+        if left_absence != previous_left_absence and left_absence > 0:
+            required_absence = int(
+                self.get_parameter("shortcut_yolo_absence_frames").value
+            )
+            self.get_logger().warning(
+                "[MISSION] left_4 ABSENT: "
+                f"confirm={left_absence}/{required_absence}"
+            )
+            if left_absence >= required_absence:
+                self.get_logger().warning(
+                    "[MISSION] left_4 ABSENT 2/2 CONFIRMED"
+                )
         self._handle_traffic_shortcut_request(now)
         cone_confidences = [
             float(item.confidence)
@@ -1271,7 +1296,9 @@ class SequentialHybridDriver(Node):
             self.shortcut_entry_ready = False
             self.shortcut_processing_pub.publish(Bool(data=True))
             self.get_logger().warning(
-                "SHORTCUT ENTRY SEARCH; RULE remains active until W1 ready"
+                "[MISSION] SHORTCUT ENTRY PERCEPTION START: left_4 absent "
+                "2/2; LR-ASPP/W1 armed; RULE steering and speed retained "
+                "until the distance gate"
             )
             return
         event = self.shortcut_latch.start(
@@ -1976,24 +2003,6 @@ class SequentialHybridDriver(Node):
                     angle_command=0.0,
                     speed_command=0.0,
                     reason="avoidance lane-rule command stale",
-                )
-        if self.shortcut_entry_search_active:
-            search_speed = limit_shortcut_entry_search_speed(
-                output.speed_command,
-                search_speed_command=float(
-                    self.get_parameter(
-                        "shortcut_entry_search_speed_command"
-                    ).value
-                ),
-            )
-            if search_speed < float(output.speed_command):
-                output = replace(
-                    output,
-                    speed_command=search_speed,
-                    reason=(
-                        f"{output.reason}; shortcut entry search speed "
-                        f"limit={search_speed:.1f}"
-                    ),
                 )
         command = Float32MultiArray(
             data=[output.angle_command, output.speed_command]

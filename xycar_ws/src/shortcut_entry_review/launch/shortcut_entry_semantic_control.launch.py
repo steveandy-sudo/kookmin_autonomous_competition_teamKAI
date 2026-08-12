@@ -64,8 +64,31 @@ def generate_launch_description():
             default_value="/hybrid/shortcut_processing_enabled",
         ),
         DeclareLaunchArgument("default_enabled", default_value="false"),
-        DeclareLaunchArgument("entry_speed_command", default_value="4.0"),
+        DeclareLaunchArgument(
+            "controller_reference_speed_command", default_value="20.0"
+        ),
         DeclareLaunchArgument("w1_path_weight", default_value="0.60"),
+        DeclareLaunchArgument(
+            "rule_candidate_topic", default_value="/hybrid/rule_candidate"
+        ),
+        DeclareLaunchArgument("rule_angle_index", default_value="0"),
+        DeclareLaunchArgument("rule_speed_index", default_value="1"),
+        DeclareLaunchArgument(
+            "vehicle_state_topic", default_value="/vehicle/vesc_state"
+        ),
+        DeclareLaunchArgument(
+            "full_control_distance_m", default_value="0.15"
+        ),
+        DeclareLaunchArgument(
+            "minimum_start_distance_m", default_value="0.55"
+        ),
+        DeclareLaunchArgument(
+            "maximum_start_distance_m", default_value="1.20"
+        ),
+        DeclareLaunchArgument("control_latency_sec", default_value="0.25"),
+        DeclareLaunchArgument("distance_margin_m", default_value="0.08"),
+        DeclareLaunchArgument("minimum_control_blend", default_value="0.05"),
+        DeclareLaunchArgument("speed_command_to_mps", default_value="0.08"),
         DeclareLaunchArgument(
             "candidate_topic", default_value="/hybrid/shortcut_candidate"
         ),
@@ -99,6 +122,11 @@ def generate_launch_description():
             "direct_model_rectify_oversample": "3",
             "max_input_age_sec": "0.0",
             "direct_canonical_enabled": "true",
+            # Keep the white fork branches.  The sequence selector must see
+            # the same raw 256x144 canonical masks used by the hand-labelled
+            # W1/W2 evaluation; the generic single-white-line fitter erases
+            # the fork before W1 can be selected.
+            "canonical_white_fit_enabled": "false",
             "publish_intermediate_topics": "true",
             "max_output_rate_hz": "15.0",
             "debug_rate_hz": "10.0",
@@ -132,11 +160,11 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {
-                "white_mask_topic": "/shortcut/lraspp/white_mask",
-                "yellow_mask_topic": "/shortcut/lraspp/yellow_mask",
+                "white_mask_topic": "/shortcut/lraspp/canonical_white_mask",
+                "yellow_mask_topic": "/shortcut/lraspp/canonical_yellow_mask",
                 "processing_enabled_topic": processing_topic,
                 "default_enabled": ParameterValue(default_enabled, value_type=bool),
-                "input_is_bev": False,
+                "input_is_bev": True,
                 "w1_path_weight": ParameterValue(
                     LaunchConfiguration("w1_path_weight"), value_type=float
                 ),
@@ -166,10 +194,12 @@ def generate_launch_description():
                 "target_right_offset_m": 0.0,
                 "target_left_offset_m": 0.0,
                 "cruise_speed_command": ParameterValue(
-                    LaunchConfiguration("entry_speed_command"), value_type=float
+                    LaunchConfiguration("controller_reference_speed_command"),
+                    value_type=float,
                 ),
                 "minimum_speed_command": ParameterValue(
-                    LaunchConfiguration("entry_speed_command"), value_type=float
+                    LaunchConfiguration("controller_reference_speed_command"),
+                    value_type=float,
                 ),
                 "lane_loss_speed_command": 0.0,
                 "hold_last_steering_on_lane_loss": False,
@@ -207,6 +237,46 @@ def generate_launch_description():
                 "processing_enabled_topic": processing_topic,
                 "default_enabled": ParameterValue(default_enabled, value_type=bool),
                 "candidate_topic": LaunchConfiguration("candidate_topic"),
+                "rule_candidate_topic": LaunchConfiguration(
+                    "rule_candidate_topic"
+                ),
+                "rule_angle_index": ParameterValue(
+                    LaunchConfiguration("rule_angle_index"), value_type=int
+                ),
+                "rule_speed_index": ParameterValue(
+                    LaunchConfiguration("rule_speed_index"), value_type=int
+                ),
+                "vehicle_state_topic": LaunchConfiguration(
+                    "vehicle_state_topic"
+                ),
+                "full_control_distance_m": ParameterValue(
+                    LaunchConfiguration("full_control_distance_m"),
+                    value_type=float,
+                ),
+                "minimum_start_distance_m": ParameterValue(
+                    LaunchConfiguration("minimum_start_distance_m"),
+                    value_type=float,
+                ),
+                "maximum_start_distance_m": ParameterValue(
+                    LaunchConfiguration("maximum_start_distance_m"),
+                    value_type=float,
+                ),
+                "control_latency_sec": ParameterValue(
+                    LaunchConfiguration("control_latency_sec"),
+                    value_type=float,
+                ),
+                "distance_margin_m": ParameterValue(
+                    LaunchConfiguration("distance_margin_m"),
+                    value_type=float,
+                ),
+                "minimum_control_blend": ParameterValue(
+                    LaunchConfiguration("minimum_control_blend"),
+                    value_type=float,
+                ),
+                "speed_command_to_mps": ParameterValue(
+                    LaunchConfiguration("speed_command_to_mps"),
+                    value_type=float,
+                ),
             }
         ],
     )

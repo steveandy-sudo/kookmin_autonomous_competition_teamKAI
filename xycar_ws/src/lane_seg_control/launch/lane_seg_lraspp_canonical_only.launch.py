@@ -37,19 +37,23 @@ def generate_launch_description():
         "src_bl_y_ratio": _as_float("src_bl_y_ratio"),
         "dst_left_ratio": _as_float("dst_left_ratio"),
         "dst_right_ratio": _as_float("dst_right_ratio"),
-        "dst_top_y_ratio": 0.0,
+        "dst_top_y_ratio": _as_float("dst_top_y_ratio"),
         "dst_bottom_y_ratio": _as_float("dst_bottom_y_ratio"),
-        "bev_width": 640,
-        "bev_height": 660,
+        "bev_width": _as_int("bev_width"),
+        "bev_height": _as_int("bev_height"),
         "bev_valid_lateral_margin_px": 0,
         "bev_valid_erode_px": 0,
         "bev_clip_to_source_polygon": False,
-        "lateral_m_per_px": 1.4 / 640.0,
-        "forward_m_per_px": 1.5 / 660.0,
-        "canonical_width": 256,
-        "canonical_height": 144,
-        "canonical_lateral_range_m": 1.4,
-        "canonical_forward_range_m": 1.5,
+        "lateral_m_per_px": _as_float("lateral_m_per_px"),
+        "forward_m_per_px": _as_float("forward_m_per_px"),
+        "canonical_width": _as_int("canonical_width"),
+        "canonical_height": _as_int("canonical_height"),
+        "canonical_lateral_range_m": _as_float(
+            "canonical_lateral_range_m"
+        ),
+        "canonical_forward_range_m": _as_float(
+            "canonical_forward_range_m"
+        ),
         "canonical_white_fit_enabled": _as_bool(
             "canonical_white_fit_enabled"
         ),
@@ -108,6 +112,8 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "image_topic", default_value="/wide_camera/rect/image_raw"
         ),
+        DeclareLaunchArgument("input_width", default_value="256"),
+        DeclareLaunchArgument("input_height", default_value="144"),
         DeclareLaunchArgument("use_compressed_image", default_value="false"),
         DeclareLaunchArgument("enable_rectify", default_value="false"),
         DeclareLaunchArgument(
@@ -160,8 +166,25 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "dst_right_ratio", default_value="0.794286"
         ),
+        DeclareLaunchArgument("dst_top_y_ratio", default_value="0.0"),
         DeclareLaunchArgument(
             "dst_bottom_y_ratio", default_value="0.666666667"
+        ),
+        DeclareLaunchArgument("bev_width", default_value="640"),
+        DeclareLaunchArgument("bev_height", default_value="660"),
+        DeclareLaunchArgument(
+            "lateral_m_per_px", default_value="0.0021875"
+        ),
+        DeclareLaunchArgument(
+            "forward_m_per_px", default_value="0.002272727273"
+        ),
+        DeclareLaunchArgument("canonical_width", default_value="256"),
+        DeclareLaunchArgument("canonical_height", default_value="144"),
+        DeclareLaunchArgument(
+            "canonical_lateral_range_m", default_value="1.4"
+        ),
+        DeclareLaunchArgument(
+            "canonical_forward_range_m", default_value="1.5"
         ),
         DeclareLaunchArgument(
             "canonical_white_fit_enabled", default_value="true"
@@ -236,8 +259,8 @@ def generate_launch_description():
                 "processed_image_topic": processed_image_topic,
                 "white_mask_topic": white_topic,
                 "yellow_mask_topic": yellow_topic,
-                "input_width": 256,
-                "input_height": 144,
+                "input_width": _as_int("input_width"),
+                "input_height": _as_int("input_height"),
                 "white_class_id": 1,
                 "yellow_class_id": 2,
                 "white_confidence": _as_float("white_confidence"),

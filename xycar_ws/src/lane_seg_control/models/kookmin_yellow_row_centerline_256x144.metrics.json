@@ -1,0 +1,45 @@
+{
+  "dataset": "Roboflow Kookmin final lane segmentation vdataset-v9ysa",
+  "license": "CC BY 4.0",
+  "images": {
+    "train": 1463,
+    "valid": 411,
+    "test": 202
+  },
+  "input": [256, 144],
+  "parameters": 270952,
+  "anchor_rows": [
+    36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58,
+    60, 62, 64, 66, 67, 69, 71, 73, 75, 77, 79, 81,
+    83, 85, 87, 89, 91, 93, 95, 97, 100, 103, 105, 108,
+    111, 113, 116, 119, 121, 124, 127, 129, 132, 135, 137, 140
+  ],
+  "best_epoch": 43,
+  "test": {
+    "presence_recall": 0.9840132304,
+    "presence_precision": 0.9215281363,
+    "within_4px_recall": 0.7273980154,
+    "within_8px_recall": 0.9189636163,
+    "far_within_8px_recall": 0.9147034931,
+    "visible_x_mae_px": 3.4411513043
+  },
+  "cpu_model_only": {
+    "threads": 1,
+    "mean_latency_ms": 5.09,
+    "throughput_fps": 196.59
+  },
+  "ros_full_pipeline": {
+    "compressed_camera_input_hz": 30.0,
+    "configured_output_hz": 20.0,
+    "measured_output_hz": 20.0,
+    "model_ms": 5.3,
+    "decode_rectify_ms": 4.3,
+    "canonical_ms": 4.1,
+    "total_ms": 13.7
+  },
+  "mask_adapter_visibility_threshold": 0.5,
+  "sha256": {
+    "mask_adapter": "397a8faee199dc246288f398e52f267d8e5b7d09eba68c06d277896db35005e1",
+    "coordinate_core": "f5ecc1aa0d5d1b4912d8da9cb4d8933f7a884c634ae72987bfbd349e514d6874"
+  }
+}

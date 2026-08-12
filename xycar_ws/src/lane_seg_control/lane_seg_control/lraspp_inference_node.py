@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ROS 2 TorchScript LR-ASPP lane segmentation without motor outputs."""
+"""ROS 2 TorchScript lane perception without motor outputs."""
 
 from __future__ import annotations
 
@@ -87,7 +87,7 @@ def masks_from_probabilities(
 
 
 class LrasppInferenceNode(Node):
-    """Publish semantic lane masks from a TorchScript LR-ASPP model."""
+    """Publish semantic lane masks from a compatible TorchScript model."""
 
     def __init__(self) -> None:
         super().__init__("lane_seg_lraspp_inference")
@@ -290,12 +290,12 @@ class LrasppInferenceNode(Node):
             output = self.model(warmup)
         if not isinstance(output, torch.Tensor) or output.ndim != 4:
             raise RuntimeError(
-                "LR-ASPP model must return an NxCxHxW tensor, "
+                "lane model must return an NxCxHxW tensor, "
                 f"got {type(output)!r}"
             )
         if output.shape[1] <= max(self.white_class_id, self.yellow_class_id):
             raise RuntimeError(
-                f"LR-ASPP model has {output.shape[1]} classes but lane class IDs "
+                f"lane model has {output.shape[1]} classes but lane class IDs "
                 f"are {self.white_class_id}/{self.yellow_class_id}"
             )
 
@@ -392,7 +392,7 @@ class LrasppInferenceNode(Node):
             )
             self.scheduler_thread.start()
         self.get_logger().info(
-            f"LR-ASPP lane segmentation ready: model={model_path}, "
+            f"TorchScript lane perception ready: model={model_path}, "
             f"input={self.input_width}x{self.input_height}, classes="
             f"background/white/yellow=0/{self.white_class_id}/{self.yellow_class_id}, "
             f"thresholds={self.white_confidence:.2f}/{self.yellow_confidence:.2f}, "
@@ -668,7 +668,7 @@ class LrasppInferenceNode(Node):
                 logits = self.model(tensor)
                 probabilities = self.torch.softmax(logits, dim=1)[0].cpu().numpy()
         except Exception as exc:
-            self.get_logger().error(f"LR-ASPP inference failed: {exc}")
+            self.get_logger().error(f"lane model inference failed: {exc}")
             return
 
         white_small, yellow_small = masks_from_probabilities(
@@ -811,7 +811,7 @@ class LrasppInferenceNode(Node):
             debug[selected] = blended[selected]
             cv2.putText(
                 debug,
-                f"LR-ASPP {elapsed_ms:.1f}ms",
+                f"LANE MODEL {elapsed_ms:.1f}ms",
                 (12, 28),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.75,
@@ -861,7 +861,7 @@ class LrasppInferenceNode(Node):
         now = time.monotonic()
         if now - self.last_log_time >= 5.0:
             self.get_logger().info(
-                f"LR-ASPP lane segmentation: {elapsed_ms:.1f}ms, "
+                f"lane perception: {elapsed_ms:.1f}ms, "
                 f"decode_rect={decode_ms:.1f}ms, canonical="
                 f"{canonical_ms:.1f}ms, total={callback_elapsed_ms:.1f}ms, "
                 f"source_age={input_age_sec * 1000.0:.1f}ms, "
