@@ -147,8 +147,6 @@ root:
 sudo apt update
 sudo apt install -y \
   python3-pip \
-  python3-torch \
-  python3-torchvision \
   python3-opencv \
   python3-numpy \
   python3-yaml \
@@ -162,19 +160,26 @@ sudo apt install -y \
   python3-seaborn \
   python3-cpuinfo
 
+/usr/bin/python3 -m pip install --user --upgrade --no-deps \
+  --index-url https://download.pytorch.org/whl/cpu \
+  'torch==1.13.1+cpu' \
+  'torchvision==0.14.1+cpu'
+
 /usr/bin/python3 -m pip install --user --no-deps \
   -r xycar_ws/src/study/my_rule/requirements.txt \
   'ultralytics-thop>=2.0.0'
 ```
 
-`--no-deps` is intentional: Torch, TorchVision, OpenCV, and NumPy stay on the
-Ubuntu/ROS versions instead of pip replacing them with a different CUDA or
-NumPy stack.  Verify the exact interpreter used by ROS after sourcing Humble:
+Ubuntu 22.04's `python3-torch` is too old for the lane node's
+`torch.jit.optimize_for_inference()` call.  The pinned CPU wheels provide that
+API without installing a CUDA runtime.  `--no-deps` is intentional: OpenCV and
+NumPy stay on the Ubuntu/ROS versions instead of pip replacing them.  Verify
+the exact interpreter used by ROS after sourcing Humble:
 
 ```bash
 source /opt/ros/humble/setup.bash
 /usr/bin/python3 -c \
-  'import rclpy, cv2, torch, torchvision, ultralytics; print("model runtime OK")'
+  'import rclpy, cv2, torch, torchvision, ultralytics; assert hasattr(torch.jit, "optimize_for_inference"); print("model runtime OK")'
 ```
 
 ### Rerun the current models from the bag
