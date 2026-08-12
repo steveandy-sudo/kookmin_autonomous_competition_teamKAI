@@ -56,7 +56,7 @@ def generate_launch_description():
         [
             FindPackageShare("my_rule"),
             "models",
-            "kookmin_objects_best_20260804.pt",
+            "kookmin_objects_best_20260811.pt",
         ]
     )
     object_camera_yaml = PathJoinSubstitution(

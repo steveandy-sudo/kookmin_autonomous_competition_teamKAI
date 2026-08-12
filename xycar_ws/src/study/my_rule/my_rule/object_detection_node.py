@@ -48,7 +48,7 @@ class ObjectDetectionNode(Node):
             "model_path": str(
                 package_share
                 / "models"
-                / "kookmin_objects_best_20260804.pt"
+                / "kookmin_objects_best_20260811.pt"
             ),
             "image_topic": "/wide_camera_mjpeg/image_raw/compressed",
             "use_compressed_image": True,
