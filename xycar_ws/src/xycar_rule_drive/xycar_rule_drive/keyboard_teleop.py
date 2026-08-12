@@ -21,12 +21,18 @@ except ImportError:
 HELP_TEXT = """
 Xycar keyboard teleop
 
-  w (hold)    drive at fixed speed 17; release to stop
-  a (hold)    ramp steering by 10 to -30; release to center
-  d (hold)    ramp steering by 10 to +30; release to center
-  x           stop
-  space       full stop
+terminal_step mode:
+  w           increase speed by speed_step
+  s           decrease speed by speed_step (negative speed is reverse)
+  a / d       move steering left / right by angle_step
+  e           center steering
+  x           set speed to zero
+  space       set speed and steering to zero
   q           quit
+
+pygame_hold mode:
+  hold w      drive at fixed_speed; release to stop
+  hold a / d  ramp steering left / right; release to center
 
 Commands are published as std_msgs/Float32MultiArray [angle, speed] on /xycar_motor.
 Do not run this together with lane_rule_driver because both publish /xycar_motor.
@@ -73,6 +79,15 @@ def ramped_steering_command(
 
 def hold_speed_command(drive_pressed: bool, fixed_speed: float) -> float:
     return fixed_speed if drive_pressed else 0.0
+
+
+def stepped_speed_command(
+    current: float,
+    step: float,
+    speed_min: float,
+    speed_max: float,
+) -> float:
+    return clamp(current + step, speed_min, speed_max)
 
 
 class KeyboardTeleop(Node):
@@ -178,11 +193,19 @@ class KeyboardTeleop(Node):
 
     def handle_key(self, key: str) -> None:
         if key == "w":
-            self.drive_enabled = True
-            self.speed = self.fixed_speed
+            self.speed = stepped_speed_command(
+                self.speed,
+                abs(self.speed_step),
+                self.speed_min,
+                self.speed_max,
+            )
         elif key == "s":
-            self.drive_enabled = False
-            self.speed = 0.0
+            self.speed = stepped_speed_command(
+                self.speed,
+                -abs(self.speed_step),
+                self.speed_min,
+                self.speed_max,
+            )
         elif key == "a":
             self.angle -= self.angle_step
         elif key == "d":
@@ -204,6 +227,7 @@ class KeyboardTeleop(Node):
 
         self.angle = clamp(self.angle, self.angle_min, self.angle_max)
         self.speed = clamp(self.speed, self.speed_min, self.speed_max)
+        self.drive_enabled = abs(self.speed) > 1e-6
         self.get_logger().info(
             f"keyboard command angle={self.angle:.1f}, speed={self.speed:.1f}",
             throttle_duration_sec=0.05,
