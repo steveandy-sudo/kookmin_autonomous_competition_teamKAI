@@ -53,7 +53,7 @@ cd ~/xycar_kookmin_gazebo_track
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 
-MODEL="$PWD/xycar_ws/src/xycar_rl/models/lap_time_speed_only_round02_20260723/camera_speed_lap_time_speed_only_actor.pth"
+MODEL="$PWD/src/xycar_rl/models/lap_time_speed_only_round02_20260723/camera_speed_lap_time_speed_only_actor.pth"
 
 ros2 run xycar_rl rollout_policy \
   --project-root "$PWD" \

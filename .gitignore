@@ -30,27 +30,27 @@ __pycache__/
 # Imitation-learning datasets and trained weights
 datasets/
 models/
-!xycar_ws/src/study/my_rule/models/
-!xycar_ws/src/study/my_rule/models/kookmin_objects_best_20260804.pt
-!xycar_ws/src/study/my_rule/models/my_rule_objects.pt
-!xycar_ws/src/xycar_rl/models/
-!xycar_ws/src/xycar_rl/models/**
-!xycar_ws/src/il_data_tools/models/
-!xycar_ws/src/il_data_tools/models/drive_policy_scripted.pt
-!xycar_ws/src/il_data_tools/models/drive_canonical_policy_scripted.pt
-!xycar_ws/src/il_data_tools/models/drive_canonical_policy_metrics.json
-!xycar_ws/src/xycar_perception/models/
-!xycar_ws/src/xycar_perception/models/**
-!xycar_ws/src/lane_seg_control/models/
-xycar_ws/src/lane_seg_control/models/*
-!xycar_ws/src/lane_seg_control/models/best_512.onnx
-!xycar_ws/src/lane_seg_control/models/kookmin_lane_lraspp_mbv3s_256x144.pt
-!xycar_ws/src/lane_seg_control/models/kookmin_yellow_row_centerline_256x144.pt
-!xycar_ws/src/lane_seg_control/models/kookmin_yellow_row_centerline_core_256x144.pt
-!xycar_ws/src/lane_seg_control/models/kookmin_yellow_row_centerline_256x144.metrics.json
-!xycar_ws/src/lane_seg_control/models/kookmin_far_centerline_xbin_512x288.pt
-!xycar_ws/src/lane_seg_control/models/kookmin_far_centerline_xbin_core_512x288.pt
-!xycar_ws/src/lane_seg_control/models/kookmin_far_centerline_xbin_512x288.metrics.json
+!src/study/my_rule/models/
+!src/study/my_rule/models/kookmin_objects_best_20260804.pt
+!src/study/my_rule/models/my_rule_objects.pt
+!src/xycar_rl/models/
+!src/xycar_rl/models/**
+!src/il_data_tools/models/
+!src/il_data_tools/models/drive_policy_scripted.pt
+!src/il_data_tools/models/drive_canonical_policy_scripted.pt
+!src/il_data_tools/models/drive_canonical_policy_metrics.json
+!src/xycar_perception/models/
+!src/xycar_perception/models/**
+!src/lane_seg_control/models/
+src/lane_seg_control/models/*
+!src/lane_seg_control/models/best_512.onnx
+!src/lane_seg_control/models/kookmin_lane_lraspp_mbv3s_256x144.pt
+!src/lane_seg_control/models/kookmin_yellow_row_centerline_256x144.pt
+!src/lane_seg_control/models/kookmin_yellow_row_centerline_core_256x144.pt
+!src/lane_seg_control/models/kookmin_yellow_row_centerline_256x144.metrics.json
+!src/lane_seg_control/models/kookmin_far_centerline_xbin_512x288.pt
+!src/lane_seg_control/models/kookmin_far_centerline_xbin_core_512x288.pt
+!src/lane_seg_control/models/kookmin_far_centerline_xbin_512x288.metrics.json
 generated/
 
 # Generated debug images kept locally during map fitting
@@ -61,12 +61,12 @@ worlds/*.before_*.sdf
 *.bak
 
 # Large local tools / external model weights
-xycar_ws/etc/
-xycar_ws/etc/desktop_all/*.pdf
-xycar_ws/etc/motor_vesc/
-xycar_ws/src/xycar_device/xycar_lidar/YDLidar-SDK/
-xycar_ws/src/yolo_ros/
+etc/
+etc/desktop_all/*.pdf
+etc/motor_vesc/
+src/xycar_device/xycar_lidar/YDLidar-SDK/
+src/yolo_ros/
 
 # Compiled binaries copied from the real-car workspace
 *.so
-xycar_ws/src/xycar_application/app_path_planning/app_path_planning/main
+src/xycar_application/app_path_planning/app_path_planning/main

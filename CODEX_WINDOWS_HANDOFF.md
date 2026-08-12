@@ -58,7 +58,7 @@ WSL2 Ubuntu 22.04 또는 원래 Ubuntu PC를 사용해라.
 패키지:
 
 ```text
-xycar_ws/src/xycar_hybrid_drive
+src/xycar_hybrid_drive
 ```
 
 최종 명령 경로:
@@ -129,7 +129,7 @@ LaserScan
 자세한 설명:
 
 ```text
-xycar_ws/src/xycar_hybrid_drive/README.md
+src/xycar_hybrid_drive/README.md
 ```
 
 ## 4. 지금까지 확정된 실차 인터페이스
@@ -294,7 +294,7 @@ docs/canonical_model_latest.md
 현재 Git에 포함된 최종 정책 기본 경로:
 
 ```text
-xycar_ws/src/xycar_rl/models/final_rule_td3_bc_uncapped_avg17_20260723/
+src/xycar_rl/models/final_rule_td3_bc_uncapped_avg17_20260723/
   camera_speed_td3_bc_best.pth
 ```
 
@@ -344,7 +344,7 @@ ROS가 설치된 뒤:
 
 ```bash
 source /opt/ros/humble/setup.bash
-rosdep install --from-paths xycar_ws/src --ignore-src -r -y
+rosdep install --from-paths src --ignore-src -r -y
 colcon build --packages-up-to \
   xycar_rule_drive xycar_rl xycar_hybrid_drive xycar_final_drive \
   --symlink-install
@@ -364,10 +364,10 @@ cd ~/xycar_kookmin_gazebo_track
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 
-PYTHONPATH="$PWD/xycar_ws/src/xycar_rule_drive:$PWD/xycar_ws/src/xycar_hybrid_drive:$PYTHONPATH" \
+PYTHONPATH="$PWD/src/xycar_rule_drive:$PWD/src/xycar_hybrid_drive:$PYTHONPATH" \
 python3 -m pytest -q \
-  xycar_ws/src/xycar_rule_drive/test/test_canonical_stanley_pursuit.py \
-  xycar_ws/src/xycar_hybrid_drive/test
+  src/xycar_rule_drive/test/test_canonical_stanley_pursuit.py \
+  src/xycar_hybrid_drive/test
 ```
 
 기준 결과:
@@ -453,7 +453,7 @@ git@github.com:yunny22/kookmin_sim_to_real.git
 
 1. `CODEX_WINDOWS_HANDOFF.md`
 2. `README.md`
-3. `xycar_ws/src/xycar_hybrid_drive/README.md`
+3. `src/xycar_hybrid_drive/README.md`
 4. `docs/real_low_latency_handoff_20260724.md`
 5. `docs/real_curve_fix_handoff_20260724.md`
 6. `docs/current_simulation_guide.md`

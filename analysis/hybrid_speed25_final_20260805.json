@@ -1,7 +1,7 @@
 {
   "configuration": {
     "straight_controller": "RL only",
-    "straight_checkpoint": "xycar_ws/src/xycar_rl/models/straight_speed25_recovery_v3_20260805/camera_speed_td3_bc_best.pth",
+    "straight_checkpoint": "src/xycar_rl/models/straight_speed25_recovery_v3_20260805/camera_speed_td3_bc_best.pth",
     "curve_controller": "continuous rule",
     "curve_three_level_enabled": false,
     "speed_command": 25.0,

@@ -39,8 +39,8 @@ timestamp="$(date +%Y%m%d_%H%M%S)"
 output_root="${CAMERA_DIAGNOSTIC_ROOT:-$HOME/kookmin_camera_diagnostics}"
 session_dir="$output_root/${timestamp}_${label}"
 bag_dir="$session_dir/diagnostic_bag"
-calibration="$project_root/xycar_ws/src/xycar_perception/config/wide_camera_fisheye_1280x1024_20260708.yaml"
-model="$project_root/xycar_ws/src/xycar_perception/models/kookmin_lane_yolo11n_512.pt"
+calibration="$project_root/src/xycar_perception/config/wide_camera_fisheye_1280x1024_20260708.yaml"
+model="$project_root/src/xycar_perception/models/kookmin_lane_yolo11n_512.pt"
 
 if ! command -v ros2 >/dev/null 2>&1; then
   echo "ERROR: ros2 is unavailable. Source ROS 2 Humble and the workspace." >&2

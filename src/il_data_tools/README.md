@@ -49,7 +49,7 @@ sim-to-real용 canonical BEV는 복구 데이터, 정지 직전 10초 폐기, �
 현재 게시된 3만 장 모델은 새 20만 장 모델의 평가가 끝날 때까지만 유지한다.
 
 ```bash
-PROFILE="$PWD/xycar_ws/src/il_data_tools/config/real_reference_profile_20260715.json"
+PROFILE="$PWD/src/il_data_tools/config/real_reference_profile_20260715.json"
 ros2 run il_data_tools run_canonical_pipeline \
   --project-root "$PWD" --total-samples 100000 --batch-samples 5000 \
   --seed 2026071524 \

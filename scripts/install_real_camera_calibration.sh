@@ -23,7 +23,7 @@ fi
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 project_root="$(cd -- "$script_dir/.." && pwd)"
 real_ws="${1:-$HOME/xycar_ws}"
-source_yaml="$project_root/xycar_ws/src/xycar_perception/config/wide_camera_fisheye_1280x1024_20260708.yaml"
+source_yaml="$project_root/src/xycar_perception/config/wide_camera_fisheye_1280x1024_20260708.yaml"
 target_dir="$real_ws/src/xycar_application/app_wide_camera_calib/config"
 target_yaml="$target_dir/wide_camera_fisheye_1280x1024.yaml"
 expected_sha="0bc9b224e8105b7c9da2f280097d5f6ea75395482f0c504d288745cbd5a25dfe"

@@ -4,9 +4,9 @@
 
 기준 실행 파일:
 
-- xycar_ws/src/xycar_map_nav/scripts/run_complete_space_hybrid.sh
-- xycar_ws/src/xycar_rule_drive/xycar_rule_drive/canonical_stanley_pursuit_driver.py
-- xycar_ws/src/xycar_map_nav/xycar_map_nav/space_drive_gate_core.py
+- src/xycar_map_nav/scripts/run_complete_space_hybrid.sh
+- src/xycar_rule_drive/xycar_rule_drive/canonical_stanley_pursuit_driver.py
+- src/xycar_map_nav/xycar_map_nav/space_drive_gate_core.py
 
 현재 통합 우선순위는 다음과 같다.
 
@@ -195,7 +195,7 @@ Pure Pursuit와 Stanley 제어점 X는 영향이 크므로 0.02m 단위로 조�
 
 관련 설정 파일:
 
-- xycar_ws/src/xycar_map_nav/config/sequential_hybrid_real.yaml
-- xycar_ws/src/xycar_map_nav/xycar_map_nav/cone_waypoint_bypass.py
-- xycar_ws/src/xycar_map_nav/xycar_map_nav/yolo_lidar_avoidance.py
-- xycar_ws/src/xycar_map_nav/xycar_map_nav/lidar_obstacle.py
+- src/xycar_map_nav/config/sequential_hybrid_real.yaml
+- src/xycar_map_nav/xycar_map_nav/cone_waypoint_bypass.py
+- src/xycar_map_nav/xycar_map_nav/yolo_lidar_avoidance.py
+- src/xycar_map_nav/xycar_map_nav/lidar_obstacle.py

@@ -2,7 +2,7 @@
 
 This package owns the single ROS 2 launch entry point used on the Jetson Orin
 NX competition computer. Runtime source, launch files, configuration, and
-packaged models remain under `xycar_ws/src`. Generated `build`, `install`, and
+packaged models remain under `~/xycar_ws/src`. Generated `build`, `install`, and
 `log` trees and the Python virtual environment are not source artifacts and
 must not be committed.
 
@@ -19,7 +19,7 @@ Build console scripts with the virtual-environment Python so perception and
 policy nodes keep access to the Jetson CUDA build of PyTorch:
 
 ```bash
-cd ~/kookmin_ty/jetson_final/xycar_ws
+cd ~/xycar_ws
 source /opt/ros/humble/setup.bash
 source ~/kookmin_ty/venvs/xycar-jp621/bin/activate
 export CMAKE_PREFIX_PATH="$HOME/kookmin_ty/ydlidar-sdk-v1.2.7-install${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"

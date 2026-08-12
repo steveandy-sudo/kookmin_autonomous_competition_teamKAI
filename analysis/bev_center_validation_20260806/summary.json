@@ -2,7 +2,7 @@
   "bag": "/tmp/xycar_center_bag.4SFcB0/20260721_170617_bev_marker_050_100_150/diagnostic_bag",
   "topic": "/wide_camera/rect/image_raw",
   "frames": 214,
-  "model": "xycar_ws/src/lane_seg_control/models/kookmin_lane_lraspp_mbv3s_256x144.pt",
+  "model": "src/lane_seg_control/models/kookmin_lane_lraspp_mbv3s_256x144.pt",
   "profiles": {
     "current": {
       "source": [
