@@ -53,7 +53,7 @@ def generate_launch_description():
         [
             FindPackageShare("my_rule"),
             "models",
-            "kookmin_objects_best_20260811.pt",
+            "kookmin_objects_best_20260804.pt",
         ]
     )
     simulation_launch = PathJoinSubstitution(

@@ -18,6 +18,19 @@ def generate_launch_description():
             DeclareLaunchArgument("cpu_threads", default_value="4"),
             DeclareLaunchArgument("max_output_rate_hz", default_value="20.0"),
             DeclareLaunchArgument("debug_rate_hz", default_value="0.0"),
+            DeclareLaunchArgument("model_python_prefix", default_value=""),
+            DeclareLaunchArgument(
+                "image_topic",
+                default_value="/wide_camera_mjpeg/image_raw/compressed",
+            ),
+            DeclareLaunchArgument("use_compressed_image", default_value="true"),
+            DeclareLaunchArgument("enable_rectify", default_value="true"),
+            DeclareLaunchArgument(
+                "direct_model_rectify_enabled", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "direct_model_rectify_oversample", default_value="2"
+            ),
             DeclareLaunchArgument(
                 "publish_intermediate_topics", default_value="false"
             ),
@@ -32,6 +45,20 @@ def generate_launch_description():
                         "max_output_rate_hz"
                     ),
                     "debug_rate_hz": LaunchConfiguration("debug_rate_hz"),
+                    "model_python_prefix": LaunchConfiguration(
+                        "model_python_prefix"
+                    ),
+                    "image_topic": LaunchConfiguration("image_topic"),
+                    "use_compressed_image": LaunchConfiguration(
+                        "use_compressed_image"
+                    ),
+                    "enable_rectify": LaunchConfiguration("enable_rectify"),
+                    "direct_model_rectify_enabled": LaunchConfiguration(
+                        "direct_model_rectify_enabled"
+                    ),
+                    "direct_model_rectify_oversample": LaunchConfiguration(
+                        "direct_model_rectify_oversample"
+                    ),
                     "publish_intermediate_topics": LaunchConfiguration(
                         "publish_intermediate_topics"
                     ),

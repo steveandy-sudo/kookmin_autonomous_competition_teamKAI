@@ -1,4 +1,4 @@
-my_rule_object_detection_node:
+/**:
   ros__parameters:
     image_topic: /wide_camera_mjpeg/image_raw/compressed
     use_compressed_image: true

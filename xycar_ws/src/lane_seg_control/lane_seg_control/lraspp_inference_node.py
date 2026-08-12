@@ -12,7 +12,6 @@ import cv2
 import numpy as np
 import rclpy
 from ament_index_python.packages import get_package_share_directory
-from cv_bridge import CvBridge
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
@@ -20,7 +19,12 @@ from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CompressedImage, Image
 from std_msgs.msg import Float32MultiArray, Header
 
-from lane_seg_control.camera_input import CameraRectifier, decode_compressed_bgr
+from lane_seg_control.camera_input import (
+    CameraRectifier,
+    cv_image_to_message,
+    decode_compressed_bgr,
+    raw_image_to_bgr,
+)
 from lane_seg_control.canonical_adapter_node import (
     BevGeometry,
     CanonicalRenderConfig,
@@ -190,7 +194,6 @@ class LrasppInferenceNode(Node):
         self.declare_parameter("canonical_yellow_normalize_min_area_px", 3)
         self.declare_parameter("canonical_yellow_normalize_smoothing_rows", 5)
 
-        self.bridge = CvBridge()
         self.input_width = int(self.get_parameter("input_width").value)
         self.input_height = int(self.get_parameter("input_height").value)
         self.white_class_id = int(self.get_parameter("white_class_id").value)
@@ -547,9 +550,7 @@ class LrasppInferenceNode(Node):
             if frame is None:
                 raise ValueError("compressed camera payload is empty or invalid")
         else:
-            frame = self.bridge.imgmsg_to_cv2(
-                message, desired_encoding="bgr8"
-            )
+            frame = raw_image_to_bgr(message)
         if self.rectifier is not None:
             if self.direct_model_rectify_enabled:
                 frame = self.rectifier.rectify_to_size(
@@ -633,8 +634,7 @@ class LrasppInferenceNode(Node):
         encoding: str,
         header: Header,
     ) -> None:
-        output = self.bridge.cv2_to_imgmsg(frame, encoding=encoding)
-        output.header = header
+        output = cv_image_to_message(frame, encoding, header)
         publisher.publish(output)
 
     def process_image(self, message: CameraMessage) -> None:
@@ -809,18 +809,9 @@ class LrasppInferenceNode(Node):
                 output_frame, 0.45, overlay, 0.55, 0.0
             )
             debug[selected] = blended[selected]
-            cv2.putText(
-                debug,
-                f"LANE MODEL {elapsed_ms:.1f}ms",
-                (12, 28),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.75,
-                (40, 40, 255),
-                2,
-                cv2.LINE_AA,
+            debug_message = cv_image_to_message(
+                debug, "bgr8", camera_header
             )
-            debug_message = self.bridge.cv2_to_imgmsg(debug, encoding="bgr8")
-            debug_message.header = camera_header
             self.debug_pub.publish(debug_message)
             self.perception_debug_pub.publish(debug_message)
             self.last_debug_bucket = debug_bucket

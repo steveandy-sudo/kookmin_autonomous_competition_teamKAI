@@ -113,7 +113,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
             {
                 "model_path": PathJoinSubstitution(
-                    [my_rule_share, "models", "kookmin_objects_best_20260811.pt"]
+                    [my_rule_share, "models", "kookmin_objects_best_20260804.pt"]
                 ),
                 "camera_yaml": PathJoinSubstitution(
                     [

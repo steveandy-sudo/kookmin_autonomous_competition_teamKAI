@@ -10,7 +10,6 @@ from pathlib import Path
 import cv2
 import rclpy
 from ament_index_python.packages import get_package_share_directory
-from cv_bridge import CvBridge
 from my_rule_msgs.msg import ObjectDetection, ObjectDetectionArray
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
@@ -26,7 +25,9 @@ from std_msgs.msg import Bool
 
 from my_rule.perception.camera_input import (
     CameraRectifier,
+    cv_image_to_message,
     decode_compressed_bgr,
+    raw_image_to_bgr,
 )
 from my_rule.perception.object_perception import (
     DetectionRecord,
@@ -48,7 +49,7 @@ class ObjectDetectionNode(Node):
             "model_path": str(
                 package_share
                 / "models"
-                / "kookmin_objects_best_20260811.pt"
+                / "kookmin_objects_best_20260804.pt"
             ),
             "image_topic": "/wide_camera_mjpeg/image_raw/compressed",
             "use_compressed_image": True,
@@ -100,7 +101,6 @@ class ObjectDetectionNode(Node):
         for name, value in defaults.items():
             self.declare_parameter(name, value)
 
-        self.bridge = CvBridge()
         self.lock = threading.Lock()
         self.latest_image: CompressedImage | Image | None = None
         self.last_processed_stamp_ns: int | None = None
@@ -229,11 +229,18 @@ class ObjectDetectionNode(Node):
             if bool(self.get_parameter("use_compressed_image").value)
             else Image
         )
+        image_qos = qos
+        if image_type is Image:
+            image_qos = QoSProfile(
+                history=HistoryPolicy.KEEP_LAST,
+                depth=1,
+                reliability=ReliabilityPolicy.RELIABLE,
+            )
         self.create_subscription(
             image_type,
             str(self.get_parameter("image_topic").value),
             self.on_image,
-            qos,
+            image_qos,
             callback_group=self.image_group,
         )
         rate_hz = max(
@@ -280,9 +287,7 @@ class ObjectDetectionNode(Node):
             frame = decode_compressed_bgr(message.data)
         else:
             try:
-                frame = self.bridge.imgmsg_to_cv2(
-                    message, desired_encoding="bgr8"
-                )
+                frame = raw_image_to_bgr(message)
             except Exception:
                 return None
         if frame is None:
@@ -530,8 +535,9 @@ class ObjectDetectionNode(Node):
                     2,
                     cv2.LINE_AA,
                 )
-            debug_message = self.bridge.cv2_to_imgmsg(debug, encoding="bgr8")
-            debug_message.header = message.header
+            debug_message = cv_image_to_message(
+                debug, "bgr8", message.header
+            )
             self.debug_pub.publish(debug_message)
 
         now = time.monotonic()

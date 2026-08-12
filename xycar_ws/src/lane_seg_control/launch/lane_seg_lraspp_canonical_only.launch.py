@@ -109,6 +109,7 @@ def generate_launch_description():
                 ]
             ),
         ),
+        DeclareLaunchArgument("model_python_prefix", default_value=""),
         DeclareLaunchArgument(
             "image_topic", default_value="/wide_camera/rect/image_raw"
         ),
@@ -233,6 +234,7 @@ def generate_launch_description():
     inference = Node(
         package="lane_seg_control",
         executable="lane_seg_lraspp_inference_node",
+        prefix=LaunchConfiguration("model_python_prefix"),
         name="lane_seg_lraspp_inference",
         output="screen",
         additional_env={

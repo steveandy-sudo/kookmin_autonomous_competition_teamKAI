@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish RViz markers for the LiDAR cone planner without affecting control."""
+"""Publish read-only RViz markers for the lane and LiDAR cone planners."""
 
 import math
 import time
@@ -7,6 +7,7 @@ from typing import List, Optional, Sequence, Tuple
 
 import rclpy
 from geometry_msgs.msg import Point, PoseArray
+from kaiev26_msgs.msg import Centerline
 from nav_msgs.msg import Path
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
@@ -41,10 +42,13 @@ def transform_planar_points(
     if not source or source == output:
         return values
     offset = float(lidar_to_rear_axle_m)
-    if source == "rear_axle" and output == "laser_frame":
+    rear_frames = {"rear_axle", "base_footprint"}
+    if source in rear_frames and output == "laser_frame":
         return [(x - offset, y) for x, y in values]
-    if source == "laser_frame" and output == "rear_axle":
+    if source == "laser_frame" and output in rear_frames:
         return [(x + offset, y) for x, y in values]
+    if source in rear_frames and output in rear_frames:
+        return values
     return None
 
 
@@ -90,6 +94,52 @@ def fov_outline_points(
     return [(0.0, 0.0), *arc, (0.0, 0.0)]
 
 
+def sector_triangle_points(
+    minimum_range_m: float,
+    maximum_range_m: float,
+    minimum_angle_deg: float,
+    maximum_angle_deg: float,
+    samples: int = 48,
+) -> List[Point2]:
+    """Build triangles filling an annular sector in the LiDAR XY plane."""
+    count = max(2, int(samples))
+    inner_radius = max(0.0, float(minimum_range_m))
+    outer_radius = max(inner_radius, float(maximum_range_m))
+    start = math.radians(float(minimum_angle_deg))
+    finish = math.radians(float(maximum_angle_deg))
+    triangles: List[Point2] = []
+    for index in range(count - 1):
+        first = start + index / float(count - 1) * (finish - start)
+        second = start + (index + 1) / float(count - 1) * (finish - start)
+        inner_first = (
+            inner_radius * math.cos(first),
+            inner_radius * math.sin(first),
+        )
+        inner_second = (
+            inner_radius * math.cos(second),
+            inner_radius * math.sin(second),
+        )
+        outer_first = (
+            outer_radius * math.cos(first),
+            outer_radius * math.sin(first),
+        )
+        outer_second = (
+            outer_radius * math.cos(second),
+            outer_radius * math.sin(second),
+        )
+        triangles.extend(
+            [
+                inner_first,
+                outer_first,
+                outer_second,
+                inner_first,
+                outer_second,
+                inner_second,
+            ]
+        )
+    return triangles
+
+
 def make_point(x: float, y: float, z: float = 0.0) -> Point:
     point = Point()
     point.x = float(x)
@@ -99,22 +149,37 @@ def make_point(x: float, y: float, z: float = 0.0) -> Point:
 
 
 class ConePathVisualizer(Node):
-    """Convert cone-planner outputs into an RViz-friendly MarkerArray."""
+    """Convert lane/cone planner outputs into one RViz-friendly MarkerArray.
+
+    The historical class and executable names are retained so existing launch
+    files keep working.  This node only subscribes to perception/control
+    outputs and never publishes a motor command.
+    """
 
     def __init__(self) -> None:
         super().__init__("my_rule_cone_path_visualizer")
         self.declare_parameter("path_topic", "/my_rule/cone_path")
         self.declare_parameter("cluster_topic", "/my_rule/cone_clusters")
         self.declare_parameter("command_topic", "/my_rule/cone_cmd")
+        self.declare_parameter(
+            "lane_path_topic", "/rule_drive/connected_yellow_path"
+        )
+        self.declare_parameter(
+            "lane_diagnostics_topic", "/rule_drive/diagnostics"
+        )
         self.declare_parameter("marker_topic", "/my_rule/cone_path_markers")
         self.declare_parameter("output_frame", "laser_frame")
         self.declare_parameter("lidar_to_rear_axle_m", 0.42)
         self.declare_parameter("lookahead_min_m", 0.7)
         self.declare_parameter("lookahead_max_m", 1.45)
         self.declare_parameter("lookahead_scale", 0.12)
+        self.declare_parameter("min_range_m", 0.18)
         self.declare_parameter("max_range_m", 2.2)
         self.declare_parameter("scan_front_min_deg", -94.0)
         self.declare_parameter("scan_front_max_deg", 94.0)
+        self.declare_parameter("seed_min_angle_deg", 15.0)
+        self.declare_parameter("seed_max_angle_deg", 90.0)
+        self.declare_parameter("seed_max_range_m", 2.2)
         self.declare_parameter("publish_rate_hz", 10.0)
         self.declare_parameter("data_timeout_sec", 0.5)
         self.declare_parameter("path_point_stride", 5)
@@ -154,22 +219,44 @@ class ConePathVisualizer(Node):
             self.on_command,
             input_qos,
         )
+        self.lane_path_sub = self.create_subscription(
+            Centerline,
+            str(self.get_parameter("lane_path_topic").value),
+            self.on_lane_path,
+            input_qos,
+        )
+        self.lane_diagnostics_sub = self.create_subscription(
+            Float32MultiArray,
+            str(self.get_parameter("lane_diagnostics_topic").value),
+            self.on_lane_diagnostics,
+            input_qos,
+        )
 
         self.latest_path: List[Point2] = []
         self.latest_path_frame = "rear_axle"
         self.latest_clusters: List[Point2] = []
         self.latest_cluster_frame = "laser_frame"
         self.latest_command = (0.0, 0.0, 0.0)
+        self.latest_lane_path: List[Point2] = []
+        self.latest_lane_frame = "laser_frame"
+        self.latest_lane_source = "unknown"
+        self.latest_lane_confidence = 0.0
+        self.lane_path_received = False
+        self.lane_path_received_at = 0.0
+        self.latest_lane_diagnostics: List[float] = []
+        self.lane_diagnostics_received_at = 0.0
         self.path_received = False
         self.path_received_at = 0.0
         self.command_received_at = 0.0
         self.unsupported_path_frame = ""
+        self.unsupported_lane_frame = ""
 
         rate = max(1.0, float(self.get_parameter("publish_rate_hz").value))
         self.timer = self.create_timer(1.0 / rate, self.publish_markers)
         self.get_logger().info(
-            "cone path RViz visualizer ready: "
-            f"{self.get_parameter('path_topic').value} -> "
+            "lane/cone RViz visualizer ready: "
+            f"lane={self.get_parameter('lane_path_topic').value}, "
+            f"cone={self.get_parameter('path_topic').value} -> "
             f"{self.get_parameter('marker_topic').value}"
         )
 
@@ -194,6 +281,20 @@ class ConePathVisualizer(Node):
             return
         self.latest_command = tuple(float(value) for value in message.data[:3])
         self.command_received_at = time.monotonic()
+
+    def on_lane_path(self, message: Centerline) -> None:
+        self.latest_lane_path = [
+            (float(point.x), float(point.y)) for point in message.points
+        ]
+        self.latest_lane_frame = message.header.frame_id or "laser_frame"
+        self.latest_lane_source = str(message.source) or "unknown"
+        self.latest_lane_confidence = float(message.confidence)
+        self.lane_path_received = True
+        self.lane_path_received_at = time.monotonic()
+
+    def on_lane_diagnostics(self, message: Float32MultiArray) -> None:
+        self.latest_lane_diagnostics = [float(value) for value in message.data]
+        self.lane_diagnostics_received_at = time.monotonic()
 
     def marker(self, namespace: str, marker_id: int, marker_type: int) -> Marker:
         marker = Marker()
@@ -224,6 +325,14 @@ class ConePathVisualizer(Node):
             float(self.get_parameter("lidar_to_rear_axle_m").value),
         )
 
+    def transformed_lane_path(self) -> Optional[List[Point2]]:
+        return transform_planar_points(
+            self.latest_lane_path,
+            self.latest_lane_frame,
+            str(self.get_parameter("output_frame").value),
+            float(self.get_parameter("lidar_to_rear_axle_m").value),
+        )
+
     def publish_markers(self) -> None:
         markers = MarkerArray()
         delete_all = self.marker("cleanup", 0, Marker.ARROW)
@@ -236,22 +345,101 @@ class ConePathVisualizer(Node):
         if clusters:
             self.append_clusters(markers, clusters)
 
-        path = self.transformed_path()
-        if path is None:
+        cone_path = self.transformed_path()
+        if cone_path is None:
             frame = normalize_frame_id(self.latest_path_frame)
             if frame != self.unsupported_path_frame:
                 self.unsupported_path_frame = frame
                 self.get_logger().warn(
                     f"cannot visualize path frame '{frame}' without a TF transform"
                 )
-        elif path:
+        elif cone_path:
             self.unsupported_path_frame = ""
-            self.append_path(markers, path)
-            self.append_lookahead(markers, path)
-        self.append_status(markers, path)
+            self.append_path(markers, cone_path)
+            self.append_lookahead(markers, cone_path)
+
+        lane_path = self.transformed_lane_path()
+        if lane_path is None:
+            frame = normalize_frame_id(self.latest_lane_frame)
+            if frame != self.unsupported_lane_frame:
+                self.unsupported_lane_frame = frame
+                self.get_logger().warn(
+                    f"cannot visualize lane path frame '{frame}' without a TF transform"
+                )
+        elif lane_path:
+            self.unsupported_lane_frame = ""
+            self.append_lane_path(markers, lane_path)
+            self.append_lane_target(markers)
+
         self.marker_pub.publish(markers)
 
     def append_fov(self, markers: MarkerArray) -> None:
+        minimum_range = float(self.get_parameter("min_range_m").value)
+        maximum_range = float(self.get_parameter("max_range_m").value)
+        minimum_angle = float(
+            self.get_parameter("scan_front_min_deg").value
+        )
+        maximum_angle = float(
+            self.get_parameter("scan_front_max_deg").value
+        )
+
+        accepted_fill = self.marker(
+            "accepted_scan_sector_fill", 30, Marker.TRIANGLE_LIST
+        )
+        accepted_fill.scale.x = 1.0
+        accepted_fill.scale.y = 1.0
+        accepted_fill.scale.z = 1.0
+        accepted_fill.color.r = 0.95
+        accepted_fill.color.g = 0.58
+        accepted_fill.color.b = 0.10
+        accepted_fill.color.a = 0.14
+        accepted_fill.points = [
+            make_point(x, y, 0.001)
+            for x, y in sector_triangle_points(
+                minimum_range,
+                maximum_range,
+                minimum_angle,
+                maximum_angle,
+            )
+        ]
+        markers.markers.append(accepted_fill)
+
+        seed_minimum = float(
+            self.get_parameter("seed_min_angle_deg").value
+        )
+        seed_maximum = float(
+            self.get_parameter("seed_max_angle_deg").value
+        )
+        seed_range = float(self.get_parameter("seed_max_range_m").value)
+        seed_fill = self.marker(
+            "cone_seed_regions_fill", 31, Marker.TRIANGLE_LIST
+        )
+        seed_fill.scale.x = 1.0
+        seed_fill.scale.y = 1.0
+        seed_fill.scale.z = 1.0
+        seed_fill.color.r = 1.0
+        seed_fill.color.g = 0.42
+        seed_fill.color.b = 0.02
+        seed_fill.color.a = 0.28
+        seed_points = [
+            *sector_triangle_points(
+                minimum_range,
+                seed_range,
+                seed_minimum,
+                seed_maximum,
+            ),
+            *sector_triangle_points(
+                minimum_range,
+                seed_range,
+                -seed_maximum,
+                -seed_minimum,
+            ),
+        ]
+        seed_fill.points = [
+            make_point(x, y, 0.002) for x, y in seed_points
+        ]
+        markers.markers.append(seed_fill)
+
         outline = self.marker("accepted_scan_sector", 1, Marker.LINE_STRIP)
         outline.scale.x = 0.015
         outline.color.r = 0.35
@@ -261,9 +449,9 @@ class ConePathVisualizer(Node):
         outline.points = [
             make_point(x, y, 0.005)
             for x, y in fov_outline_points(
-                float(self.get_parameter("max_range_m").value),
-                float(self.get_parameter("scan_front_min_deg").value),
-                float(self.get_parameter("scan_front_max_deg").value),
+                maximum_range,
+                minimum_angle,
+                maximum_angle,
             )
         ]
         markers.markers.append(outline)
@@ -342,7 +530,7 @@ class ConePathVisualizer(Node):
         markers.markers.append(finish)
 
     def append_lookahead(self, markers: MarkerArray, path: Sequence[Point2]) -> None:
-        index, lookahead = select_lookahead_index(
+        index, _lookahead = select_lookahead_index(
             self.latest_path,
             float(self.get_parameter("lookahead_min_m").value),
             float(self.get_parameter("lookahead_max_m").value),
@@ -363,54 +551,79 @@ class ConePathVisualizer(Node):
         target.color.a = 1.0
         markers.markers.append(target)
 
-        label = self.marker("pure_pursuit_target", 10, Marker.TEXT_VIEW_FACING)
-        label.pose.position = make_point(target_x, target_y, 0.23)
-        label.scale.z = 0.11
-        label.color.r = 1.0
-        label.color.g = 1.0
-        label.color.b = 1.0
-        label.color.a = 1.0
-        label.text = f"lookahead {lookahead:.2f} m"
-        markers.markers.append(label)
+    def append_lane_path(
+        self, markers: MarkerArray, path: Sequence[Point2]
+    ) -> None:
+        fresh = self.lane_path_is_fresh()
+        line = self.marker("lane_planned_waypoint_line", 20, Marker.LINE_STRIP)
+        line.scale.x = 0.065
+        line.color.r = 0.10 if fresh else 1.0
+        line.color.g = 0.85 if fresh else 0.72
+        line.color.b = 1.0 if fresh else 0.05
+        line.color.a = 1.0
+        line.points = [make_point(x, y, 0.085) for x, y in path]
+        markers.markers.append(line)
+
+        waypoints = self.marker("lane_planned_waypoints", 21, Marker.SPHERE_LIST)
+        waypoints.scale.x = 0.055
+        waypoints.scale.y = 0.055
+        waypoints.scale.z = 0.055
+        waypoints.color.r = 0.15
+        waypoints.color.g = 0.65
+        waypoints.color.b = 1.0
+        waypoints.color.a = 0.95
+        stride = max(1, int(self.get_parameter("path_point_stride").value))
+        sampled = list(path[::stride])
+        if sampled[-1] != path[-1]:
+            sampled.append(path[-1])
+        waypoints.points = [make_point(x, y, 0.095) for x, y in sampled]
+        markers.markers.append(waypoints)
+
+    def append_lane_target(self, markers: MarkerArray) -> None:
+        timeout = max(0.0, float(self.get_parameter("data_timeout_sec").value))
+        if (
+            len(self.latest_lane_diagnostics) < 16
+            or time.monotonic() - self.lane_diagnostics_received_at > timeout
+        ):
+            return
+        target = transform_planar_points(
+            [
+                (
+                    self.latest_lane_diagnostics[14],
+                    self.latest_lane_diagnostics[15],
+                )
+            ],
+            self.latest_lane_frame,
+            str(self.get_parameter("output_frame").value),
+            float(self.get_parameter("lidar_to_rear_axle_m").value),
+        )
+        if not target:
+            return
+        target_x, target_y = target[0]
+        marker = self.marker("lane_control_target", 22, Marker.SPHERE)
+        marker.pose.position = make_point(target_x, target_y, 0.13)
+        marker.scale.x = 0.14
+        marker.scale.y = 0.14
+        marker.scale.z = 0.14
+        marker.color.r = 0.10
+        marker.color.g = 0.45
+        marker.color.b = 1.0
+        marker.color.a = 1.0
+        markers.markers.append(marker)
 
     def path_is_fresh(self) -> bool:
         timeout = max(0.0, float(self.get_parameter("data_timeout_sec").value))
-        return self.path_received and time.monotonic() - self.path_received_at <= timeout
-
-    def append_status(
-        self,
-        markers: MarkerArray,
-        transformed_path: Optional[Sequence[Point2]],
-    ) -> None:
-        status = self.marker("planner_status", 11, Marker.TEXT_VIEW_FACING)
-        maximum_range = float(self.get_parameter("max_range_m").value)
-        status.pose.position = make_point(maximum_range * 0.78, -1.15, 0.18)
-        status.scale.z = 0.13
-        status.color.a = 1.0
-
-        if transformed_path is None:
-            headline = f"UNSUPPORTED FRAME: {self.latest_path_frame}"
-            status.color.r, status.color.g, status.color.b = 1.0, 0.15, 0.15
-        elif not self.path_received:
-            headline = "WAITING FOR CONE PATH"
-            status.color.r, status.color.g, status.color.b = 0.8, 0.8, 0.8
-        elif not transformed_path:
-            headline = "NO VALID PATH"
-            status.color.r, status.color.g, status.color.b = 1.0, 0.15, 0.15
-        elif not self.path_is_fresh():
-            headline = f"PATH STALE ({len(transformed_path)} points)"
-            status.color.r, status.color.g, status.color.b = 1.0, 0.72, 0.05
-        else:
-            headline = f"PATH ACTIVE ({len(transformed_path)} points)"
-            status.color.r, status.color.g, status.color.b = 0.15, 1.0, 0.25
-
-        steer, speed, confidence = self.latest_command
-        status.text = (
-            f"{headline}\n"
-            f"steer {steer:+.1f} deg | speed {speed:.1f} | conf {confidence:.2f}"
+        return (
+            self.path_received
+            and time.monotonic() - self.path_received_at <= timeout
         )
-        markers.markers.append(status)
 
+    def lane_path_is_fresh(self) -> bool:
+        timeout = max(0.0, float(self.get_parameter("data_timeout_sec").value))
+        return (
+            self.lane_path_received
+            and time.monotonic() - self.lane_path_received_at <= timeout
+        )
 
 def main(args=None) -> None:
     rclpy.init(args=args)
@@ -420,7 +633,10 @@ def main(args=None) -> None:
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
-        node.destroy_node()
+        try:
+            node.destroy_node()
+        except (KeyboardInterrupt, ExternalShutdownException):
+            pass
         if rclpy.ok():
             rclpy.shutdown()
 

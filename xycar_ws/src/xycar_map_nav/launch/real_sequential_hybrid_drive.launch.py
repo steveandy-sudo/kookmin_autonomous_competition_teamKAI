@@ -5,7 +5,7 @@ from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
-from launch_ros.actions import Node
+from launch_ros.actions import Node, SetParameter
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
@@ -56,7 +56,7 @@ def generate_launch_description():
         [
             FindPackageShare("my_rule"),
             "models",
-            "kookmin_objects_best_20260811.pt",
+            "kookmin_objects_best_20260804.pt",
         ]
     )
     object_camera_yaml = PathJoinSubstitution(
@@ -68,9 +68,9 @@ def generate_launch_description():
     )
     rviz_config = PathJoinSubstitution(
         [
-            FindPackageShare("xycar_map_nav"),
+            FindPackageShare("my_rule"),
             "rviz",
-            "avoidance_test.rviz",
+            "integrated_drive.rviz",
         ]
     )
     drive_enabled = LaunchConfiguration("drive_enabled")
@@ -79,12 +79,34 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            DeclareLaunchArgument("use_sim_time", default_value="false"),
+            SetParameter(
+                name="use_sim_time",
+                value=ParameterValue(
+                    LaunchConfiguration("use_sim_time"), value_type=bool
+                ),
+            ),
             DeclareLaunchArgument("drive_enabled", default_value="false"),
             DeclareLaunchArgument("steering_only", default_value="false"),
             DeclareLaunchArgument("gate_arming_required", default_value="false"),
             DeclareLaunchArgument("force_rule_only", default_value="true"),
             DeclareLaunchArgument("enable_rviz", default_value="false"),
             DeclareLaunchArgument("start_perception", default_value="true"),
+            DeclareLaunchArgument("model_python_prefix", default_value=""),
+            DeclareLaunchArgument(
+                "camera_image_topic",
+                default_value="/wide_camera_mjpeg/image_raw/compressed",
+            ),
+            DeclareLaunchArgument(
+                "object_camera_image_topic",
+                default_value=LaunchConfiguration("camera_image_topic"),
+            ),
+            DeclareLaunchArgument(
+                "camera_use_compressed_image", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "camera_enable_rectify", default_value="true"
+            ),
             DeclareLaunchArgument(
                 "lane_perception_launch",
                 default_value="lane_seg_far_centerline_extended_real.launch.py",
@@ -251,6 +273,9 @@ def generate_launch_description():
                 "perception_max_output_rate_hz", default_value="15.0"
             ),
             DeclareLaunchArgument(
+                "perception_debug_rate_hz", default_value="5.0"
+            ),
+            DeclareLaunchArgument(
                 "canonical_forward_range_m", default_value="2.5"
             ),
             DeclareLaunchArgument(
@@ -387,13 +412,25 @@ def generate_launch_description():
                     "max_output_rate_hz": LaunchConfiguration(
                         "perception_max_output_rate_hz"
                     ),
+                    "model_python_prefix": LaunchConfiguration(
+                        "model_python_prefix"
+                    ),
+                    "image_topic": LaunchConfiguration("camera_image_topic"),
+                    "use_compressed_image": LaunchConfiguration(
+                        "camera_use_compressed_image"
+                    ),
+                    "enable_rectify": LaunchConfiguration(
+                        "camera_enable_rectify"
+                    ),
                     "direct_model_rectify_enabled": LaunchConfiguration(
                         "direct_model_rectify_enabled"
                     ),
                     "direct_model_rectify_oversample": LaunchConfiguration(
                         "direct_model_rectify_oversample"
                     ),
-                    "debug_rate_hz": "0.0",
+                    "debug_rate_hz": LaunchConfiguration(
+                        "perception_debug_rate_hz"
+                    ),
                     "publish_intermediate_topics": "true",
                     "canonical_forward_range_m": LaunchConfiguration(
                         "canonical_forward_range_m"
@@ -536,6 +573,28 @@ def generate_launch_description():
                 }.items(),
             ),
             Node(
+                package="my_rule",
+                executable="drive_path_visualizer",
+                name="my_rule_cone_path_visualizer",
+                condition=IfCondition(LaunchConfiguration("enable_rviz")),
+                output="screen",
+                parameters=[
+                    PathJoinSubstitution(
+                        [
+                            FindPackageShare("my_rule"),
+                            "config",
+                            "cone_path_visualizer.yaml",
+                        ]
+                    ),
+                    {
+                        "use_sim_time": ParameterValue(
+                            LaunchConfiguration("use_sim_time"),
+                            value_type=bool,
+                        )
+                    },
+                ],
+            ),
+            Node(
                 package="rviz2",
                 executable="rviz2",
                 name="rviz2_avoidance_test",
@@ -557,7 +616,10 @@ def generate_launch_description():
                     rule_base,
                     rule_real,
                     {
-                        "use_sim_time": False,
+                        "use_sim_time": ParameterValue(
+                            LaunchConfiguration("use_sim_time"),
+                            value_type=bool,
+                        ),
                         "drive_enabled": False,
                         "steering_only": ParameterValue(
                             LaunchConfiguration("steering_only"),
@@ -803,6 +865,7 @@ def generate_launch_description():
             Node(
                 package="my_rule",
                 executable="object_detection_node",
+                prefix=LaunchConfiguration("model_python_prefix"),
                 name="my_rule_object_detection_node",
                 condition=IfCondition(
                     LaunchConfiguration("start_object_detection")
@@ -820,6 +883,19 @@ def generate_launch_description():
                     object_config,
                     {
                         "model_path": object_model,
+                        "image_topic": LaunchConfiguration(
+                            "object_camera_image_topic"
+                        ),
+                        "use_compressed_image": ParameterValue(
+                            LaunchConfiguration(
+                                "camera_use_compressed_image"
+                            ),
+                            value_type=bool,
+                        ),
+                        "enable_rectify": ParameterValue(
+                            LaunchConfiguration("camera_enable_rectify"),
+                            value_type=bool,
+                        ),
                         "camera_yaml": object_camera_yaml,
                         "startup_signal_hsv_enabled": False,
                         "inference_rate_hz": 3.0,
