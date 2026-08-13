@@ -130,7 +130,7 @@ def generate_launch_description():
                     [
                         FindPackageShare("my_rule"),
                         "models",
-                        "no_red_car_best.pt",
+                        "final.pt",
                     ]
                 ),
             ),

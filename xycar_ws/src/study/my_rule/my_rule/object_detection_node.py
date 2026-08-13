@@ -48,7 +48,7 @@ class ObjectDetectionNode(Node):
             "model_path": str(
                 package_share
                 / "models"
-                / "no_red_car_best.pt"
+                / "final.pt"
             ),
             "image_topic": "/wide_camera_mjpeg/image_raw/compressed",
             "use_compressed_image": True,
