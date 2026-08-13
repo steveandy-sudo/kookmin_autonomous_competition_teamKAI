@@ -90,13 +90,13 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument("w1_loss_handoff_enabled", default_value="true"),
         DeclareLaunchArgument(
-            "maximum_entry_steering_sec", default_value="1.3"
+            "maximum_entry_steering_sec", default_value="1.5"
         ),
         DeclareLaunchArgument("w1_steering_hold_sec", default_value="1.0"),
         DeclareLaunchArgument(
             "entry_direction_hold_command", default_value="-30.0"
         ),
-        DeclareLaunchArgument("entry_speed_command", default_value="11.0"),
+        DeclareLaunchArgument("entry_speed_command", default_value="9.0"),
         DeclareLaunchArgument("w1_path_weight", default_value="0.60"),
         DeclareLaunchArgument(
             "candidate_topic", default_value="/hybrid/shortcut_candidate"

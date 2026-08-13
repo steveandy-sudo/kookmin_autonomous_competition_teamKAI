@@ -33,7 +33,6 @@ models/
 !xycar_ws/src/study/my_rule/models/
 !xycar_ws/src/study/my_rule/models/kookmin_objects_best_20260804.pt
 !xycar_ws/src/study/my_rule/models/my_rule_objects.pt
-!xycar_ws/src/study/my_rule/models/no_red_car_best.pt
 !xycar_ws/src/xycar_rl/models/
 !xycar_ws/src/xycar_rl/models/**
 !xycar_ws/src/il_data_tools/models/

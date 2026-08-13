@@ -46,7 +46,7 @@ class TrafficLightFrame:
 @dataclass(frozen=True)
 class TrafficLightConfig:
     minimum_confidence: float = 0.50
-    left_minimum_confidence: float = 0.40
+    left_minimum_confidence: float = 0.50
     stop_min_box_area_ratio: float = 0.025
     go_min_box_area_ratio: float = 0.025
     stop_required_frames: int = 2

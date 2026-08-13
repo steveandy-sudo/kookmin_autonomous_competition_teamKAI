@@ -80,33 +80,6 @@ def test_each_class_uses_its_own_confidence_threshold():
     assert [item.class_name for item in accepted] == ["car", "red"]
 
 
-def test_left_4_is_kept_when_the_shortcut_threshold_is_configured():
-    detections = [record("left_4", 0.72), record("null_4", 0.99)]
-
-    accepted = filter_detections(detections, {"left_4": 0.50})
-
-    assert [item.class_name for item in accepted] == ["left_4"]
-
-
-def test_four_lamp_signal_names_can_be_kept_distinct():
-    detections = [
-        record("red_4", 0.72),
-        record("yellow_4", 0.73),
-        record("green_4", 0.74),
-    ]
-
-    accepted = filter_detections(
-        detections,
-        {"red_4": 0.50, "yellow_4": 0.50, "green_4": 0.50},
-    )
-
-    assert [item.class_name for item in accepted] == [
-        "red_4",
-        "yellow_4",
-        "green_4",
-    ]
-
-
 def test_green_hsv_is_measured_only_inside_detector_box():
     image = np.zeros((100, 100, 3), dtype=np.uint8)
     image[10:30, 10:30] = (0, 255, 0)

@@ -181,7 +181,7 @@ def generate_launch_description():
                 "shortcut_w1_loss_handoff_enabled", default_value="true"
             ),
             DeclareLaunchArgument(
-                "shortcut_maximum_entry_steering_sec", default_value="1.3"
+                "shortcut_maximum_entry_steering_sec", default_value="1.5"
             ),
             DeclareLaunchArgument(
                 "shortcut_w1_steering_hold_sec", default_value="1.0"
@@ -191,7 +191,7 @@ def generate_launch_description():
                 default_value="-30.0",
             ),
             DeclareLaunchArgument(
-                "shortcut_entry_speed_command", default_value="11.0"
+                "shortcut_entry_speed_command", default_value="9.0"
             ),
             DeclareLaunchArgument(
                 "vehicle_avoidance_enabled", default_value="true"

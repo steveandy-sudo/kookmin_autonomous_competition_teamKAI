@@ -139,7 +139,7 @@ class ShortcutCandidateMuxNode(Node):
         self.declare_parameter("rule_command_timeout_sec", 0.35)
         self.declare_parameter("w1_steering_hold_sec", 1.0)
         self.declare_parameter("entry_direction_hold_command", -30.0)
-        self.declare_parameter("entry_speed_command", 11.0)
+        self.declare_parameter("entry_speed_command", 9.0)
         self.declare_parameter("handoff_to_rule", True)
         self.declare_parameter("default_enabled", False)
 

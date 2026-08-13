@@ -78,30 +78,6 @@ def interpolate_command(
     return sign * mapped
 
 
-def limit_override_speed(
-    speed_command: float,
-    *,
-    maximum_speed_command: float,
-) -> float:
-    """Preserve a deliberate low speed while enforcing the selector maximum."""
-    return min(
-        max(float(speed_command), 0.0),
-        float(maximum_speed_command),
-    )
-
-
-def limit_shortcut_entry_search_speed(
-    speed_command: float,
-    *,
-    search_speed_command: float,
-) -> float:
-    """Retain the legacy pure helper without changing the active runtime path."""
-    return min(
-        max(float(speed_command), 0.0),
-        max(float(search_speed_command), 0.0),
-    )
-
-
 def cone_recovery_target(
     *,
     last_angle_deg: float,

@@ -5,7 +5,6 @@ from xycar_map_nav.yolo_lidar_avoidance import (
     YoloLidarAvoidanceMode,
 )
 from xycar_map_nav.sequential_hybrid_driver import is_avoidance_detection
-from xycar_map_nav.sequential_hybrid_driver import limit_override_speed
 from xycar_map_nav.sequential_hybrid_driver import (
     preferred_avoidance_mode_from_yellow_reference,
 )
@@ -54,21 +53,6 @@ def test_cone_avoidance_uses_its_own_confidence_threshold():
         cone_as_vehicle_obstacle=True,
         cone_min_confidence=0.50,
     )
-
-
-def test_shortcut_override_speed_respects_selector_envelope():
-    assert limit_override_speed(
-        32.0,
-        maximum_speed_command=30.0,
-    ) == 30.0
-    assert limit_override_speed(
-        1.0,
-        maximum_speed_command=30.0,
-    ) == 1.0
-    assert limit_override_speed(
-        0.0,
-        maximum_speed_command=30.0,
-    ) == 0.0
 
 
 def test_yellow_reference_maps_object_to_opposite_avoidance_side():
