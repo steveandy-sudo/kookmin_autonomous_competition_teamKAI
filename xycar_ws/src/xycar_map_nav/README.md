@@ -49,6 +49,17 @@ colcon build --symlink-install --packages-up-to \
   wide_camera xycar_vesc_driver my_rule_msgs my_rule xycar_map_nav
 ```
 
+The integrated runner exposes the shortcut steering-start and blend distances
+without source edits. A smaller minimum branch distance delays W1 steering
+until the vehicle is closer to the branch. The effective trigger also includes
+the existing speed-response distance.
+
+```bash
+SHORTCUT_SPATIAL_GATE_MINIMUM_DISTANCE_M=0.10 \
+SHORTCUT_SPATIAL_GATE_BLEND_DISTANCE_M=0.50 \
+  ./src/xycar_map_nav/scripts/run_complete_space_hybrid.sh
+```
+
 Run the real-car rule-only stack from the source tree:
 
 ```bash

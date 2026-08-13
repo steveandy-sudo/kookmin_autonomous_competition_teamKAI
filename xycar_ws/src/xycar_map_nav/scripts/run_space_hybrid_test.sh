@@ -56,15 +56,17 @@ CONTROL_LOG="/tmp/xycar_hybrid_control_$(date +%Y%m%d_%H%M%S).log"
 RUN_CONFIG_FILE="${XYCAR_HYBRID_RUN_CONFIG_FILE:-/tmp/xycar_hybrid_run_config.yaml}"
 CONE_SPEED_COMMAND="8.0"
 CONE_SENSOR_PRESENCE_TIMEOUT_SEC="${CONE_SENSOR_PRESENCE_TIMEOUT_SEC:-0.5}"
+SHORTCUT_SPATIAL_GATE_MINIMUM_DISTANCE_M="${SHORTCUT_SPATIAL_GATE_MINIMUM_DISTANCE_M:-0.25}"
+SHORTCUT_SPATIAL_GATE_BLEND_DISTANCE_M="${SHORTCUT_SPATIAL_GATE_BLEND_DISTANCE_M:-0.25}"
 SHORTCUT_W1_STEERING_START_DELAY_FRAMES="${SHORTCUT_W1_STEERING_START_DELAY_FRAMES:-4}"
 SHORTCUT_W1_STEERING_DELAY_MISSING_TOLERANCE_FRAMES="${SHORTCUT_W1_STEERING_DELAY_MISSING_TOLERANCE_FRAMES:-2}"
 SHORTCUT_MINIMUM_ENTRY_PROGRESS_M="${SHORTCUT_MINIMUM_ENTRY_PROGRESS_M:-0.50}"
 SHORTCUT_PAIR_TRACK_HANDOFF_REQUIRED_FRAMES="${SHORTCUT_PAIR_TRACK_HANDOFF_REQUIRED_FRAMES:-2}"
 SHORTCUT_W1_LOSS_HANDOFF_ENABLED="${SHORTCUT_W1_LOSS_HANDOFF_ENABLED:-true}"
-SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC="${SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC:-1.5}"
+SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC="${SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC:-1.3}"
 SHORTCUT_W1_STEERING_HOLD_SEC="${SHORTCUT_W1_STEERING_HOLD_SEC:-1.0}"
 SHORTCUT_ENTRY_DIRECTION_HOLD_COMMAND="${SHORTCUT_ENTRY_DIRECTION_HOLD_COMMAND:--30.0}"
-SHORTCUT_ENTRY_SPEED_COMMAND="${SHORTCUT_ENTRY_SPEED_COMMAND:-9.0}"
+SHORTCUT_ENTRY_SPEED_COMMAND="${SHORTCUT_ENTRY_SPEED_COMMAND:-11.0}"
 TEST_PROFILE="${XYCAR_TEST_PROFILE:-integrated}"
 ENABLE_RVIZ="${XYCAR_ENABLE_RVIZ:-false}"
 START_CONE="${XYCAR_START_CONE:-true}"
@@ -162,6 +164,12 @@ prompt_bool() {
       ;;
   esac
 }
+
+prompt_float SHORTCUT_SPATIAL_GATE_MINIMUM_DISTANCE_M \
+  "Shortcut steering-start minimum branch distance [m]" 0.25 0.0 5.0
+
+prompt_float SHORTCUT_SPATIAL_GATE_BLEND_DISTANCE_M \
+  "Shortcut spatial-gate blend distance [m]" 0.25 0.01 5.0
 
 if [[ "$CONE_AS_VEHICLE_OBSTACLE" == "true" ]]; then
   AVOIDANCE_TARGET_LABEL=cone
@@ -434,6 +442,9 @@ straight_target_right_offset_cm: $STRAIGHT_RIGHT_OFFSET_CM
 straight_target_right_offset_m: $STRAIGHT_RIGHT_OFFSET_M
 cone_speed_command: $CONE_SPEED_COMMAND
 cone_sensor_presence_timeout_sec: $CONE_SENSOR_PRESENCE_TIMEOUT_SEC
+shortcut_spatial_gate_minimum_distance_m: $SHORTCUT_SPATIAL_GATE_MINIMUM_DISTANCE_M
+shortcut_spatial_gate_blend_distance_m: $SHORTCUT_SPATIAL_GATE_BLEND_DISTANCE_M
+shortcut_maximum_entry_steering_sec: $SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC
 test_profile: "$TEST_PROFILE"
 enable_rviz: $ENABLE_RVIZ
 start_cone: $START_CONE
@@ -663,6 +674,8 @@ echo "Curve steering multiplier: ${CURVE_STEERING_MULTIPLIER_ENABLED}, |angle|>=
 echo "Left target correction: ${LEFT_OFFSET_CM}cm"
 echo "Straight-only right correction: ${STRAIGHT_RIGHT_OFFSET_CM}cm"
 echo "Shortcut entry speed cap: ${SHORTCUT_ENTRY_SPEED_COMMAND}"
+echo "Shortcut steering-start minimum branch distance: ${SHORTCUT_SPATIAL_GATE_MINIMUM_DISTANCE_M}m"
+echo "Shortcut spatial-gate blend distance: ${SHORTCUT_SPATIAL_GATE_BLEND_DISTANCE_M}m"
 echo "Shortcut W1 steering start delay: ${SHORTCUT_W1_STEERING_START_DELAY_FRAMES} valid frames, missing tolerance ${SHORTCUT_W1_STEERING_DELAY_MISSING_TOLERANCE_FRAMES} frames"
 echo "Shortcut handoff: progress ${SHORTCUT_MINIMUM_ENTRY_PROGRESS_M}m, pair ${SHORTCUT_PAIR_TRACK_HANDOFF_REQUIRED_FRAMES} frames, W1-loss fallback ${SHORTCUT_W1_LOSS_HANDOFF_ENABLED}"
 echo "Shortcut W1 steering maximum active time: ${SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC}s"
@@ -742,6 +755,8 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   start_object_detection:=true \
   start_shortcut:=true \
   shortcut_handoff_to_rule:=true \
+  shortcut_spatial_gate_minimum_distance_m:="$SHORTCUT_SPATIAL_GATE_MINIMUM_DISTANCE_M" \
+  shortcut_spatial_gate_blend_distance_m:="$SHORTCUT_SPATIAL_GATE_BLEND_DISTANCE_M" \
   shortcut_w1_steering_start_delay_frames:="$SHORTCUT_W1_STEERING_START_DELAY_FRAMES" \
   shortcut_w1_steering_delay_missing_tolerance_frames:="$SHORTCUT_W1_STEERING_DELAY_MISSING_TOLERANCE_FRAMES" \
   shortcut_minimum_entry_progress_m:="$SHORTCUT_MINIMUM_ENTRY_PROGRESS_M" \
