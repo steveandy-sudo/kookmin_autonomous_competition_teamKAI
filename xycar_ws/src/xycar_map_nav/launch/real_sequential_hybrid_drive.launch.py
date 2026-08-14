@@ -197,7 +197,7 @@ def generate_launch_description():
                 "vehicle_avoidance_enabled", default_value="true"
             ),
             DeclareLaunchArgument("scan_topic", default_value="/scan"),
-            DeclareLaunchArgument("speed_command", default_value="18.0"),
+            DeclareLaunchArgument("speed_command", default_value="25.0"),
             DeclareLaunchArgument(
                 "curvature_speed_control_enabled", default_value="true"
             ),
@@ -205,7 +205,7 @@ def generate_launch_description():
                 "curve_speed_command", default_value="16.0"
             ),
             DeclareLaunchArgument(
-                "degraded_path_speed_command", default_value="12.0"
+                "degraded_path_speed_command", default_value="15.0"
             ),
             DeclareLaunchArgument(
                 "curve_speed_exit_threshold_per_m", default_value="0.12"
@@ -282,13 +282,13 @@ def generate_launch_description():
                 "adaptive_curve_release_frames", default_value="2"
             ),
             DeclareLaunchArgument(
-                "straight_path_curvature_threshold", default_value="0.16"
+                "straight_path_curvature_threshold", default_value="0.24"
             ),
             DeclareLaunchArgument(
-                "steering_current_weight", default_value="0.40"
+                "steering_current_weight", default_value="0.35"
             ),
             DeclareLaunchArgument(
-                "steering_curve_current_weight", default_value="0.70"
+                "steering_curve_current_weight", default_value="0.80"
             ),
             DeclareLaunchArgument(
                 "steering_rate_limit_cmd_per_sec", default_value="180.0"

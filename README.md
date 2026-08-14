@@ -40,11 +40,11 @@
 - 직선 현재 조향 반영 비율: `STEERING_CURRENT_WEIGHT=0.35`
 - 곡선 현재 조향 반영 비율: `STEERING_CURVE_CURRENT_WEIGHT=0.80`
 - 곡선 속도: `16`
-- 경로 품질 저하 시 속도: `12`
+- 경로 품질 저하 시 속도: `15`
 
-직선에서 간헐적으로 직선을 곡선으로 판단하는 현상이 있어 곡선 판정 기준을
-`0.16 -> 0.20 -> 0.24 rad/m` 순서로 높이는 시험을 시작했다. `0.24`는
-배터리 저전압 때문에 아직 정상 주행 검증이 끝나지 않은 후보값이다.
+직선에서 간헐적으로 직선을 곡선으로 판단하는 현상을 줄이기 위해 곡선 판정
+기준을 `0.24 rad/m`로 설정했다. 아래 값은 현재 통합 주행 스크립트와 launch의
+기본 프로파일이다.
 
 ### 충전 후 재개 명령
 
@@ -60,16 +60,14 @@ source install/setup.bash
 export ROS_DOMAIN_ID=7
 unset ROS_NAMESPACE
 
-STRAIGHT_PATH_CURVATURE_THRESHOLD=0.24 \
-STEERING_CURRENT_WEIGHT=0.35 \
-STEERING_CURVE_CURRENT_WEIGHT=0.80 \
-CURVATURE_SPEED_CONTROL_ENABLED=true \
-CURVE_SPEED_COMMAND=16 \
-DEGRADED_PATH_SPEED_COMMAND=12 \
-XYCAR_ENABLE_RVIZ=false \
-bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh \
-  25 0.30 20 0
+bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh
 ```
+
+인자와 환경변수를 생략했을 때 직선/곡선/저품질 경로 속도는 `25/16/15`,
+곡선 LD는 `0.30m`, 곡선 Stanley 비율은 `20%`, 좌측 보정은 `0cm`, 곡률
+기준은 `0.24 rad/m`, 직선/곡선 조향 현재값 반영 비율은 `0.35/0.80`, RViz는
+OFF로 적용된다. 기존과 같이 환경변수나 위치 인자를 주면 개별 값을 덮어쓸 수
+있다.
 
 `0.24`에서 완만한 곡선 진입이 늦어지면 `0.22`, 직선 오판이 계속되면
 주행 로그를 확보한 뒤 기준을 다시 조정한다. 곡선을 놓친 상태에서 속도
