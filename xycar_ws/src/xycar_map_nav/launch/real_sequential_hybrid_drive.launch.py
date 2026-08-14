@@ -282,13 +282,13 @@ def generate_launch_description():
                 "adaptive_curve_release_frames", default_value="2"
             ),
             DeclareLaunchArgument(
-                "straight_path_curvature_threshold", default_value="0.16"
+                "straight_path_curvature_threshold", default_value="0.24"
             ),
             DeclareLaunchArgument(
-                "steering_current_weight", default_value="0.40"
+                "steering_current_weight", default_value="0.35"
             ),
             DeclareLaunchArgument(
-                "steering_curve_current_weight", default_value="0.70"
+                "steering_curve_current_weight", default_value="0.80"
             ),
             DeclareLaunchArgument(
                 "steering_rate_limit_cmd_per_sec", default_value="180.0"
@@ -322,7 +322,7 @@ def generate_launch_description():
                 "maximum_speed_command", default_value="30.0"
             ),
             DeclareLaunchArgument(
-                "perception_max_output_rate_hz", default_value="15.0"
+                "perception_max_output_rate_hz", default_value="20.0"
             ),
             DeclareLaunchArgument(
                 "canonical_forward_range_m", default_value="2.5"
