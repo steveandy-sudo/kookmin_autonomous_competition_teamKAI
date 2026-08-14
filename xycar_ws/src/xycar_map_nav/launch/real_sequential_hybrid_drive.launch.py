@@ -197,7 +197,7 @@ def generate_launch_description():
                 "vehicle_avoidance_enabled", default_value="true"
             ),
             DeclareLaunchArgument("scan_topic", default_value="/scan"),
-            DeclareLaunchArgument("speed_command", default_value="18.0"),
+            DeclareLaunchArgument("speed_command", default_value="25.0"),
             DeclareLaunchArgument(
                 "curvature_speed_control_enabled", default_value="true"
             ),
@@ -205,7 +205,7 @@ def generate_launch_description():
                 "curve_speed_command", default_value="16.0"
             ),
             DeclareLaunchArgument(
-                "degraded_path_speed_command", default_value="12.0"
+                "degraded_path_speed_command", default_value="15.0"
             ),
             DeclareLaunchArgument(
                 "curve_speed_exit_threshold_per_m", default_value="0.12"
