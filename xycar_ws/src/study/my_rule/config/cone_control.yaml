@@ -53,6 +53,11 @@
     single_boundary_min_cones: 2
     single_boundary_min_span_m: 0.20
     single_boundary_switch_frames: 3
+    # Once a previously valid path has expired, do not reacquire from only two
+    # isolated points on one side. Normal single-boundary tracking is unchanged
+    # while prev_path is alive; reacquisition needs one opposite-side supporter.
+    single_boundary_reacquire_min_fused_clusters: 3
+    single_boundary_reacquire_require_opposite_support: true
     single_boundary_confidence_cap: 0.60
     nearest_gate_confidence_cap: 0.40
     single_boundary_max_speed: 9.5

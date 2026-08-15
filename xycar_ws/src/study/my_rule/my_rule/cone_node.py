@@ -113,6 +113,12 @@ class ConeNode(Node):
         self.declare_parameter("single_boundary_min_cones", 2)
         self.declare_parameter("single_boundary_min_span_m", 0.20)
         self.declare_parameter("single_boundary_switch_frames", 3)
+        self.declare_parameter(
+            "single_boundary_reacquire_min_fused_clusters", 3
+        )
+        self.declare_parameter(
+            "single_boundary_reacquire_require_opposite_support", True
+        )
         self.declare_parameter("single_boundary_confidence_cap", 0.60)
         self.declare_parameter("nearest_gate_confidence_cap", 0.40)
         self.declare_parameter("single_boundary_max_speed", 9.5)
@@ -624,6 +630,12 @@ class ConeNode(Node):
                 self.midpoints_inferred = True
                 self.midpoint_source = "nearest_gate"
                 midpoints = [fallback_midpoint]
+        midpoints = self.guard_single_boundary_reacquisition(
+            midpoints,
+            fused_clusters=fused_clusters,
+            left_cones=left_cones,
+            right_cones=right_cones,
+        )
         path = self.interpolate_path(midpoints)
         self.publish_path(path)
 
@@ -927,6 +939,60 @@ class ConeNode(Node):
             self.midpoint_source = "paired_sparse"
             return midpoints
         return self.infer_midpoints_from_single_boundary(left, right)
+
+    def guard_single_boundary_reacquisition(
+        self,
+        midpoints: Sequence[Point2],
+        *,
+        fused_clusters: Sequence[Point2],
+        left_cones: Sequence[Point2],
+        right_cones: Sequence[Point2],
+    ) -> List[Point2]:
+        """Reject an underconstrained one-sided path after path expiry.
+
+        Initial single-boundary operation and updates while ``prev_path`` is
+        alive retain their established behavior.  Only reacquisition after a
+        previously valid path has expired is guarded: two isolated points from
+        one side cannot define a trustworthy corridor tangent.  A third fused
+        candidate and support from the opposite group are enough to restore
+        the existing single-boundary fallback without requiring a valid pair.
+        """
+        values = list(midpoints)
+        if (
+            not values
+            or self.prev_path is not None
+            or not bool(getattr(self, "had_valid_path", False))
+        ):
+            return values
+
+        source = str(getattr(self, "midpoint_source", "none"))
+        if source == "left_offset":
+            opposite_support = bool(right_cones)
+        elif source == "right_offset":
+            opposite_support = bool(left_cones)
+        else:
+            return values
+
+        minimum_clusters = max(
+            2,
+            int(
+                self.get_parameter(
+                    "single_boundary_reacquire_min_fused_clusters"
+                ).value
+            ),
+        )
+        require_opposite = bool(
+            self.get_parameter(
+                "single_boundary_reacquire_require_opposite_support"
+            ).value
+        )
+        if len(fused_clusters) < minimum_clusters or (
+            require_opposite and not opposite_support
+        ):
+            self.midpoints_inferred = False
+            self.midpoint_source = "reacquire_pending"
+            return []
+        return values
 
     def infer_midpoints_from_richer_boundary(
         self,

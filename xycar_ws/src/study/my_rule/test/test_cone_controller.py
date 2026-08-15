@@ -33,6 +33,9 @@ class _PurePursuitHarness:
 
 class _GeometryHarness:
     calculate_midpoints = ConeNode.calculate_midpoints
+    guard_single_boundary_reacquisition = (
+        ConeNode.guard_single_boundary_reacquisition
+    )
     infer_midpoints_from_single_boundary = ConeNode.infer_midpoints_from_single_boundary
     infer_midpoints_from_richer_boundary = ConeNode.infer_midpoints_from_richer_boundary
     select_inferred_boundary = ConeNode.select_inferred_boundary
@@ -59,6 +62,8 @@ class _GeometryHarness:
         "fallback_pair_max_center_offset_m": 0.65,
         "group_grow_distance_m": 0.5,
         "single_boundary_switch_frames": 3,
+        "single_boundary_reacquire_min_fused_clusters": 3,
+        "single_boundary_reacquire_require_opposite_support": True,
         "min_path_midpoints": 2,
         "cone_yolo_recover_corridor_partner": True,
         "cone_yolo_recovered_centerline_max_deviation_m": 0.25,
@@ -72,6 +77,7 @@ class _GeometryHarness:
         self.pending_inferred_boundary = None
         self.pending_inferred_frames = 0
         self.prev_path = None
+        self.had_valid_path = False
 
     def get_parameter(self, name):
         return _Parameter(self.parameters[name])
@@ -253,6 +259,60 @@ def test_single_boundary_previous_path_score_does_not_penalize_x_shift():
     # boundary.  Longitudinal displacement must not make the outward normal win.
     assert centerline[0] == pytest.approx((0.269, -0.032), abs=0.002)
     assert centerline[1] == pytest.approx((0.490, 0.296), abs=0.002)
+
+
+def test_expired_path_rejects_pure_two_point_single_side_reacquisition():
+    harness = _GeometryHarness()
+    harness.had_valid_path = True
+    harness.midpoints_inferred = True
+    harness.midpoint_source = "right_offset"
+    right = [(0.867, -0.027), (1.074, -0.334)]
+    inferred = [(1.219, 0.211), (1.426, -0.096)]
+
+    guarded = harness.guard_single_boundary_reacquisition(
+        inferred,
+        fused_clusters=right,
+        left_cones=[],
+        right_cones=right,
+    )
+
+    assert guarded == []
+    assert harness.midpoint_source == "reacquire_pending"
+
+
+def test_expired_path_allows_single_side_reacquisition_with_support():
+    harness = _GeometryHarness()
+    harness.had_valid_path = True
+    harness.midpoint_source = "right_offset"
+    right = [(0.622, -0.270), (0.843, 0.058)]
+    left = [(1.061, 0.410)]
+    inferred = [(0.269, -0.032), (0.490, 0.296)]
+
+    guarded = harness.guard_single_boundary_reacquisition(
+        inferred,
+        fused_clusters=[*right, *left],
+        left_cones=left,
+        right_cones=right,
+    )
+
+    assert guarded == inferred
+    assert harness.midpoint_source == "right_offset"
+
+
+def test_initial_single_side_path_keeps_existing_behavior():
+    harness = _GeometryHarness()
+    harness.midpoint_source = "right_offset"
+    right = [(0.867, -0.027), (1.074, -0.334)]
+    inferred = [(1.219, 0.211), (1.426, -0.096)]
+
+    guarded = harness.guard_single_boundary_reacquisition(
+        inferred,
+        fused_clusters=right,
+        left_cones=[],
+        right_cones=right,
+    )
+
+    assert guarded == inferred
 
 
 def test_yolo_anchor_recovers_only_corridor_partner_near_previous_path():
