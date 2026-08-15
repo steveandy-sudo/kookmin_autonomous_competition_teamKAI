@@ -49,7 +49,7 @@ class ObjectDetectionNode(Node):
             "model_path": str(
                 package_share
                 / "models"
-                / "kookmin_objects_best_20260804.pt"
+                / "final.pt"
             ),
             "image_topic": "/wide_camera_mjpeg/image_raw/compressed",
             "use_compressed_image": True,
@@ -74,6 +74,10 @@ class ObjectDetectionNode(Node):
             "red_confidence": 0.50,
             "yellow_confidence": 0.50,
             "green_confidence": 0.50,
+            "red_4_confidence": 0.50,
+            "yellow_4_confidence": 0.50,
+            "green_4_confidence": 0.50,
+            "left_4_confidence": 0.40,
             "yellow_centerline_confidence": 0.45,
             # A non-empty identity alias makes rclpy infer STRING_ARRAY;
             # launch YAML can then replace it with model-specific aliases.
@@ -92,10 +96,10 @@ class ObjectDetectionNode(Node):
             "required_classes": [
                 "car",
                 "cone",
-                "red",
-                "yellow",
-                "green",
-                "yellow_centerline",
+                "red_4",
+                "yellow_4",
+                "green_4",
+                "left_4",
             ],
         }
         for name, value in defaults.items():
@@ -108,6 +112,7 @@ class ObjectDetectionNode(Node):
         self.processed_count = 0
         self.dropped_stale_count = 0
         self.last_log_time = time.monotonic()
+        self.last_detection_summary = ""
         self.rectify_lock = threading.Lock()
         self.startup_lock = threading.Lock()
         self.startup_signal_box: tuple[int, int, int, int] | None = None
@@ -125,6 +130,10 @@ class ObjectDetectionNode(Node):
             "red": self.parameter_float("red_confidence"),
             "yellow": self.parameter_float("yellow_confidence"),
             "green": self.parameter_float("green_confidence"),
+            "red_4": self.parameter_float("red_4_confidence"),
+            "yellow_4": self.parameter_float("yellow_4_confidence"),
+            "green_4": self.parameter_float("green_4_confidence"),
+            "left_4": self.parameter_float("left_4_confidence"),
             "yellow_centerline": self.parameter_float(
                 "yellow_centerline_confidence"
             ),
@@ -514,6 +523,16 @@ class ObjectDetectionNode(Node):
             output.detections.append(detection)
         self.detection_pub.publish(output)
         self.processed_count += 1
+        grouped = {}
+        for record in accepted:
+            grouped.setdefault(record.class_name, []).append(record.confidence)
+        summary = ", ".join(
+            f"{name} x{len(values)} max={max(values):.2f}"
+            for name, values in sorted(grouped.items())
+        ) or "none"
+        if summary != self.last_detection_summary:
+            self.get_logger().info(f"[YOLO object] {summary}")
+            self.last_detection_summary = summary
 
         if self.debug_pub.get_subscription_count() > 0:
             debug = frame.copy()

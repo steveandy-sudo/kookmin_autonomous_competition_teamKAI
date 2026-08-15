@@ -19,6 +19,7 @@ setup(
         ),
     ],
     install_requires=["setuptools"],
+    tests_require=["pytest"],
     zip_safe=True,
     maintainer="track_drive_sve_team",
     maintainer_email="student@example.com",
@@ -27,6 +28,8 @@ setup(
     entry_points={
         "console_scripts": [
             "track_drive_sve = track_drive_sve.track_drive:main",
+            "shortcut_candidate_node = "
+            "track_drive_sve.shortcut_candidate_node:main",
             "yolo_node = track_drive_sve.yolo_node:main",
             "obstacle_avoidance_node = track_drive_sve.obstacle_avoidance_node:main",
         ],

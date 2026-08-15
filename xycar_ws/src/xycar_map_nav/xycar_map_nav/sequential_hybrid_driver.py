@@ -40,6 +40,14 @@ from .sequential_hybrid_core import HybridState
 from .sequential_hybrid_core import SequentialHybridConfig
 from .sequential_hybrid_core import SequentialHybridController
 from .sequential_hybrid_core import SequentialHybridInput
+from .shortcut_mode_latch import ShortcutModeConfig
+from .shortcut_mode_latch import ShortcutModeEvent
+from .shortcut_mode_latch import ShortcutModeLatch
+from .traffic_light_control import SignalObservation
+from .traffic_light_control import TrafficLightAction
+from .traffic_light_control import TrafficLightConfig
+from .traffic_light_control import TrafficLightController
+from .traffic_light_control import TrafficLightFrame
 from .yolo_lidar_avoidance import YoloLidarAvoidanceConfig
 from .yolo_lidar_avoidance import YoloLidarAvoidanceController
 from .yolo_lidar_avoidance import YoloLidarAvoidanceMode
@@ -179,6 +187,72 @@ class SequentialHybridDriver(Node):
         self.rule_command = (0.0, 0.0)
         self.rl_command_time = float("-inf")
         self.rule_command_time = float("-inf")
+        self.shortcut_command = (0.0, 0.0, 0.0)
+        self.shortcut_command_time = float("-inf")
+        self.shortcut_phase_code = 0.0
+        self.shortcut_entry_search_active = False
+        self.shortcut_entry_search_started_time = float("-inf")
+        self.shortcut_entry_ready = False
+        self.shortcut_latch = ShortcutModeLatch(
+            ShortcutModeConfig(
+                minimum_confidence=float(
+                    self.get_parameter("shortcut_yolo_min_confidence").value
+                ),
+                required_frames=int(
+                    self.get_parameter("shortcut_yolo_required_frames").value
+                ),
+                rearm_absence_sec=float(
+                    self.get_parameter("shortcut_rearm_absence_sec").value
+                ),
+            )
+        )
+        self.traffic_light_controller = TrafficLightController(
+            TrafficLightConfig(
+                minimum_confidence=float(
+                    self.get_parameter("traffic_light_min_confidence").value
+                ),
+                left_minimum_confidence=float(
+                    self.get_parameter("shortcut_yolo_min_confidence").value
+                ),
+                stop_min_box_area_ratio=float(
+                    self.get_parameter(
+                        "traffic_light_stop_min_box_area_ratio"
+                    ).value
+                ),
+                go_min_box_area_ratio=float(
+                    self.get_parameter(
+                        "traffic_light_go_min_box_area_ratio"
+                    ).value
+                ),
+                stop_required_frames=int(
+                    self.get_parameter(
+                        "traffic_light_stop_required_frames"
+                    ).value
+                ),
+                go_required_frames=int(
+                    self.get_parameter(
+                        "traffic_light_go_required_frames"
+                    ).value
+                ),
+                left_required_frames=int(
+                    self.get_parameter("shortcut_yolo_required_frames").value
+                ),
+                left_absence_frames=int(
+                    self.get_parameter(
+                        "shortcut_yolo_absence_frames"
+                    ).value
+                ),
+                # S starts perception immediately after two absent detector
+                # frames. Steering still waits for the metric spatial gate.
+                left_start_delay_sec=0.0,
+            )
+        )
+        self.traffic_light_decision = (
+            self.traffic_light_controller.latest_decision
+        )
+        self.latest_traffic_light_frame = TrafficLightFrame()
+        self.last_left_detect_count = 0
+        self.last_left_absence_count = 0
         self.cone_command = (0.0, 0.0, 0.0)
         self.last_valid_cone_command = (0.0, 0.0)
         self.cone_bypass = ConeModeLatch(
@@ -368,6 +442,12 @@ class SequentialHybridDriver(Node):
             10,
         )
         self.create_subscription(
+            Float32MultiArray,
+            str(self.get_parameter("shortcut_command_topic").value),
+            self._on_shortcut_command,
+            10,
+        )
+        self.create_subscription(
             LaserScan,
             str(self.get_parameter("scan_topic").value),
             self._on_scan,
@@ -397,6 +477,12 @@ class SequentialHybridDriver(Node):
             self._on_drive_armed,
             10,
         )
+        self.create_subscription(
+            Bool,
+            str(self.get_parameter("shortcut_entry_ready_topic").value),
+            self._on_shortcut_entry_ready,
+            10,
+        )
         self.shadow_pub = self.create_publisher(
             Float32MultiArray,
             str(self.get_parameter("shadow_motor_topic").value),
@@ -419,6 +505,11 @@ class SequentialHybridDriver(Node):
         self.status_pub = self.create_publisher(
             String,
             str(self.get_parameter("status_topic").value),
+            10,
+        )
+        self.traffic_light_status_pub = self.create_publisher(
+            String,
+            str(self.get_parameter("traffic_light_status_topic").value),
             10,
         )
         self.diagnostics_pub = self.create_publisher(
@@ -453,6 +544,16 @@ class SequentialHybridDriver(Node):
             cone_gate_qos,
         )
         self.cone_processing_pub.publish(Bool(data=False))
+        self.shortcut_processing_pub = self.create_publisher(
+            Bool,
+            str(
+                self.get_parameter(
+                    "shortcut_processing_enabled_topic"
+                ).value
+            ),
+            cone_gate_qos,
+        )
+        self.shortcut_processing_pub.publish(Bool(data=False))
         self.create_service(Trigger, "~/reset", self._reset)
         rate_hz = max(1.0, float(self.get_parameter("control_rate_hz").value))
         self.control_timer = self.create_timer(1.0 / rate_hz, self._control_step)
@@ -471,6 +572,13 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("rl_command_topic", "/rl/policy_motor_shadow")
         self.declare_parameter("rule_command_topic", "/hybrid/rule_candidate")
         self.declare_parameter("cone_command_topic", "/my_rule/cone_cmd")
+        self.declare_parameter(
+            "shortcut_command_topic", "/hybrid/shortcut_candidate"
+        )
+        self.declare_parameter(
+            "shortcut_processing_enabled_topic",
+            "/hybrid/shortcut_processing_enabled",
+        )
         self.declare_parameter("scan_topic", "/scan")
         self.declare_parameter("motor_topic", "/xycar_motor")
         self.declare_parameter(
@@ -478,6 +586,9 @@ class SequentialHybridDriver(Node):
         )
         self.declare_parameter("mode_topic", "/hybrid_gate/mode")
         self.declare_parameter("status_topic", "/hybrid_gate/status")
+        self.declare_parameter(
+            "traffic_light_status_topic", "/hybrid/traffic_light_status"
+        )
         self.declare_parameter(
             "diagnostics_topic", "/hybrid_gate/diagnostics"
         )
@@ -521,6 +632,18 @@ class SequentialHybridDriver(Node):
         self.declare_parameter(
             "object_detections_topic", "/my_rule/object_detections"
         )
+        self.declare_parameter("shortcut_enabled", True)
+        self.declare_parameter("shortcut_class_name", "left_4")
+        self.declare_parameter("shortcut_yolo_min_confidence", 0.40)
+        self.declare_parameter("shortcut_yolo_required_frames", 2)
+        self.declare_parameter("shortcut_yolo_absence_frames", 2)
+        self.declare_parameter("shortcut_wait_for_entry_ready", True)
+        self.declare_parameter(
+            "shortcut_entry_ready_topic", "/shortcut/entry/ready"
+        )
+        self.declare_parameter("shortcut_entry_search_timeout_sec", 12.0)
+        self.declare_parameter("shortcut_candidate_timeout_sec", 0.35)
+        self.declare_parameter("shortcut_rearm_absence_sec", 1.0)
         self.declare_parameter(
             "vehicle_class_names", ["obstacle_vehicle", "car"]
         )
@@ -532,9 +655,27 @@ class SequentialHybridDriver(Node):
                 "red",
                 "yellow",
                 "green",
+                "red_4",
+                "yellow_4",
+                "green_4",
+                "left_4",
             ],
         )
-        self.declare_parameter("traffic_light_min_confidence", 0.30)
+        self.declare_parameter("traffic_light_control_enabled", True)
+        self.declare_parameter("traffic_light_red_class_name", "red_4")
+        self.declare_parameter(
+            "traffic_light_yellow_class_name", "yellow_4"
+        )
+        self.declare_parameter("traffic_light_green_class_name", "green_4")
+        self.declare_parameter("traffic_light_min_confidence", 0.50)
+        self.declare_parameter(
+            "traffic_light_stop_min_box_area_ratio", 0.025
+        )
+        self.declare_parameter(
+            "traffic_light_go_min_box_area_ratio", 0.025
+        )
+        self.declare_parameter("traffic_light_stop_required_frames", 2)
+        self.declare_parameter("traffic_light_go_required_frames", 2)
         self.declare_parameter("traffic_light_sector_memory_sec", 0.75)
         self.declare_parameter("traffic_light_lidar_padding_deg", 2.0)
         self.declare_parameter("vehicle_yolo_min_confidence", 0.45)
@@ -658,6 +799,10 @@ class SequentialHybridDriver(Node):
             # otherwise re-arming in the middle of the course briefly selects
             # RULE before camera/LiDAR entry confirmation accumulates again.
             self.gate_disarmed_time = time.monotonic()
+            # Shortcut and traffic-light state follows the operational yellow
+            # branch and is reset immediately on operator disarm. Cone state is
+            # intentionally retained for gate_disarm_cone_hold_sec.
+            self._reset_shortcut_state()
             self.avoidance_controller.reset()
             self.avoidance_state = self.avoidance_controller.state()
             self.avoidance_offset_pub.publish(Float32(data=0.0))
@@ -669,6 +814,143 @@ class SequentialHybridDriver(Node):
         elif not self.drive_armed and armed:
             self.gate_disarmed_time = float("-inf")
         self.drive_armed = armed
+
+    def _reset_shortcut_state(self) -> None:
+        self.shortcut_latch.reset()
+        self.traffic_light_controller.reset()
+        self.traffic_light_decision = (
+            self.traffic_light_controller.latest_decision
+        )
+        self.latest_traffic_light_frame = TrafficLightFrame()
+        self.shortcut_command = (0.0, 0.0, 0.0)
+        self.shortcut_command_time = float("-inf")
+        self.shortcut_phase_code = 0.0
+        self.shortcut_entry_search_active = False
+        self.shortcut_entry_search_started_time = float("-inf")
+        self.shortcut_entry_ready = False
+        self.last_left_detect_count = 0
+        self.last_left_absence_count = 0
+        self.shortcut_processing_pub.publish(Bool(data=False))
+
+    def _on_shortcut_entry_ready(self, message: Bool) -> None:
+        """Transfer authority only when the metric W1 spatial gate opens."""
+        self.shortcut_entry_ready = bool(message.data)
+        if (
+            not self.shortcut_entry_ready
+            or not self.shortcut_entry_search_active
+            or self.shortcut_latch.active
+        ):
+            return
+        now = time.monotonic()
+        if (
+            not self.drive_armed
+            or self.traffic_light_decision.action == TrafficLightAction.STOP
+        ):
+            return
+        if self._shortcut_entry_search_expired(now):
+            self._cancel_shortcut_entry_search(
+                "[MISSION] W1 spatial gate arrived after search timeout"
+            )
+            return
+        if now - self.shortcut_command_time > float(
+            self.get_parameter("shortcut_candidate_timeout_sec").value
+        ):
+            # The ready signal and mux candidate arrive on separate topics.
+            # Keep RULE authority until the first spatially gated candidate is
+            # cached instead of producing a one-cycle motor stop.
+            return
+        event = self.shortcut_latch.start(
+            now_sec=now,
+            confidence=self.traffic_light_controller.left_confidence,
+        )
+        if event != ShortcutModeEvent.NONE:
+            self.shortcut_entry_search_active = False
+            self.shortcut_entry_search_started_time = float("-inf")
+            self._handle_shortcut_event(event)
+
+    def _shortcut_entry_search_expired(self, now: float) -> bool:
+        return bool(
+            self.shortcut_entry_search_active
+            and float(now) - self.shortcut_entry_search_started_time
+            > float(
+                self.get_parameter("shortcut_entry_search_timeout_sec").value
+            )
+        )
+
+    def _cancel_shortcut_entry_search(self, reason: str) -> None:
+        if not self.shortcut_entry_search_active:
+            return
+        self.shortcut_entry_search_active = False
+        self.shortcut_entry_search_started_time = float("-inf")
+        self.shortcut_entry_ready = False
+        self.traffic_light_controller.shortcut_finished()
+        self.traffic_light_decision = (
+            self.traffic_light_controller.latest_decision
+        )
+        self.shortcut_processing_pub.publish(Bool(data=False))
+        self.get_logger().error(reason)
+
+    def _handle_shortcut_event(self, event: ShortcutModeEvent) -> None:
+        if event == ShortcutModeEvent.STARTED:
+            self.cone_bypass.reset()
+            self.avoidance_controller.reset()
+            self.avoidance_state = self.avoidance_controller.state()
+            self.avoidance_offset_pub.publish(Float32(data=0.0))
+            self.shortcut_processing_pub.publish(Bool(data=True))
+            self.get_logger().warning(
+                "[MISSION] SHORTCUT ENTRY CONTROL ACTIVE"
+            )
+        elif event == ShortcutModeEvent.FINISHED:
+            self.shortcut_entry_search_active = False
+            self.shortcut_entry_search_started_time = float("-inf")
+            self.shortcut_entry_ready = False
+            self.traffic_light_controller.shortcut_finished()
+            self.traffic_light_decision = (
+                self.traffic_light_controller.latest_decision
+            )
+            self.shortcut_processing_pub.publish(Bool(data=False))
+            self.get_logger().warning(
+                "\033[95m[MISSION] CONTROL SWITCHED -> "
+                "YELLOW XBIN RULE\033[0m"
+            )
+        elif event == ShortcutModeEvent.REARMED:
+            self.get_logger().info("[MISSION] left_4 trigger rearmed")
+
+    def _handle_traffic_shortcut_request(self, now: float) -> None:
+        if (
+            not self.traffic_light_decision.shortcut_start
+            or not bool(self.get_parameter("shortcut_enabled").value)
+            or self.shortcut_entry_search_active
+            or self.shortcut_latch.active
+        ):
+            return
+        self.shortcut_entry_search_active = True
+        self.shortcut_entry_search_started_time = float(now)
+        self.shortcut_entry_ready = False
+        self.shortcut_command = (0.0, 0.0, 0.0)
+        self.shortcut_command_time = float("-inf")
+        self.shortcut_phase_code = 0.0
+        self.shortcut_processing_pub.publish(Bool(data=True))
+        self.get_logger().warning(
+            "[MISSION] SHORTCUT ENTRY PERCEPTION START"
+        )
+
+    def _on_shortcut_command(self, message: Float32MultiArray) -> None:
+        if len(message.data) < 3 or not (
+            self.shortcut_entry_search_active or self.shortcut_latch.active
+        ):
+            return
+        self.shortcut_command = (
+            float(message.data[0]),
+            float(message.data[1]),
+            float(message.data[2]),
+        )
+        self.shortcut_phase_code = (
+            float(message.data[3]) if len(message.data) >= 4 else 0.0
+        )
+        self.shortcut_command_time = time.monotonic()
+        if self.shortcut_latch.active and self.shortcut_command[2] >= 0.5:
+            self._handle_shortcut_event(self.shortcut_latch.finish())
 
     @staticmethod
     def _normalize_class_name(value: str) -> str:
@@ -718,12 +1000,125 @@ class SequentialHybridDriver(Node):
             return self.traffic_light_sectors
         return ()
 
+    def _signal_observation(
+        self,
+        message: ObjectDetectionArray,
+        class_name: str,
+    ) -> SignalObservation:
+        target = self._normalize_class_name(class_name)
+        image_area = max(
+            1, int(message.image_width) * int(message.image_height)
+        )
+        candidates = []
+        for item in message.detections:
+            if self._normalize_class_name(item.class_name) != target:
+                continue
+            width = max(0, int(item.xmax) - int(item.xmin))
+            height = max(0, int(item.ymax) - int(item.ymin))
+            candidates.append(
+                SignalObservation(
+                    confidence=float(item.confidence),
+                    box_area_ratio=width * height / float(image_area),
+                )
+            )
+        return (
+            max(
+                candidates,
+                key=lambda item: (item.box_area_ratio, item.confidence),
+            )
+            if candidates
+            else SignalObservation()
+        )
+
     def _on_object_detections(
         self,
         message: ObjectDetectionArray,
     ) -> None:
         now = time.monotonic()
         image_width = max(0, int(message.image_width))
+        traffic_frame = TrafficLightFrame(
+            red=self._signal_observation(
+                message,
+                str(
+                    self.get_parameter(
+                        "traffic_light_red_class_name"
+                    ).value
+                ),
+            ),
+            yellow=self._signal_observation(
+                message,
+                str(
+                    self.get_parameter(
+                        "traffic_light_yellow_class_name"
+                    ).value
+                ),
+            ),
+            green=self._signal_observation(
+                message,
+                str(
+                    self.get_parameter(
+                        "traffic_light_green_class_name"
+                    ).value
+                ),
+            ),
+            left=self._signal_observation(
+                message,
+                str(self.get_parameter("shortcut_class_name").value),
+            ),
+        )
+        self.latest_traffic_light_frame = traffic_frame
+        if (
+            self.drive_armed
+            and bool(
+                self.get_parameter("traffic_light_control_enabled").value
+            )
+        ):
+            self.traffic_light_decision = (
+                self.traffic_light_controller.observe(
+                    now_sec=now,
+                    frame=traffic_frame,
+                    # Signal STOP remains above an already-active shortcut.
+                    shortcut_active=False,
+                )
+            )
+        else:
+            self.traffic_light_controller.reset()
+            self.traffic_light_decision = (
+                self.traffic_light_controller.latest_decision
+            )
+
+        left_seen = traffic_frame.left.qualifies(
+            minimum_confidence=float(
+                self.get_parameter("shortcut_yolo_min_confidence").value
+            )
+        )
+        if left_seen:
+            count = min(
+                int(self.get_parameter("shortcut_yolo_required_frames").value),
+                self.traffic_light_controller.left_frames,
+            )
+            if count != self.last_left_detect_count:
+                self.get_logger().info(
+                    "[MISSION] left_4 DETECTED "
+                    f"confidence={traffic_frame.left.confidence:.2f} "
+                    f"{count}/"
+                    f"{int(self.get_parameter('shortcut_yolo_required_frames').value)}"
+                )
+                self.last_left_detect_count = count
+            self.last_left_absence_count = 0
+        elif self.traffic_light_controller.left_confirmed:
+            count = min(
+                int(self.get_parameter("shortcut_yolo_absence_frames").value),
+                self.traffic_light_controller.left_absence_frames,
+            )
+            if count != self.last_left_absence_count:
+                self.get_logger().info(
+                    "[MISSION] left_4 ABSENT "
+                    f"{count}/"
+                    f"{int(self.get_parameter('shortcut_yolo_absence_frames').value)}"
+                )
+                self.last_left_absence_count = count
+        self._handle_traffic_shortcut_request(now)
         cone_confidences = [
             float(item.confidence)
             for item in message.detections
@@ -1026,6 +1421,7 @@ class SequentialHybridDriver(Node):
         )
         requested = bool(
             gate_allows_processing
+            and not self.shortcut_latch.active
             and (
                 self.cone_bypass.active
                 or now - self.cone_yolo_time
@@ -1192,6 +1588,7 @@ class SequentialHybridDriver(Node):
         self.controller.reset()
         if self.force_rule_only:
             self.controller.source = CandidateSource.RULE
+        self._reset_shortcut_state()
         self.cone_bypass.reset()
         self.avoidance_controller.reset()
         self.avoidance_state = self.avoidance_controller.state()
@@ -1204,6 +1601,29 @@ class SequentialHybridDriver(Node):
         response.success = True
         response.message = "integrated rule drive reset"
         return response
+
+    def _publish_traffic_light_status(self) -> None:
+        decision = self.traffic_light_decision
+        frame = self.latest_traffic_light_frame
+        self.traffic_light_status_pub.publish(
+            String(
+                data=(
+                    f"action={decision.action.value} "
+                    f"signal={decision.signal_name or 'none'} "
+                    f"box_area_ratio={decision.box_area_ratio:.6f} "
+                    f"stop_frames={self.traffic_light_controller.stop_frames} "
+                    f"green_frames={self.traffic_light_controller.go_frames} "
+                    f"left_frames={self.traffic_light_controller.left_frames} "
+                    "left_absence_frames="
+                    f"{self.traffic_light_controller.left_absence_frames} "
+                    f"red_box={frame.red.box_area_ratio:.6f} "
+                    f"yellow_box={frame.yellow.box_area_ratio:.6f} "
+                    f"green_box={frame.green.box_area_ratio:.6f} "
+                    f"left_box={frame.left.box_area_ratio:.6f} "
+                    f"reason={decision.reason}"
+                )
+            )
+        )
 
     def _publish_avoidance_path_request(
         self,
@@ -1288,7 +1708,26 @@ class SequentialHybridDriver(Node):
         )
 
     def _publish_status(self, output, now: float) -> None:
-        if self.cone_bypass.active:
+        if self.traffic_light_decision.action == TrafficLightAction.STOP:
+            source_value = "TRAFFIC_LIGHT"
+            source_label = self.traffic_light_decision.signal_name.upper()
+        elif self.shortcut_latch.active:
+            source_value = "SHORTCUT"
+            phase_names = {
+                0: "IDLE",
+                1: "ENTER",
+                2: "CRUISE",
+                3: "EXIT",
+                4: "DONE",
+                11: "W1_ONLY_ENTRY",
+                12: "Y1_LOCKED_ENTRY",
+                13: "W1_Y1_ENTRY",
+                14: "SEMANTIC_HANDOFF",
+            }
+            source_label = "SHORTCUT_" + phase_names.get(
+                int(round(self.shortcut_phase_code)), "UNKNOWN"
+            )
+        elif self.cone_bypass.active:
             source_value = "CONE_RULE"
             source_label = "CONE_RULE"
         elif self.avoidance_state.controls_vehicle:
@@ -1300,6 +1739,9 @@ class SequentialHybridDriver(Node):
         ):
             source_value = output.source.value
             source_label = "YOLO_WAIT_SIDE"
+        elif self.shortcut_entry_search_active:
+            source_value = "SHORTCUT"
+            source_label = "SHORTCUT_W1_SEARCH"
         else:
             source_value = output.source.value
             source_label = (
@@ -1332,24 +1774,56 @@ class SequentialHybridDriver(Node):
             <= float(self.get_parameter("scan_timeout_sec").value)
         )
         cone_hold_active = self._cone_disarm_hold_active(now)
-        if (
+        cone_reset_after_hold = bool(
             self.gate_arming_required
             and not self.drive_armed
             and self.cone_bypass.active
             and not cone_hold_active
-        ):
+        )
+        if cone_reset_after_hold:
             self.cone_bypass.reset()
             self.get_logger().warning(
                 "CONE_RULE reset after SPACE hold timeout"
             )
-        elif not cone_hold_active:
+        self._handle_shortcut_event(
+            self.shortcut_latch.update(now_sec=now)
+        )
+        if self._shortcut_entry_search_expired(now):
+            self._cancel_shortcut_entry_search(
+                "[MISSION] W1 search timeout; LR-ASPP disabled, RULE retained"
+            )
+        if (
+            self.drive_armed
+            and bool(
+                self.get_parameter("traffic_light_control_enabled").value
+            )
+        ):
+            self.traffic_light_decision = (
+                self.traffic_light_controller.update(
+                    now_sec=now,
+                    shortcut_active=False,
+                )
+            )
+            self._handle_traffic_shortcut_request(now)
+        self.shortcut_processing_pub.publish(
+            Bool(
+                data=bool(
+                    self.shortcut_latch.active
+                    or self.shortcut_entry_search_active
+                )
+            )
+        )
+        if not cone_hold_active and not cone_reset_after_hold:
             self._handle_cone_event(
                 self.cone_bypass.update_presence(
                     sensor_present=self._cone_sensor_present(now)
                 )
             )
         self._publish_cone_processing_gate(now)
-        if (
+        if self.shortcut_latch.active:
+            self.avoidance_controller.reset()
+            self.avoidance_state = self.avoidance_controller.state()
+        elif (
             self.drive_armed
             and bool(self.get_parameter("vehicle_avoidance_enabled").value)
         ):
@@ -1426,7 +1900,102 @@ class SequentialHybridDriver(Node):
             ),
             dt_sec=dt,
         )
-        if self.cone_bypass.active:
+        if self.traffic_light_decision.action == TrafficLightAction.STOP:
+            output = replace(
+                output,
+                state=HybridState.SENSOR_STOP,
+                angle_command=0.0,
+                speed_command=0.0,
+                reason=self.traffic_light_decision.reason,
+            )
+        elif self.shortcut_latch.active:
+            shortcut_age = now - self.shortcut_command_time
+            if (
+                output.state == HybridState.RUNNING
+                and shortcut_age
+                <= float(
+                    self.get_parameter(
+                        "shortcut_candidate_timeout_sec"
+                    ).value
+                )
+                and now - self.rule_command_time
+                <= self.controller.config.candidate_hold_sec
+            ):
+                maximum_angle = (
+                    self.controller.config.maximum_abs_angle_command
+                )
+                output = replace(
+                    output,
+                    state=HybridState.RUNNING,
+                    angle_command=float(
+                        np.clip(
+                            self.shortcut_command[0],
+                            -maximum_angle,
+                            maximum_angle,
+                        )
+                    ),
+                    # The shortcut candidate may apply an entry-only speed cap.
+                    speed_command=float(
+                        np.clip(
+                            self.shortcut_command[1],
+                            0.0,
+                            self.controller.config.maximum_speed_command,
+                        )
+                    ),
+                    reason=(
+                        "shortcut override; entry speed cap applied; "
+                        f"phase={int(round(self.shortcut_phase_code))}"
+                    ),
+                )
+            else:
+                output = replace(
+                    output,
+                    state=HybridState.SENSOR_STOP,
+                    angle_command=0.0,
+                    speed_command=0.0,
+                    reason="shortcut candidate or RULE speed stale",
+                )
+        elif self.shortcut_entry_search_active:
+            shortcut_age = now - self.shortcut_command_time
+            if (
+                output.state == HybridState.RUNNING
+                and shortcut_age
+                <= float(
+                    self.get_parameter(
+                        "shortcut_candidate_timeout_sec"
+                    ).value
+                )
+                and now - self.rule_command_time
+                <= self.controller.config.candidate_hold_sec
+            ):
+                maximum_angle = (
+                    self.controller.config.maximum_abs_angle_command
+                )
+                output = replace(
+                    output,
+                    state=HybridState.RUNNING,
+                    angle_command=float(
+                        np.clip(
+                            self.shortcut_command[0],
+                            -maximum_angle,
+                            maximum_angle,
+                        )
+                    ),
+                    speed_command=float(
+                        np.clip(
+                            self.shortcut_command[1],
+                            0.0,
+                            self.controller.config.maximum_speed_command,
+                        )
+                    ),
+                    reason=(
+                        "shortcut pre-entry; entry speed cap applied; "
+                        f"phase={int(round(self.shortcut_phase_code))}"
+                    ),
+                )
+            # While the camera gate is starting, retain the existing RULE
+            # output instead of inserting a motor stop.
+        elif self.cone_bypass.active:
             if output.state == HybridState.RUNNING and scan_fresh:
                 output = replace(
                     output,
@@ -1502,7 +2071,12 @@ class SequentialHybridDriver(Node):
             data=[
                 STATE_CODES[output.state],
                 (
-                    2.0
+                    6.0
+                    if self.traffic_light_decision.action
+                    == TrafficLightAction.STOP
+                    else 5.0
+                    if self.shortcut_latch.active
+                    else 2.0
                     if self.cone_bypass.active
                     else 3.0
                     if self.avoidance_state.controls_vehicle
@@ -1516,13 +2090,23 @@ class SequentialHybridDriver(Node):
                 float(now - self.rule_command_time),
                 float(output.angle_command),
                 float(output.speed_command),
+                float(
+                    list(TrafficLightAction).index(
+                        self.traffic_light_decision.action
+                    )
+                ),
+                float(self.traffic_light_decision.box_area_ratio),
             ]
         )
         self.diagnostics_pub.publish(diagnostics)
+        self._publish_traffic_light_status()
         self._publish_status(output, now)
 
     def stop(self) -> None:
         self.control_timer.cancel()
+        self.shortcut_entry_search_active = False
+        self.shortcut_entry_search_started_time = float("-inf")
+        self.shortcut_entry_ready = False
         self.avoidance_offset_pub.publish(Float32(data=0.0))
         self._publish_avoidance_path_request(
             now=time.monotonic(),
@@ -1530,6 +2114,7 @@ class SequentialHybridDriver(Node):
             force_inactive=True,
         )
         self.cone_processing_pub.publish(Bool(data=False))
+        self.shortcut_processing_pub.publish(Bool(data=False))
         command = Float32MultiArray(data=[0.0, 0.0])
         self.shadow_pub.publish(command)
         if self.motor_pub is not None:

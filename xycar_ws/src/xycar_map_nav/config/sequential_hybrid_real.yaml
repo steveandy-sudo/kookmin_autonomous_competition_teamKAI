@@ -57,6 +57,7 @@ sequential_hybrid_driver:
     cone_entry_distance_m: 3.0
     cone_cluster_timeout_sec: 0.50
     cone_sensor_presence_timeout_sec: 0.5
+    # jsb cone planning consumes only camera-confirmed LiDAR clusters.
     cone_cluster_topic: /my_rule/cone_fused_clusters
     cone_processing_enabled_topic: /my_rule/cone_processing_enabled
 
@@ -64,6 +65,29 @@ sequential_hybrid_driver:
     # immediately. LiDAR remains distance/space telemetry, not an entry veto.
     # Traffic-light detections are intentionally not consumed here.
     object_detections_topic: /my_rule/object_detections
+    shortcut_enabled: true
+    shortcut_class_name: left_4
+    shortcut_yolo_min_confidence: 0.40
+    shortcut_yolo_required_frames: 2
+    shortcut_yolo_absence_frames: 2
+    shortcut_wait_for_entry_ready: true
+    shortcut_entry_ready_topic: /shortcut/entry/ready
+    shortcut_entry_search_timeout_sec: 12.0
+    shortcut_candidate_timeout_sec: 0.35
+    shortcut_rearm_absence_sec: 1.0
+    shortcut_command_topic: /hybrid/shortcut_candidate
+    shortcut_processing_enabled_topic: /hybrid/shortcut_processing_enabled
+
+    traffic_light_control_enabled: true
+    traffic_light_red_class_name: red_4
+    traffic_light_yellow_class_name: yellow_4
+    traffic_light_green_class_name: green_4
+    traffic_light_min_confidence: 0.50
+    traffic_light_stop_min_box_area_ratio: 0.025
+    traffic_light_go_min_box_area_ratio: 0.025
+    traffic_light_stop_required_frames: 2
+    traffic_light_go_required_frames: 2
+    traffic_light_status_topic: /hybrid/traffic_light_status
     vehicle_class_names: [obstacle_vehicle, car]
     vehicle_yolo_min_confidence: 0.45
     vehicle_yolo_required_frames: 1

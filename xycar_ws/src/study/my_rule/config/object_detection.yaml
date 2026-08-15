@@ -28,14 +28,15 @@
     red_confidence: 0.50
     yellow_confidence: 0.50
     green_confidence: 0.50
+    red_4_confidence: 0.50
+    yellow_4_confidence: 0.50
+    green_4_confidence: 0.50
+    left_4_confidence: 0.40
     yellow_centerline_confidence: 0.45
 
     # The 2026-08-04 detector separates traffic-light hardware variants and
     # red/green vehicles. Convert those raw labels into stable mission names.
-    class_aliases:
-      [green_3=green, green_4=green, red_3=red, red_4=red,
-       yellow_3=yellow, yellow_4=yellow,
-       green_car=car, red_car=car]
+    class_aliases: [green_car=car, red_car=car]
 
     # At the first start only, YOLO owns the complete traffic-light box and
     # lightweight HSV checks only that exact box at camera-rate. The one-shot
@@ -52,4 +53,5 @@
     startup_green_min_pixel_ratio: 0.015
     startup_green_required_frames: 2
 
-    required_classes: [car, cone, red, yellow, green]
+    # null_4 is deliberately ignored by all mission triggers.
+    required_classes: [car, cone, red_4, yellow_4, green_4, left_4]
