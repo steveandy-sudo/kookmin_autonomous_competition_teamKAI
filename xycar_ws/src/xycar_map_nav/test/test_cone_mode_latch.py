@@ -72,6 +72,39 @@ def test_cone_finishes_only_after_both_sensors_are_absent():
     assert not latch.active
 
 
+def test_cone_timed_exit_requires_continuous_sensor_absence():
+    latch = ConeModeLatch(
+        ConeModeConfig(
+            entry_frames=3,
+            exit_frames=1,
+            exit_absence_sec=1.0,
+        )
+    )
+    for _ in range(3):
+        observe(latch)
+
+    assert (
+        latch.update_presence(sensor_present=False, now_sec=10.0)
+        == ConeModeEvent.NONE
+    )
+    assert (
+        latch.update_presence(sensor_present=False, now_sec=10.9)
+        == ConeModeEvent.NONE
+    )
+    assert (
+        latch.update_presence(sensor_present=True, now_sec=10.95)
+        == ConeModeEvent.NONE
+    )
+    assert (
+        latch.update_presence(sensor_present=False, now_sec=20.0)
+        == ConeModeEvent.NONE
+    )
+    assert (
+        latch.update_presence(sensor_present=False, now_sec=21.0)
+        == ConeModeEvent.FINISHED
+    )
+
+
 def test_cone_can_reenter_without_waypoint_or_lap_state():
     latch = make_latch()
     for _ in range(3):

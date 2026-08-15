@@ -266,6 +266,9 @@ class SequentialHybridDriver(Node):
                 exit_frames=int(
                     self.get_parameter("cone_exit_frames").value
                 ),
+                exit_absence_sec=float(
+                    self.get_parameter("cone_exit_absence_sec").value
+                ),
                 entry_distance_m=float(
                     self.get_parameter("cone_entry_distance_m").value
                 ),
@@ -611,6 +614,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("cone_exit_confidence", 0.20)
         self.declare_parameter("cone_entry_frames", 3)
         self.declare_parameter("cone_exit_frames", 1)
+        self.declare_parameter("cone_exit_absence_sec", 1.0)
         self.declare_parameter("cone_max_target_angle_deg", 42.0)
         self.declare_parameter(
             "cone_steering_actual_deg", [0.0, 4.0, 10.0, 16.0, 26.0]
@@ -1816,7 +1820,8 @@ class SequentialHybridDriver(Node):
         if not cone_hold_active and not cone_reset_after_hold:
             self._handle_cone_event(
                 self.cone_bypass.update_presence(
-                    sensor_present=self._cone_sensor_present(now)
+                    sensor_present=self._cone_sensor_present(now),
+                    now_sec=now,
                 )
             )
         self._publish_cone_processing_gate(now)

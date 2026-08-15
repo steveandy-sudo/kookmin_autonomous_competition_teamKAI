@@ -92,10 +92,12 @@
     min_path_midpoints: 2
     min_path_span_m: 0.15
     max_path_target_jump_m: 0.30
-    inferred_max_path_target_jump_m: 0.25
+    # Single-boundary paths are usable during a curve, but their target may
+    # move only this far per accepted LiDAR scan.
+    inferred_max_path_target_jump_m: 0.08
     steering_median_window: 1
     steering_max_delta_deg: 14.0
-    inferred_steering_max_delta_deg: 10.0
+    inferred_steering_max_delta_deg: 4.0
     allow_nearest_gate_fallback: true
     fallback_pair_min_lateral_separation_m: 0.4
     fallback_pair_max_center_offset_m: 0.65

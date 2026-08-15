@@ -224,6 +224,7 @@ class ConeNode(Node):
                 self.scan_qos,
             )
         self.prev_path: Optional[List[Point2]] = None
+        self.last_path_target_lateral: Optional[float] = None
         self.path_miss_count = 0
         self.path_is_held = False
         history_frames = max(1, int(self.get_parameter("sparse_cluster_history_frames").value))
@@ -395,6 +396,52 @@ class ConeNode(Node):
             best = min(best, math.hypot(px - nearest[0], py - nearest[1]))
         return float(best)
 
+    @staticmethod
+    def lateral_path_distance_at_x(
+        candidate_path: Sequence[Point2],
+        reference_path: Sequence[Point2],
+        candidate_x_offset: float = 0.0,
+    ) -> float:
+        """Compare paths laterally at corresponding forward positions.
+
+        ``x`` is used only to look up the reference path's lateral position.
+        It must not contribute to the distance itself: consecutive LiDAR scans
+        naturally move a boundary forward/backward in vehicle coordinates, and
+        treating that longitudinal displacement as an error can prefer the
+        normal pointing to the outside of a bend.
+        """
+        if not candidate_path or not reference_path:
+            return float("inf")
+
+        reference = sorted(
+            ((float(x), float(y)) for x, y in reference_path),
+            key=lambda point: point[0],
+        )
+        reference_x = np.asarray(
+            [point[0] for point in reference],
+            dtype=np.float64,
+        )
+        reference_y = np.asarray(
+            [point[1] for point in reference],
+            dtype=np.float64,
+        )
+        unique_x, unique_indices = np.unique(
+            reference_x,
+            return_index=True,
+        )
+        unique_y = reference_y[unique_indices]
+
+        candidate_x = np.asarray(
+            [float(x) + float(candidate_x_offset) for x, _ in candidate_path],
+            dtype=np.float64,
+        )
+        candidate_y = np.asarray(
+            [float(y) for _, y in candidate_path],
+            dtype=np.float64,
+        )
+        reference_y_at_x = np.interp(candidate_x, unique_x, unique_y)
+        return float(np.mean(np.abs(candidate_y - reference_y_at_x)))
+
     def recover_corridor_partners(
         self,
         lidar_clusters: Sequence[Point2],
@@ -530,6 +577,7 @@ class ConeNode(Node):
 
     def reset_processing_state(self) -> None:
         self.prev_path = None
+        self.last_path_target_lateral = None
         self.path_miss_count = 0
         self.path_is_held = False
         self.cluster_candidate_history.clear()
@@ -866,7 +914,9 @@ class ConeNode(Node):
             # single boundary must never replace this path just because it has
             # more points; that caused left/right source flapping in S turns.
             self.midpoint_source = "paired"
-            self.active_inferred_boundary = None
+            # Preserve the last reliable one-sided boundary identity. A brief
+            # paired observation must not make the opposite boundary eligible
+            # for immediate selection on the next sparse scan.
             self.pending_inferred_boundary = None
             self.pending_inferred_frames = 0
             return midpoints
@@ -1085,16 +1135,10 @@ class ConeNode(Node):
             )
 
             def path_score(candidate_path: Sequence[Point2]) -> float:
-                return float(
-                    np.mean(
-                        [
-                            self.point_to_path_distance(
-                                (x + rear_offset, y),
-                                self.prev_path,
-                            )
-                            for x, y in candidate_path
-                        ]
-                    )
+                return self.lateral_path_distance_at_x(
+                    candidate_path,
+                    self.prev_path,
+                    candidate_x_offset=rear_offset,
                 )
 
             if path_score(opposite_centerline) < path_score(default_centerline):
@@ -1130,18 +1174,54 @@ class ConeNode(Node):
     def accept_new_path(self, new_path: List[Point2]) -> List[Point2]:
         if self.prev_path is not None and len(self.prev_path) > 1 and len(new_path) == 1:
             return self.hold_previous_path()
-        if self.prev_path is not None:
-            previous_target = self.path_target_lateral(self.prev_path)
-            new_target = self.path_target_lateral(new_path)
-            source = str(getattr(self, "midpoint_source", "none"))
-            inferred = source in ("left_offset", "right_offset", "nearest_gate", "paired_sparse")
-            parameter = "inferred_max_path_target_jump_m" if inferred else "max_path_target_jump_m"
-            max_jump = float(self.get_parameter(parameter).value)
+        source = str(getattr(self, "midpoint_source", "none"))
+        inferred = source in (
+            "left_offset",
+            "right_offset",
+            "nearest_gate",
+            "paired_sparse",
+        )
+        previous_target = (
+            self.path_target_lateral(self.prev_path)
+            if self.prev_path is not None
+            else getattr(self, "last_path_target_lateral", None)
+        )
+        new_target = self.path_target_lateral(new_path)
+        if inferred and previous_target is not None:
+            # A single boundary is geometrically underconstrained. Limit its
+            # lateral output continuously instead of rejecting it until the
+            # old path expires; expiry followed by an unrestricted replacement
+            # was the source of the visible one-frame steering jump.
+            max_step = max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "inferred_max_path_target_jump_m"
+                    ).value
+                ),
+            )
+            delta = new_target - previous_target
+            if abs(delta) > max_step:
+                limited_target = previous_target + math.copysign(
+                    max_step,
+                    delta,
+                )
+                lateral_shift = new_target - limited_target
+                new_path = [
+                    (float(x), float(y) - lateral_shift)
+                    for x, y in new_path
+                ]
+                new_target = self.path_target_lateral(new_path)
+        elif self.prev_path is not None:
+            max_jump = float(
+                self.get_parameter("max_path_target_jump_m").value
+            )
             if abs(new_target - previous_target) > max_jump:
                 return self.hold_previous_path()
         self.path_miss_count = 0
         self.path_is_held = False
         self.prev_path = new_path
+        self.last_path_target_lateral = new_target
         return self.prev_path
 
     def hold_previous_path(self) -> List[Point2]:

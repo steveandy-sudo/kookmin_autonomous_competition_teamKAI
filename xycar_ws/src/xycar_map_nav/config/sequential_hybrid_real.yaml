@@ -40,12 +40,14 @@ sequential_hybrid_driver:
 
     # Cone mode may start anywhere. While either YOLO or LiDAR still sees a
     # cone, the selector holds the last valid cone steering command. It exits
-    # after both sensors have been absent for the timeout. One control frame is
-    # used only to apply that timeout result, so no second release delay stacks.
+    # only after both sensors have been absent continuously. The sensor timeout
+    # absorbs transport jitter; the additional absence duration prevents one
+    # missed YOLO frame and one empty LiDAR scan from ending cone mode.
     cone_entry_confidence: 0.35
     cone_exit_confidence: 0.20
     cone_entry_frames: 3
     cone_exit_frames: 1
+    cone_exit_absence_sec: 1.0
     # cone_node publishes a physical wheel target. Convert it to the calibrated
     # Xycar servo command used by the main real-vehicle drive manager.
     cone_max_target_angle_deg: 42.0

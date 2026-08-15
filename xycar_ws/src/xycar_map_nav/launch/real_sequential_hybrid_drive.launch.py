@@ -251,6 +251,9 @@ def generate_launch_description():
                 "cone_sensor_presence_timeout_sec", default_value="0.5"
             ),
             DeclareLaunchArgument(
+                "cone_exit_absence_sec", default_value="1.0"
+            ),
+            DeclareLaunchArgument(
                 "lookahead_distance_m", default_value="0.3"
             ),
             DeclareLaunchArgument(
@@ -1133,6 +1136,10 @@ def generate_launch_description():
                             LaunchConfiguration(
                                 "cone_sensor_presence_timeout_sec"
                             ),
+                            value_type=float,
+                        ),
+                        "cone_exit_absence_sec": ParameterValue(
+                            LaunchConfiguration("cone_exit_absence_sec"),
                             value_type=float,
                         ),
                         "vehicle_avoidance_enabled": ParameterValue(

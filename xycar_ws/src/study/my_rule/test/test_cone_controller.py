@@ -41,6 +41,9 @@ class _GeometryHarness:
     nearest_gate_midpoint = ConeNode.nearest_gate_midpoint
     offset_boundary_to_center = ConeNode.offset_boundary_to_center
     point_to_path_distance = staticmethod(ConeNode.point_to_path_distance)
+    lateral_path_distance_at_x = staticmethod(
+        ConeNode.lateral_path_distance_at_x
+    )
     recover_corridor_partners = ConeNode.recover_corridor_partners
 
     parameters = {
@@ -109,6 +112,29 @@ class _PathHarness:
     def __init__(self):
         self.path_is_held = False
         self.path_miss_count = 0
+        self.midpoint_source = "paired"
+
+    def get_parameter(self, name):
+        return _Parameter(self.parameters[name])
+
+
+class _PathAcceptanceHarness:
+    accept_new_path = ConeNode.accept_new_path
+    hold_previous_path = ConeNode.hold_previous_path
+    path_target_lateral = ConeNode.path_target_lateral
+
+    parameters = {
+        "lookahead_min_m": 0.7,
+        "path_hold_frames": 5,
+        "max_path_target_jump_m": 0.30,
+        "inferred_max_path_target_jump_m": 0.08,
+    }
+
+    def __init__(self):
+        self.prev_path = None
+        self.last_path_target_lateral = None
+        self.path_miss_count = 0
+        self.path_is_held = False
         self.midpoint_source = "paired"
 
     def get_parameter(self, name):
@@ -211,6 +237,24 @@ def test_single_boundary_normal_uses_previous_path_when_bearing_side_is_wrong():
     assert all(abs(y) < 0.01 for _, y in centerline)
 
 
+def test_single_boundary_previous_path_score_does_not_penalize_x_shift():
+    harness = _GeometryHarness()
+    # This reproduces the bend where the previous implementation selected the
+    # outward normal because its Euclidean score was dominated by the x gap.
+    harness.prev_path = [(1.64, 0.21), (1.85, -0.10)]
+    right_boundary = [(0.622, -0.270), (0.843, 0.058)]
+
+    centerline = harness.offset_boundary_to_center(
+        right_boundary,
+        is_left_boundary=False,
+    )
+
+    # The correct inward normal lies to the rear/left in x on this diagonal
+    # boundary.  Longitudinal displacement must not make the outward normal win.
+    assert centerline[0] == pytest.approx((0.269, -0.032), abs=0.002)
+    assert centerline[1] == pytest.approx((0.490, 0.296), abs=0.002)
+
+
 def test_yolo_anchor_recovers_only_corridor_partner_near_previous_path():
     harness = _GeometryHarness()
     harness.prev_path = [(0.70, 0.0), (1.10, 0.0), (1.50, 0.0)]
@@ -247,6 +291,52 @@ def test_single_boundary_stays_selected_until_bilateral_path_returns():
     assert harness.select_inferred_boundary("left", left_candidates) == "left"
     for _ in range(5):
         assert harness.select_inferred_boundary("right", both_candidates) == "left"
+
+
+def test_paired_frame_preserves_single_boundary_identity():
+    harness = _GeometryHarness()
+    harness.active_inferred_boundary = "left"
+    paired = harness.calculate_midpoints(
+        [(0.50, 0.42), (0.90, 0.44)],
+        [(0.52, -0.43), (0.92, -0.41)],
+    )
+    assert len(paired) == 2
+    assert harness.midpoint_source == "paired"
+    assert harness.active_inferred_boundary == "left"
+
+    right_candidates = {
+        "right": (3, -0.1, [(0.5, 0.0), (0.9, 0.0)])
+    }
+    assert harness.select_inferred_boundary("right", right_candidates) is None
+    assert harness.select_inferred_boundary("right", right_candidates) is None
+    assert harness.select_inferred_boundary("right", right_candidates) == "right"
+
+
+def test_inferred_path_is_laterally_slew_limited_not_rejected():
+    harness = _PathAcceptanceHarness()
+    harness.prev_path = [(0.70, 0.0), (1.00, 0.0)]
+    harness.last_path_target_lateral = 0.0
+    harness.midpoint_source = "right_offset"
+
+    accepted = harness.accept_new_path(
+        [(0.70, 0.40), (1.00, 0.40)]
+    )
+
+    assert accepted
+    assert not harness.path_is_held
+    assert harness.path_target_lateral(accepted) == pytest.approx(0.08)
+
+
+def test_inferred_path_remains_limited_after_hold_expiry():
+    harness = _PathAcceptanceHarness()
+    harness.last_path_target_lateral = 0.0
+    harness.midpoint_source = "left_offset"
+
+    accepted = harness.accept_new_path(
+        [(0.70, -0.40), (1.00, -0.40)]
+    )
+
+    assert harness.path_target_lateral(accepted) == pytest.approx(-0.08)
 
 
 def test_deployed_speed_profile_boosts_only_a_good_straight():
