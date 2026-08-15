@@ -89,6 +89,9 @@ def generate_launch_description():
             DeclareLaunchArgument("drive_enabled", default_value="false"),
             DeclareLaunchArgument("steering_only", default_value="false"),
             DeclareLaunchArgument("gate_arming_required", default_value="false"),
+            DeclareLaunchArgument(
+                "gate_disarm_cone_hold_sec", default_value="5.0"
+            ),
             DeclareLaunchArgument("force_rule_only", default_value="true"),
             DeclareLaunchArgument("enable_rviz", default_value="false"),
             DeclareLaunchArgument("start_perception", default_value="true"),
@@ -948,6 +951,10 @@ def generate_launch_description():
                         "gate_arming_required": ParameterValue(
                             LaunchConfiguration("gate_arming_required"),
                             value_type=bool,
+                        ),
+                        "gate_disarm_cone_hold_sec": ParameterValue(
+                            LaunchConfiguration("gate_disarm_cone_hold_sec"),
+                            value_type=float,
                         ),
                         "force_rule_only": ParameterValue(
                             LaunchConfiguration("force_rule_only"),

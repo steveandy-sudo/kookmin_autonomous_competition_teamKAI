@@ -86,6 +86,10 @@ class ConeNode(Node):
         self.declare_parameter("cone_yolo_box_padding_ratio", 0.20)
         self.declare_parameter("cone_yolo_box_min_padding_px", 8.0)
         self.declare_parameter("cone_yolo_match_vertical", False)
+        self.declare_parameter("cone_yolo_recover_corridor_partner", True)
+        self.declare_parameter(
+            "cone_yolo_recovered_centerline_max_deviation_m", 0.25
+        )
         self.declare_parameter("max_range_m", 3.0)
         self.declare_parameter("min_range_m", 0.18)
         self.declare_parameter("scan_angle_offset_deg", 0.0)
@@ -367,6 +371,127 @@ class ConeNode(Node):
             ),
         )
 
+    @staticmethod
+    def point_to_path_distance(
+        point: Point2,
+        path: Sequence[Point2],
+    ) -> float:
+        """Return the shortest Euclidean distance from a point to a polyline."""
+        if not path:
+            return float("inf")
+        px, py = point
+        best = min(math.hypot(px - x, py - y) for x, y in path)
+        for first, second in zip(path, path[1:]):
+            vx = second[0] - first[0]
+            vy = second[1] - first[1]
+            length_squared = vx * vx + vy * vy
+            if length_squared <= 1.0e-12:
+                continue
+            ratio = (
+                (px - first[0]) * vx + (py - first[1]) * vy
+            ) / length_squared
+            ratio = float(np.clip(ratio, 0.0, 1.0))
+            nearest = (first[0] + ratio * vx, first[1] + ratio * vy)
+            best = min(best, math.hypot(px - nearest[0], py - nearest[1]))
+        return float(best)
+
+    def recover_corridor_partners(
+        self,
+        lidar_clusters: Sequence[Point2],
+        yolo_clusters: Sequence[Point2],
+    ) -> List[Point2]:
+        """Recover a camera-hidden cone only when corridor geometry supports it.
+
+        A bend can move one physical boundary outside the camera image while
+        both boundaries remain visible to the LiDAR.  Re-enabling every raw
+        LiDAR cluster would also restore chair and table legs.  Instead, use a
+        YOLO-confirmed cluster as an anchor and add at most one opposite cluster
+        whose corridor width, longitudinal alignment and midpoint all agree
+        with the most recent accepted path.
+        """
+        confirmed = list(yolo_clusters)
+        if (
+            not bool(
+                self.get_parameter(
+                    "cone_yolo_recover_corridor_partner"
+                ).value
+            )
+            or not confirmed
+            or not self.prev_path
+        ):
+            return confirmed
+
+        max_forward_delta = float(
+            self.get_parameter("pair_max_forward_delta_m").value
+        )
+        min_width = float(self.get_parameter("min_corridor_width_m").value)
+        max_width = float(self.get_parameter("max_corridor_width_m").value)
+        expected_width = float(
+            self.get_parameter("expected_corridor_width_m").value
+        )
+        min_lateral = float(
+            self.get_parameter("fallback_pair_min_lateral_separation_m").value
+        )
+        max_path_deviation = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "cone_yolo_recovered_centerline_max_deviation_m"
+                ).value
+            ),
+        )
+        rear_offset = float(self.get_parameter("lidar_to_rear_axle_m").value)
+        confirmed_set = set(confirmed)
+        candidates = []
+        for anchor in confirmed:
+            for candidate in lidar_clusters:
+                if candidate == anchor:
+                    continue
+                forward_delta = abs(anchor[0] - candidate[0])
+                lateral_separation = abs(anchor[1] - candidate[1])
+                width = math.hypot(
+                    anchor[0] - candidate[0],
+                    anchor[1] - candidate[1],
+                )
+                if (
+                    forward_delta > max_forward_delta
+                    or lateral_separation < min_lateral
+                    or not min_width <= width <= max_width
+                ):
+                    continue
+                midpoint_rear = (
+                    0.5 * (anchor[0] + candidate[0]) + rear_offset,
+                    0.5 * (anchor[1] + candidate[1]),
+                )
+                path_deviation = self.point_to_path_distance(
+                    midpoint_rear,
+                    self.prev_path,
+                )
+                if path_deviation > max_path_deviation:
+                    continue
+                # Pair two directly confirmed cones first. A raw-only partner
+                # is considered only for a still-unpaired confirmed anchor.
+                direct_rank = 0 if candidate in confirmed_set else 1
+                cost = (
+                    path_deviation
+                    + 2.0 * forward_delta
+                    + abs(width - expected_width)
+                )
+                candidates.append(
+                    (direct_rank, cost, anchor, candidate)
+                )
+
+        used = set()
+        recovered = list(confirmed)
+        for _direct_rank, _cost, anchor, candidate in sorted(candidates):
+            if anchor in used or candidate in used:
+                continue
+            used.add(anchor)
+            used.add(candidate)
+            if candidate not in confirmed_set:
+                recovered.append(candidate)
+        return recovered
+
     def processing_enabled_callback(self, msg: Bool) -> None:
         requested = bool(msg.data)
         if requested == self.processing_enabled:
@@ -429,6 +554,10 @@ class ConeNode(Node):
         fused_clusters = self.associate_clusters_with_yolo(
             clusters,
             scan_stamp_ns=self.message_stamp_ns(msg),
+        )
+        fused_clusters = self.recover_corridor_partners(
+            clusters,
+            fused_clusters,
         )
         self.publish_cluster_array(self.fused_cluster_pub, fused_clusters)
         # Retain the historical topic as a compatibility alias, but its content
@@ -914,7 +1043,8 @@ class ConeNode(Node):
         points = sorted(boundary, key=lambda p: p[0])
         expected_width = float(self.get_parameter("expected_corridor_width_m").value)
         half_width = expected_width * 0.5
-        centerline: List[Point2] = []
+        default_centerline: List[Point2] = []
+        opposite_centerline: List[Point2] = []
         for index, (x, y) in enumerate(points):
             # A wider local baseline makes the boundary normal less sensitive
             # to one noisy cone while still following an S-shaped corridor.
@@ -932,13 +1062,44 @@ class ConeNode(Node):
                 normal_x, normal_y = tangent_y, -tangent_x
             else:
                 normal_x, normal_y = -tangent_y, tangent_x
-            centerline.append(
+            default_centerline.append(
                 (
                     x + half_width * normal_x,
                     y + half_width * normal_y,
                 )
             )
-        return sorted(centerline, key=lambda p: p[0])
+            opposite_centerline.append(
+                (
+                    x - half_width * normal_x,
+                    y - half_width * normal_y,
+                )
+            )
+
+        # On a tight bend, a physical boundary can cross the vehicle centre in
+        # LiDAR coordinates and be seeded as the wrong side.  When a previously
+        # accepted path exists, choose the normal direction that remains closest
+        # to that path instead of trusting the instantaneous bearing alone.
+        if self.prev_path:
+            rear_offset = float(
+                self.get_parameter("lidar_to_rear_axle_m").value
+            )
+
+            def path_score(candidate_path: Sequence[Point2]) -> float:
+                return float(
+                    np.mean(
+                        [
+                            self.point_to_path_distance(
+                                (x + rear_offset, y),
+                                self.prev_path,
+                            )
+                            for x, y in candidate_path
+                        ]
+                    )
+                )
+
+            if path_score(opposite_centerline) < path_score(default_centerline):
+                default_centerline = opposite_centerline
+        return sorted(default_centerline, key=lambda p: p[0])
 
     def interpolate_path(self, midpoints: Sequence[Point2]) -> List[Point2]:
         min_midpoints = max(1, int(self.get_parameter("min_path_midpoints").value))

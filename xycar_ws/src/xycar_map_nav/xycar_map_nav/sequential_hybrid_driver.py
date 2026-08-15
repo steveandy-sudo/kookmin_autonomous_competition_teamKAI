@@ -52,6 +52,19 @@ SOURCE_CODES = {
 }
 
 
+def cone_disarm_hold_active(
+    *,
+    now_sec: float,
+    disarmed_since_sec: float,
+    hold_sec: float,
+) -> bool:
+    """Return whether cone mission state should survive a SPACE stop."""
+    if not math.isfinite(float(disarmed_since_sec)):
+        return False
+    elapsed = max(0.0, float(now_sec) - float(disarmed_since_sec))
+    return elapsed <= max(0.0, float(hold_sec))
+
+
 def interpolate_command(
     target_angle_deg: float,
     actual_angles_deg: Sequence[float],
@@ -157,6 +170,7 @@ class SequentialHybridDriver(Node):
             self.get_parameter("force_rule_only").value
         )
         self.drive_armed = not self.gate_arming_required
+        self.gate_disarmed_time = float("-inf")
         self.sector_centers_deg = self._float_array("sector_centers_deg")
         self.controller = SequentialHybridController(self._config())
         if self.force_rule_only:
@@ -450,6 +464,7 @@ class SequentialHybridDriver(Node):
     def _declare_parameters(self) -> None:
         self.declare_parameter("drive_enabled", False)
         self.declare_parameter("gate_arming_required", False)
+        self.declare_parameter("gate_disarm_cone_hold_sec", 5.0)
         self.declare_parameter("force_rule_only", True)
         self.declare_parameter("drive_armed_topic", "/hybrid_gate/drive_armed")
         self.declare_parameter("control_rate_hz", 20.0)
@@ -634,8 +649,15 @@ class SequentialHybridDriver(Node):
 
     def _on_drive_armed(self, message: Bool) -> None:
         armed = bool(message.data)
+        if not self.gate_arming_required:
+            self.drive_armed = True
+            return
         if self.drive_armed and not armed:
-            self.cone_bypass.reset()
+            # SPACE remains an immediate motor-output stop in space_drive_gate.
+            # Preserve only the cone mission state for a short operator pause;
+            # otherwise re-arming in the middle of the course briefly selects
+            # RULE before camera/LiDAR entry confirmation accumulates again.
+            self.gate_disarmed_time = time.monotonic()
             self.avoidance_controller.reset()
             self.avoidance_state = self.avoidance_controller.state()
             self.avoidance_offset_pub.publish(Float32(data=0.0))
@@ -644,7 +666,9 @@ class SequentialHybridDriver(Node):
                 scan_fresh=False,
                 force_inactive=True,
             )
-        self.drive_armed = armed if self.gate_arming_required else True
+        elif not self.drive_armed and armed:
+            self.gate_disarmed_time = float("-inf")
+        self.drive_armed = armed
 
     @staticmethod
     def _normalize_class_name(value: str) -> str:
@@ -997,8 +1021,11 @@ class SequentialHybridDriver(Node):
         )
 
     def _publish_cone_processing_gate(self, now: float) -> None:
+        gate_allows_processing = bool(
+            self.drive_armed or self._cone_disarm_hold_active(now)
+        )
         requested = bool(
-            self.drive_armed
+            gate_allows_processing
             and (
                 self.cone_bypass.active
                 or now - self.cone_yolo_time
@@ -1006,6 +1033,20 @@ class SequentialHybridDriver(Node):
             )
         )
         self.cone_processing_pub.publish(Bool(data=requested))
+
+    def _cone_disarm_hold_active(self, now: float) -> bool:
+        return bool(
+            self.gate_arming_required
+            and not self.drive_armed
+            and self.cone_bypass.active
+            and cone_disarm_hold_active(
+                now_sec=now,
+                disarmed_since_sec=self.gate_disarmed_time,
+                hold_sec=float(
+                    self.get_parameter("gate_disarm_cone_hold_sec").value
+                ),
+            )
+        )
 
     def _handle_cone_event(self, event: ConeModeEvent) -> None:
         if event == ConeModeEvent.STARTED:
@@ -1290,11 +1331,23 @@ class SequentialHybridDriver(Node):
             now - self.scan_time
             <= float(self.get_parameter("scan_timeout_sec").value)
         )
-        self._handle_cone_event(
-            self.cone_bypass.update_presence(
-                sensor_present=self._cone_sensor_present(now)
+        cone_hold_active = self._cone_disarm_hold_active(now)
+        if (
+            self.gate_arming_required
+            and not self.drive_armed
+            and self.cone_bypass.active
+            and not cone_hold_active
+        ):
+            self.cone_bypass.reset()
+            self.get_logger().warning(
+                "CONE_RULE reset after SPACE hold timeout"
             )
-        )
+        elif not cone_hold_active:
+            self._handle_cone_event(
+                self.cone_bypass.update_presence(
+                    sensor_present=self._cone_sensor_present(now)
+                )
+            )
         self._publish_cone_processing_gate(now)
         if (
             self.drive_armed

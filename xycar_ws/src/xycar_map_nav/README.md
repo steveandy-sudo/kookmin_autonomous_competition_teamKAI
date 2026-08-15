@@ -49,7 +49,8 @@ ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
 Build once after a source update:
 
 ```bash
-cd /home/subin/kookmin_autonomous_competition_teamKAI/xycar_ws
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT/xycar_ws"
 source /opt/ros/humble/setup.bash
 colcon build --symlink-install \
   --packages-select lane_seg_control my_rule xycar_map_nav
@@ -72,10 +73,12 @@ silently dropped; the lane stream remains best-effort to prioritize freshness.
 Use four terminals.  In every new terminal, run:
 
 ```bash
-cd /home/subin/kookmin_autonomous_competition_teamKAI/xycar_ws
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+export XYCAR_WS="$REPO_ROOT/xycar_ws"
+cd "$XYCAR_WS"
 source /opt/ros/humble/setup.bash
 source install/setup.bash
-BAG_PATH='/home/subin/kookmin_autonomous_competition_teamKAI/8.11 오전주행-20260811T095714Z-1-001/8.11 오전주행/bag'
+BAG_PATH='/path/to/rosbag_directory'
 ```
 
 Terminal 1 safely replays the camera, LiDAR, and recorded perception outputs.
@@ -125,9 +128,9 @@ Return to Terminal 1 and press Space to begin.  The Humble player controls are:
 - `Ctrl+C`: stop playback
 
 Set the initial rate with `--rate 0.25`, `--rate 0.5`, `--rate 1.0`, or
-`--rate 2.0`.  Start at a bag-time offset with `--start-offset 28.0`.  This bag
-is 99.098 seconds long, and the progress monitor reports offsets against that
-full duration even when playback starts in the middle.
+`--rate 2.0`. Start at a bag-time offset with `--start-offset 28.0`. The
+progress monitor reads the selected bag's metadata and reports the current
+offset against its full duration even when playback starts in the middle.
 
 The bag does not contain either object-YOLO debug-image topic.  Therefore the
 RViz panel named `YOLO Object Detection (live model)` is expected to say
@@ -236,8 +239,11 @@ Start the real drive stack in a separate terminal using the same shared-camera
 arguments and the standard ROS system Python:
 
 ```bash
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+export XYCAR_WS="$REPO_ROOT/xycar_ws"
+cd "$XYCAR_WS"
 source /opt/ros/humble/setup.bash
-source xycar_ws/install/setup.bash
+source install/setup.bash
 
 ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   use_sim_time:=false drive_enabled:=false enable_rviz:=true \

@@ -40,6 +40,8 @@ class _GeometryHarness:
     boundary_is_sufficient = ConeNode.boundary_is_sufficient
     nearest_gate_midpoint = ConeNode.nearest_gate_midpoint
     offset_boundary_to_center = ConeNode.offset_boundary_to_center
+    point_to_path_distance = staticmethod(ConeNode.point_to_path_distance)
+    recover_corridor_partners = ConeNode.recover_corridor_partners
 
     parameters = {
         "pair_max_forward_delta_m": 0.30,
@@ -55,6 +57,9 @@ class _GeometryHarness:
         "group_grow_distance_m": 0.5,
         "single_boundary_switch_frames": 3,
         "min_path_midpoints": 2,
+        "cone_yolo_recover_corridor_partner": True,
+        "cone_yolo_recovered_centerline_max_deviation_m": 0.25,
+        "lidar_to_rear_axle_m": 0.42,
     }
 
     def __init__(self):
@@ -63,6 +68,7 @@ class _GeometryHarness:
         self.active_inferred_boundary = None
         self.pending_inferred_boundary = None
         self.pending_inferred_frames = 0
+        self.prev_path = None
 
     def get_parameter(self, name):
         return _Parameter(self.parameters[name])
@@ -190,6 +196,45 @@ def test_single_boundary_offset_is_perpendicular_to_local_tangent():
         offset = np.asarray(center_point) - np.asarray(boundary_point)
         assert np.linalg.norm(offset) == pytest.approx(half_width)
         assert float(np.dot(offset, tangent)) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_single_boundary_normal_uses_previous_path_when_bearing_side_is_wrong():
+    harness = _GeometryHarness()
+    harness.prev_path = [(0.80, 0.0), (1.20, 0.0), (1.60, 0.0)]
+    boundary = [(0.40, 0.42), (0.80, 0.42), (1.20, 0.42)]
+
+    centerline = harness.offset_boundary_to_center(
+        boundary,
+        is_left_boundary=False,
+    )
+
+    assert all(abs(y) < 0.01 for _, y in centerline)
+
+
+def test_yolo_anchor_recovers_only_corridor_partner_near_previous_path():
+    harness = _GeometryHarness()
+    harness.prev_path = [(0.70, 0.0), (1.10, 0.0), (1.50, 0.0)]
+    anchor = (0.60, 0.42)
+    true_partner = (0.62, -0.43)
+    chair_leg = (0.60, 1.27)
+
+    recovered = harness.recover_corridor_partners(
+        [anchor, true_partner, chair_leg],
+        [anchor],
+    )
+
+    assert recovered == [anchor, true_partner]
+
+
+def test_corridor_partner_is_not_recovered_without_previous_path():
+    harness = _GeometryHarness()
+    anchor = (0.60, 0.42)
+    partner = (0.62, -0.43)
+
+    assert harness.recover_corridor_partners(
+        [anchor, partner],
+        [anchor],
+    ) == [anchor]
 
 
 def test_single_boundary_stays_selected_until_bilateral_path_returns():

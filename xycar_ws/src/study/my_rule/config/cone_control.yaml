@@ -25,6 +25,11 @@
     # The 2-D LiDAR measures one horizontal plane, not cone height. Match the
     # projected camera bearing and do not reject a cone on vertical pixels.
     cone_yolo_match_vertical: false
+    # If a bend hides one cone boundary from the camera, recover only a LiDAR
+    # partner that forms a valid 0.68~0.98 m corridor around the previous path.
+    # This keeps arbitrary chair/table legs excluded from the fused candidates.
+    cone_yolo_recover_corridor_partner: true
+    cone_yolo_recovered_centerline_max_deviation_m: 0.25
     max_range_m: 2.2
     min_range_m: 0.18
     scan_angle_offset_deg: 0.0

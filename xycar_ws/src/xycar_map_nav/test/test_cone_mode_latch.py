@@ -1,6 +1,7 @@
 from xycar_map_nav.cone_mode_latch import ConeModeConfig
 from xycar_map_nav.cone_mode_latch import ConeModeEvent
 from xycar_map_nav.cone_mode_latch import ConeModeLatch
+from xycar_map_nav.sequential_hybrid_driver import cone_disarm_hold_active
 
 
 def make_latch():
@@ -83,3 +84,16 @@ def test_cone_can_reenter_without_waypoint_or_lap_state():
     )
     events = [observe(latch) for _ in range(3)]
     assert events[-1] == ConeModeEvent.STARTED
+
+
+def test_space_disarm_hold_covers_observed_operator_pause():
+    assert cone_disarm_hold_active(
+        now_sec=14.1,
+        disarmed_since_sec=10.0,
+        hold_sec=5.0,
+    )
+    assert not cone_disarm_hold_active(
+        now_sec=15.01,
+        disarmed_since_sec=10.0,
+        hold_sec=5.0,
+    )

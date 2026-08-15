@@ -3,6 +3,9 @@ sequential_hybrid_driver:
     use_sim_time: false
     drive_enabled: false
     gate_arming_required: false
+    # SPACE stops the motor immediately, but a short operator pause inside the
+    # cone course must not erase CONE_RULE and briefly resume normal driving.
+    gate_disarm_cone_hold_sec: 5.0
     drive_armed_topic: /hybrid_gate/drive_armed
     control_rate_hz: 20.0
 
