@@ -1,5 +1,7 @@
 import pytest
 
+from xycar_map_nav.space_drive_gate_core import GateCandidateMode
+from xycar_map_nav.space_drive_gate_core import RuleToConeSteeringBlend
 from xycar_map_nav.space_drive_gate_core import SpaceDriveGateController
 from xycar_map_nav.space_drive_gate_core import steering_speed_limit
 
@@ -183,3 +185,124 @@ def test_adaptive_steering_speed_can_be_disabled():
         candidate_speed_command=10.0,
     )
     assert output.speed_command == 10.0
+
+
+def test_final_gate_rate_limits_only_rule_to_cone_handoff():
+    blend = RuleToConeSteeringBlend(maximum_rate_command_per_sec=60.0)
+
+    assert blend.apply(
+        -42.0,
+        candidate_mode=GateCandidateMode.RULE,
+        now_sec=1.00,
+        output_enabled=True,
+    ) == -42.0
+    first_cone = blend.apply(
+        -17.5,
+        candidate_mode=GateCandidateMode.CONE,
+        now_sec=1.05,
+        output_enabled=True,
+    )
+    second_cone = blend.apply(
+        -17.5,
+        candidate_mode=GateCandidateMode.CONE,
+        now_sec=1.10,
+        output_enabled=True,
+    )
+
+    assert first_cone == pytest.approx(-39.0)
+    assert second_cone == pytest.approx(-36.0)
+    assert blend.active
+
+    for step in range(3, 11):
+        connected = blend.apply(
+            -17.5,
+            candidate_mode=GateCandidateMode.CONE,
+            now_sec=1.00 + step * 0.05,
+            output_enabled=True,
+        )
+    assert connected == pytest.approx(-17.5)
+    assert not blend.active
+    assert blend.apply(
+        3.6,
+        candidate_mode=GateCandidateMode.CONE,
+        now_sec=1.55,
+        output_enabled=True,
+    ) == pytest.approx(3.6)
+
+
+def test_precomputed_cone_handoff_starts_from_stopped_wheel_angle():
+    blend = RuleToConeSteeringBlend(maximum_rate_command_per_sec=60.0)
+
+    assert blend.apply(
+        -42.0,
+        candidate_mode=GateCandidateMode.RULE,
+        now_sec=1.00,
+        output_enabled=False,
+    ) == 0.0
+    assert blend.apply(
+        -17.5,
+        candidate_mode=GateCandidateMode.CONE,
+        now_sec=1.05,
+        output_enabled=False,
+    ) == 0.0
+    first_armed = blend.apply(
+        -17.5,
+        candidate_mode=GateCandidateMode.CONE,
+        now_sec=1.10,
+        output_enabled=True,
+    )
+
+    assert first_armed == pytest.approx(-3.0)
+    assert blend.active
+
+
+def test_gate_starting_after_precompute_also_blends_from_zero():
+    blend = RuleToConeSteeringBlend(maximum_rate_command_per_sec=60.0)
+
+    assert blend.apply(
+        -17.5,
+        candidate_mode=GateCandidateMode.CONE,
+        now_sec=1.00,
+        output_enabled=False,
+    ) == 0.0
+    assert blend.active
+    assert blend.apply(
+        -17.5,
+        candidate_mode=GateCandidateMode.CONE,
+        now_sec=1.05,
+        output_enabled=True,
+    ) == pytest.approx(-3.0)
+
+
+def test_other_mission_to_cone_is_outside_rule_handoff_blend():
+    blend = RuleToConeSteeringBlend(maximum_rate_command_per_sec=60.0)
+
+    assert blend.apply(
+        12.0,
+        candidate_mode=GateCandidateMode.OTHER,
+        now_sec=1.00,
+        output_enabled=True,
+    ) == 12.0
+    assert blend.apply(
+        -17.5,
+        candidate_mode=GateCandidateMode.CONE,
+        now_sec=1.05,
+        output_enabled=True,
+    ) == -17.5
+
+
+def test_non_transition_steering_is_not_rate_limited():
+    blend = RuleToConeSteeringBlend(maximum_rate_command_per_sec=60.0)
+
+    assert blend.apply(
+        35.0,
+        candidate_mode=GateCandidateMode.RULE,
+        now_sec=1.00,
+        output_enabled=True,
+    ) == 35.0
+    assert blend.apply(
+        -20.0,
+        candidate_mode=GateCandidateMode.RULE,
+        now_sec=1.05,
+        output_enabled=True,
+    ) == -20.0

@@ -16,8 +16,11 @@ fi
 export XYCAR_WS="$WORKSPACE"
 SPEED_COMMAND="${1:-${SPEED_COMMAND:-25.0}}"
 CURVATURE_SPEED_CONTROL_ENABLED="${CURVATURE_SPEED_CONTROL_ENABLED:-true}"
-CURVE_SPEED_COMMAND="${CURVE_SPEED_COMMAND:-16.0}"
-DEGRADED_PATH_SPEED_COMMAND="${DEGRADED_PATH_SPEED_COMMAND:-15.0}"
+# Leave these empty unless the operator explicitly overrides them. Their safe
+# defaults depend on SPEED_COMMAND and are calculated after that value is
+# validated (for example, speed 3 must produce curve/degraded defaults of 3).
+CURVE_SPEED_COMMAND="${CURVE_SPEED_COMMAND:-}"
+DEGRADED_PATH_SPEED_COMMAND="${DEGRADED_PATH_SPEED_COMMAND:-}"
 CURVE_SPEED_EXIT_THRESHOLD_PER_M="${CURVE_SPEED_EXIT_THRESHOLD_PER_M:-0.12}"
 CURVE_SPEED_CONFIRMATION_FRAMES="${CURVE_SPEED_CONFIRMATION_FRAMES:-2}"
 CURVE_SPEED_RELEASE_FRAMES="${CURVE_SPEED_RELEASE_FRAMES:-3}"
@@ -543,6 +546,44 @@ read_double_parameter() {
     | awk '/value is:/ { print $NF; exit }'
 }
 
+read_parameter_value() {
+  local node="$1"
+  local parameter="$2"
+  local attempt
+  local value
+  for attempt in $(seq 1 10); do
+    value="$(
+      ros2 param get "$node" "$parameter" 2>/dev/null \
+        | awk '/value is:/ { print $NF; exit }'
+    )"
+    if [[ -n "$value" ]]; then
+      printf '%s\n' "$value"
+      return 0
+    fi
+    sleep 0.1
+  done
+  return 1
+}
+
+verify_runtime_parameter() {
+  local node="$1"
+  local parameter="$2"
+  local expected="$3"
+  local label="$4"
+  local actual
+  actual="$(read_parameter_value "$node" "$parameter" || true)"
+  if [[ -z "$actual" ]]; then
+    echo "[문제: $label 확인 실패] $node 의 $parameter 값을 읽지 못했습니다." >&2
+    return 1
+  fi
+  if [[ "${actual,,}" != "${expected,,}" ]]; then
+    echo "[문제: $label 불일치] 기대=$expected, 실제=$actual" >&2
+    echo "[확인 방법] 현재 workspace만 source한 새 터미널에서 다시 실행하세요." >&2
+    return 1
+  fi
+  printf '  [OK] %-20s %s=%s\n' "$label" "$parameter" "$actual"
+}
+
 verify_runtime_cruise_speed() {
   local actual
   actual="$(read_double_parameter \
@@ -562,6 +603,29 @@ verify_runtime_cruise_speed() {
     "$SPEED_COMMAND" "$actual"
   printf 'runtime_cruise_speed_command: %.3f\n' "$actual" \
     >>"$RUN_CONFIG_FILE"
+}
+
+verify_runtime_control_contract() {
+  verify_runtime_parameter \
+    /sequential_hybrid_driver drive_enabled False \
+    "선택기 직접출력 차단"
+  verify_runtime_parameter \
+    /sequential_hybrid_driver gate_arming_required True \
+    "SPACE 게이트 연동"
+  verify_runtime_parameter \
+    /sequential_hybrid_driver shadow_motor_topic \
+    /hybrid_gate/xycar_motor_shadow "선택기 shadow 출력"
+  verify_runtime_parameter \
+    /sequential_hybrid_driver scan_topic /scan "선택기 LiDAR 입력"
+  if [[ "$RULE_PERCEPTION_BACKEND" == "canonical" ]]; then
+    verify_runtime_parameter \
+      /canonical_stanley_pursuit_driver drive_enabled False \
+      "룰 직접출력 차단"
+    verify_runtime_parameter \
+      /canonical_stanley_pursuit_driver shadow_motor_topic \
+      /hybrid/rule_candidate "룰 candidate 출력"
+    verify_runtime_cruise_speed
+  fi
 }
 
 wait_for_control_message() {
@@ -817,6 +881,11 @@ wait_for_control_message \
   "$RULE_READY_LABEL" \
   "카메라 영상과 선택한 lane segmentation 노드의 ERROR를 확인하세요." \
   header.stamp
+verify_runtime_control_contract
+wait_for_control_message \
+  /scan \
+  "LiDAR" \
+  "xycar_lidar_node와 /scan 10Hz 출력을 확인하세요."
 wait_for_control_message \
   /hybrid/rule_candidate \
   "룰베이스" \
@@ -829,10 +898,6 @@ wait_for_control_message \
   /hybrid_gate/status \
   "주행 선택기" \
   "LiDAR /scan과 sequential_hybrid_driver를 확인하세요."
-if [[ "$RULE_PERCEPTION_BACKEND" == "canonical" ]]; then
-  verify_runtime_cruise_speed
-fi
-
 echo
 echo "========== READY | MODE=RULE | SPEED=$SPEED_COMMAND | LD=$LOOKAHEAD_DISTANCE | STANLEY=$STANLEY_PERCENT% | LEFT=${LEFT_OFFSET_CM}cm =========="
 echo "Press SPACE once to RUN. Press SPACE again to STOP."

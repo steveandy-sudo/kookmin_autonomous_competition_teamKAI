@@ -58,9 +58,14 @@ sequential_hybrid_driver:
     cone_yolo_timeout_sec: 0.75
     cone_entry_distance_m: 3.0
     cone_cluster_timeout_sec: 0.50
+    # cone_node emits a command from every accepted LiDAR scan. Use that
+    # timestamp for cone safety instead of a duplicate selector scan callback.
+    cone_command_timeout_sec: 0.35
     cone_sensor_presence_timeout_sec: 0.5
-    # jsb cone planning consumes only camera-confirmed LiDAR clusters.
-    cone_cluster_topic: /my_rule/cone_fused_clusters
+    # Before entry this topic contains only camera-confirmed candidates. Once
+    # unlocked it follows the same corridor-gated LiDAR geometry used by the
+    # planner, so a slow YOLO frame cannot falsely end an active cone course.
+    cone_cluster_topic: /my_rule/cone_clusters
     cone_processing_enabled_topic: /my_rule/cone_processing_enabled
 
     # One YOLO frame plus the yellow centerline side selects the opposite lane

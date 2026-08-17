@@ -1,7 +1,9 @@
 from xycar_map_nav.cone_mode_latch import ConeModeConfig
 from xycar_map_nav.cone_mode_latch import ConeModeEvent
 from xycar_map_nav.cone_mode_latch import ConeModeLatch
+from xycar_map_nav.sequential_hybrid_driver import command_timestamp_is_fresh
 from xycar_map_nav.sequential_hybrid_driver import cone_disarm_hold_active
+from xycar_map_nav.sequential_hybrid_driver import cone_processing_requested
 
 
 def make_latch():
@@ -129,4 +131,54 @@ def test_space_disarm_hold_covers_observed_operator_pause():
         now_sec=15.01,
         disarmed_since_sec=10.0,
         hold_sec=5.0,
+    )
+
+
+def test_cone_command_freshness_uses_lidar_derived_command_time():
+    assert command_timestamp_is_fresh(
+        now_sec=10.30,
+        command_time_sec=10.0,
+        timeout_sec=0.35,
+    )
+    assert not command_timestamp_is_fresh(
+        now_sec=10.36,
+        command_time_sec=10.0,
+        timeout_sec=0.35,
+    )
+    assert not command_timestamp_is_fresh(
+        now_sec=9.9,
+        command_time_sec=10.0,
+        timeout_sec=0.35,
+    )
+    assert not command_timestamp_is_fresh(
+        now_sec=10.0,
+        command_time_sec=float("-inf"),
+        timeout_sec=0.35,
+    )
+
+
+def test_cone_planning_is_requested_while_motor_gate_is_stopped():
+    assert cone_processing_requested(
+        shortcut_active=False,
+        cone_active=False,
+        yolo_age_sec=0.20,
+        yolo_timeout_sec=0.75,
+    )
+    assert cone_processing_requested(
+        shortcut_active=False,
+        cone_active=True,
+        yolo_age_sec=5.0,
+        yolo_timeout_sec=0.75,
+    )
+    assert not cone_processing_requested(
+        shortcut_active=True,
+        cone_active=True,
+        yolo_age_sec=0.20,
+        yolo_timeout_sec=0.75,
+    )
+    assert not cone_processing_requested(
+        shortcut_active=False,
+        cone_active=False,
+        yolo_age_sec=0.80,
+        yolo_timeout_sec=0.75,
     )

@@ -48,6 +48,7 @@ from .traffic_light_control import TrafficLightAction
 from .traffic_light_control import TrafficLightConfig
 from .traffic_light_control import TrafficLightController
 from .traffic_light_control import TrafficLightFrame
+from .space_drive_gate_core import GateCandidateMode
 from .yolo_lidar_avoidance import YoloLidarAvoidanceConfig
 from .yolo_lidar_avoidance import YoloLidarAvoidanceController
 from .yolo_lidar_avoidance import YoloLidarAvoidanceMode
@@ -71,6 +72,38 @@ def cone_disarm_hold_active(
         return False
     elapsed = max(0.0, float(now_sec) - float(disarmed_since_sec))
     return elapsed <= max(0.0, float(hold_sec))
+
+
+def command_timestamp_is_fresh(
+    *,
+    now_sec: float,
+    command_time_sec: float,
+    timeout_sec: float,
+) -> bool:
+    """Return whether a command timestamp is finite, ordered, and recent."""
+    if not math.isfinite(float(command_time_sec)):
+        return False
+    age_sec = float(now_sec) - float(command_time_sec)
+    return 0.0 <= age_sec <= max(0.0, float(timeout_sec))
+
+
+def cone_processing_requested(
+    *,
+    shortcut_active: bool,
+    cone_active: bool,
+    yolo_age_sec: float,
+    yolo_timeout_sec: float,
+) -> bool:
+    """Allow camera-confirmed cone planning before the motor gate is armed."""
+    return bool(
+        not shortcut_active
+        and (
+            cone_active
+            or 0.0 <= float(yolo_age_sec) <= max(
+                0.0, float(yolo_timeout_sec)
+            )
+        )
+    )
 
 
 def interpolate_command(
@@ -255,6 +288,8 @@ class SequentialHybridDriver(Node):
         self.last_left_absence_count = 0
         self.cone_command = (0.0, 0.0, 0.0)
         self.last_valid_cone_command = (0.0, 0.0)
+        self.cone_command_time = float("-inf")
+        self.last_valid_cone_command_time = float("-inf")
         self.cone_bypass = ConeModeLatch(
             ConeModeConfig(
                 entry_confidence=float(
@@ -562,7 +597,11 @@ class SequentialHybridDriver(Node):
         self.control_timer = self.create_timer(1.0 / rate_hz, self._control_step)
         self.get_logger().info(
             "INTEGRATED RULE DRIVE: waypoint/map/pose/SLAM are not used; "
-            f"drive_enabled={self.drive_enabled}"
+            f"drive_enabled={self.drive_enabled}, "
+            f"gate_arming_required={self.gate_arming_required}, "
+            f"scan={self.get_parameter('scan_topic').value}, "
+            "cone_freshness=LiDAR-derived-command, "
+            "cone_precompute=enabled-while-stopped"
         )
 
     def _declare_parameters(self) -> None:
@@ -627,6 +666,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("cone_yolo_timeout_sec", 0.75)
         self.declare_parameter("cone_entry_distance_m", 3.0)
         self.declare_parameter("cone_cluster_timeout_sec", 0.50)
+        self.declare_parameter("cone_command_timeout_sec", 0.35)
         self.declare_parameter("cone_sensor_presence_timeout_sec", 0.5)
         self.declare_parameter("cone_cluster_topic", "/my_rule/cone_clusters")
         self.declare_parameter(
@@ -1420,17 +1460,13 @@ class SequentialHybridDriver(Node):
         )
 
     def _publish_cone_processing_gate(self, now: float) -> None:
-        gate_allows_processing = bool(
-            self.drive_armed or self._cone_disarm_hold_active(now)
-        )
-        requested = bool(
-            gate_allows_processing
-            and not self.shortcut_latch.active
-            and (
-                self.cone_bypass.active
-                or now - self.cone_yolo_time
-                <= float(self.get_parameter("cone_yolo_timeout_sec").value)
-            )
+        requested = cone_processing_requested(
+            shortcut_active=self.shortcut_latch.active,
+            cone_active=self.cone_bypass.active,
+            yolo_age_sec=now - self.cone_yolo_time,
+            yolo_timeout_sec=float(
+                self.get_parameter("cone_yolo_timeout_sec").value
+            ),
         )
         self.cone_processing_pub.publish(Bool(data=requested))
 
@@ -1459,21 +1495,21 @@ class SequentialHybridDriver(Node):
             )
 
     def _on_cone_command(self, message: Float32MultiArray) -> None:
-        if self.gate_arming_required and not self.drive_armed:
-            return
         if len(message.data) < 3:
             return
         angle = float(message.data[0])
         speed = float(message.data[1])
         confidence = float(message.data[2])
+        now = time.monotonic()
         self.cone_command = (angle, speed, confidence)
+        self.cone_command_time = now
         if (
             confidence
             > float(self.get_parameter("cone_exit_confidence").value)
             and speed > 0.0
         ):
             self.last_valid_cone_command = (angle, speed)
-        now = time.monotonic()
+            self.last_valid_cone_command_time = now
         event = self.cone_bypass.observe_command(
             confidence=confidence,
             speed_command=speed,
@@ -1782,10 +1818,15 @@ class SequentialHybridDriver(Node):
             self.gate_arming_required
             and not self.drive_armed
             and self.cone_bypass.active
+            and math.isfinite(self.gate_disarmed_time)
             and not cone_hold_active
         )
         if cone_reset_after_hold:
             self.cone_bypass.reset()
+            # The retained mission state has now been cleared once. Return to
+            # normal stationary precomputation instead of resetting every
+            # control cycle while fresh cones remain in view.
+            self.gate_disarmed_time = float("-inf")
             self.get_logger().warning(
                 "CONE_RULE reset after SPACE hold timeout"
             )
@@ -2001,7 +2042,14 @@ class SequentialHybridDriver(Node):
             # While the camera gate is starting, retain the existing RULE
             # output instead of inserting a motor stop.
         elif self.cone_bypass.active:
-            if output.state == HybridState.RUNNING and scan_fresh:
+            cone_command_fresh = command_timestamp_is_fresh(
+                now_sec=now,
+                command_time_sec=self.last_valid_cone_command_time,
+                timeout_sec=float(
+                    self.get_parameter("cone_command_timeout_sec").value
+                ),
+            )
+            if output.state == HybridState.RUNNING and cone_command_fresh:
                 output = replace(
                     output,
                     state=HybridState.RUNNING,
@@ -2017,7 +2065,7 @@ class SequentialHybridDriver(Node):
                     state=HybridState.SENSOR_STOP,
                     angle_command=0.0,
                     speed_command=0.0,
-                    reason="cone LiDAR scan stale",
+                    reason="cone LiDAR-derived command stale",
                 )
         elif (
             self.avoidance_state.controls_vehicle
@@ -2066,12 +2114,32 @@ class SequentialHybridDriver(Node):
                     speed_command=0.0,
                     reason="avoidance lane-rule command stale",
                 )
-        command = Float32MultiArray(
-            data=[output.angle_command, output.speed_command]
+        if self.cone_bypass.active:
+            candidate_mode = GateCandidateMode.CONE
+        elif (
+            not self.shortcut_latch.active
+            and not self.shortcut_entry_search_active
+            and not self.avoidance_state.controls_vehicle
+            and output.source == CandidateSource.RULE
+        ):
+            candidate_mode = GateCandidateMode.RULE
+        else:
+            candidate_mode = GateCandidateMode.OTHER
+        self.shadow_pub.publish(
+            Float32MultiArray(
+                data=[
+                    output.angle_command,
+                    output.speed_command,
+                    float(candidate_mode),
+                ]
+            )
         )
-        self.shadow_pub.publish(command)
         if self.motor_pub is not None:
-            self.motor_pub.publish(command)
+            self.motor_pub.publish(
+                Float32MultiArray(
+                    data=[output.angle_command, output.speed_command]
+                )
+            )
         diagnostics = Float32MultiArray(
             data=[
                 STATE_CODES[output.state],
@@ -2101,6 +2169,8 @@ class SequentialHybridDriver(Node):
                     )
                 ),
                 float(self.traffic_light_decision.box_area_ratio),
+                float(now - self.scan_time),
+                float(now - self.last_valid_cone_command_time),
             ]
         )
         self.diagnostics_pub.publish(diagnostics)

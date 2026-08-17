@@ -20,7 +20,7 @@ from rclpy.qos import (
     ReliabilityPolicy,
 )
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import Bool, Float32MultiArray
+from std_msgs.msg import Bool, Float32MultiArray, String
 
 from my_rule.perception.camera_input import CameraRectifier
 from my_rule.perception.lidar_camera_association import (
@@ -55,6 +55,10 @@ class ConeNode(Node):
             "cone_fused_cluster_topic", "/my_rule/cone_fused_clusters"
         )
         self.declare_parameter("cone_path_topic", "my_rule/cone_path")
+        self.declare_parameter(
+            "cone_diagnostics_topic", "/my_rule/cone_diagnostics"
+        )
+        self.declare_parameter("cone_status_topic", "/my_rule/cone_status")
         self.declare_parameter("processing_gate_enabled", False)
         self.declare_parameter(
             "processing_enabled_topic",
@@ -90,6 +94,16 @@ class ConeNode(Node):
         self.declare_parameter(
             "cone_yolo_recovered_centerline_max_deviation_m", 0.25
         )
+        # YOLO confirms that the vehicle has entered the cone course. Once a
+        # camera-confirmed LiDAR cluster has unlocked planning, geometry near
+        # the accepted corridor may continue on native-rate 2-D LiDAR data.
+        # This prevents a slow camera inference from erasing the steering path
+        # without treating every pole-like LiDAR cluster as a cone.
+        self.declare_parameter("lidar_geometry_planning_enabled", True)
+        self.declare_parameter("lidar_geometry_path_band_margin_m", 0.16)
+        self.declare_parameter(
+            "lidar_geometry_reference_timeout_sec", 1.00
+        )
         self.declare_parameter("max_range_m", 3.0)
         self.declare_parameter("min_range_m", 0.18)
         self.declare_parameter("scan_angle_offset_deg", 0.0)
@@ -106,6 +120,8 @@ class ConeNode(Node):
         self.declare_parameter("max_cone_diameter_m", 0.3)
         self.declare_parameter("angle_bin_deg", 12.0)
         self.declare_parameter("group_grow_distance_m", 0.5)
+        self.declare_parameter("boundary_gap_max_m", 0.85)
+        self.declare_parameter("boundary_gap_max_turn_deg", 55.0)
         self.declare_parameter("seed_min_angle_deg", 20.0)
         self.declare_parameter("seed_max_angle_deg", 100.0)
         self.declare_parameter("seed_max_range_m", 3.0)
@@ -155,27 +171,43 @@ class ConeNode(Node):
         self.declare_parameter("path_interpolation_method", "linear")
         self.declare_parameter("path_sample_count", 100)
         self.declare_parameter("path_hold_frames", 5)
+        self.declare_parameter("path_hold_sec", 0.40)
         self.declare_parameter("pair_max_forward_delta_m", 0.30)
         # LiDAR cluster centres can measure a few centimetres inside the physical
         # cone spacing, so keep a small tolerance below the 0.78 m course minimum.
         self.declare_parameter("min_corridor_width_m", 0.68)
         self.declare_parameter("max_corridor_width_m", 0.98)
         self.declare_parameter("expected_corridor_width_m", 0.85)
+        self.declare_parameter("corridor_width_learning_enabled", True)
+        self.declare_parameter("corridor_width_learning_alpha", 0.20)
+        self.declare_parameter("corridor_width_max_update_m", 0.04)
+        self.declare_parameter("corridor_width_learning_min_pairs", 2)
         self.declare_parameter("min_path_midpoints", 2)
         self.declare_parameter("min_path_span_m", 0.15)
+        self.declare_parameter("path_gap_fill_start_m", 0.35)
+        self.declare_parameter("path_gap_fill_max_m", 0.95)
+        self.declare_parameter("path_gap_sample_spacing_m", 0.12)
         # A geometrically validated bilateral path may legitimately move this
         # far when it replaces a less reliable single-boundary estimate.
         self.declare_parameter("max_path_target_jump_m", 0.45)
         self.declare_parameter("inferred_max_path_target_jump_m", 0.25)
+        self.declare_parameter("inferred_path_target_rate_mps", 0.80)
+        self.declare_parameter("path_target_rate_max_dt_sec", 0.12)
         self.declare_parameter("steering_median_window", 1)
         self.declare_parameter("steering_max_delta_deg", 14.0)
         self.declare_parameter("inferred_steering_max_delta_deg", 10.0)
+        self.declare_parameter("steering_max_rate_deg_per_sec", 180.0)
+        self.declare_parameter(
+            "inferred_steering_max_rate_deg_per_sec", 100.0
+        )
+        self.declare_parameter("steering_rate_max_dt_sec", 0.12)
         self.declare_parameter("allow_nearest_gate_fallback", True)
         self.declare_parameter("fallback_pair_min_lateral_separation_m", 0.4)
         self.declare_parameter("fallback_pair_max_center_offset_m", 0.65)
         self.declare_parameter("blind_recovery_frames", 10)
         self.declare_parameter("blind_recovery_min_clusters", 2)
         self.declare_parameter("blind_recovery_steer_decay", 0.92)
+        self.declare_parameter("diagnostics_log_period_sec", 0.50)
 
         self.scan_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -195,6 +227,16 @@ class ConeNode(Node):
             10,
         )
         self.path_pub = self.create_publisher(Path, str(self.get_parameter("cone_path_topic").value), 10)
+        self.diagnostics_pub = self.create_publisher(
+            Float32MultiArray,
+            str(self.get_parameter("cone_diagnostics_topic").value),
+            10,
+        )
+        self.status_pub = self.create_publisher(
+            String,
+            str(self.get_parameter("cone_status_topic").value),
+            10,
+        )
         self.scan_subscription = None
         self.cone_yolo_boxes: List[ImageBox] = []
         self.cone_yolo_boxes_time = float("-inf")
@@ -231,8 +273,23 @@ class ConeNode(Node):
             )
         self.prev_path: Optional[List[Point2]] = None
         self.last_path_target_lateral: Optional[float] = None
+        self.last_raw_path_target_lateral = 0.0
+        self.last_output_path_target_lateral = 0.0
+        self.path_target_limit_applied = False
         self.path_miss_count = 0
         self.path_is_held = False
+        self.current_scan_time: Optional[float] = None
+        self.last_scan_time: Optional[float] = None
+        self.last_path_accept_time: Optional[float] = None
+        self.last_path_update_time: Optional[float] = None
+        self.geometry_reference_path: Optional[List[Point2]] = None
+        self.geometry_reference_time: Optional[float] = None
+        self.last_steering_time: Optional[float] = None
+        self.last_diagnostics_log_time = float("-inf")
+        self.learned_corridor_width_m = float(
+            self.get_parameter("expected_corridor_width_m").value
+        )
+        self.geometry_planning_unlocked = not self.cone_yolo_association_enabled
         history_frames = max(1, int(self.get_parameter("sparse_cluster_history_frames").value))
         self.cluster_candidate_history = deque(maxlen=history_frames)
         self.midpoints_inferred = False
@@ -280,7 +337,16 @@ class ConeNode(Node):
             f"cone_node ready: scan offset {offset:.1f} deg, "
             f"path interpolation {method}, state={state}, "
             "YOLO-cluster association="
-            f"{'enabled' if self.cone_yolo_association_enabled else 'disabled'}"
+            f"{'enabled' if self.cone_yolo_association_enabled else 'disabled'}, "
+            "steering delta="
+            f"{float(self.get_parameter('steering_max_delta_deg').value):.1f}/"
+            f"{float(self.get_parameter('inferred_steering_max_delta_deg').value):.1f}deg, "
+            "path target delta="
+            f"{float(self.get_parameter('max_path_target_jump_m').value):.2f}/"
+            f"{float(self.get_parameter('inferred_max_path_target_jump_m').value):.2f}m, "
+            "steering rate="
+            f"{float(self.get_parameter('steering_max_rate_deg_per_sec').value):.0f}/"
+            f"{float(self.get_parameter('inferred_steering_max_rate_deg_per_sec').value):.0f}deg/s"
         )
 
     def object_detections_callback(
@@ -308,8 +374,6 @@ class ConeNode(Node):
                 and int(item.ymax) > int(item.ymin)
             )
         ]
-        if not boxes:
-            return
         image_size = (width, height)
         if (
             self.cone_yolo_camera_matrix is None
@@ -323,6 +387,18 @@ class ConeNode(Node):
         self.cone_yolo_boxes = boxes
         self.cone_yolo_boxes_time = time.monotonic()
         self.cone_yolo_boxes_stamp_ns = self.message_stamp_ns(message)
+
+    def yolo_box_age_sec(self, scan_stamp_ns: int = 0) -> float:
+        age_sec = time.monotonic() - self.cone_yolo_boxes_time
+        if scan_stamp_ns > 0 and self.cone_yolo_boxes_stamp_ns > 0:
+            stamp_delta_sec = (
+                scan_stamp_ns - self.cone_yolo_boxes_stamp_ns
+            ) / 1.0e9
+            # Some sensor drivers use a separate clock. Only compare stamps
+            # that plausibly share the active ROS clock.
+            if abs(stamp_delta_sec) < 60.0:
+                age_sec = max(0.0, stamp_delta_sec)
+        return float(age_sec)
 
     @staticmethod
     def message_stamp_ns(message) -> int:
@@ -342,15 +418,7 @@ class ConeNode(Node):
             0.0,
             float(self.get_parameter("cone_yolo_box_timeout_sec").value),
         )
-        age_sec = time.monotonic() - self.cone_yolo_boxes_time
-        if scan_stamp_ns > 0 and self.cone_yolo_boxes_stamp_ns > 0:
-            stamp_delta_sec = (
-                scan_stamp_ns - self.cone_yolo_boxes_stamp_ns
-            ) / 1.0e9
-            # Prefer sensor timestamps when both devices share the ROS clock.
-            # Fall back to receipt time for drivers with unrelated clocks.
-            if abs(stamp_delta_sec) < 60.0:
-                age_sec = max(0.0, stamp_delta_sec)
+        age_sec = self.yolo_box_age_sec(scan_stamp_ns)
         if (
             age_sec > timeout
             or self.cone_yolo_camera_matrix is None
@@ -377,6 +445,129 @@ class ConeNode(Node):
                 self.get_parameter("cone_yolo_match_vertical").value
             ),
         )
+
+    def effective_corridor_width(self) -> float:
+        minimum = float(self.get_parameter("min_corridor_width_m").value)
+        maximum = float(self.get_parameter("max_corridor_width_m").value)
+        default = float(self.get_parameter("expected_corridor_width_m").value)
+        learned = float(getattr(self, "learned_corridor_width_m", default))
+        return float(np.clip(learned, minimum, maximum))
+
+    def update_corridor_width(self, measured_widths: Sequence[float]) -> None:
+        """Learn the RC-course width only from a reliable bilateral frame."""
+        if not bool(
+            self.get_parameter("corridor_width_learning_enabled").value
+        ):
+            return
+        minimum_pairs = max(
+            1,
+            int(
+                self.get_parameter(
+                    "corridor_width_learning_min_pairs"
+                ).value
+            ),
+        )
+        finite = [float(value) for value in measured_widths if math.isfinite(value)]
+        if len(finite) < minimum_pairs:
+            return
+        minimum = float(self.get_parameter("min_corridor_width_m").value)
+        maximum = float(self.get_parameter("max_corridor_width_m").value)
+        measurement = float(np.median(np.asarray(finite, dtype=np.float64)))
+        if not minimum <= measurement <= maximum:
+            return
+        previous = self.effective_corridor_width()
+        alpha = float(
+            np.clip(
+                self.get_parameter("corridor_width_learning_alpha").value,
+                0.0,
+                1.0,
+            )
+        )
+        maximum_update = max(
+            0.0,
+            float(self.get_parameter("corridor_width_max_update_m").value),
+        )
+        update = alpha * (measurement - previous)
+        if maximum_update > 0.0:
+            update = float(np.clip(update, -maximum_update, maximum_update))
+        self.learned_corridor_width_m = float(
+            np.clip(previous + update, minimum, maximum)
+        )
+
+    def select_planning_clusters(
+        self,
+        lidar_clusters: Sequence[Point2],
+        yolo_clusters: Sequence[Point2],
+    ) -> List[Point2]:
+        """Use YOLO to unlock, then retain LiDAR geometry around the corridor.
+
+        The 2-D scanner cannot reject poles by height as the old 3-D system did.
+        Raw candidates are therefore admitted only inside a band around the
+        last accepted centre path. Direct camera matches remain valid anchors.
+        """
+        raw = list(lidar_clusters)
+        confirmed = list(yolo_clusters)
+        if not self.cone_yolo_association_enabled:
+            return raw
+        if confirmed:
+            self.geometry_planning_unlocked = True
+        if not bool(
+            self.get_parameter("lidar_geometry_planning_enabled").value
+        ) or not getattr(self, "geometry_planning_unlocked", False):
+            return confirmed
+        now_value = getattr(self, "current_scan_time", None)
+        now = time.monotonic() if now_value is None else float(now_value)
+        reference_path = self.prev_path
+        reference_time = getattr(self, "geometry_reference_time", None)
+        reference_timeout = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "lidar_geometry_reference_timeout_sec"
+                ).value
+            ),
+        )
+        if (
+            not reference_path
+            and getattr(self, "geometry_reference_path", None)
+            and reference_time is not None
+            and now - float(reference_time) <= reference_timeout
+        ):
+            reference_path = self.geometry_reference_path
+        if not reference_path:
+            return confirmed
+
+        margin = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "lidar_geometry_path_band_margin_m"
+                ).value
+            ),
+        )
+        lower = max(
+            0.0,
+            0.5 * float(self.get_parameter("min_corridor_width_m").value)
+            - margin,
+        )
+        upper = (
+            0.5 * float(self.get_parameter("max_corridor_width_m").value)
+            + margin
+        )
+        rear_offset = float(self.get_parameter("lidar_to_rear_axle_m").value)
+        selected = list(confirmed)
+        selected_set = set(selected)
+        for point in raw:
+            if point in selected_set:
+                continue
+            path_distance = self.point_to_path_distance(
+                (point[0] + rear_offset, point[1]),
+                reference_path,
+            )
+            if lower <= path_distance <= upper:
+                selected.append(point)
+                selected_set.add(point)
+        return sorted(selected, key=lambda point: math.hypot(*point))
 
     @staticmethod
     def point_to_path_distance(
@@ -470,7 +661,6 @@ class ConeNode(Node):
                 ).value
             )
             or not confirmed
-            or not self.prev_path
         ):
             return confirmed
 
@@ -479,9 +669,7 @@ class ConeNode(Node):
         )
         min_width = float(self.get_parameter("min_corridor_width_m").value)
         max_width = float(self.get_parameter("max_corridor_width_m").value)
-        expected_width = float(
-            self.get_parameter("expected_corridor_width_m").value
-        )
+        expected_width = self.effective_corridor_width()
         min_lateral = float(
             self.get_parameter("fallback_pair_min_lateral_separation_m").value
         )
@@ -516,12 +704,27 @@ class ConeNode(Node):
                     0.5 * (anchor[0] + candidate[0]) + rear_offset,
                     0.5 * (anchor[1] + candidate[1]),
                 )
-                path_deviation = self.point_to_path_distance(
-                    midpoint_rear,
-                    self.prev_path,
-                )
-                if path_deviation > max_path_deviation:
-                    continue
+                if self.prev_path:
+                    path_deviation = self.point_to_path_distance(
+                        midpoint_rear,
+                        self.prev_path,
+                    )
+                    if path_deviation > max_path_deviation:
+                        continue
+                else:
+                    # The first usable path has no temporal reference yet.
+                    # Width, opposite lateral support and a centre corridor
+                    # bound provide a conservative one-frame bootstrap.
+                    max_center_offset = float(
+                        self.get_parameter(
+                            "fallback_pair_max_center_offset_m"
+                        ).value
+                    )
+                    if anchor[1] * candidate[1] > 0.0:
+                        continue
+                    path_deviation = abs(midpoint_rear[1])
+                    if path_deviation > max_center_offset:
+                        continue
                 # Pair two directly confirmed cones first. A raw-only partner
                 # is considered only for a still-unpaired confirmed anchor.
                 direct_rank = 0 if candidate in confirmed_set else 1
@@ -584,8 +787,22 @@ class ConeNode(Node):
     def reset_processing_state(self) -> None:
         self.prev_path = None
         self.last_path_target_lateral = None
+        self.last_raw_path_target_lateral = 0.0
+        self.last_output_path_target_lateral = 0.0
+        self.path_target_limit_applied = False
         self.path_miss_count = 0
         self.path_is_held = False
+        self.current_scan_time = None
+        self.last_scan_time = None
+        self.last_path_accept_time = None
+        self.last_path_update_time = None
+        self.geometry_reference_path = None
+        self.geometry_reference_time = None
+        self.last_steering_time = None
+        self.learned_corridor_width_m = float(
+            self.get_parameter("expected_corridor_width_m").value
+        )
+        self.geometry_planning_unlocked = not self.cone_yolo_association_enabled
         self.cluster_candidate_history.clear()
         self.midpoints_inferred = False
         self.midpoint_source = "none"
@@ -601,61 +818,125 @@ class ConeNode(Node):
     def scan_callback(self, msg: LaserScan) -> None:
         if not self.processing_enabled:
             return
+        now = time.monotonic()
+        scan_dt = (
+            0.0
+            if self.last_scan_time is None
+            else max(0.0, now - self.last_scan_time)
+        )
+        self.current_scan_time = now
+        self.last_scan_time = now
+        scan_stamp_ns = self.message_stamp_ns(msg)
         points = self.scan_to_points(msg)
         clusters = self.cluster_cones(points)
         clusters = self.filter_front_clusters_by_angle(clusters)
         self.publish_cluster_array(self.lidar_cluster_pub, clusters)
         fused_clusters = self.associate_clusters_with_yolo(
             clusters,
-            scan_stamp_ns=self.message_stamp_ns(msg),
+            scan_stamp_ns=scan_stamp_ns,
         )
         fused_clusters = self.recover_corridor_partners(
             clusters,
             fused_clusters,
         )
         self.publish_cluster_array(self.fused_cluster_pub, fused_clusters)
-        # Retain the historical topic as a compatibility alias, but its content
-        # is now the fused result rather than the raw LiDAR candidates.
-        self.publish_clusters(fused_clusters)
+        planning_clusters = self.select_planning_clusters(
+            clusters,
+            fused_clusters,
+        )
+        # The historical topic now reflects the exact candidates consumed by
+        # path planning. Camera-only safety/entry logic keeps using the explicit
+        # /cone_fused_clusters topic.
+        self.publish_clusters(planning_clusters)
 
-        left_cones, right_cones = self.form_cone_groups(fused_clusters)
+        left_cones, right_cones = self.form_cone_groups(planning_clusters)
         midpoints = self.calculate_midpoints(left_cones, right_cones)
         boundary_switch_pending = (
             self.pending_inferred_boundary is not None
             and self.pending_inferred_frames > 0
         )
         if not midpoints and not boundary_switch_pending:
-            fallback_midpoint = self.nearest_gate_midpoint(fused_clusters)
+            fallback_midpoint = self.nearest_gate_midpoint(planning_clusters)
             if fallback_midpoint is not None:
                 self.midpoints_inferred = True
                 self.midpoint_source = "nearest_gate"
                 midpoints = [fallback_midpoint]
         midpoints = self.guard_single_boundary_reacquisition(
             midpoints,
-            fused_clusters=fused_clusters,
+            fused_clusters=planning_clusters,
             left_cones=left_cones,
             right_cones=right_cones,
         )
+        evidence_midpoint_count = len(midpoints)
+        midpoints = self.bridge_midpoint_gaps(midpoints)
         path = self.interpolate_path(midpoints)
         self.publish_path(path)
 
         if not path:
-            if self.publish_blind_recovery(len(fused_clusters)):
+            if self.publish_blind_recovery(len(planning_clusters)):
+                self.publish_diagnostics(
+                    raw_angle=self.last_valid_steering,
+                    output_angle=self.last_valid_steering,
+                    speed=float(
+                        self.get_parameter("cone_min_drive_speed").value
+                    ),
+                    confidence=max(
+                        0.21,
+                        float(self.get_parameter("min_confidence").value)
+                        * 0.75,
+                    ),
+                    scan_dt=scan_dt,
+                    scan_stamp_ns=scan_stamp_ns,
+                    lidar_count=len(clusters),
+                    fused_count=len(fused_clusters),
+                    planning_count=len(planning_clusters),
+                    left_count=len(left_cones),
+                    right_count=len(right_cones),
+                    path_count=0,
+                )
                 return
             self.steering_history.clear()
             self.stabilized_steering = None
             self.publish_cmd(0.0, 0.0, 0.0)
+            self.publish_diagnostics(
+                raw_angle=0.0,
+                output_angle=0.0,
+                speed=0.0,
+                confidence=0.0,
+                scan_dt=scan_dt,
+                scan_stamp_ns=scan_stamp_ns,
+                lidar_count=len(clusters),
+                fused_count=len(fused_clusters),
+                planning_count=len(planning_clusters),
+                left_count=len(left_cones),
+                right_count=len(right_cones),
+                path_count=0,
+            )
             return
 
         raw_angle = self.pure_pursuit(path)
         angle = self.stabilize_steering(raw_angle)
-        confidence = self.path_confidence(len(midpoints))
+        confidence = self.path_confidence(evidence_midpoint_count)
         speed = self.compute_speed(angle, confidence, path)
         self.last_valid_steering = angle
         self.had_valid_path = True
         if not self.path_is_held:
             self.blind_recovery_count = 0
         self.publish_cmd(angle, speed, confidence)
+        self.publish_diagnostics(
+            raw_angle=raw_angle,
+            output_angle=angle,
+            speed=speed,
+            confidence=confidence,
+            scan_dt=scan_dt,
+            scan_stamp_ns=scan_stamp_ns,
+            lidar_count=len(clusters),
+            fused_count=len(fused_clusters),
+            planning_count=len(planning_clusters),
+            left_count=len(left_cones),
+            right_count=len(right_cones),
+            path_count=len(path),
+        )
 
     def scan_to_points(self, msg: LaserScan) -> np.ndarray:
         ranges = np.asarray(msg.ranges, dtype=np.float32)
@@ -807,11 +1088,84 @@ class ConeNode(Node):
         left_seed = self.find_seed(centers, min_angle, max_angle, max_range)
         right_seed = self.find_seed(centers, 360.0 - max_angle, 360.0 - min_angle, max_range)
         if left_seed is not None and right_seed is not None:
-            return self.grow_groups_competitively(left_seed, right_seed, centers)
+            left, right = self.grow_groups_competitively(
+                left_seed, right_seed, centers
+            )
+            return self.bridge_boundary_groups(left, right, centers)
         used = set()
         left = self.grow_group(left_seed, centers, used) if left_seed is not None else []
         right = self.grow_group(right_seed, centers, used) if right_seed is not None else []
-        return left, right
+        return self.bridge_boundary_groups(left, right, centers)
+
+    def bridge_boundary_groups(
+        self,
+        left: Sequence[Point2],
+        right: Sequence[Point2],
+        centers: Sequence[Point2],
+    ) -> Tuple[List[Point2], List[Point2]]:
+        """Extend a locally established boundary across one missing cone.
+
+        A long jump is accepted only after two points define a tangent and the
+        new point continues that tangent within the configured turn angle. This
+        is the 2-D RC equivalent of the old graph walk, with a much smaller
+        metric threshold appropriate to the present course.
+        """
+        groups = [sorted(list(left), key=lambda point: point[0]),
+                  sorted(list(right), key=lambda point: point[0])]
+        used = set(groups[0]) | set(groups[1])
+        maximum_gap = max(
+            float(self.get_parameter("group_grow_distance_m").value),
+            float(self.get_parameter("boundary_gap_max_m").value),
+        )
+        maximum_turn = math.radians(
+            max(
+                0.0,
+                float(
+                    self.get_parameter("boundary_gap_max_turn_deg").value
+                ),
+            )
+        )
+
+        while True:
+            best = None
+            for side, group in enumerate(groups):
+                if len(group) < 2:
+                    continue
+                before, endpoint = group[-2], group[-1]
+                tangent = np.asarray(
+                    [endpoint[0] - before[0], endpoint[1] - before[1]],
+                    dtype=np.float64,
+                )
+                tangent_norm = float(np.linalg.norm(tangent))
+                if tangent_norm <= 1.0e-6:
+                    continue
+                tangent /= tangent_norm
+                for point in centers:
+                    if point in used or point[0] < endpoint[0] - 0.05:
+                        continue
+                    vector = np.asarray(
+                        [point[0] - endpoint[0], point[1] - endpoint[1]],
+                        dtype=np.float64,
+                    )
+                    distance = float(np.linalg.norm(vector))
+                    if distance <= 1.0e-6 or distance > maximum_gap:
+                        continue
+                    direction = vector / distance
+                    turn = math.acos(
+                        float(np.clip(np.dot(tangent, direction), -1.0, 1.0))
+                    )
+                    if turn > maximum_turn:
+                        continue
+                    candidate = (distance + 0.35 * turn, side, point)
+                    if best is None or candidate < best:
+                        best = candidate
+            if best is None:
+                break
+            _cost, side, point = best
+            groups[side].append(point)
+            groups[side].sort(key=lambda value: value[0])
+            used.add(point)
+        return groups[0], groups[1]
 
     def grow_groups_competitively(
         self,
@@ -891,7 +1245,7 @@ class ConeNode(Node):
         max_forward_delta = float(self.get_parameter("pair_max_forward_delta_m").value)
         min_width = float(self.get_parameter("min_corridor_width_m").value)
         max_width = float(self.get_parameter("max_corridor_width_m").value)
-        expected_width = float(self.get_parameter("expected_corridor_width_m").value)
+        expected_width = self.effective_corridor_width()
 
         candidates = []
         for left_index, left_point in enumerate(left):
@@ -901,12 +1255,13 @@ class ConeNode(Node):
                 if forward_delta > max_forward_delta or not min_width <= width <= max_width:
                     continue
                 cost = 2.0 * forward_delta + abs(width - expected_width)
-                candidates.append((cost, left_index, right_index))
+                candidates.append((cost, left_index, right_index, width))
 
         used_left = set()
         used_right = set()
         midpoints: List[Point2] = []
-        for _cost, left_index, right_index in sorted(candidates):
+        paired_widths: List[float] = []
+        for _cost, left_index, right_index, width in sorted(candidates):
             if left_index in used_left or right_index in used_right:
                 continue
             left_point = left[left_index]
@@ -919,9 +1274,11 @@ class ConeNode(Node):
             )
             used_left.add(left_index)
             used_right.add(right_index)
+            paired_widths.append(width)
         midpoints = sorted(midpoints, key=lambda p: p[0])
         minimum_bilateral = max(2, int(self.get_parameter("min_path_midpoints").value))
         if len(midpoints) >= minimum_bilateral:
+            self.update_corridor_width(paired_widths)
             # Two measured boundaries constrain the corridor directly. A denser
             # single boundary must never replace this path just because it has
             # more points; that caused left/right source flapping in S turns.
@@ -1130,7 +1487,7 @@ class ConeNode(Node):
         max_forward_delta = float(self.get_parameter("pair_max_forward_delta_m").value)
         min_width = float(self.get_parameter("min_corridor_width_m").value)
         max_width = float(self.get_parameter("max_corridor_width_m").value)
-        expected_width = float(self.get_parameter("expected_corridor_width_m").value)
+        expected_width = self.effective_corridor_width()
         min_lateral = float(self.get_parameter("fallback_pair_min_lateral_separation_m").value)
         max_center_offset = float(self.get_parameter("fallback_pair_max_center_offset_m").value)
         candidates = []
@@ -1157,7 +1514,7 @@ class ConeNode(Node):
 
     def offset_boundary_to_center(self, boundary: Sequence[Point2], is_left_boundary: bool) -> List[Point2]:
         points = sorted(boundary, key=lambda p: p[0])
-        expected_width = float(self.get_parameter("expected_corridor_width_m").value)
+        expected_width = self.effective_corridor_width()
         half_width = expected_width * 0.5
         default_centerline: List[Point2] = []
         opposite_centerline: List[Point2] = []
@@ -1211,6 +1568,99 @@ class ConeNode(Node):
                 default_centerline = opposite_centerline
         return sorted(default_centerline, key=lambda p: p[0])
 
+    def bridge_midpoint_gaps(
+        self,
+        midpoints: Sequence[Point2],
+    ) -> List[Point2]:
+        """Densify a plausible centre-path gap without crossing a large void."""
+        points = sorted(
+            [(float(x), float(y)) for x, y in midpoints],
+            key=lambda point: point[0],
+        )
+        if len(points) < 2:
+            return points
+        fill_start = max(
+            0.0,
+            float(self.get_parameter("path_gap_fill_start_m").value),
+        )
+        maximum_gap = max(
+            fill_start,
+            float(self.get_parameter("path_gap_fill_max_m").value),
+        )
+        spacing = max(
+            0.03,
+            float(self.get_parameter("path_gap_sample_spacing_m").value),
+        )
+
+        # Never make a single path jump across an implausibly large empty area.
+        # Select a coherent segment; a previous accepted path can then be held
+        # if that segment is too short for control.
+        segments: List[List[Point2]] = [[points[0]]]
+        for point in points[1:]:
+            if math.hypot(
+                point[0] - segments[-1][-1][0],
+                point[1] - segments[-1][-1][1],
+            ) > maximum_gap:
+                segments.append([point])
+            else:
+                segments[-1].append(point)
+        points = max(
+            segments,
+            key=lambda segment: (
+                len(segment),
+                segment[-1][0] - segment[0][0],
+                -math.hypot(*segment[0]),
+            ),
+        )
+        if len(points) < 2:
+            return points
+
+        bridged: List[Point2] = [points[0]]
+        for index, (first, second) in enumerate(zip(points, points[1:])):
+            delta = np.asarray(
+                [second[0] - first[0], second[1] - first[1]],
+                dtype=np.float64,
+            )
+            gap = float(np.linalg.norm(delta))
+            insert_count = max(0, int(math.ceil(gap / spacing)) - 1)
+            if gap <= fill_start or insert_count == 0:
+                bridged.append(second)
+                continue
+
+            # With neighbours on both sides, cubic Hermite retains the local
+            # entry/exit headings. At either end, the secant gives a monotonic
+            # linear bridge and cannot overshoot a tight RC corridor.
+            if index > 0:
+                tangent_in = np.asarray(first) - np.asarray(points[index - 1])
+            else:
+                tangent_in = delta.copy()
+            if index + 2 < len(points):
+                tangent_out = np.asarray(points[index + 2]) - np.asarray(second)
+            else:
+                tangent_out = delta.copy()
+            for tangent in (tangent_in, tangent_out):
+                norm = float(np.linalg.norm(tangent))
+                if norm > 1.0e-6:
+                    tangent *= gap / norm
+                else:
+                    tangent[:] = delta
+
+            p0 = np.asarray(first, dtype=np.float64)
+            p1 = np.asarray(second, dtype=np.float64)
+            for sample_index in range(1, insert_count + 1):
+                ratio = sample_index / float(insert_count + 1)
+                ratio2 = ratio * ratio
+                ratio3 = ratio2 * ratio
+                value = (
+                    (2.0 * ratio3 - 3.0 * ratio2 + 1.0) * p0
+                    + (ratio3 - 2.0 * ratio2 + ratio) * tangent_in
+                    + (-2.0 * ratio3 + 3.0 * ratio2) * p1
+                    + (ratio3 - ratio2) * tangent_out
+                )
+                bridged.append((float(value[0]), float(value[1])))
+            bridged.append(second)
+        return sorted(bridged, key=lambda point: point[0])
+
     def interpolate_path(self, midpoints: Sequence[Point2]) -> List[Point2]:
         min_midpoints = max(1, int(self.get_parameter("min_path_midpoints").value))
         if len(midpoints) < min_midpoints:
@@ -1253,21 +1703,51 @@ class ConeNode(Node):
             else getattr(self, "last_path_target_lateral", None)
         )
         new_target = self.path_target_lateral(new_path)
+        self.last_raw_path_target_lateral = new_target
+        self.path_target_limit_applied = False
         if inferred and previous_target is not None:
             # A single boundary is geometrically underconstrained. Limit its
             # lateral output continuously instead of rejecting it until the
             # old path expires; expiry followed by an unrestricted replacement
             # was the source of the visible one-frame steering jump.
-            max_step = max(
+            now = float(
+                getattr(self, "current_scan_time", None) or time.monotonic()
+            )
+            rate = max(
                 0.0,
                 float(
                     self.get_parameter(
-                        "inferred_max_path_target_jump_m"
+                        "inferred_path_target_rate_mps"
                     ).value
                 ),
             )
+            if rate > 0.0:
+                maximum_dt = max(
+                    0.0,
+                    float(
+                        self.get_parameter(
+                            "path_target_rate_max_dt_sec"
+                        ).value
+                    ),
+                )
+                previous_time = getattr(self, "last_path_update_time", None)
+                dt = maximum_dt if previous_time is None else float(
+                    np.clip(now - previous_time, 0.0, maximum_dt)
+                )
+                max_step = rate * dt
+            else:
+                # Compatibility fallback for old configurations.
+                max_step = max(
+                    0.0,
+                    float(
+                        self.get_parameter(
+                            "inferred_max_path_target_jump_m"
+                        ).value
+                    ),
+                )
             delta = new_target - previous_target
             if abs(delta) > max_step:
+                self.path_target_limit_applied = True
                 limited_target = previous_target + math.copysign(
                     max_step,
                     delta,
@@ -1288,12 +1768,33 @@ class ConeNode(Node):
         self.path_is_held = False
         self.prev_path = new_path
         self.last_path_target_lateral = new_target
+        self.last_output_path_target_lateral = new_target
+        accepted_at = float(
+            getattr(self, "current_scan_time", None) or time.monotonic()
+        )
+        self.last_path_accept_time = accepted_at
+        self.last_path_update_time = accepted_at
+        self.geometry_reference_path = list(new_path)
+        self.geometry_reference_time = accepted_at
         return self.prev_path
 
     def hold_previous_path(self) -> List[Point2]:
         self.path_miss_count += 1
+        now = float(
+            getattr(self, "current_scan_time", None) or time.monotonic()
+        )
+        hold_sec = max(
+            0.0,
+            float(self.get_parameter("path_hold_sec").value),
+        )
         hold_frames = max(0, int(self.get_parameter("path_hold_frames").value))
-        if self.prev_path is not None and self.path_miss_count <= hold_frames:
+        accepted_at = getattr(self, "last_path_accept_time", None)
+        if hold_sec > 0.0 and accepted_at is not None:
+            within_hold = now - float(accepted_at) <= hold_sec
+        else:
+            # Compatibility fallback for old configs and pure test harnesses.
+            within_hold = self.path_miss_count <= hold_frames
+        if self.prev_path is not None and within_hold:
             self.path_is_held = True
             return self.prev_path
         self.path_is_held = False
@@ -1412,8 +1913,32 @@ class ConeNode(Node):
 
         source = str(getattr(self, "midpoint_source", "none"))
         inferred = source in ("left_offset", "right_offset", "nearest_gate", "paired_sparse")
-        parameter = "inferred_steering_max_delta_deg" if inferred else "steering_max_delta_deg"
-        max_delta = max(0.0, float(self.get_parameter(parameter).value))
+        rate_parameter = (
+            "inferred_steering_max_rate_deg_per_sec"
+            if inferred
+            else "steering_max_rate_deg_per_sec"
+        )
+        rate = max(0.0, float(self.get_parameter(rate_parameter).value))
+        now_value = getattr(self, "current_scan_time", None)
+        now = time.monotonic() if now_value is None else float(now_value)
+        previous_time = getattr(self, "last_steering_time", None)
+        if rate > 0.0 and previous_time is not None:
+            maximum_dt = max(
+                0.0,
+                float(
+                    self.get_parameter("steering_rate_max_dt_sec").value
+                ),
+            )
+            dt = float(np.clip(now - previous_time, 0.0, maximum_dt))
+            max_delta = rate * dt
+        else:
+            # Preserve old YAML compatibility when a rate is not configured.
+            parameter = (
+                "inferred_steering_max_delta_deg"
+                if inferred
+                else "steering_max_delta_deg"
+            )
+            max_delta = max(0.0, float(self.get_parameter(parameter).value))
         if self.stabilized_steering is not None and max_delta > 0.0:
             filtered = float(
                 np.clip(
@@ -1423,12 +1948,29 @@ class ConeNode(Node):
                 )
             )
         self.stabilized_steering = filtered
+        self.last_steering_time = now
         return filtered
+
+    def held_path_progress(self) -> float:
+        if not self.path_is_held:
+            return 0.0
+        hold_sec = max(
+            0.0,
+            float(self.get_parameter("path_hold_sec").value),
+        )
+        accepted_at = getattr(self, "last_path_accept_time", None)
+        now_value = getattr(self, "current_scan_time", None)
+        if hold_sec > 0.0 and accepted_at is not None:
+            now = time.monotonic() if now_value is None else float(now_value)
+            return float(
+                np.clip((now - float(accepted_at)) / hold_sec, 0.0, 1.0)
+            )
+        hold_frames = max(1, int(self.get_parameter("path_hold_frames").value))
+        return min(1.0, float(self.path_miss_count) / float(hold_frames))
 
     def path_confidence(self, midpoint_count: int) -> float:
         if self.path_is_held:
-            hold_frames = max(1, int(self.get_parameter("path_hold_frames").value))
-            remaining = max(0.0, 1.0 - float(self.path_miss_count - 1) / float(hold_frames))
+            remaining = 1.0 - self.held_path_progress()
             return max(0.21, float(self.get_parameter("min_confidence").value) * remaining)
         source = str(getattr(self, "midpoint_source", "none"))
         if source == "paired":
@@ -1533,8 +2075,7 @@ class ConeNode(Node):
         speed = min(speed, confidence_speed)
 
         if self.path_is_held:
-            hold_frames = max(1, int(self.get_parameter("path_hold_frames").value))
-            hold_ratio = min(1.0, float(self.path_miss_count) / float(hold_frames))
+            hold_ratio = self.held_path_progress()
             speed = minimum + (speed - minimum) * (1.0 - 0.55 * hold_ratio)
         source = str(getattr(self, "midpoint_source", "none"))
         if source in ("left_offset", "right_offset"):
@@ -1568,6 +2109,92 @@ class ConeNode(Node):
         confidence = max(0.21, float(self.get_parameter("min_confidence").value) * 0.75)
         self.publish_cmd(angle, speed, confidence)
         return True
+
+    def publish_diagnostics(
+        self,
+        *,
+        raw_angle: float,
+        output_angle: float,
+        speed: float,
+        confidence: float,
+        scan_dt: float,
+        scan_stamp_ns: int,
+        lidar_count: int,
+        fused_count: int,
+        planning_count: int,
+        left_count: int,
+        right_count: int,
+        path_count: int,
+    ) -> None:
+        """Publish every control stage needed to diagnose a delayed turn.
+
+        Float array schema:
+        [raw_steer, output_steer, speed, confidence, scan_dt, scan_hz,
+         yolo_age, lidar_n, fused_n, planning_n, left_n, right_n, path_n,
+         learned_width, source_code, held, raw_path_y, output_path_y,
+         path_limit_applied, geometry_unlocked]
+        """
+        source = str(getattr(self, "midpoint_source", "none"))
+        source_codes = {
+            "none": 0.0,
+            "paired": 1.0,
+            "left_offset": 2.0,
+            "right_offset": 3.0,
+            "nearest_gate": 4.0,
+            "paired_sparse": 5.0,
+            "reacquire_pending": 6.0,
+        }
+        yolo_age = self.yolo_box_age_sec(scan_stamp_ns)
+        if not math.isfinite(yolo_age):
+            yolo_age = -1.0
+        scan_hz = 1.0 / scan_dt if scan_dt > 1.0e-6 else 0.0
+        message = Float32MultiArray()
+        message.data = [
+            float(raw_angle),
+            float(output_angle),
+            float(speed),
+            float(confidence),
+            float(scan_dt),
+            float(scan_hz),
+            float(yolo_age),
+            float(lidar_count),
+            float(fused_count),
+            float(planning_count),
+            float(left_count),
+            float(right_count),
+            float(path_count),
+            self.effective_corridor_width(),
+            source_codes.get(source, -1.0),
+            1.0 if self.path_is_held else 0.0,
+            float(getattr(self, "last_raw_path_target_lateral", 0.0)),
+            float(getattr(self, "last_output_path_target_lateral", 0.0)),
+            1.0 if getattr(self, "path_target_limit_applied", False) else 0.0,
+            1.0
+            if getattr(self, "geometry_planning_unlocked", False)
+            else 0.0,
+        ]
+        self.diagnostics_pub.publish(message)
+
+        status = (
+            f"source={source} lidar={lidar_count} fused={fused_count} "
+            f"plan={planning_count} LR={left_count}/{right_count} "
+            f"path={path_count} width={self.effective_corridor_width():.3f}m "
+            f"yolo_age={yolo_age:.3f}s scan={scan_hz:.1f}Hz "
+            f"steer={raw_angle:+.1f}->{output_angle:+.1f}deg "
+            f"path_y={getattr(self, 'last_raw_path_target_lateral', 0.0):+.3f}->"
+            f"{getattr(self, 'last_output_path_target_lateral', 0.0):+.3f}m "
+            f"held={int(self.path_is_held)}"
+        )
+        self.status_pub.publish(String(data=status))
+        now_value = getattr(self, "current_scan_time", None)
+        now = time.monotonic() if now_value is None else float(now_value)
+        log_period = max(
+            0.0,
+            float(self.get_parameter("diagnostics_log_period_sec").value),
+        )
+        if now - self.last_diagnostics_log_time >= log_period:
+            self.get_logger().info(f"[cone] {status}")
+            self.last_diagnostics_log_time = now
 
     def publish_cmd(self, angle: float, speed: float, confidence: float) -> None:
         msg = Float32MultiArray()

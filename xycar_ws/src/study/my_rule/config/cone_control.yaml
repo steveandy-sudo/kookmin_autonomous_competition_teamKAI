@@ -6,6 +6,10 @@
     cone_lidar_cluster_topic: /my_rule/cone_lidar_clusters
     cone_fused_cluster_topic: /my_rule/cone_fused_clusters
     cone_path_topic: /my_rule/cone_path
+    # Numeric schema is documented in cone_node.publish_diagnostics. The text
+    # topic is convenient for live echo and both are useful in a rosbag.
+    cone_diagnostics_topic: /my_rule/cone_diagnostics
+    cone_status_topic: /my_rule/cone_status
     # The integrated semantic launch overrides this to true. Standalone cone
     # testing remains active without requiring a gate publisher.
     processing_gate_enabled: false
@@ -30,6 +34,14 @@
     # This keeps arbitrary chair/table legs excluded from the fused candidates.
     cone_yolo_recover_corridor_partner: true
     cone_yolo_recovered_centerline_max_deviation_m: 0.25
+    # YOLO still unlocks cone entry. After the first camera-confirmed LiDAR
+    # match, path geometry may use raw clusters close to the accepted corridor
+    # so a 3 Hz camera inference cannot erase a 2-D LiDAR steering path.
+    lidar_geometry_planning_enabled: true
+    lidar_geometry_path_band_margin_m: 0.16
+    # After control-path hold expires, retain only a short-lived geometry
+    # reference so LiDAR can reacquire while a YOLO frame is late.
+    lidar_geometry_reference_timeout_sec: 1.00
     max_range_m: 2.2
     min_range_m: 0.18
     scan_angle_offset_deg: 0.0
@@ -46,6 +58,10 @@
     max_cone_diameter_m: 0.3
     angle_bin_deg: 6.0
     group_grow_distance_m: 0.5
+    # Bridge at most one RC-scale missing-cone gap, and only when two existing
+    # boundary points define a compatible forward tangent.
+    boundary_gap_max_m: 0.85
+    boundary_gap_max_turn_deg: 55.0
     seed_min_angle_deg: 15.0
     seed_max_angle_deg: 90.0
     seed_max_range_m: 2.2
@@ -89,18 +105,37 @@
     min_confidence: 0.3
     path_interpolation_method: linear
     path_sample_count: 100
+    # Time is authoritative; frames remain only as a legacy fallback.
+    path_hold_sec: 0.40
     path_hold_frames: 5
     pair_max_forward_delta_m: 0.30
     min_corridor_width_m: 0.68
     max_corridor_width_m: 0.98
     expected_corridor_width_m: 0.85
+    # Learn slowly inside the measured 0.68~0.98 m RC-course bounds. A single
+    # bad pair cannot move the estimate because two pairs are required.
+    corridor_width_learning_enabled: true
+    corridor_width_learning_alpha: 0.20
+    corridor_width_max_update_m: 0.04
+    corridor_width_learning_min_pairs: 2
     min_path_midpoints: 2
     min_path_span_m: 0.15
+    path_gap_fill_start_m: 0.35
+    path_gap_fill_max_m: 0.95
+    path_gap_sample_spacing_m: 0.12
     max_path_target_jump_m: 0.30
-    # Single-boundary paths are usable during a curve, but their target may
-    # move only this far per accepted LiDAR scan.
+    # Single-boundary target motion is limited per second, not per LiDAR scan.
+    # The old per-scan value remains as a disabled-rate compatibility fallback.
+    inferred_path_target_rate_mps: 0.80
+    path_target_rate_max_dt_sec: 0.12
     inferred_max_path_target_jump_m: 0.08
     steering_median_window: 1
+    # These rates retain RC-scale smoothing while avoiding a hidden dependence
+    # on whether /scan arrives at 10 Hz or 20 Hz. Legacy per-frame values below
+    # are used only if a rate is explicitly set to zero.
+    steering_max_rate_deg_per_sec: 180.0
+    inferred_steering_max_rate_deg_per_sec: 100.0
+    steering_rate_max_dt_sec: 0.12
     steering_max_delta_deg: 14.0
     inferred_steering_max_delta_deg: 4.0
     allow_nearest_gate_fallback: true
@@ -109,3 +144,4 @@
     blind_recovery_frames: 10
     blind_recovery_min_clusters: 2
     blind_recovery_steer_decay: 0.92
+    diagnostics_log_period_sec: 0.50

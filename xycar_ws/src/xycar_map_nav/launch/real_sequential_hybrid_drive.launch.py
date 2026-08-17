@@ -686,6 +686,10 @@ def generate_launch_description():
                 package="xycar_rule_drive",
                 executable="canonical_stanley_pursuit_driver",
                 name="canonical_stanley_pursuit_driver",
+                # Make the generated parameter file node-specific. Otherwise
+                # launch_ros writes this dictionary under /** and the named
+                # YAML rules above override the runtime safety arguments.
+                namespace="/",
                 condition=IfCondition(LaunchConfiguration("start_rule")),
                 output="screen",
                 parameters=[
@@ -1086,6 +1090,9 @@ def generate_launch_description():
                 package="xycar_map_nav",
                 executable="sequential_hybrid_driver",
                 name="sequential_hybrid_driver",
+                # In particular, gate_arming_required=true must override the
+                # standalone YAML default before SPACE can control motion.
+                namespace="/",
                 output="screen",
                 parameters=[
                     hybrid_config,

@@ -1,4 +1,5 @@
 import math
+from collections import deque
 
 import numpy as np
 import pytest
@@ -48,12 +49,24 @@ class _GeometryHarness:
         ConeNode.lateral_path_distance_at_x
     )
     recover_corridor_partners = ConeNode.recover_corridor_partners
+    effective_corridor_width = ConeNode.effective_corridor_width
+    update_corridor_width = ConeNode.update_corridor_width
+    select_planning_clusters = ConeNode.select_planning_clusters
+    bridge_boundary_groups = ConeNode.bridge_boundary_groups
+    bridge_midpoint_gaps = ConeNode.bridge_midpoint_gaps
 
     parameters = {
         "pair_max_forward_delta_m": 0.30,
         "min_corridor_width_m": 0.68,
         "max_corridor_width_m": 0.98,
         "expected_corridor_width_m": 0.85,
+        "corridor_width_learning_enabled": True,
+        "corridor_width_learning_alpha": 0.20,
+        "corridor_width_max_update_m": 0.04,
+        "corridor_width_learning_min_pairs": 2,
+        "lidar_geometry_planning_enabled": True,
+        "lidar_geometry_path_band_margin_m": 0.16,
+        "lidar_geometry_reference_timeout_sec": 1.00,
         "allow_single_boundary_fallback": True,
         "single_boundary_min_cones": 2,
         "single_boundary_min_span_m": 0.20,
@@ -61,6 +74,8 @@ class _GeometryHarness:
         "fallback_pair_min_lateral_separation_m": 0.4,
         "fallback_pair_max_center_offset_m": 0.65,
         "group_grow_distance_m": 0.5,
+        "boundary_gap_max_m": 0.85,
+        "boundary_gap_max_turn_deg": 55.0,
         "single_boundary_switch_frames": 3,
         "single_boundary_reacquire_min_fused_clusters": 3,
         "single_boundary_reacquire_require_opposite_support": True,
@@ -68,6 +83,9 @@ class _GeometryHarness:
         "cone_yolo_recover_corridor_partner": True,
         "cone_yolo_recovered_centerline_max_deviation_m": 0.25,
         "lidar_to_rear_axle_m": 0.42,
+        "path_gap_fill_start_m": 0.35,
+        "path_gap_fill_max_m": 0.95,
+        "path_gap_sample_spacing_m": 0.12,
     }
 
     def __init__(self):
@@ -78,6 +96,12 @@ class _GeometryHarness:
         self.pending_inferred_frames = 0
         self.prev_path = None
         self.had_valid_path = False
+        self.learned_corridor_width_m = 0.85
+        self.cone_yolo_association_enabled = True
+        self.geometry_planning_unlocked = False
+        self.current_scan_time = 1.0
+        self.geometry_reference_path = None
+        self.geometry_reference_time = None
 
     def get_parameter(self, name):
         return _Parameter(self.parameters[name])
@@ -88,6 +112,7 @@ class _PathHarness:
     preview_steering_demand = ConeNode.preview_steering_demand
     straight_boost_ratio = ConeNode.straight_boost_ratio
     compute_speed = ConeNode.compute_speed
+    held_path_progress = ConeNode.held_path_progress
 
     parameters = {
         "lookahead_min_m": 0.7,
@@ -112,6 +137,7 @@ class _PathHarness:
         "cone_speed_preview_samples": 4,
         "min_confidence": 0.3,
         "path_hold_frames": 5,
+        "path_hold_sec": 0.40,
         "single_boundary_max_speed": 9.5,
     }
 
@@ -132,8 +158,11 @@ class _PathAcceptanceHarness:
     parameters = {
         "lookahead_min_m": 0.7,
         "path_hold_frames": 5,
+        "path_hold_sec": 0.40,
         "max_path_target_jump_m": 0.30,
         "inferred_max_path_target_jump_m": 0.08,
+        "inferred_path_target_rate_mps": 0.80,
+        "path_target_rate_max_dt_sec": 0.10,
     }
 
     def __init__(self):
@@ -142,6 +171,31 @@ class _PathAcceptanceHarness:
         self.path_miss_count = 0
         self.path_is_held = False
         self.midpoint_source = "paired"
+        self.current_scan_time = 1.0
+        self.last_path_accept_time = None
+        self.last_path_update_time = None
+
+    def get_parameter(self, name):
+        return _Parameter(self.parameters[name])
+
+
+class _SteeringHarness:
+    stabilize_steering = ConeNode.stabilize_steering
+
+    parameters = {
+        "inferred_steering_max_rate_deg_per_sec": 100.0,
+        "steering_max_rate_deg_per_sec": 180.0,
+        "steering_rate_max_dt_sec": 0.12,
+        "inferred_steering_max_delta_deg": 4.0,
+        "steering_max_delta_deg": 14.0,
+    }
+
+    def __init__(self):
+        self.midpoint_source = "right_offset"
+        self.steering_history = deque(maxlen=1)
+        self.stabilized_steering = 0.0
+        self.last_steering_time = 1.0
+        self.current_scan_time = 1.0
 
     def get_parameter(self, name):
         return _Parameter(self.parameters[name])
@@ -330,7 +384,90 @@ def test_yolo_anchor_recovers_only_corridor_partner_near_previous_path():
     assert recovered == [anchor, true_partner]
 
 
-def test_corridor_partner_is_not_recovered_without_previous_path():
+def test_yolo_unlock_keeps_only_lidar_geometry_near_previous_corridor():
+    harness = _GeometryHarness()
+    harness.prev_path = [(0.70, 0.0), (1.10, 0.0), (1.50, 0.0)]
+    confirmed = (0.60, 0.42)
+    opposite_boundary = (0.75, -0.43)
+    centre_clutter = (0.90, 0.02)
+    far_clutter = (0.90, 1.30)
+
+    assert harness.select_planning_clusters(
+        [confirmed, opposite_boundary, centre_clutter, far_clutter],
+        [],
+    ) == []
+
+    selected = harness.select_planning_clusters(
+        [confirmed, opposite_boundary, centre_clutter, far_clutter],
+        [confirmed],
+    )
+
+    assert confirmed in selected
+    assert opposite_boundary in selected
+    assert centre_clutter not in selected
+    assert far_clutter not in selected
+
+
+def test_recent_geometry_reference_allows_lidar_only_reacquisition():
+    harness = _GeometryHarness()
+    harness.geometry_planning_unlocked = True
+    harness.geometry_reference_path = [
+        (0.70, 0.0),
+        (1.10, 0.0),
+        (1.50, 0.0),
+    ]
+    harness.geometry_reference_time = 1.0
+    boundary = (0.75, -0.43)
+
+    harness.current_scan_time = 1.90
+    assert harness.select_planning_clusters([boundary], []) == [boundary]
+
+    harness.current_scan_time = 2.01
+    assert harness.select_planning_clusters([boundary], []) == []
+
+
+def test_corridor_width_learns_slowly_from_two_bilateral_pairs():
+    harness = _GeometryHarness()
+    harness.update_corridor_width([0.75, 0.77])
+    assert harness.effective_corridor_width() == pytest.approx(0.832)
+
+    # A single pair is insufficient and must not move the learned RC width.
+    harness.update_corridor_width([0.68])
+    assert harness.effective_corridor_width() == pytest.approx(0.832)
+
+
+def test_boundary_bridge_requires_a_tangent_consistent_gap():
+    harness = _GeometryHarness()
+    left = [(0.30, 0.42), (0.70, 0.44)]
+    continuation = (1.25, 0.48)
+    sharp_outlier = (1.00, 1.00)
+
+    bridged_left, _ = harness.bridge_boundary_groups(
+        left,
+        [],
+        [*left, continuation, sharp_outlier],
+    )
+
+    assert continuation in bridged_left
+    assert sharp_outlier not in bridged_left
+
+
+def test_midpoint_gap_is_densified_but_large_void_is_not_crossed():
+    harness = _GeometryHarness()
+    filled = harness.bridge_midpoint_gaps(
+        [(0.30, 0.00), (0.80, 0.05), (1.20, 0.12)]
+    )
+    assert len(filled) > 3
+    assert filled[0] == (0.30, 0.00)
+    assert filled[-1] == (1.20, 0.12)
+
+    split = harness.bridge_midpoint_gaps(
+        [(0.20, 0.00), (0.50, 0.02), (1.80, 0.70)]
+    )
+    assert all(point[0] <= 0.50 for point in split)
+
+
+def test_corridor_partner_bootstraps_without_previous_path_when_geometry_is_safe():
     harness = _GeometryHarness()
     anchor = (0.60, 0.42)
     partner = (0.62, -0.43)
@@ -338,7 +475,7 @@ def test_corridor_partner_is_not_recovered_without_previous_path():
     assert harness.recover_corridor_partners(
         [anchor, partner],
         [anchor],
-    ) == [anchor]
+    ) == [anchor, partner]
 
 
 def test_single_boundary_stays_selected_until_bilateral_path_returns():
@@ -397,6 +534,33 @@ def test_inferred_path_remains_limited_after_hold_expiry():
     )
 
     assert harness.path_target_lateral(accepted) == pytest.approx(-0.08)
+
+
+def test_path_hold_uses_elapsed_time_instead_of_scan_count():
+    harness = _PathAcceptanceHarness()
+    harness.prev_path = [(0.70, 0.0), (1.00, 0.0)]
+    harness.last_path_accept_time = 1.0
+
+    harness.current_scan_time = 1.39
+    assert harness.hold_previous_path()
+    harness.current_scan_time = 1.41
+    assert harness.hold_previous_path() == []
+
+
+def test_inferred_steering_rate_is_independent_of_scan_frequency():
+    ten_hz = _SteeringHarness()
+    ten_hz.current_scan_time = 1.10
+    ten_hz_angle = ten_hz.stabilize_steering(30.0)
+
+    twenty_hz = _SteeringHarness()
+    twenty_hz.current_scan_time = 1.05
+    first = twenty_hz.stabilize_steering(30.0)
+    twenty_hz.current_scan_time = 1.10
+    twenty_hz_angle = twenty_hz.stabilize_steering(30.0)
+
+    assert ten_hz_angle == pytest.approx(10.0)
+    assert first == pytest.approx(5.0)
+    assert twenty_hz_angle == pytest.approx(10.0)
 
 
 def test_deployed_speed_profile_boosts_only_a_good_straight():
