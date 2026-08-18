@@ -187,15 +187,19 @@ def generate_launch_description():
                 default_value="0.25",
             ),
             DeclareLaunchArgument(
+                "shortcut_entry_steering_rate_limit_cmd_per_sec",
+                default_value="90.0",
+            ),
+            DeclareLaunchArgument(
                 "shortcut_w1_steering_start_delay_frames",
-                default_value="4",
+                default_value="0",
             ),
             DeclareLaunchArgument(
                 "shortcut_w1_steering_delay_missing_tolerance_frames",
                 default_value="2",
             ),
             DeclareLaunchArgument(
-                "shortcut_minimum_entry_progress_m", default_value="0.50"
+                "shortcut_minimum_entry_progress_m", default_value="0.30"
             ),
             DeclareLaunchArgument(
                 "shortcut_pair_track_handoff_required_frames",
@@ -205,10 +209,10 @@ def generate_launch_description():
                 "shortcut_w1_loss_handoff_enabled", default_value="true"
             ),
             DeclareLaunchArgument(
-                "shortcut_maximum_entry_steering_sec", default_value="1.5"
+                "shortcut_maximum_entry_steering_sec", default_value="1.3"
             ),
             DeclareLaunchArgument(
-                "shortcut_w1_steering_hold_sec", default_value="1.0"
+                "shortcut_w1_steering_hold_sec", default_value="1.3"
             ),
             DeclareLaunchArgument(
                 "shortcut_entry_direction_hold_command",
@@ -1061,6 +1065,12 @@ def generate_launch_description():
                     ),
                     "spatial_gate_blend_distance_m": LaunchConfiguration(
                         "shortcut_spatial_gate_blend_distance_m"
+                    ),
+                    "w1_start_on_intersection": "true",
+                    "entry_steering_rate_limit_cmd_per_sec": (
+                        LaunchConfiguration(
+                            "shortcut_entry_steering_rate_limit_cmd_per_sec"
+                        )
                     ),
                     "w1_steering_start_delay_frames": LaunchConfiguration(
                         "shortcut_w1_steering_start_delay_frames"

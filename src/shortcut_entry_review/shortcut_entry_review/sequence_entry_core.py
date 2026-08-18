@@ -42,10 +42,33 @@ class SequenceEntryConfig:
     yellow_component_minimum_area_px: int = 50
     yellow_component_minimum_height_px: int = 15
     yellow_component_minimum_span_ratio: float = 0.020
-    w1_acquisition_required_frames: int = 1
+    w2_acquisition_required_frames: int = 2
+    w2_acquisition_minimum_span_ratio: float = 0.12
+    w2_acquisition_min_mean_x_ratio: float = 0.05
+    w2_acquisition_max_mean_x_ratio: float = 0.60
+    w1_acquisition_required_frames: int = 2
+    w1_acquisition_window_frames: int = 4
+    w1_fast_lock_enabled: bool = True
+    w1_fast_lock_minimum_slope: float = 0.35
+    w1_fast_lock_minimum_span_ratio: float = 0.075
+    w1_fast_lock_minimum_distance_ratio: float = 0.080
+    # A new W1 may be accepted only after the observed branch reaches the
+    # lower/near part of the BEV.  Far white fragments beside W2 can have the
+    # correct positive slope and separation, but they are not yet the entry
+    # branch.  This gate is acquisition-only; a locked W1 may subsequently be
+    # tracked while it becomes short or leaves the lower image.
+    w1_acquisition_minimum_max_y_ratio: float = 0.72
+    # W2 edge fragments in the labelled false frames reached the lower BEV,
+    # but remained only 0.046--0.063 image-width from W2.  Require a visibly
+    # opened branch before W1 identity can be acquired.
+    w1_acquisition_minimum_distance_ratio: float = 0.065
     y1_acquisition_required_frames: int = 2
     acquisition_slope_minimum: float = 0.15
+    w1_tracking_slope_minimum: float = 0.02
     w1_acquisition_max_mean_x_ratio: float = 0.40
+    w1_branch_minimum_separation_ratio: float = 0.045
+    w1_branch_expected_separation_ratio: float = 0.11
+    w1_branch_maximum_separation_ratio: float = 0.24
     temporal_max_mean_x_jump_ratio: float = 0.12
     temporal_max_line_distance_ratio: float = 0.16
     tracking_white_max_mean_x_ratio: float = 0.42
@@ -69,10 +92,39 @@ class SequenceEntryConfig:
     maximum_fit_extrapolation_ratio: float = 0.16
 
     def __post_init__(self) -> None:
+        if self.w2_acquisition_required_frames < 1:
+            raise ValueError("w2 acquisition frames must be positive")
         if self.w1_acquisition_required_frames < 1:
             raise ValueError("w1 acquisition frames must be positive")
+        if (
+            self.w1_acquisition_window_frames
+            < self.w1_acquisition_required_frames
+        ):
+            raise ValueError(
+                "W1 acquisition window must contain the required hits"
+            )
         if self.y1_acquisition_required_frames < 1:
             raise ValueError("y1 acquisition frames must be positive")
+        if not 0.0 <= self.w1_acquisition_minimum_max_y_ratio <= 1.0:
+            raise ValueError("W1 acquisition near-y ratio must be in [0, 1]")
+        if not (
+            self.duplicate_distance_ratio
+            < self.w1_acquisition_minimum_distance_ratio
+            <= self.w1_fast_lock_minimum_distance_ratio
+        ):
+            raise ValueError(
+                "W1 acquisition distance must be above duplicate distance "
+                "and no greater than the fast-lock distance"
+            )
+        if not (
+            0.0
+            <= self.w1_tracking_slope_minimum
+            <= self.acquisition_slope_minimum
+        ):
+            raise ValueError(
+                "W1 tracking slope minimum must stay left-positive and not "
+                "exceed the acquisition minimum"
+            )
         if self.path_sample_count < 3:
             raise ValueError("path_sample_count must be at least three")
         if self.yellow_component_minimum_area_px < 1:
@@ -97,6 +149,13 @@ class SequenceEntryConfig:
             raise ValueError("expected pair separation must be inside limits")
         if not 0.5 <= self.w1_path_weight < 1.0:
             raise ValueError("W1 path weight must be in [0.5, 1.0)")
+        if not (
+            0.0
+            < self.w1_branch_minimum_separation_ratio
+            < self.w1_branch_expected_separation_ratio
+            < self.w1_branch_maximum_separation_ratio
+        ):
+            raise ValueError("W1/W2 branch separation limits are invalid")
 
 
 @dataclass(frozen=True)
@@ -130,6 +189,7 @@ class SequenceEntryResult:
     white_candidates: tuple[LineHypothesis, ...]
     yellow_candidates: tuple[LineHypothesis, ...]
     w1: LineHypothesis | None
+    w2: LineHypothesis | None
     y1: LineHypothesis | None
     path_pixels: tuple[tuple[float, float], ...]
     used_synthetic_y1: bool
@@ -142,6 +202,16 @@ class SpatialSteeringGate:
     trigger_distance_m: float
     ready: bool
     blend: float
+
+
+@dataclass(frozen=True)
+class BranchPointEstimate:
+    """Selected W2 geometry used only by the spatial steering gate."""
+
+    distance_m: float
+    w2: LineHypothesis | None
+    intersection_x_ratio: float = math.nan
+    intersection_y_ratio: float = math.nan
 
 
 @dataclass(frozen=True)
@@ -428,7 +498,6 @@ def _component_hypotheses(
             output.append(fitted)
     return output
 
-
 def _band_track_hypotheses(
     mask: np.ndarray,
     color: str,
@@ -707,18 +776,30 @@ def pixels_to_vehicle_path(
     return points[np.argsort(points[:, 0])]
 
 
-def branch_point_distance_m(
+def estimate_branch_point(
     w1: LineHypothesis | None,
     white_candidates: tuple[LineHypothesis, ...],
     *,
     forward_range_m: float,
-) -> float:
-    """Estimate remaining vehicle-forward distance to the W1/W2 fork."""
+    tracked_w2: LineHypothesis | None = None,
+) -> BranchPointEstimate:
+    """Estimate the fork from locked W1 and the temporally tracked W2.
+
+    ``tracked_w2`` is the runtime path.  Candidate search remains only for the
+    small float-only compatibility API and unit tests; it must not be used by
+    the vehicle node because an unrelated white fragment can form a plausible
+    infinite-line intersection with W1.
+    """
     if w1 is None:
-        return math.inf
-    best: tuple[float, float] | None = None
+        return BranchPointEstimate(distance_m=math.inf, w2=tracked_w2)
+    best: tuple[float, float, LineHypothesis, float, float] | None = None
     w1_slope, w1_intercept = w1.coefficients
-    for candidate in white_candidates:
+    candidates = (
+        (tracked_w2,)
+        if tracked_w2 is not None
+        else white_candidates
+    )
+    for candidate in candidates:
         if candidate is w1 or candidate.color != "white":
             continue
         slope, intercept = candidate.coefficients
@@ -731,7 +812,7 @@ def branch_point_distance_m(
         if candidate.x_ratio_at(sample_y) <= w1.x_ratio_at(sample_y):
             continue
         intersection_y = (intercept - w1_intercept) / slope_delta
-        if not -0.10 <= intersection_y <= 1.10:
+        if not -0.10 <= intersection_y <= 1.25:
             continue
         intersection_x = w1.x_ratio_at(intersection_y)
         if not -0.15 <= intersection_x <= 1.15:
@@ -741,8 +822,38 @@ def branch_point_distance_m(
             continue
         score = abs(intersection_x - 0.5) + 0.15 * abs(candidate.mean_x_ratio - w1.mean_x_ratio)
         if best is None or score < best[0]:
-            best = (score, max(0.0, distance))
-    return math.inf if best is None else float(best[1])
+            best = (
+                score,
+                max(0.0, distance),
+                candidate,
+                intersection_x,
+                intersection_y,
+            )
+    if best is None:
+        return BranchPointEstimate(
+            distance_m=math.inf,
+            w2=tracked_w2,
+        )
+    return BranchPointEstimate(
+        distance_m=float(best[1]),
+        w2=best[2],
+        intersection_x_ratio=float(best[3]),
+        intersection_y_ratio=float(best[4]),
+    )
+
+
+def branch_point_distance_m(
+    w1: LineHypothesis | None,
+    white_candidates: tuple[LineHypothesis, ...],
+    *,
+    forward_range_m: float,
+) -> float:
+    """Estimate remaining distance while preserving the original float API."""
+    return estimate_branch_point(
+        w1,
+        white_candidates,
+        forward_range_m=forward_range_m,
+    ).distance_m
 
 
 def spatial_steering_gate(
@@ -779,6 +890,24 @@ def spatial_steering_gate(
         ready=ready,
         blend=float(blend),
     )
+
+
+def w1_entry_trigger_ready(
+    *,
+    branch_distance_m: float,
+    spatial_gate_ready: bool,
+    start_on_intersection: bool,
+) -> bool:
+    """Select the W1 authority trigger without changing intersection rules.
+
+    The red intersection annotation is emitted exactly when
+    ``branch_distance_m`` is finite.  Intersection mode therefore transfers
+    authority on that same semantic frame; the legacy option retains the
+    distance-threshold gate for A/B comparison.
+    """
+    if bool(start_on_intersection):
+        return math.isfinite(float(branch_distance_m))
+    return bool(spatial_gate_ready)
 
 
 def w1_steering_delay_ready(
@@ -836,7 +965,7 @@ def select_entry_handoff_condition(
 
 
 class SequenceAwareEntrySelector:
-    """Lock W1 first, acquire Y1 later, and never substitute W2/Y2."""
+    """Track the continuing W2 first, then lock its new left branch as W1."""
 
     def __init__(self, config: SequenceEntryConfig | None = None) -> None:
         self.config = config or SequenceEntryConfig()
@@ -845,12 +974,18 @@ class SequenceAwareEntrySelector:
     def reset(self) -> None:
         self.phase = EntrySequencePhase.LEFT4_ARMED
         self.w1: LineHypothesis | None = None
+        self.w2: LineHypothesis | None = None
         self.y1: LineHypothesis | None = None
         self.pending_w1: LineHypothesis | None = None
+        self.pending_w2: LineHypothesis | None = None
         self.pending_y1: LineHypothesis | None = None
+        self.w1_confirmation_history: list[LineHypothesis | None] = []
         self.w1_confirmations = 0
+        self.w1_fast_locked = False
+        self.w2_confirmations = 0
         self.y1_confirmations = 0
         self.w1_missing_frames = 0
+        self.w2_missing_frames = 0
         self.y1_missing_frames = 0
         self.y1_blend = 0.0
         self.alignment_frames = 0
@@ -923,22 +1058,45 @@ class SequenceAwareEntrySelector:
             <= self.config.temporal_max_line_distance_ratio
         )
 
-    def _acquire_w1(
+    def _w2_topology_score(
+        self,
+        candidate: LineHypothesis,
+        previous: LineHypothesis | None = None,
+    ) -> float:
+        score = (
+            -1.35 * candidate.vertical_span_ratio
+            - 0.18 * candidate.support_length_ratio
+            + 0.08 * abs(candidate.mean_x_ratio - 0.32)
+        )
+        if previous is not None:
+            score += 2.0 * _line_distance_ratio(candidate, previous)
+            score += 0.35 * abs(
+                candidate.direction_dx_dy - previous.direction_dx_dy
+            )
+        return float(score)
+
+    def _acquire_w2(
         self, candidates: tuple[LineHypothesis, ...]
     ) -> LineHypothesis | None:
         eligible = [
             item
             for item in candidates
-            if item.mean_x_ratio
-            <= self.config.w1_acquisition_max_mean_x_ratio
-            and item.direction_dx_dy
-            >= self.config.acquisition_slope_minimum
+            if (
+                self.config.w2_acquisition_min_mean_x_ratio
+                <= item.mean_x_ratio
+                <= self.config.w2_acquisition_max_mean_x_ratio
+                and item.vertical_span_ratio
+                >= self.config.w2_acquisition_minimum_span_ratio
+                and self.config.tracking_minimum_slope
+                <= item.direction_dx_dy
+                <= self.config.tracking_maximum_slope
+            )
         ]
         if not eligible:
             return None
-        return min(eligible, key=self._w1_topology_score)
+        return min(eligible, key=self._w2_topology_score)
 
-    def _track_w1(
+    def _track_w2(
         self,
         candidates: tuple[LineHypothesis, ...],
         previous: LineHypothesis | None,
@@ -949,20 +1107,194 @@ class SequenceAwareEntrySelector:
             item
             for item in candidates
             if (
-                item.mean_x_ratio
-                <= self.config.tracking_white_max_mean_x_ratio
-                and self.config.tracking_minimum_slope
+                self.config.tracking_minimum_slope
                 <= item.direction_dx_dy
                 <= self.config.tracking_maximum_slope
                 and item.vertical_span_ratio
                 >= self.config.tracking_white_minimum_span_ratio
+                and self._matches_previous(item, previous)
             )
         ]
         if not eligible:
             return None
         return min(
             eligible,
-            key=lambda item: self._w1_topology_score(item, previous),
+            key=lambda item: self._w2_topology_score(item, previous),
+        )
+
+    def _w1_branch_metrics(
+        self,
+        candidate: LineHypothesis,
+        w2: LineHypothesis,
+    ) -> tuple[float, float]:
+        distance = _line_distance_ratio(candidate, w2)
+        # W1 is normally a short, far-away branch while W2 continues close to
+        # the vehicle.  Evaluating both fits at W2's lower endpoint therefore
+        # extrapolated W1 far outside its observed pixels and often reversed
+        # their left/right order.  Compare only the vertical range in which
+        # both lines were actually observed.
+        overlap_min_y = max(
+            candidate.minimum_y_ratio,
+            w2.minimum_y_ratio,
+        )
+        overlap_max_y = min(
+            candidate.maximum_y_ratio,
+            w2.maximum_y_ratio,
+        )
+        if overlap_max_y <= overlap_min_y:
+            return float("-inf"), float(distance)
+        sample_y = np.linspace(overlap_min_y, overlap_max_y, 3)
+        separations = [
+            w2.x_ratio_at(y_ratio) - candidate.x_ratio_at(y_ratio)
+            for y_ratio in sample_y
+        ]
+        separation = float(np.median(separations))
+        return float(separation), float(distance)
+
+    def _is_strong_w1_branch(
+        self,
+        candidate: LineHypothesis,
+        w2: LineHypothesis,
+    ) -> bool:
+        """Allow one-frame lock only for an unambiguous left branch."""
+        if not self.config.w1_fast_lock_enabled:
+            return False
+        _, distance = self._w1_branch_metrics(candidate, w2)
+        return bool(
+            self._is_w1_acquisition_candidate(candidate, w2)
+            and candidate.direction_dx_dy
+            >= self.config.w1_fast_lock_minimum_slope
+            and candidate.vertical_span_ratio
+            >= self.config.w1_fast_lock_minimum_span_ratio
+            and distance
+            >= self.config.w1_fast_lock_minimum_distance_ratio
+        )
+
+    def _is_w1_branch(
+        self,
+        candidate: LineHypothesis,
+        w2: LineHypothesis,
+        *,
+        require_acquisition_heading: bool = True,
+    ) -> bool:
+        separation, distance = self._w1_branch_metrics(candidate, w2)
+        return bool(
+            candidate is not w2
+            and candidate.mean_x_ratio
+            <= self.config.w1_acquisition_max_mean_x_ratio
+            and (
+                candidate.direction_dx_dy
+                >= (
+                    self.config.acquisition_slope_minimum
+                    if require_acquisition_heading
+                    else self.config.w1_tracking_slope_minimum
+                )
+            )
+            and candidate.vertical_span_ratio
+            >= self.config.tracking_white_minimum_span_ratio
+            and self.config.w1_branch_minimum_separation_ratio
+            <= separation
+            <= self.config.w1_branch_maximum_separation_ratio
+            and distance > self.config.duplicate_distance_ratio
+        )
+
+    def _is_w1_acquisition_candidate(
+        self,
+        candidate: LineHypothesis,
+        w2: LineHypothesis,
+    ) -> bool:
+        """Reject far-only white fragments before assigning W1 identity."""
+        _, distance = self._w1_branch_metrics(candidate, w2)
+        return bool(
+            self._is_w1_branch(candidate, w2)
+            and candidate.maximum_y_ratio
+            >= self.config.w1_acquisition_minimum_max_y_ratio
+            and distance
+            >= self.config.w1_acquisition_minimum_distance_ratio
+        )
+
+    def _w1_branch_score(
+        self,
+        candidate: LineHypothesis,
+        w2: LineHypothesis,
+        previous: LineHypothesis | None = None,
+    ) -> float:
+        separation, _ = self._w1_branch_metrics(candidate, w2)
+        score = (
+            abs(
+                separation
+                - self.config.w1_branch_expected_separation_ratio
+            )
+            + 0.18
+            * abs(
+                candidate.direction_dx_dy
+                - max(self.config.acquisition_slope_minimum, 0.35)
+            )
+            - 0.35 * candidate.vertical_span_ratio
+            - 0.05 * candidate.support_length_ratio
+        )
+        if previous is not None:
+            score += 1.6 * _line_distance_ratio(candidate, previous)
+            score += 0.15 * abs(
+                candidate.direction_dx_dy - previous.direction_dx_dy
+            )
+        return float(score)
+
+    def _acquire_w1(
+        self,
+        candidates: tuple[LineHypothesis, ...],
+        w2: LineHypothesis | None,
+    ) -> LineHypothesis | None:
+        if w2 is None:
+            return None
+        eligible = [
+            item
+            for item in candidates
+            if self._is_w1_acquisition_candidate(item, w2)
+        ]
+        if not eligible:
+            return None
+        return min(
+            eligible,
+            key=lambda item: self._w1_branch_score(item, w2),
+        )
+
+    def _track_w1(
+        self,
+        candidates: tuple[LineHypothesis, ...],
+        previous: LineHypothesis | None,
+        w2: LineHypothesis | None,
+    ) -> LineHypothesis | None:
+        if previous is None or w2 is None:
+            return None
+        eligible = [
+            item
+            for item in candidates
+            if (
+                self._is_w1_branch(
+                    item,
+                    w2,
+                    # Acquisition requires a clear left branch (+0.15).  Once
+                    # locked, W1 may approach forward alignment but must stay
+                    # left-positive (+0.02 or more); negative/right-leaning
+                    # hypotheses can never retain W1 identity.
+                    require_acquisition_heading=False,
+                )
+                and item.mean_x_ratio
+                <= self.config.tracking_white_max_mean_x_ratio
+                and self.config.tracking_minimum_slope
+                <= item.direction_dx_dy
+                <= self.config.tracking_maximum_slope
+                and item.vertical_span_ratio
+                >= self.config.tracking_white_minimum_span_ratio
+                and self._matches_previous(item, previous)
+            )
+        ]
+        if not eligible:
+            return None
+        return min(
+            eligible,
+            key=lambda item: self._w1_branch_score(item, w2, previous),
         )
 
     def _track_y1(
@@ -1061,25 +1393,61 @@ class SequenceAwareEntrySelector:
             key=lambda item: self._y1_topology_score(item, w1),
         )
 
-    def _confirm_w1(self, candidate: LineHypothesis | None) -> None:
+    def _confirm_w2(self, candidate: LineHypothesis | None) -> None:
         if candidate is None:
-            self.pending_w1 = None
-            self.w1_confirmations = 0
+            self.pending_w2 = None
+            self.w2_confirmations = 0
             return
-        if self.pending_w1 is not None and self._matches_previous(
-            candidate, self.pending_w1
+        if self.pending_w2 is not None and self._matches_previous(
+            candidate, self.pending_w2
         ):
-            self.w1_confirmations += 1
+            self.w2_confirmations += 1
         else:
-            self.pending_w1 = candidate
-            self.w1_confirmations = 1
+            self.pending_w2 = candidate
+            self.w2_confirmations = 1
+        if (
+            self.w2_confirmations
+            >= self.config.w2_acquisition_required_frames
+        ):
+            self.w2 = candidate
+            self.w2_missing_frames = 0
+
+    def _confirm_w1(
+        self,
+        candidate: LineHypothesis | None,
+        w2: LineHypothesis | None,
+    ) -> None:
+        # Normal acquisition is N matching hits in a short rolling window.
+        # One missing semantic frame no longer erases all prior evidence.
+        if candidate is not None and self.pending_w1 is not None:
+            if not self._matches_previous(candidate, self.pending_w1):
+                self.w1_confirmation_history = []
+
+        self.w1_confirmation_history.append(candidate)
+        window = self.config.w1_acquisition_window_frames
+        self.w1_confirmation_history = self.w1_confirmation_history[-window:]
+        valid_history = [
+            item
+            for item in self.w1_confirmation_history
+            if item is not None
+        ]
+        self.pending_w1 = valid_history[-1] if valid_history else None
+        self.w1_confirmations = len(valid_history)
+
+        fast_lock = bool(
+            candidate is not None
+            and w2 is not None
+            and self._is_strong_w1_branch(candidate, w2)
+        )
         if (
             self.w1_confirmations
             >= self.config.w1_acquisition_required_frames
-        ):
+            or fast_lock
+        ) and candidate is not None:
             self.w1 = candidate
             self.phase = EntrySequencePhase.W1_LOCKED
             self.w1_missing_frames = 0
+            self.w1_fast_locked = fast_lock
 
     def _confirm_y1(self, candidate: LineHypothesis | None) -> None:
         if candidate is None:
@@ -1109,47 +1477,42 @@ class SequenceAwareEntrySelector:
         *,
         width: int,
         height: int,
+        use_y1: bool,
     ) -> tuple[tuple[tuple[float, float], ...], bool, float]:
-        if self.w1 is None:
+        source = self.y1 if use_y1 and self.y1 is not None else self.w1
+        if source is None:
             return (), False, 0.0
         w1 = self.w1
-        synthetic_separation = self.config.expected_pair_separation_ratio
-        top = w1.minimum_y_ratio
-        bottom = w1.maximum_y_ratio
-        separation = synthetic_separation
+        # Keep the established W1 forward sampling span after switching to a
+        # short yellow dash.  Once Y1 is confirmed, its own fitted line remains
+        # the steering geometry even if W1 subsequently leaves the image.
+        sampling_reference = w1 if w1 is not None else source
+        top = sampling_reference.minimum_y_ratio
+        bottom = sampling_reference.maximum_y_ratio
         rows_ratio = np.linspace(
             bottom, top, int(self.config.path_sample_count)
         )
         points = []
         separations = []
         for row_ratio in rows_ratio:
-            white_x = w1.x_ratio_at(float(row_ratio))
-            # W1 is the only observed steering geometry.  Y1 confirms mission
-            # phase and handoff, while W2/Y2 never enter the steering path.
-            yellow_x = white_x + synthetic_separation
-            local_separation = yellow_x - white_x
-            if not (
-                self.config.minimum_pair_separation_ratio * 0.75
-                <= local_separation
-                <= self.config.maximum_pair_separation_ratio * 1.25
-            ):
-                continue
+            source_x = source.x_ratio_at(float(row_ratio))
             points.append(
                 (
-                    float(
-                        (
-                            self.config.w1_path_weight * white_x
-                            + (1.0 - self.config.w1_path_weight) * yellow_x
-                        )
-                        * width
-                    ),
+                    float(source_x * width),
                     float(row_ratio * height),
                 )
             )
-            separations.append(local_separation)
+            if w1 is not None and source is not w1:
+                separations.append(
+                    source_x - w1.x_ratio_at(float(row_ratio))
+                )
         if len(points) < 3:
-            return (), True, float(separation)
-        return tuple(points), True, float(np.median(separations))
+            return (), False, 0.0
+        separation = float(np.median(separations)) if separations else 0.0
+        # Synthetic Y1 is intentionally no longer used.  Before Y1 is
+        # confirmed, steering follows W1 itself.  From the existing two-frame
+        # Y1 confirmation onward, it follows the detected Y1 fit itself.
+        return tuple(points), False, separation
 
     def process(
         self,
@@ -1164,23 +1527,33 @@ class SequenceAwareEntrySelector:
         whites = extract_line_hypotheses(white, "white", self.config)
         yellows = extract_line_hypotheses(yellow, "yellow", self.config)
 
-        if self.phase == EntrySequencePhase.LEFT4_ARMED:
-            self._confirm_w1(self._acquire_w1(whites))
+        if self.w2 is None:
+            self._confirm_w2(self._acquire_w2(whites))
         else:
-            # Until Y1 establishes the fork pair, position continuity alone is
-            # ambiguous: as the vehicle turns, W1 moves sharply vehicle-left
-            # while the old W2 can remain closer to W1's previous x.  The 55
-            # hand-labelled frames show that W1 keeps its positive acquisition
-            # heading throughout this interval whereas W2 keeps the opposite
-            # heading.  Re-apply that *relative branch identity* (not an
-            # absolute pixel) until Y1 is locked.  Afterwards W1/Y1 may both
-            # rotate through zero, so tracking deliberately returns to temporal
-            # polyline continuity and does not reapply the positive-heading
-            # gate.
-            if self.y1 is None:
-                tracked_w1 = self._acquire_w1(whites)
+            tracked_w2 = self._track_w2(whites, self.w2)
+            if tracked_w2 is not None:
+                self.w2 = tracked_w2
+                self.w2_missing_frames = 0
             else:
-                tracked_w1 = self._track_w1(whites, self.w1)
+                self.w2_missing_frames += 1
+
+        w2_usable = bool(
+            self.w2 is not None
+            and self.w2_missing_frames <= self.config.missing_hold_frames
+        )
+        if self.phase == EntrySequencePhase.LEFT4_ARMED:
+            # The single continuing white line after left_4 disappearance is
+            # W2.  Do not give W1 identity to it.  W1 is acquired only after a
+            # distinct positive-heading line appears on W2's left for the
+            # configured number of consecutive semantic frames.
+            self._confirm_w1(
+                self._acquire_w1(whites, self.w2)
+                if w2_usable and self.w2_missing_frames == 0
+                else None,
+                self.w2 if w2_usable else None,
+            )
+        else:
+            tracked_w1 = self._track_w1(whites, self.w1, self.w2)
             if tracked_w1 is not None:
                 self.w1 = tracked_w1
                 self.w1_missing_frames = 0
@@ -1211,21 +1584,24 @@ class SequenceAwareEntrySelector:
             self.y1 is not None
             and self.y1_missing_frames <= self.config.missing_hold_frames
         )
-        if not w1_usable:
+        selected_source_usable = bool(y1_usable or w1_usable)
+        if not selected_source_usable:
             path = ()
             synthetic = False
             separation = 0.0
-            reason = "W1 unavailable; safe stop"
+            reason = "W1/Y1 unavailable; safe stop"
         else:
             path, synthetic, separation = self._path(
-                width=width, height=height
+                width=width,
+                height=height,
+                use_y1=bool(y1_usable and self.y1 is not None),
             )
             if not path:
-                reason = "W1 geometry invalid; safe stop"
+                reason = "selected steering geometry invalid; safe stop"
             elif not y1_usable or self.y1 is None:
-                reason = "W1 steering geometry; waiting Y1 stage; W2/Y2 ignored"
+                reason = "PATH=W1 direct; waiting confirmed Y1; W2/Y2 ignored"
             else:
-                reason = "W1 steering geometry; Y1 stage tracked; W2/Y2 ignored"
+                reason = "PATH=Y1 direct; confirmed yellow centerline; W2/Y2 ignored"
 
         if (
             self.phase in (
@@ -1249,16 +1625,24 @@ class SequenceAwareEntrySelector:
             reason = "W1/Y1 aligned with vehicle forward axis; cruise handoff"
 
         ready = self.phase != EntrySequencePhase.LEFT4_ARMED
-        path_valid = bool(path and ready and w1_usable)
+        path_valid = bool(path and ready and selected_source_usable)
+        if self.phase == EntrySequencePhase.LEFT4_ARMED:
+            if w2_usable:
+                phase_reason = "W2 tracked; waiting for left-diverging W1"
+            else:
+                phase_reason = "left_4 armed; acquiring persistent W2"
+        else:
+            phase_reason = reason
         return SequenceEntryResult(
             phase=self.phase,
             ready=ready,
             path_valid=path_valid,
             cruise_handoff=self.phase == EntrySequencePhase.CRUISE_HANDOFF,
-            reason=reason if ready else "left_4 armed; searching for W1",
+            reason=phase_reason,
             white_candidates=whites,
             yellow_candidates=yellows,
             w1=self.w1 if w1_usable else None,
+            w2=self.w2 if w2_usable else None,
             y1=self.y1 if y1_usable else None,
             path_pixels=path,
             used_synthetic_y1=bool(synthetic),
@@ -1270,6 +1654,9 @@ def render_sequence_debug(
     white_mask: np.ndarray,
     yellow_mask: np.ndarray,
     result: SequenceEntryResult,
+    branch_estimate: BranchPointEstimate | None = None,
+    *,
+    branch_latched: bool = False,
 ) -> np.ndarray:
     white = normalize_mask(white_mask)
     yellow = normalize_mask(yellow_mask)
@@ -1293,6 +1680,23 @@ def render_sequence_debug(
         draw_line(item, (120, 90, 90), 1)
     for item in result.yellow_candidates:
         draw_line(item, (40, 100, 120), 1)
+    if branch_estimate is not None and branch_estimate.w2 is not None:
+        w2 = branch_estimate.w2
+        draw_line(w2, (255, 255, 0), 3)
+        label_y = int(
+            round(0.5 * (w2.minimum_y_ratio + w2.maximum_y_ratio) * height)
+        )
+        label_x = int(round(w2.x_ratio_at(label_y / height) * width))
+        cv2.putText(
+            output,
+            "W2 (GATE LATCHED)" if branch_latched else "W2 (GATE CANDIDATE)",
+            (max(4, min(width - 150, label_x + 8)), max(92, label_y)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.46,
+            (255, 255, 0),
+            2,
+            cv2.LINE_AA,
+        )
     if result.w1 is not None:
         draw_line(result.w1, (255, 0, 255), 4)
     if result.y1 is not None:
@@ -1300,6 +1704,43 @@ def render_sequence_debug(
     if len(result.path_pixels) >= 2:
         pixels = np.asarray(result.path_pixels, dtype=np.int32)
         cv2.polylines(output, [pixels], False, (255, 100, 0), 4, cv2.LINE_AA)
+    if (
+        branch_estimate is not None
+        and branch_estimate.w2 is not None
+        and math.isfinite(branch_estimate.intersection_x_ratio)
+        and math.isfinite(branch_estimate.intersection_y_ratio)
+    ):
+        raw_intersection = (
+            int(round(branch_estimate.intersection_x_ratio * width)),
+            int(round(branch_estimate.intersection_y_ratio * height)),
+        )
+        # A fork at 0 m projects onto the bottom image boundary.  Pull only
+        # the display marker inside the frame so the complete red circle stays
+        # visible; the distance calculation continues to use the raw point.
+        marker_margin = 12
+        intersection = (
+            max(marker_margin, min(width - marker_margin - 1, raw_intersection[0])),
+            max(marker_margin, min(height - marker_margin - 1, raw_intersection[1])),
+        )
+        # A valid W1/W2 fork is the spatial steering trigger.  Keep it red so
+        # it cannot be confused with the yellow lane/Y1 diagnostics.
+        cv2.circle(output, intersection, 10, (0, 0, 255), 4, cv2.LINE_AA)
+        text_x = max(4, min(width - 185, intersection[0] + 12))
+        text_y = max(104, min(height - 10, intersection[1] - 12))
+        cv2.putText(
+            output,
+            (
+                f"W1/W2 GATE X  {branch_estimate.distance_m:.3f}m"
+                if branch_latched
+                else f"W1/W2 X  {branch_estimate.distance_m:.3f}m"
+            ),
+            (text_x, text_y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.48,
+            (0, 0, 255),
+            2,
+            cv2.LINE_AA,
+        )
 
     cv2.line(
         output,
@@ -1339,6 +1780,7 @@ def render_sequence_debug(
         (
             f"W candidates={len(result.white_candidates)}  "
             f"Y candidates={len(result.yellow_candidates)}  "
+            f"path_source={'Y1' if result.y1 is not None else 'W1'}  "
             f"synthetic_Y1={int(result.used_synthetic_y1)}"
         ),
         (10, 70),

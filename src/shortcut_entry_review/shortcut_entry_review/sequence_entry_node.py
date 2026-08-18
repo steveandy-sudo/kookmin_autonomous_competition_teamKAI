@@ -31,12 +31,13 @@ from lane_seg_control.canonical_adapter_node import (
 from .sequence_entry_core import (
     SequenceEntryConfig,
     SequenceAwareEntrySelector,
-    branch_point_distance_m,
+    estimate_branch_point,
     pixels_to_vehicle_path,
     render_sequence_debug,
     select_entry_handoff_condition,
     spatial_steering_gate,
     update_w1_steering_delay_counts,
+    w1_entry_trigger_ready,
     w1_steering_delay_ready,
 )
 
@@ -63,19 +64,25 @@ class SequenceEntryNode(Node):
         self.declare_parameter("spatial_gate_response_time_sec", 0.35)
         self.declare_parameter("spatial_gate_minimum_distance_m", 0.25)
         self.declare_parameter("spatial_gate_blend_distance_m", 0.25)
-        self.declare_parameter("w1_steering_start_delay_frames", 4)
+        self.declare_parameter("w1_start_on_intersection", True)
+        self.declare_parameter("w1_steering_start_delay_frames", 0)
         self.declare_parameter(
             "w1_steering_delay_missing_tolerance_frames", 2
         )
-        self.declare_parameter("minimum_entry_progress_m", 0.50)
+        self.declare_parameter("minimum_entry_progress_m", 0.30)
         self.declare_parameter("pair_track_handoff_required_frames", 2)
         self.declare_parameter("w1_loss_handoff_enabled", True)
-        self.declare_parameter("maximum_entry_steering_sec", 1.5)
+        self.declare_parameter("maximum_entry_steering_sec", 1.3)
         self.declare_parameter("input_is_bev", False)
         self.declare_parameter("base_frame_id", "base_footprint")
         self.declare_parameter("forward_range_m", 1.5)
         self.declare_parameter("lateral_range_m", 1.4)
         self.declare_parameter("w1_path_weight", 0.60)
+        self.declare_parameter("w1_acquisition_required_frames", 2)
+        self.declare_parameter("w1_acquisition_window_frames", 4)
+        self.declare_parameter("w1_fast_lock_enabled", True)
+        self.declare_parameter("w1_acquisition_minimum_max_y_ratio", 0.72)
+        self.declare_parameter("w1_acquisition_minimum_distance_ratio", 0.065)
         self.declare_parameter("show_opencv_windows", False)
         self.declare_parameter(
             "path_topic", "/shortcut/entry/selected_centerline"
@@ -97,6 +104,10 @@ class SequenceEntryNode(Node):
         )
         self.declare_parameter("debug_topic", "/shortcut/entry/debug_image")
         self.declare_parameter(
+            "intersection_debug_topic",
+            "/shortcut/entry/intersection_debug_image",
+        )
+        self.declare_parameter(
             "canonical_input_debug_topic",
             "/shortcut/entry/canonical_model_input",
         )
@@ -117,7 +128,30 @@ class SequenceEntryNode(Node):
             SequenceEntryConfig(
                 w1_path_weight=float(
                     self.get_parameter("w1_path_weight").value
-                )
+                ),
+                w1_acquisition_required_frames=int(
+                    self.get_parameter(
+                        "w1_acquisition_required_frames"
+                    ).value
+                ),
+                w1_acquisition_window_frames=int(
+                    self.get_parameter(
+                        "w1_acquisition_window_frames"
+                    ).value
+                ),
+                w1_fast_lock_enabled=bool(
+                    self.get_parameter("w1_fast_lock_enabled").value
+                ),
+                w1_acquisition_minimum_max_y_ratio=float(
+                    self.get_parameter(
+                        "w1_acquisition_minimum_max_y_ratio"
+                    ).value
+                ),
+                w1_acquisition_minimum_distance_ratio=float(
+                    self.get_parameter(
+                        "w1_acquisition_minimum_distance_ratio"
+                    ).value
+                ),
             )
         )
         self.enabled = bool(self.get_parameter("default_enabled").value)
@@ -126,10 +160,12 @@ class SequenceEntryNode(Node):
         self.last_stamp: tuple[int, int] | None = None
         self.semantic_frame_index = 0
         self.handoff_logged = False
+        self.w2_locked_logged = False
         self.w1_locked_logged = False
         self.w1_steering_delay_frames = 0
         self.w1_steering_delay_missing_frames = 0
         self.w1_spatial_gate_latched = False
+        self.gate_branch_estimate = None
         self.steering_started = False
         self.steering_blend = 0.0
         self.rule_command = (0.0, 0.0)
@@ -175,6 +211,11 @@ class SequenceEntryNode(Node):
         )
         self.debug_publisher = self.create_publisher(
             Image, str(self.get_parameter("debug_topic").value), image_qos
+        )
+        self.intersection_debug_publisher = self.create_publisher(
+            Image,
+            str(self.get_parameter("intersection_debug_topic").value),
+            10,
         )
         self.canonical_input_publisher = self.create_publisher(
             Image,
@@ -244,10 +285,12 @@ class SequenceEntryNode(Node):
         self.last_stamp = None
         self.semantic_frame_index = 0
         self.handoff_logged = False
+        self.w2_locked_logged = False
         self.w1_locked_logged = False
         self.w1_steering_delay_frames = 0
         self.w1_steering_delay_missing_frames = 0
         self.w1_spatial_gate_latched = False
+        self.gate_branch_estimate = None
         self.steering_started = False
         self.steering_blend = 0.0
         self.entry_progress_m = 0.0
@@ -309,6 +352,12 @@ class SequenceEntryNode(Node):
         )
         return bev_white, bev_yellow
 
+    @staticmethod
+    def message_stamp_sec(message: Image) -> float:
+        return float(message.header.stamp.sec) + 1e-9 * float(
+            message.header.stamp.nanosec
+        )
+
     def try_process(self) -> None:
         if self.white_message is None or self.yellow_message is None:
             return
@@ -335,11 +384,14 @@ class SequenceEntryNode(Node):
         result = self.selector.process(bev_white, bev_yellow)
         self.semantic_frame_index += 1
         forward_range_m = float(self.get_parameter("forward_range_m").value)
-        branch_distance = branch_point_distance_m(
+        branch_estimate = estimate_branch_point(
             result.w1,
             result.white_candidates,
             forward_range_m=forward_range_m,
+            tracked_w2=result.w2,
         )
+        branch_distance = branch_estimate.distance_m
+        observation_time = self.message_stamp_sec(self.white_message)
         now = time.monotonic()
         rule_fresh = (
             now - self.rule_command_time
@@ -367,14 +419,21 @@ class SequenceEntryNode(Node):
                 self.get_parameter("spatial_gate_blend_distance_m").value
             ),
         )
+        if result.w2 is not None and not self.w2_locked_logged:
+            self.get_logger().info(
+                "[MISSION] W2 CONTINUATION TRACK LOCKED: waiting for a "
+                "persistent left-diverging W1 branch"
+            )
+            self.w2_locked_logged = True
         if result.w1 is not None and not self.w1_locked_logged:
             self.get_logger().info(
-                "[MISSION] W1 DETECTED/LOCKED: steering remains RULE until "
-                "the spatial branch gate opens"
+                "[MISSION] W1 DETECTED/LOCKED: waiting for a valid red "
+                "W1/W2 intersection"
             )
             self.w1_locked_logged = True
         w1_observed = bool(
-            result.w1 is not None and self.selector.w1_missing_frames == 0
+            result.w1 is not None
+            and self.selector.w1_missing_frames == 0
         )
         w1_delay_required_frames = max(
             0,
@@ -393,8 +452,19 @@ class SequenceEntryNode(Node):
             ),
         )
         if not self.steering_started:
-            if gate.ready and rule_driving and w1_observed:
+            entry_trigger_ready = w1_entry_trigger_ready(
+                branch_distance_m=branch_distance,
+                spatial_gate_ready=gate.ready,
+                start_on_intersection=bool(
+                    self.get_parameter(
+                        "w1_start_on_intersection"
+                    ).value
+                ),
+            )
+            if entry_trigger_ready and rule_driving:
                 self.w1_spatial_gate_latched = True
+                if self.gate_branch_estimate is None:
+                    self.gate_branch_estimate = branch_estimate
             if self.w1_spatial_gate_latched and rule_driving:
                 (
                     self.w1_steering_delay_frames,
@@ -416,25 +486,29 @@ class SequenceEntryNode(Node):
         if self.steering_started and math.isfinite(
             self.entry_progress_update_time
         ):
-            elapsed_sec = max(0.0, now - self.entry_progress_update_time)
+            elapsed_sec = max(
+                0.0, observation_time - self.entry_progress_update_time
+            )
             dt_sec = min(
                 0.25,
                 elapsed_sec,
             )
             self.entry_progress_m += (
                 entry_speed_command
-                * float(self.get_parameter("speed_command_to_mps").value)
+                * float(
+                    self.get_parameter("speed_command_to_mps").value
+                )
                 * dt_sec
             )
             if entry_speed_command > 0.0:
                 self.entry_steering_active_sec += elapsed_sec
-            self.entry_progress_update_time = now
+            self.entry_progress_update_time = observation_time
         if self.w1_spatial_gate_latched and rule_driving and w1_delay_ready:
             if not self.steering_started:
                 self.get_logger().warning(
-                    "[MISSION] SHORTCUT ENTRY STEERING START: "
+                    "[MISSION] RED W1/W2 INTERSECTION -> DIRECT W1 "
+                    "STEERING START: "
                     f"branch={branch_distance:.3f}m "
-                    f"trigger={gate.trigger_distance_m:.3f}m "
                     f"W1_delay={self.w1_steering_delay_frames}/"
                     f"{w1_delay_required_frames} "
                     f"gap={self.w1_steering_delay_missing_frames}/"
@@ -443,13 +517,11 @@ class SequenceEntryNode(Node):
                 )
                 self.entry_progress_m = 0.0
                 self.entry_steering_active_sec = 0.0
-                self.entry_progress_update_time = now
+                self.entry_progress_update_time = observation_time
             self.steering_started = True
-            self.steering_blend = max(
-                self.steering_blend, max(0.05, float(gate.blend))
-            )
+            self.steering_blend = 1.0
         elif self.w1_spatial_gate_latched and rule_driving:
-            self.get_logger().info(
+            self.get_logger().warning(
                 "[MISSION] W1 STEERING DELAY: retaining yellow Xbin RULE "
                 f"valid={self.w1_steering_delay_frames}/"
                 f"{w1_delay_required_frames} "
@@ -478,20 +550,19 @@ class SequenceEntryNode(Node):
                 Point(x=float(forward), y=float(lateral), z=0.0)
                 for forward, lateral in vehicle_path
             ]
-            path_message.confidence = (
-                0.55 if result.used_synthetic_y1 else 1.0
-            )
+            path_message.confidence = 1.0
             path_message.source = (
-                "shortcut_W1_synthetic_Y1"
-                if result.used_synthetic_y1
-                else "shortcut_W1_Y1"
+                "shortcut_Y1_direct"
+                if result.y1 is not None
+                else "shortcut_W1_direct"
             )
             self.path_publisher.publish(path_message)
 
         # W1 can be locked and published early, but the hybrid driver keeps
-        # RULE authority until the physical W1/W2 branch gate opens.  The
-        # aligned visual geometry must then persist through a minimum estimated
-        # travel distance so camera alignment alone cannot end the turn early.
+        # RULE authority until a valid W1/W2 intersection produces the red
+        # annotation. The aligned visual geometry must then persist through a
+        # minimum estimated travel distance so camera alignment alone cannot
+        # end the turn early.
         minimum_entry_progress_m = max(
             0.0,
             float(self.get_parameter("minimum_entry_progress_m").value),
@@ -530,7 +601,9 @@ class SequenceEntryNode(Node):
             maximum_steering_sec=max(
                 0.0,
                 float(
-                    self.get_parameter("maximum_entry_steering_sec").value
+                    self.get_parameter(
+                        "maximum_entry_steering_sec"
+                    ).value
                 ),
             ),
         )
@@ -629,14 +702,43 @@ class SequenceEntryNode(Node):
                     float(self.w1_steering_delay_missing_frames),
                     float(w1_delay_missing_tolerance_frames),
                     1.0 if self.w1_spatial_gate_latched else 0.0,
+                    float(
+                        result.w2.mean_x_ratio
+                        if result.w2 is not None
+                        else math.nan
+                    ),
+                    float(
+                        result.w2.direction_dx_dy
+                        if result.w2 is not None
+                        else math.nan
+                    ),
+                    float(self.selector.w2_missing_frames),
+                    float(self.selector.w1_confirmations),
+                    1.0 if self.selector.w1_fast_locked else 0.0,
+                    float(
+                        self.selector.config.w1_acquisition_required_frames
+                    ),
+                    float(
+                        self.selector.config.w1_acquisition_window_frames
+                    ),
                 ]
             )
         )
 
-        debug = render_sequence_debug(bev_white, bev_yellow, result)
+        debug = render_sequence_debug(
+            bev_white,
+            bev_yellow,
+            result,
+            self.gate_branch_estimate or branch_estimate,
+            branch_latched=self.gate_branch_estimate is not None,
+        )
         debug_message = self.bridge.cv2_to_imgmsg(debug, encoding="bgr8")
         debug_message.header = output_header
         self.debug_publisher.publish(debug_message)
+        if math.isfinite(branch_distance):
+            # Preserve every actual W1/W2 pair frame for review even when the
+            # high-rate BEST_EFFORT debug stream drops around a player pause.
+            self.intersection_debug_publisher.publish(debug_message)
 
         canonical = np.full(
             (bev_white.shape[0], bev_white.shape[1], 3), 28, dtype=np.uint8
