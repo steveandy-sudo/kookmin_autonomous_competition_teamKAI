@@ -1,0 +1,57 @@
+/**:
+  ros__parameters:
+    image_topic: /wide_camera_mjpeg/image_raw/compressed
+    use_compressed_image: true
+    detections_topic: /my_rule/object_detections
+    debug_topic: /my_rule/object_detection/debug_image
+    startup_green_topic: /my_rule/start_signal_green
+    enable_rectify: true
+    rect_balance: 0.3
+
+    # Keep YOLO outside the 7 Hz lane loop. Mission decisions consume only
+    # temporally confirmed semantic results from this latest-frame worker.
+    inference_rate_hz: 3.0
+    max_input_age_sec: 0.40
+    input_size: 640
+    device: cpu
+    half: false
+    iou_threshold: 0.50
+    max_detections: 50
+    cpu_threads: 2
+    opencv_threads: 1
+
+    car_confidence: 0.45
+    # Reserved dynamic-obstacle class. It is accepted when a future model
+    # exports the class, but is intentionally not a required class today.
+    obstacle_vehicle_confidence: 0.45
+    cone_confidence: 0.50
+    red_confidence: 0.50
+    yellow_confidence: 0.50
+    green_confidence: 0.50
+    red_4_confidence: 0.50
+    yellow_4_confidence: 0.50
+    green_4_confidence: 0.50
+    left_4_confidence: 0.40
+    yellow_centerline_confidence: 0.45
+
+    # The 2026-08-04 detector separates traffic-light hardware variants and
+    # red/green vehicles. Convert those raw labels into stable mission names.
+    class_aliases: [green_car=car, red_car=car]
+
+    # At the first start only, YOLO owns the complete traffic-light box and
+    # lightweight HSV checks only that exact box at camera-rate. The one-shot
+    # green result is latched; later traffic lights cannot stop the vehicle.
+    startup_signal_hsv_enabled: true
+    startup_signal_hsv_rate_hz: 20.0
+    startup_signal_box_timeout_sec: 1.0
+    startup_signal_min_confidence: 0.50
+    startup_signal_max_center_y_ratio: 0.55
+    startup_signal_min_area_ratio: 0.00005
+    startup_green_hsv_lower: [70, 100, 120]
+    startup_green_hsv_upper: [90, 255, 255]
+    startup_green_min_pixels: 20
+    startup_green_min_pixel_ratio: 0.015
+    startup_green_required_frames: 2
+
+    # null_4 is deliberately ignored by all mission triggers.
+    required_classes: [car, cone, red_4, yellow_4, green_4, left_4]
