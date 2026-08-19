@@ -262,3 +262,18 @@ After the 2026-08-06 BEV zero-point calibration, the default static lane target
 is 9 cm left of the perceived yellow line. This is the conservative starting
 value that preserves the previously validated physical trajectory.
 Dynamic avoidance offsets are added only while the avoidance state is active.
+
+## KTY 첫 수정한 부분
+
+통합 주행의 첫 KTY 수정은 기존 RULE, 지름길, 콘 경로 생성과 제어 우선순위를
+유지하면서 다음 세 동작만 변경한다.
+
+- `red_4`, `yellow_4`, `green_4` 신호 판단에서 bbox 면적을 거리 대용 조건으로
+  사용하지 않는다. confidence와 기존 2프레임 확인 조건은 유지한다.
+- 차량 및 장애물의 좌우 회피 방향을 곡선에서도 최신 노란 중앙선 기준으로
+  판단한다. 장애물 오른쪽은 왼쪽, 장애물 왼쪽은 오른쪽으로 회피한다.
+- 콘 주행은 YOLO와 LiDAR 콘 관측이 모두 끊긴 후 센서 freshness `0.5초`만
+  기다리고 RULE로 복귀한다. 기존 추가 대기 `1.0초`는 제거한다.
+
+실차 적용 전 `test_traffic_light_control.py`, `test_yolo_lidar_avoidance.py`,
+`test_cone_mode_latch.py`와 `xycar_map_nav` 빌드를 확인한다.

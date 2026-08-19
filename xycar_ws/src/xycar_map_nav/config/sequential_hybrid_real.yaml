@@ -47,7 +47,9 @@ sequential_hybrid_driver:
     cone_exit_confidence: 0.20
     cone_entry_frames: 3
     cone_exit_frames: 1
-    cone_exit_absence_sec: 1.0
+    # The 0.5 s sensor-presence timeout is the complete exit hold. Do not add
+    # another delay after both YOLO and LiDAR cone observations go stale.
+    cone_exit_absence_sec: 0.0
     # cone_node publishes a physical wheel target. Convert it to the calibrated
     # Xycar servo command used by the main real-vehicle drive manager.
     cone_max_target_angle_deg: 42.0
@@ -90,8 +92,10 @@ sequential_hybrid_driver:
     traffic_light_yellow_class_name: yellow_4
     traffic_light_green_class_name: green_4
     traffic_light_min_confidence: 0.50
-    traffic_light_stop_min_box_area_ratio: 0.025
-    traffic_light_go_min_box_area_ratio: 0.025
+    # Signal decisions use confidence and consecutive frames without treating
+    # bounding-box area as a distance proxy.
+    traffic_light_stop_min_box_area_ratio: 0.0
+    traffic_light_go_min_box_area_ratio: 0.0
     traffic_light_stop_required_frames: 2
     traffic_light_go_required_frames: 2
     traffic_light_status_topic: /hybrid/traffic_light_status
@@ -106,10 +110,8 @@ sequential_hybrid_driver:
     # The detector runs at 3 Hz, so 0.5 s still spans a normal frame interval.
     vehicle_lidar_sector_memory_sec: 0.5
     vehicle_preferred_side_required_frames: 1
-    # Choose obstacle left/right only when both the rule command and the raw
-    # yellow geometry indicate a straight road. Curves wait instead of using
-    # the full-height straight divider fitted for white-lane classification.
-    vehicle_side_decision_straight_only: true
+    # Use the fitted yellow divider for avoidance-side selection on curves too.
+    vehicle_side_decision_straight_only: false
     vehicle_side_decision_max_rule_angle_command: 8.0
     vehicle_side_decision_rule_timeout_sec: 0.25
     yellow_straight_max_rmse_px: 3.0

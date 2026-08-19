@@ -653,7 +653,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("cone_exit_confidence", 0.20)
         self.declare_parameter("cone_entry_frames", 3)
         self.declare_parameter("cone_exit_frames", 1)
-        self.declare_parameter("cone_exit_absence_sec", 1.0)
+        self.declare_parameter("cone_exit_absence_sec", 0.0)
         self.declare_parameter("cone_max_target_angle_deg", 42.0)
         self.declare_parameter(
             "cone_steering_actual_deg", [0.0, 4.0, 10.0, 16.0, 26.0]
@@ -713,10 +713,10 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("traffic_light_green_class_name", "green_4")
         self.declare_parameter("traffic_light_min_confidence", 0.50)
         self.declare_parameter(
-            "traffic_light_stop_min_box_area_ratio", 0.025
+            "traffic_light_stop_min_box_area_ratio", 0.0
         )
         self.declare_parameter(
-            "traffic_light_go_min_box_area_ratio", 0.025
+            "traffic_light_go_min_box_area_ratio", 0.0
         )
         self.declare_parameter("traffic_light_stop_required_frames", 2)
         self.declare_parameter("traffic_light_go_required_frames", 2)
@@ -736,7 +736,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("yellow_reference_min_pixels", 3)
         self.declare_parameter("yellow_reference_residual_px", 6.0)
         self.declare_parameter("yellow_side_deadband_px", 6.0)
-        self.declare_parameter("vehicle_side_decision_straight_only", True)
+        self.declare_parameter("vehicle_side_decision_straight_only", False)
         self.declare_parameter(
             "vehicle_side_decision_max_rule_angle_command", 8.0
         )

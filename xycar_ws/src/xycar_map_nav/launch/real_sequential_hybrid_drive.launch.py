@@ -251,7 +251,7 @@ def generate_launch_description():
                 "cone_sensor_presence_timeout_sec", default_value="0.5"
             ),
             DeclareLaunchArgument(
-                "cone_exit_absence_sec", default_value="1.0"
+                "cone_exit_absence_sec", default_value="0.0"
             ),
             DeclareLaunchArgument(
                 "lookahead_distance_m", default_value="0.3"
@@ -367,7 +367,7 @@ def generate_launch_description():
                 "vehicle_yolo_min_confidence", default_value="0.45"
             ),
             DeclareLaunchArgument(
-                "vehicle_side_decision_straight_only", default_value="true"
+                "vehicle_side_decision_straight_only", default_value="false"
             ),
             DeclareLaunchArgument(
                 "vehicle_side_decision_max_rule_angle_command",
