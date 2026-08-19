@@ -1,0 +1,11 @@
+[
+  {
+    "checkpoint": "camera_speed_td3_bc_best.pth",
+    "epoch": 14,
+    "planned_simulation_speed_cap": 0.0,
+    "selected": true,
+    "suggested_shadow_speed_cap": 0.0,
+    "validation_speed_mse": 0.01213979534804821,
+    "validation_steering_mse": 0.012626734329387546
+  }
+]

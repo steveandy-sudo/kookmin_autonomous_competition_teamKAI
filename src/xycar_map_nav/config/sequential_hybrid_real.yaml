@@ -45,22 +45,19 @@ sequential_hybrid_driver:
     # missed YOLO frame and one empty LiDAR scan from ending cone mode.
     cone_entry_confidence: 0.35
     cone_exit_confidence: 0.20
-    # Integrated entry is semantic-first: two visible cones identify the
-    # slalom, while one visible cone is routed to local obstacle avoidance.
-    cone_entry_frames: 1
+    cone_entry_frames: 3
     cone_exit_frames: 1
-    cone_exit_absence_sec: 1.0
+    # The 0.5 s sensor-presence timeout is the complete exit hold. Do not add
+    # another delay after both YOLO and LiDAR cone observations go stale.
+    cone_exit_absence_sec: 0.0
     # cone_node publishes a physical wheel target. Convert it to the calibrated
     # Xycar servo command used by the main real-vehicle drive manager.
     cone_max_target_angle_deg: 42.0
     cone_steering_actual_deg: [0.0, 4.0, 10.0, 16.0, 26.0]
     cone_steering_command: [0.0, 10.0, 20.0, 30.0, 42.0]
     cone_yolo_min_confidence: 0.50
-    cone_yolo_required_frames: 1
+    cone_yolo_required_frames: 2
     cone_yolo_timeout_sec: 0.75
-    cone_zone_minimum_detections: 2
-    cone_entry_distance_enabled: false
-    # Retained only for an explicitly enabled distance-gated fallback.
     cone_entry_distance_m: 3.0
     cone_cluster_timeout_sec: 0.50
     # cone_node emits a command from every accepted LiDAR scan. Use that
@@ -95,17 +92,15 @@ sequential_hybrid_driver:
     traffic_light_yellow_class_name: yellow_4
     traffic_light_green_class_name: green_4
     traffic_light_min_confidence: 0.50
-    traffic_light_stop_min_box_area_ratio: 0.025
-    traffic_light_go_min_box_area_ratio: 0.025
+    # Signal decisions use confidence and consecutive frames without treating
+    # bounding-box area as a distance proxy.
+    traffic_light_stop_min_box_area_ratio: 0.0
+    traffic_light_go_min_box_area_ratio: 0.0
     traffic_light_stop_required_frames: 2
     traffic_light_go_required_frames: 2
     traffic_light_status_topic: /hybrid/traffic_light_status
     vehicle_class_names: [obstacle_vehicle, car]
     vehicle_yolo_min_confidence: 0.45
-    # Only one qualifying cone is admitted as an avoidance target. Two or more
-    # qualifying cones remain exclusively owned by CONE_RULE.
-    cone_as_vehicle_obstacle: true
-    cone_as_vehicle_min_confidence: 0.50
     vehicle_yolo_required_frames: 1
     vehicle_yolo_timeout_sec: 1.00
     vehicle_camera_lidar_hfov_deg: 60.0
@@ -115,10 +110,8 @@ sequential_hybrid_driver:
     # The detector runs at 3 Hz, so 0.5 s still spans a normal frame interval.
     vehicle_lidar_sector_memory_sec: 0.5
     vehicle_preferred_side_required_frames: 1
-    # Choose obstacle left/right only when both the rule command and the raw
-    # yellow geometry indicate a straight road. Curves wait instead of using
-    # the full-height straight divider fitted for white-lane classification.
-    vehicle_side_decision_straight_only: true
+    # Use the fitted yellow divider for avoidance-side selection on curves too.
+    vehicle_side_decision_straight_only: false
     vehicle_side_decision_max_rule_angle_command: 8.0
     vehicle_side_decision_rule_timeout_sec: 0.25
     yellow_straight_max_rmse_px: 3.0

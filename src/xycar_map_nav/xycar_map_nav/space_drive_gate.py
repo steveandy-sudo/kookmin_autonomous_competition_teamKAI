@@ -10,7 +10,10 @@ import sys
 import termios
 import time
 import tty
+from typing import Mapping
 
+from diagnostic_msgs.msg import DiagnosticArray
+from diagnostic_msgs.msg import DiagnosticStatus
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
@@ -46,11 +49,98 @@ def active_drive_mode(source: str, mode_label: str) -> str:
         return "CONE"
     if source == "SHORTCUT":
         return "SHORTCUT"
+    if source == "TRAFFIC_LIGHT":
+        return "TRAFFIC_LIGHT"
     if source == "RULE":
         return "RULE"
     if source == "RL":
         return "MODEL"
     return "WAIT"
+
+
+def classify_vesc_health(
+    *,
+    diagnostic_message: str,
+    diagnostic_level: int,
+    values: Mapping[str, str],
+) -> tuple[str, str]:
+    """Return a stable operator-facing VESC state and explanation."""
+    guard_state = str(values.get("guard_state", "unknown"))
+    voltage_text = str(values.get("voltage_input", "nan"))
+    output_scale_text = str(values.get("voltage_output_scale", "nan"))
+    fault_text = str(values.get("fault_code", "0"))
+    try:
+        voltage = float(voltage_text)
+    except ValueError:
+        voltage = float("nan")
+    try:
+        output_scale = float(output_scale_text)
+    except ValueError:
+        output_scale = float("nan")
+    try:
+        fault_code = int(fault_text)
+    except ValueError:
+        fault_code = 0
+
+    voltage_label = f"{voltage:.2f}V" if math.isfinite(voltage) else "미확인"
+    if guard_state == "low_voltage_limited":
+        scale_label = (
+            f"{100.0 * output_scale:.0f}%"
+            if math.isfinite(output_scale)
+            else "미확인"
+        )
+        return (
+            "LOW_VOLTAGE_LIMITED",
+            f"저전압 출력 제한: 전압={voltage_label}, 출력={scale_label}",
+        )
+    if guard_state == "fault_latched":
+        if fault_code == 2 or (math.isfinite(voltage) and voltage <= 6.0):
+            return (
+                "LOW_VOLTAGE_STOP",
+                f"저전압 보호 차단: 전압={voltage_label}, fault={fault_code}",
+            )
+        return (
+            "VESC_FAULT_STOP",
+            f"VESC 고장 차단: 전압={voltage_label}, fault={fault_code}",
+        )
+    message = str(diagnostic_message).strip()
+    if diagnostic_level >= DiagnosticStatus.ERROR:
+        return "VESC_ERROR_STOP", message or "VESC 진단 오류"
+    if message in {
+        "drive disabled",
+        "motor command timeout",
+        "VESC telemetry timeout",
+    }:
+        return "VESC_NOT_READY", message
+    return "NORMAL", f"전압 정상: {voltage_label}"
+
+
+def stop_reason_text(
+    *,
+    output_reason: str,
+    selector_state: str,
+    selector_reason: str,
+    vesc_state: str,
+    vesc_reason: str,
+) -> str:
+    if vesc_state in {
+        "LOW_VOLTAGE_STOP",
+        "VESC_FAULT_STOP",
+        "VESC_ERROR_STOP",
+        "VESC_NOT_READY",
+    }:
+        return vesc_reason
+    if output_reason == "SPACE_STOP":
+        return "SPACE 키로 정지"
+    if output_reason == "CANDIDATE_STALE":
+        return "통합 주행 후보 명령이 끊김"
+    if output_reason == "SELECTOR_STOP":
+        detail = selector_reason.strip()
+        return detail if detail else "주행 선택기가 속도 0을 요청함"
+    if selector_state not in {"UNKNOWN", "RUNNING"}:
+        detail = selector_reason.strip()
+        return detail if detail else f"주행 선택기 상태={selector_state}"
+    return output_reason or "정지 원인 미확인"
 
 
 def estimate_message_rate_hz(timestamps: list[float]) -> float:
@@ -204,6 +294,8 @@ class SpaceDriveGate(Node):
         self.quit_requested = False
         self.has_started = False
         self.last_display_key = ""
+        self.vesc_state = "UNKNOWN"
+        self.vesc_reason = "VESC 진단 대기"
         self.avoidance_debug: list[float] | None = None
         self.rule_path_speed_mode = "UNKNOWN"
         self.rule_path_speed_command = float("nan")
@@ -248,6 +340,12 @@ class SpaceDriveGate(Node):
             self._on_rule_diagnostics,
             10,
         )
+        self.create_subscription(
+            DiagnosticArray,
+            str(self.get_parameter("vesc_diagnostics_topic").value),
+            self._on_diagnostics,
+            10,
+        )
         self.motor_pub = self.create_publisher(
             Float32MultiArray,
             str(self.get_parameter("motor_topic").value),
@@ -281,6 +379,8 @@ class SpaceDriveGate(Node):
         self.declare_parameter(
             "rule_diagnostics_topic", "/rule_drive/diagnostics"
         )
+        self.declare_parameter("vesc_diagnostics_topic", "/diagnostics")
+        self.declare_parameter("vesc_diagnostic_name", "xycar_vesc_driver")
         self.declare_parameter("avoidance_target_label", "vehicle")
         self.declare_parameter("avoidance_yolo_min_confidence", 0.45)
         self.declare_parameter("avoidance_entry_distance_m", 1.20)
@@ -345,12 +445,27 @@ class SpaceDriveGate(Node):
             mode = "CURVE"
         else:
             mode = "STRAIGHT"
-        if mode != self.rule_path_speed_mode:
-            self.last_display_key = ""
         self.rule_path_speed_mode = mode
         self.rule_path_speed_command = float(
             message.data[RULE_DIAGNOSTICS_CLASSIFIED_SPEED_INDEX]
         )
+
+    def _on_diagnostics(self, message: DiagnosticArray) -> None:
+        expected_name = str(
+            self.get_parameter("vesc_diagnostic_name").value
+        )
+        for status in message.status:
+            if status.name != expected_name and not status.name.endswith(
+                "/" + expected_name
+            ):
+                continue
+            values = {item.key: item.value for item in status.values}
+            self.vesc_state, self.vesc_reason = classify_vesc_health(
+                diagnostic_message=status.message,
+                diagnostic_level=status.level,
+                values=values,
+            )
+            return
 
     def _rl_rate_hz(self, now: float) -> float:
         if not self.rl_message_times or now - self.rl_message_times[-1] > 1.0:
@@ -383,9 +498,21 @@ class SpaceDriveGate(Node):
             return
         arm_state = "RUN" if self.controller.armed else "STOP"
         drive_mode = active_drive_mode(self.source, self.mode_label)
+        vesc_stops_output = self.vesc_state in {
+            "LOW_VOLTAGE_STOP",
+            "VESC_FAULT_STOP",
+            "VESC_ERROR_STOP",
+            "VESC_NOT_READY",
+        }
+        stopped = (
+            not self.controller.armed
+            or output.reason != "SPACE_RUN"
+            or vesc_stops_output
+        )
+        motion_state = "STOP" if stopped else "RUN"
         key = (
-            f"{arm_state}:{drive_mode}:{self.selector_state}:{output.reason}:"
-            f"{self.rule_path_speed_mode}"
+            f"{arm_state}:{motion_state}:{drive_mode}:{self.selector_state}:"
+            f"{output.reason}:{self.vesc_state}"
         )
         if key == self.last_display_key:
             return
@@ -400,42 +527,55 @@ class SpaceDriveGate(Node):
                 f" | PATH={self.rule_path_speed_mode}"
                 f"({self.rule_path_speed_command:.1f})"
             )
-        self.get_logger().info(
-            f"[{arm_state}] MODE={drive_mode}{model_hz} | "
-            f"SPEED={output.speed_command:.1f}{path_speed}"
+        power_status = (
+            f" | 전원={self.vesc_state}({self.vesc_reason})"
+            if self.vesc_state != "NORMAL"
+            else ""
         )
-        if drive_mode.startswith("AVOIDANCE_"):
-            self.get_logger().info(
-                "[회피 판단] "
-                + format_avoidance_basis(
-                    drive_mode,
-                    self.avoidance_debug,
-                    target_label=str(
-                        self.get_parameter("avoidance_target_label").value
-                    ),
-                    yolo_min_confidence=float(
-                        self.get_parameter(
-                            "avoidance_yolo_min_confidence"
-                        ).value
-                    ),
-                    entry_distance_m=float(
-                        self.get_parameter("avoidance_entry_distance_m").value
-                    ),
-                    minimum_side_clearance_m=float(
-                        self.get_parameter(
-                            "avoidance_minimum_side_clearance_m"
-                        ).value
-                    ),
+        if stopped:
+            reason = stop_reason_text(
+                output_reason=output.reason,
+                selector_state=self.selector_state,
+                selector_reason=self.selector_reason,
+                vesc_state=self.vesc_state,
+                vesc_reason=self.vesc_reason,
+            )
+            self.get_logger().warning(
+                f"[주행 상태 변경] MODE={drive_mode} | STATE=STOP | "
+                f"이유={reason}{power_status}"
+            )
+        else:
+            detail = ""
+            if drive_mode.startswith("AVOIDANCE_"):
+                detail = (
+                    " | 판단="
+                    + format_avoidance_basis(
+                        drive_mode,
+                        self.avoidance_debug,
+                        target_label=str(
+                            self.get_parameter("avoidance_target_label").value
+                        ),
+                        yolo_min_confidence=float(
+                            self.get_parameter(
+                                "avoidance_yolo_min_confidence"
+                            ).value
+                        ),
+                        entry_distance_m=float(
+                            self.get_parameter(
+                                "avoidance_entry_distance_m"
+                            ).value
+                        ),
+                        minimum_side_clearance_m=float(
+                            self.get_parameter(
+                                "avoidance_minimum_side_clearance_m"
+                            ).value
+                        ),
+                    )
                 )
-            )
-        if self.selector_state not in {"UNKNOWN", "RUNNING"}:
-            self.get_logger().warning(
-                f"[문제] 주행 선택기={self.selector_state} | "
-                f"{self.selector_reason}"
-            )
-        elif self.controller.armed and output.reason != "SPACE_RUN":
-            self.get_logger().warning(
-                f"[문제] 모터 명령 정지={output.reason}"
+            self.get_logger().info(
+                f"[주행 상태 변경] MODE={drive_mode}{model_hz} | "
+                f"STATE=RUN | SPEED={output.speed_command:.1f}"
+                f"{path_speed}{power_status}{detail}"
             )
         self.last_display_key = key
 

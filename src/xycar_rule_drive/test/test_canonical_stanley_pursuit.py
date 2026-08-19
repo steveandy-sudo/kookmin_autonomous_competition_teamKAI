@@ -30,6 +30,7 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
     path_heading_change_per_m,
     predict_path_in_delayed_vehicle_frame,
     pursuit_requests_command_reversal,
+    select_control_latency_preview_sec,
     select_path_when_yellow_missing,
     smooth_target_path,
     steering_term_requests_command_reversal,
@@ -37,6 +38,7 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
     update_heading_recovery_latch,
     update_curve_reversal_confirmation,
     update_curve_preview_latch,
+    update_curve_latency_preview_hold,
     update_curve_speed_latch,
     usable_forward_path,
     white_boundary_to_target_offset,
@@ -45,6 +47,54 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
 
 
 class CanonicalStanleyPursuitTest(unittest.TestCase):
+    def test_control_latency_preview_uses_confirmed_curve_state(self):
+        self.assertEqual(
+            select_control_latency_preview_sec(
+                curve_active=False,
+                straight_sec=0.20,
+                curve_sec=0.35,
+            ),
+            0.20,
+        )
+        self.assertEqual(
+            select_control_latency_preview_sec(
+                curve_active=True,
+                straight_sec=0.20,
+                curve_sec=0.35,
+            ),
+            0.35,
+        )
+
+    def test_curve_latency_preview_holds_for_half_second_after_entry(self):
+        active, hold_until = update_curve_latency_preview_hold(
+            curve_latched=True,
+            preview_active=False,
+            hold_until=0.0,
+            now=10.0,
+            minimum_hold_sec=0.50,
+        )
+        self.assertTrue(active)
+        self.assertEqual(hold_until, 10.5)
+
+        active, hold_until = update_curve_latency_preview_hold(
+            curve_latched=False,
+            preview_active=active,
+            hold_until=hold_until,
+            now=10.3,
+            minimum_hold_sec=0.50,
+        )
+        self.assertTrue(active)
+
+        active, hold_until = update_curve_latency_preview_hold(
+            curve_latched=False,
+            preview_active=active,
+            hold_until=hold_until,
+            now=10.5,
+            minimum_hold_sec=0.50,
+        )
+        self.assertFalse(active)
+        self.assertEqual(hold_until, 0.0)
+
     def test_curvature_speed_limit_uses_the_lowest_path_cap(self):
         common = {
             "straight_speed_command": 22.0,

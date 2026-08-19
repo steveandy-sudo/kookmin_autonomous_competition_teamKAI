@@ -112,6 +112,38 @@ def latency_compensated_lookahead(
     )
 
 
+def select_control_latency_preview_sec(
+    *,
+    curve_active: bool,
+    straight_sec: float,
+    curve_sec: float,
+) -> float:
+    """Select a stable straight/curve delay preview from the curve latch."""
+    selected = curve_sec if bool(curve_active) else straight_sec
+    return max(0.0, float(selected))
+
+
+def update_curve_latency_preview_hold(
+    *,
+    curve_latched: bool,
+    preview_active: bool,
+    hold_until: float,
+    now: float,
+    minimum_hold_sec: float,
+) -> tuple[bool, float]:
+    """Keep curve delay preview active for a minimum dwell after entry."""
+    active = bool(preview_active)
+    until = float(hold_until)
+    current_time = float(now)
+    if bool(curve_latched):
+        if not active:
+            until = current_time + max(0.0, float(minimum_hold_sec))
+        return True, until
+    if active and current_time < until:
+        return True, until
+    return False, 0.0
+
+
 def predict_path_in_delayed_vehicle_frame(
     path: np.ndarray,
     *,
@@ -1460,6 +1492,10 @@ class CanonicalStanleyPursuitDriver(Node):
         self.declare_parameter("stanley_control_x_m", 0.16)
         self.declare_parameter("lookahead_distance_m", 1.50)
         self.declare_parameter("control_latency_preview_sec", 0.10)
+        self.declare_parameter("curve_control_latency_preview_sec", 0.10)
+        self.declare_parameter(
+            "curve_control_latency_minimum_hold_sec", 0.50
+        )
         self.declare_parameter("stanley_gain", 1.15)
         self.declare_parameter("stanley_softening_mps", 0.35)
         self.declare_parameter("pure_pursuit_weight", 0.95)
@@ -1791,6 +1827,11 @@ class CanonicalStanleyPursuitDriver(Node):
         )
         self.latest_straight_mode_active = False
         self.curve_speed_mode_active = False
+        self.latest_active_latency_preview_sec = float(
+            self.get_parameter("control_latency_preview_sec").value
+        )
+        self.curve_latency_preview_active = False
+        self.curve_latency_preview_hold_until = 0.0
         self.curve_speed_evidence_frames = 0
         self.curve_speed_miss_frames = 0
         self.latest_degraded_path_speed_active = False
@@ -2270,9 +2311,32 @@ class CanonicalStanleyPursuitDriver(Node):
                 * float(self.get_parameter("speed_gain_mps_per_cmd").value)
             )
         delayed_path = path
-        latency_sec = float(
-            self.get_parameter("control_latency_preview_sec").value
+        (
+            self.curve_latency_preview_active,
+            self.curve_latency_preview_hold_until,
+        ) = update_curve_latency_preview_hold(
+            curve_latched=self.curve_speed_mode_active,
+            preview_active=self.curve_latency_preview_active,
+            hold_until=self.curve_latency_preview_hold_until,
+            now=time.monotonic(),
+            minimum_hold_sec=float(
+                self.get_parameter(
+                    "curve_control_latency_minimum_hold_sec"
+                ).value
+            ),
         )
+        latency_sec = select_control_latency_preview_sec(
+            curve_active=self.curve_latency_preview_active,
+            straight_sec=float(
+                self.get_parameter("control_latency_preview_sec").value
+            ),
+            curve_sec=float(
+                self.get_parameter(
+                    "curve_control_latency_preview_sec"
+                ).value
+            ),
+        )
+        self.latest_active_latency_preview_sec = latency_sec
         if self.has_valid_command and latency_sec > 0.0:
             active_curvature = interpolate_clamped(
                 self.last_angle_command,
@@ -3311,6 +3375,8 @@ class CanonicalStanleyPursuitDriver(Node):
             float(
                 self.get_parameter("straight_target_right_offset_m").value
             ),
+            float(self.latest_active_latency_preview_sec),
+            1.0 if self.curve_latency_preview_active else 0.0,
         ]
         self.diagnostics_pub.publish(message)
 

@@ -38,6 +38,8 @@ STRAIGHT_STANLEY_GAIN="${STRAIGHT_STANLEY_GAIN:-}"
 STRAIGHT_STANLEY_SOFTENING_MPS="${STRAIGHT_STANLEY_SOFTENING_MPS:-}"
 OPPOSED_STANLEY_PERCENT="${OPPOSED_STANLEY_PERCENT:-}"
 CONTROL_LATENCY_PREVIEW_SEC="${CONTROL_LATENCY_PREVIEW_SEC:-}"
+CURVE_CONTROL_LATENCY_PREVIEW_SEC="${CURVE_CONTROL_LATENCY_PREVIEW_SEC:-}"
+CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC="${CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC:-}"
 STRAIGHT_PATH_CURVATURE_THRESHOLD="${STRAIGHT_PATH_CURVATURE_THRESHOLD:-0.24}"
 STEERING_CURRENT_WEIGHT="${STEERING_CURRENT_WEIGHT:-0.35}"
 STEERING_CURVE_CURRENT_WEIGHT="${STEERING_CURVE_CURRENT_WEIGHT:-0.80}"
@@ -59,26 +61,21 @@ CONTROL_LOG="/tmp/xycar_hybrid_control_$(date +%Y%m%d_%H%M%S).log"
 RUN_CONFIG_FILE="${XYCAR_HYBRID_RUN_CONFIG_FILE:-/tmp/xycar_hybrid_run_config.yaml}"
 CONE_SPEED_COMMAND="8.0"
 CONE_SENSOR_PRESENCE_TIMEOUT_SEC="${CONE_SENSOR_PRESENCE_TIMEOUT_SEC:-0.5}"
-CONE_ENTRY_FRAMES="${CONE_ENTRY_FRAMES:-1}"
-CONE_YOLO_REQUIRED_FRAMES="${CONE_YOLO_REQUIRED_FRAMES:-1}"
-CONE_ZONE_MINIMUM_DETECTIONS="${CONE_ZONE_MINIMUM_DETECTIONS:-2}"
-CONE_ENTRY_DISTANCE_ENABLED="${CONE_ENTRY_DISTANCE_ENABLED:-false}"
-SHORTCUT_W1_STEERING_START_DELAY_FRAMES="${SHORTCUT_W1_STEERING_START_DELAY_FRAMES:-0}"
+SHORTCUT_W1_STEERING_START_DELAY_FRAMES="${SHORTCUT_W1_STEERING_START_DELAY_FRAMES:-4}"
 SHORTCUT_W1_STEERING_DELAY_MISSING_TOLERANCE_FRAMES="${SHORTCUT_W1_STEERING_DELAY_MISSING_TOLERANCE_FRAMES:-2}"
-SHORTCUT_MINIMUM_ENTRY_PROGRESS_M="${SHORTCUT_MINIMUM_ENTRY_PROGRESS_M:-0.30}"
+SHORTCUT_MINIMUM_ENTRY_PROGRESS_M="${SHORTCUT_MINIMUM_ENTRY_PROGRESS_M:-0.50}"
 SHORTCUT_PAIR_TRACK_HANDOFF_REQUIRED_FRAMES="${SHORTCUT_PAIR_TRACK_HANDOFF_REQUIRED_FRAMES:-2}"
 SHORTCUT_W1_LOSS_HANDOFF_ENABLED="${SHORTCUT_W1_LOSS_HANDOFF_ENABLED:-true}"
-SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC="${SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC:-1.3}"
-SHORTCUT_W1_STEERING_HOLD_SEC="${SHORTCUT_W1_STEERING_HOLD_SEC:-1.3}"
+SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC="${SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC:-1.5}"
+SHORTCUT_W1_STEERING_HOLD_SEC="${SHORTCUT_W1_STEERING_HOLD_SEC:-1.0}"
 SHORTCUT_ENTRY_DIRECTION_HOLD_COMMAND="${SHORTCUT_ENTRY_DIRECTION_HOLD_COMMAND:--30.0}"
 SHORTCUT_ENTRY_SPEED_COMMAND="${SHORTCUT_ENTRY_SPEED_COMMAND:-9.0}"
-SHORTCUT_ENTRY_STEERING_RATE_LIMIT_CMD_PER_SEC="${SHORTCUT_ENTRY_STEERING_RATE_LIMIT_CMD_PER_SEC:-90.0}"
 TEST_PROFILE="${XYCAR_TEST_PROFILE:-integrated}"
 ENABLE_RVIZ="${XYCAR_ENABLE_RVIZ:-false}"
 START_CONE="${XYCAR_START_CONE:-true}"
 STEERING_ONLY="${XYCAR_STEERING_ONLY:-false}"
 VEHICLE_YOLO_MIN_CONFIDENCE="${VEHICLE_YOLO_MIN_CONFIDENCE:-0.45}"
-CONE_AS_VEHICLE_OBSTACLE="${CONE_AS_VEHICLE_OBSTACLE:-true}"
+CONE_AS_VEHICLE_OBSTACLE="${CONE_AS_VEHICLE_OBSTACLE:-false}"
 CONE_AS_VEHICLE_MIN_CONFIDENCE="${CONE_AS_VEHICLE_MIN_CONFIDENCE:-0.50}"
 VEHICLE_YOLO_REQUIRED_FRAMES="${VEHICLE_YOLO_REQUIRED_FRAMES:-1}"
 VEHICLE_PREFERRED_SIDE_REQUIRED_FRAMES="${VEHICLE_PREFERRED_SIDE_REQUIRED_FRAMES:-1}"
@@ -171,7 +168,7 @@ prompt_bool() {
   esac
 }
 
-if [[ "$TEST_PROFILE" == "cone_obstacle" ]]; then
+if [[ "$CONE_AS_VEHICLE_OBSTACLE" == "true" ]]; then
   AVOIDANCE_TARGET_LABEL=cone
   AVOIDANCE_DISPLAY_CONFIDENCE="$CONE_AS_VEHICLE_MIN_CONFIDENCE"
 else
@@ -343,7 +340,11 @@ prompt_float STRAIGHT_STANLEY_SOFTENING_MPS \
 prompt_float OPPOSED_STANLEY_PERCENT \
   "Opposed-term Stanley percentage" 70.0 0.0 100.0
 prompt_float CONTROL_LATENCY_PREVIEW_SEC \
-  "Control latency preview [s]" 0.35 0.0 2.0
+  "Straight control latency preview [s]" 0.20 0.0 2.0
+prompt_float CURVE_CONTROL_LATENCY_PREVIEW_SEC \
+  "Curve control latency preview [s]" 0.40 0.0 2.0
+prompt_float CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC \
+  "Curve latency preview minimum hold [s]" 0.50 0.0 5.0
 prompt_float STRAIGHT_PATH_CURVATURE_THRESHOLD \
   "Straight/curve curvature threshold [rad/m]" 0.24 0.0 5.0
 prompt_float STEERING_CURRENT_WEIGHT \
@@ -423,6 +424,8 @@ straight_stanley_softening_mps: $STRAIGHT_STANLEY_SOFTENING_MPS
 opposed_stanley_percent: $OPPOSED_STANLEY_PERCENT
 opposed_stanley_weight: $OPPOSED_STANLEY_WEIGHT
 control_latency_preview_sec: $CONTROL_LATENCY_PREVIEW_SEC
+curve_control_latency_preview_sec: $CURVE_CONTROL_LATENCY_PREVIEW_SEC
+curve_control_latency_minimum_hold_sec: $CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC
 straight_path_curvature_threshold: $STRAIGHT_PATH_CURVATURE_THRESHOLD
 steering_current_weight: $STEERING_CURRENT_WEIGHT
 steering_curve_current_weight: $STEERING_CURVE_CURRENT_WEIGHT
@@ -442,10 +445,6 @@ straight_target_right_offset_cm: $STRAIGHT_RIGHT_OFFSET_CM
 straight_target_right_offset_m: $STRAIGHT_RIGHT_OFFSET_M
 cone_speed_command: $CONE_SPEED_COMMAND
 cone_sensor_presence_timeout_sec: $CONE_SENSOR_PRESENCE_TIMEOUT_SEC
-cone_entry_frames: $CONE_ENTRY_FRAMES
-cone_yolo_required_frames: $CONE_YOLO_REQUIRED_FRAMES
-cone_zone_minimum_detections: $CONE_ZONE_MINIMUM_DETECTIONS
-cone_entry_distance_enabled: $CONE_ENTRY_DISTANCE_ENABLED
 test_profile: "$TEST_PROFILE"
 enable_rviz: $ENABLE_RVIZ
 start_cone: $START_CONE
@@ -727,7 +726,7 @@ echo "Curve control: LD=${LOOKAHEAD_DISTANCE}m, Stanley=${STANLEY_PERCENT}%"
 echo "Control points: PP X=${PURE_PURSUIT_CONTROL_X_M}m, Stanley X=${STANLEY_CONTROL_X_M}m"
 echo "Curve Stanley: gain=$STANLEY_GAIN, soft=${STANLEY_SOFTENING_MPS}m/s"
 echo "Straight Stanley: ${STRAIGHT_STANLEY_PERCENT}%, gain=$STRAIGHT_STANLEY_GAIN, soft=${STRAIGHT_STANLEY_SOFTENING_MPS}m/s"
-echo "Opposed Stanley: ${OPPOSED_STANLEY_PERCENT}%, latency preview=${CONTROL_LATENCY_PREVIEW_SEC}s"
+echo "Opposed Stanley: ${OPPOSED_STANLEY_PERCENT}%, latency preview=straight ${CONTROL_LATENCY_PREVIEW_SEC}s/curve ${CURVE_CONTROL_LATENCY_PREVIEW_SEC}s, curve minimum hold=${CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC}s"
 echo "Straight/curve threshold: ${STRAIGHT_PATH_CURVATURE_THRESHOLD}rad/m"
 echo "Steering smoothing: straight ${STEERING_CURRENT_WEIGHT}/${STEERING_RATE_LIMIT_CMD_PER_SEC}, curve ${STEERING_CURVE_CURRENT_WEIGHT}/${STEERING_CURVE_RATE_LIMIT_CMD_PER_SEC}"
 echo "Steering lead: ${STEERING_LEAD_TIME_SEC}s, max ${STEERING_MAX_LEAD_COMMAND} command"
@@ -736,20 +735,18 @@ echo "Curve steering multiplier: ${CURVE_STEERING_MULTIPLIER_ENABLED}, |angle|>=
 echo "Left target correction: ${LEFT_OFFSET_CM}cm"
 echo "Straight-only right correction: ${STRAIGHT_RIGHT_OFFSET_CM}cm"
 echo "Shortcut entry speed cap: ${SHORTCUT_ENTRY_SPEED_COMMAND}"
-echo "Shortcut W1 transition: valid W1/W2 intersection immediately enables direct W1 steering, ${SHORTCUT_ENTRY_STEERING_RATE_LIMIT_CMD_PER_SEC} cmd/s limit"
 echo "Shortcut W1 steering start delay: ${SHORTCUT_W1_STEERING_START_DELAY_FRAMES} valid frames, missing tolerance ${SHORTCUT_W1_STEERING_DELAY_MISSING_TOLERANCE_FRAMES} frames"
 echo "Shortcut handoff: progress ${SHORTCUT_MINIMUM_ENTRY_PROGRESS_M}m, pair ${SHORTCUT_PAIR_TRACK_HANDOFF_REQUIRED_FRAMES} frames, W1-loss fallback ${SHORTCUT_W1_LOSS_HANDOFF_ENABLED}"
 echo "Shortcut W1 steering maximum active time: ${SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC}s"
 echo "Cone speed command: $CONE_SPEED_COMMAND"
 echo "Cone sensor-loss hold: ${CONE_SENSOR_PRESENCE_TIMEOUT_SEC}s"
-echo "Cone entry: distance gate=${CONE_ENTRY_DISTANCE_ENABLED}, zone=${CONE_ZONE_MINIMUM_DETECTIONS}+ detections, YOLO=${CONE_YOLO_REQUIRED_FRAMES} frame(s), command=${CONE_ENTRY_FRAMES} frame(s)"
 if [[ "$VEHICLE_AVOIDANCE_IMMEDIATE_ON_YOLO" == "true" ]]; then
   echo "Avoidance: YOLO>=${VEHICLE_YOLO_MIN_CONFIDENCE}, one-frame immediate entry (LiDAR distance=telemetry), offsets=L${VEHICLE_LEFT_OFFSET_M}/R${VEHICLE_RIGHT_OFFSET_M}m"
 else
   echo "Avoidance: YOLO>=${VEHICLE_YOLO_MIN_CONFIDENCE}, entry=${VEHICLE_AVOIDANCE_ENTRY_DISTANCE_M}m, offsets=L${VEHICLE_LEFT_OFFSET_M}/R${VEHICLE_RIGHT_OFFSET_M}m"
 fi
 if [[ "$CONE_AS_VEHICLE_OBSTACLE" == "true" ]]; then
-  echo "Single-cone avoidance: enabled, YOLO>=${CONE_AS_VEHICLE_MIN_CONFIDENCE}; ${CONE_ZONE_MINIMUM_DETECTIONS}+ cones remain CONE_RULE"
+  echo "Cone substitute: enabled, YOLO>=${CONE_AS_VEHICLE_MIN_CONFIDENCE} (slalom disabled)"
 fi
 echo "Avoidance speed cap: $VEHICLE_AVOIDANCE_SPEED_LIMIT_COMMAND | RViz: $ENABLE_RVIZ"
 echo "Lane perception: $LANE_PERCEPTION_LAUNCH | forward=${CANONICAL_FORWARD_RANGE_M}m | max=${PERCEPTION_MAX_OUTPUT_RATE_HZ}Hz"
@@ -784,10 +781,6 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   selector_minimum_speed_command:=3.0 \
   cone_speed_command:="$CONE_SPEED_COMMAND" \
   cone_sensor_presence_timeout_sec:="$CONE_SENSOR_PRESENCE_TIMEOUT_SEC" \
-  cone_entry_frames:="$CONE_ENTRY_FRAMES" \
-  cone_yolo_required_frames:="$CONE_YOLO_REQUIRED_FRAMES" \
-  cone_zone_minimum_detections:="$CONE_ZONE_MINIMUM_DETECTIONS" \
-  cone_entry_distance_enabled:="$CONE_ENTRY_DISTANCE_ENABLED" \
   lookahead_distance_m:="$LOOKAHEAD_DISTANCE" \
   pure_pursuit_weight:="$PURE_PURSUIT_WEIGHT" \
   pure_pursuit_control_x_m:="$PURE_PURSUIT_CONTROL_X_M" \
@@ -799,6 +792,8 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   straight_stanley_softening_mps:="$STRAIGHT_STANLEY_SOFTENING_MPS" \
   opposed_stanley_weight:="$OPPOSED_STANLEY_WEIGHT" \
   control_latency_preview_sec:="$CONTROL_LATENCY_PREVIEW_SEC" \
+  curve_control_latency_preview_sec:="$CURVE_CONTROL_LATENCY_PREVIEW_SEC" \
+  curve_control_latency_minimum_hold_sec:="$CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC" \
   straight_path_curvature_threshold:="$STRAIGHT_PATH_CURVATURE_THRESHOLD" \
   steering_current_weight:="$STEERING_CURRENT_WEIGHT" \
   steering_curve_current_weight:="$STEERING_CURVE_CURRENT_WEIGHT" \
@@ -821,7 +816,6 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   start_object_detection:=true \
   start_shortcut:=true \
   shortcut_handoff_to_rule:=true \
-  shortcut_entry_steering_rate_limit_cmd_per_sec:="$SHORTCUT_ENTRY_STEERING_RATE_LIMIT_CMD_PER_SEC" \
   shortcut_w1_steering_start_delay_frames:="$SHORTCUT_W1_STEERING_START_DELAY_FRAMES" \
   shortcut_w1_steering_delay_missing_tolerance_frames:="$SHORTCUT_W1_STEERING_DELAY_MISSING_TOLERANCE_FRAMES" \
   shortcut_minimum_entry_progress_m:="$SHORTCUT_MINIMUM_ENTRY_PROGRESS_M" \
@@ -880,13 +874,14 @@ if ! kill -0 "$launch_pid" 2>/dev/null; then
 fi
 
 # Keep the complete launch output in CONTROL_LOG while forwarding only
-# operator-relevant mission transitions to this terminal in real time.
+# failures that need immediate operator attention. Stable driving-mode changes
+# and stop reasons are printed by space_drive_gate itself.
 setsid bash -c '
   log_file="$1"
   owner_pid="$2"
   stdbuf -oL tail --pid="$owner_pid" -n 0 -F "$log_file" 2>/dev/null |
     stdbuf -oL grep --line-buffered -E \
-      "\\[MISSION\\]|\\[YOLO object\\]|SHORTCUT HANDOFF|SHORTCUT CONTROL SWITCHED|SHORTCUT candidate (enabled|disabled)|shortcut LR-ASPP camera input (enabled|disabled)|candidate stale|safe stop"
+      "W1 spatial gate arrived after search timeout|W1 search timeout|candidate stale|safe stop|process has died|Traceback|ERROR"
 ' _ "$CONTROL_LOG" "$launch_pid" &
 mission_log_pid=$!
 

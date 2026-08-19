@@ -187,19 +187,15 @@ def generate_launch_description():
                 default_value="0.25",
             ),
             DeclareLaunchArgument(
-                "shortcut_entry_steering_rate_limit_cmd_per_sec",
-                default_value="90.0",
-            ),
-            DeclareLaunchArgument(
                 "shortcut_w1_steering_start_delay_frames",
-                default_value="0",
+                default_value="4",
             ),
             DeclareLaunchArgument(
                 "shortcut_w1_steering_delay_missing_tolerance_frames",
                 default_value="2",
             ),
             DeclareLaunchArgument(
-                "shortcut_minimum_entry_progress_m", default_value="0.30"
+                "shortcut_minimum_entry_progress_m", default_value="0.50"
             ),
             DeclareLaunchArgument(
                 "shortcut_pair_track_handoff_required_frames",
@@ -209,10 +205,10 @@ def generate_launch_description():
                 "shortcut_w1_loss_handoff_enabled", default_value="true"
             ),
             DeclareLaunchArgument(
-                "shortcut_maximum_entry_steering_sec", default_value="1.3"
+                "shortcut_maximum_entry_steering_sec", default_value="1.5"
             ),
             DeclareLaunchArgument(
-                "shortcut_w1_steering_hold_sec", default_value="1.3"
+                "shortcut_w1_steering_hold_sec", default_value="1.0"
             ),
             DeclareLaunchArgument(
                 "shortcut_entry_direction_hold_command",
@@ -251,21 +247,11 @@ def generate_launch_description():
                 "selector_minimum_speed_command", default_value="3.0"
             ),
             DeclareLaunchArgument("cone_speed_command", default_value="8.0"),
-            DeclareLaunchArgument("cone_entry_frames", default_value="1"),
-            DeclareLaunchArgument(
-                "cone_yolo_required_frames", default_value="1"
-            ),
-            DeclareLaunchArgument(
-                "cone_zone_minimum_detections", default_value="2"
-            ),
-            DeclareLaunchArgument(
-                "cone_entry_distance_enabled", default_value="false"
-            ),
             DeclareLaunchArgument(
                 "cone_sensor_presence_timeout_sec", default_value="0.5"
             ),
             DeclareLaunchArgument(
-                "cone_exit_absence_sec", default_value="1.0"
+                "cone_exit_absence_sec", default_value="0.0"
             ),
             DeclareLaunchArgument(
                 "lookahead_distance_m", default_value="0.3"
@@ -296,7 +282,14 @@ def generate_launch_description():
                 "opposed_stanley_weight", default_value="0.70"
             ),
             DeclareLaunchArgument(
-                "control_latency_preview_sec", default_value="0.35"
+                "control_latency_preview_sec", default_value="0.20"
+            ),
+            DeclareLaunchArgument(
+                "curve_control_latency_preview_sec", default_value="0.40"
+            ),
+            DeclareLaunchArgument(
+                "curve_control_latency_minimum_hold_sec",
+                default_value="0.50",
             ),
             DeclareLaunchArgument(
                 "curve_detection_near_x_m", default_value="0.20"
@@ -381,7 +374,7 @@ def generate_launch_description():
                 "vehicle_yolo_min_confidence", default_value="0.45"
             ),
             DeclareLaunchArgument(
-                "vehicle_side_decision_straight_only", default_value="true"
+                "vehicle_side_decision_straight_only", default_value="false"
             ),
             DeclareLaunchArgument(
                 "vehicle_side_decision_max_rule_angle_command",
@@ -398,7 +391,7 @@ def generate_launch_description():
                 "yellow_straight_min_span_ratio", default_value="0.20"
             ),
             DeclareLaunchArgument(
-                "cone_as_vehicle_obstacle", default_value="true"
+                "cone_as_vehicle_obstacle", default_value="false"
             ),
             DeclareLaunchArgument(
                 "cone_as_vehicle_min_confidence", default_value="0.50"
@@ -639,6 +632,12 @@ def generate_launch_description():
                     "control_latency_preview_sec": LaunchConfiguration(
                         "control_latency_preview_sec"
                     ),
+                    "curve_control_latency_preview_sec": LaunchConfiguration(
+                        "curve_control_latency_preview_sec"
+                    ),
+                    "curve_control_latency_minimum_hold_sec": LaunchConfiguration(
+                        "curve_control_latency_minimum_hold_sec"
+                    ),
                     "steering_current_weight": LaunchConfiguration(
                         "steering_current_weight"
                     ),
@@ -821,6 +820,18 @@ def generate_launch_description():
                         "control_latency_preview_sec": ParameterValue(
                             LaunchConfiguration(
                                 "control_latency_preview_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "curve_control_latency_preview_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "curve_control_latency_preview_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "curve_control_latency_minimum_hold_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "curve_control_latency_minimum_hold_sec"
                             ),
                             value_type=float,
                         ),
@@ -1066,12 +1077,6 @@ def generate_launch_description():
                     "spatial_gate_blend_distance_m": LaunchConfiguration(
                         "shortcut_spatial_gate_blend_distance_m"
                     ),
-                    "w1_start_on_intersection": "true",
-                    "entry_steering_rate_limit_cmd_per_sec": (
-                        LaunchConfiguration(
-                            "shortcut_entry_steering_rate_limit_cmd_per_sec"
-                        )
-                    ),
                     "w1_steering_start_delay_frames": LaunchConfiguration(
                         "shortcut_w1_steering_start_delay_frames"
                     ),
@@ -1164,26 +1169,6 @@ def generate_launch_description():
                                 "cone_sensor_presence_timeout_sec"
                             ),
                             value_type=float,
-                        ),
-                        "cone_entry_frames": ParameterValue(
-                            LaunchConfiguration("cone_entry_frames"),
-                            value_type=int,
-                        ),
-                        "cone_yolo_required_frames": ParameterValue(
-                            LaunchConfiguration("cone_yolo_required_frames"),
-                            value_type=int,
-                        ),
-                        "cone_zone_minimum_detections": ParameterValue(
-                            LaunchConfiguration(
-                                "cone_zone_minimum_detections"
-                            ),
-                            value_type=int,
-                        ),
-                        "cone_entry_distance_enabled": ParameterValue(
-                            LaunchConfiguration(
-                                "cone_entry_distance_enabled"
-                            ),
-                            value_type=bool,
                         ),
                         "cone_exit_absence_sec": ParameterValue(
                             LaunchConfiguration("cone_exit_absence_sec"),

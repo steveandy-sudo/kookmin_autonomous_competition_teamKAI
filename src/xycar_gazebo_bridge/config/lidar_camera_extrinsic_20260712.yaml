@@ -1,0 +1,19 @@
+description: "Values visible in KakaoTalk_20260712_225222369.png laser overlay"
+lidar_frame: xycar_ackermann/chassis/lidar
+camera_frame: xycar_ackermann/chassis/front_camera
+camera_position_in_laser_frame_m:
+  x_forward: -0.105
+  y_left: 0.0
+  z_up: 0.090
+correction_rotation_deg_in_camera_optical:
+  roll: 9.0
+  pitch: 0.0
+  yaw: 0.0
+scan_filter:
+  min_range_m: 0.30
+  max_range_m: 4.0
+  angle_min_deg: -70.0
+  angle_max_deg: 70.0
+notes:
+  - "Translation is applied to the Gazebo sensor poses."
+  - "The 9 degree roll is an overlay-frame correction and is not applied as physical camera roll."

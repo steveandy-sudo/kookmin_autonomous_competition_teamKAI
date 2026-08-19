@@ -6,14 +6,6 @@ from xycar_map_nav.yolo_lidar_avoidance import (
 )
 from xycar_map_nav.sequential_hybrid_driver import is_avoidance_detection
 from xycar_map_nav.sequential_hybrid_driver import (
-    classify_cone_detection_role,
-)
-from xycar_map_nav.sequential_hybrid_driver import CONE_ROLE_NONE
-from xycar_map_nav.sequential_hybrid_driver import (
-    CONE_ROLE_SINGLE_OBSTACLE,
-)
-from xycar_map_nav.sequential_hybrid_driver import CONE_ROLE_ZONE
-from xycar_map_nav.sequential_hybrid_driver import (
     preferred_avoidance_mode_from_yellow_reference,
 )
 from xycar_map_nav.sequential_hybrid_driver import (
@@ -61,46 +53,6 @@ def test_cone_avoidance_uses_its_own_confidence_threshold():
         cone_as_vehicle_obstacle=True,
         cone_min_confidence=0.50,
     )
-
-
-def test_one_cone_is_an_immediate_obstacle_but_two_are_a_cone_zone():
-    common = {
-        "minimum_confidence": 0.50,
-        "zone_minimum_detections": 2,
-        "single_cone_avoidance_enabled": True,
-    }
-    assert classify_cone_detection_role(
-        confidences=[0.80],
-        **common,
-    ) == CONE_ROLE_SINGLE_OBSTACLE
-    assert classify_cone_detection_role(
-        confidences=[0.80, 0.72],
-        **common,
-    ) == CONE_ROLE_ZONE
-
-
-def test_low_confidence_or_disabled_single_cone_does_not_claim_a_mode():
-    assert classify_cone_detection_role(
-        confidences=[0.49],
-        minimum_confidence=0.50,
-        zone_minimum_detections=2,
-        single_cone_avoidance_enabled=True,
-    ) == CONE_ROLE_NONE
-    assert classify_cone_detection_role(
-        confidences=[0.80],
-        minimum_confidence=0.50,
-        zone_minimum_detections=2,
-        single_cone_avoidance_enabled=False,
-    ) == CONE_ROLE_NONE
-
-
-def test_zone_detection_wins_even_when_single_cone_avoidance_is_disabled():
-    assert classify_cone_detection_role(
-        confidences=[0.80, 0.72],
-        minimum_confidence=0.50,
-        zone_minimum_detections=2,
-        single_cone_avoidance_enabled=False,
-    ) == CONE_ROLE_ZONE
 
 
 def test_yellow_reference_maps_object_to_opposite_avoidance_side():

@@ -60,29 +60,6 @@ SOURCE_CODES = {
     CandidateSource.RULE: 1.0,
 }
 
-CONE_ROLE_NONE = "NONE"
-CONE_ROLE_SINGLE_OBSTACLE = "SINGLE_OBSTACLE"
-CONE_ROLE_ZONE = "CONE_ZONE"
-
-
-def classify_cone_detection_role(
-    *,
-    confidences: Sequence[float],
-    minimum_confidence: float,
-    zone_minimum_detections: int,
-    single_cone_avoidance_enabled: bool,
-) -> str:
-    """Split one fixed cone from a multi-cone slalom without a range gate."""
-    count = sum(
-        float(confidence) >= float(minimum_confidence)
-        for confidence in confidences
-    )
-    if count >= max(2, int(zone_minimum_detections)):
-        return CONE_ROLE_ZONE
-    if count == 1 and bool(single_cone_avoidance_enabled):
-        return CONE_ROLE_SINGLE_OBSTACLE
-    return CONE_ROLE_NONE
-
 
 def cone_disarm_hold_active(
     *,
@@ -327,11 +304,6 @@ class SequentialHybridDriver(Node):
                 exit_absence_sec=float(
                     self.get_parameter("cone_exit_absence_sec").value
                 ),
-                entry_distance_enabled=bool(
-                    self.get_parameter(
-                        "cone_entry_distance_enabled"
-                    ).value
-                ),
                 entry_distance_m=float(
                     self.get_parameter("cone_entry_distance_m").value
                 ),
@@ -340,7 +312,6 @@ class SequentialHybridDriver(Node):
         self.cone_yolo_frames = 0
         self.cone_yolo_time = float("-inf")
         self.cone_yolo_confidence = 0.0
-        self.cone_detection_role = CONE_ROLE_NONE
         self.cone_lidar_distance_m = float("inf")
         self.cone_cluster_count = 0
         self.cone_cluster_time = float("-inf")
@@ -682,7 +653,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("cone_exit_confidence", 0.20)
         self.declare_parameter("cone_entry_frames", 3)
         self.declare_parameter("cone_exit_frames", 1)
-        self.declare_parameter("cone_exit_absence_sec", 1.0)
+        self.declare_parameter("cone_exit_absence_sec", 0.0)
         self.declare_parameter("cone_max_target_angle_deg", 42.0)
         self.declare_parameter(
             "cone_steering_actual_deg", [0.0, 4.0, 10.0, 16.0, 26.0]
@@ -693,8 +664,6 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("cone_yolo_min_confidence", 0.50)
         self.declare_parameter("cone_yolo_required_frames", 2)
         self.declare_parameter("cone_yolo_timeout_sec", 0.75)
-        self.declare_parameter("cone_zone_minimum_detections", 2)
-        self.declare_parameter("cone_entry_distance_enabled", False)
         self.declare_parameter("cone_entry_distance_m", 3.0)
         self.declare_parameter("cone_cluster_timeout_sec", 0.50)
         self.declare_parameter("cone_command_timeout_sec", 0.35)
@@ -744,10 +713,10 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("traffic_light_green_class_name", "green_4")
         self.declare_parameter("traffic_light_min_confidence", 0.50)
         self.declare_parameter(
-            "traffic_light_stop_min_box_area_ratio", 0.025
+            "traffic_light_stop_min_box_area_ratio", 0.0
         )
         self.declare_parameter(
-            "traffic_light_go_min_box_area_ratio", 0.025
+            "traffic_light_go_min_box_area_ratio", 0.0
         )
         self.declare_parameter("traffic_light_stop_required_frames", 2)
         self.declare_parameter("traffic_light_go_required_frames", 2)
@@ -767,7 +736,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("yellow_reference_min_pixels", 3)
         self.declare_parameter("yellow_reference_residual_px", 6.0)
         self.declare_parameter("yellow_side_deadband_px", 6.0)
-        self.declare_parameter("vehicle_side_decision_straight_only", True)
+        self.declare_parameter("vehicle_side_decision_straight_only", False)
         self.declare_parameter(
             "vehicle_side_decision_max_rule_angle_command", 8.0
         )
@@ -1194,51 +1163,21 @@ class SequentialHybridDriver(Node):
                 )
                 self.last_left_absence_count = count
         self._handle_traffic_shortcut_request(now)
-        cone_detections = [
-            item
+        cone_confidences = [
+            float(item.confidence)
             for item in message.detections
             if self._normalize_class_name(item.class_name) == "cone"
         ]
-        cone_confidences = [
-            float(item.confidence)
-            for item in cone_detections
-        ]
         cone_confidence = max(cone_confidences, default=0.0)
-        cone_minimum_confidence = float(
+        cone_seen = cone_confidence >= float(
             self.get_parameter("cone_yolo_min_confidence").value
         )
-        cone_as_vehicle_obstacle = bool(
-            self.get_parameter("cone_as_vehicle_obstacle").value
-        )
-        cone_role = classify_cone_detection_role(
-            confidences=cone_confidences,
-            minimum_confidence=cone_minimum_confidence,
-            zone_minimum_detections=int(
-                self.get_parameter(
-                    "cone_zone_minimum_detections"
-                ).value
-            ),
-            single_cone_avoidance_enabled=cone_as_vehicle_obstacle,
-        )
-        cone_seen = cone_role != CONE_ROLE_NONE
-        cone_zone_seen = cone_role == CONE_ROLE_ZONE
         self.cone_yolo_frames = (
-            self.cone_yolo_frames + 1 if cone_zone_seen else 0
+            self.cone_yolo_frames + 1 if cone_seen else 0
         )
         if cone_seen:
             self.cone_yolo_time = now
             self.cone_yolo_confidence = cone_confidence
-        if cone_role != self.cone_detection_role:
-            qualified_count = sum(
-                confidence >= cone_minimum_confidence
-                for confidence in cone_confidences
-            )
-            self.get_logger().info(
-                "[CONE ROLE] "
-                f"{cone_role} detections={qualified_count} "
-                f"confidence={cone_confidence:.2f}"
-            )
-            self.cone_detection_role = cone_role
 
         traffic_light_names = {
             self._normalize_class_name(value)
@@ -1284,9 +1223,8 @@ class SequentialHybridDriver(Node):
             self._normalize_class_name(value)
             for value in self.get_parameter("vehicle_class_names").value
         }
-        single_cone_avoidance = (
-            cone_as_vehicle_obstacle
-            and cone_role == CONE_ROLE_SINGLE_OBSTACLE
+        cone_as_vehicle_obstacle = bool(
+            self.get_parameter("cone_as_vehicle_obstacle").value
         )
         vehicles = [
             item
@@ -1298,7 +1236,7 @@ class SequentialHybridDriver(Node):
                 vehicle_min_confidence=float(
                     self.get_parameter("vehicle_yolo_min_confidence").value
                 ),
-                cone_as_vehicle_obstacle=single_cone_avoidance,
+                cone_as_vehicle_obstacle=cone_as_vehicle_obstacle,
                 cone_min_confidence=float(
                     self.get_parameter(
                         "cone_as_vehicle_min_confidence"
@@ -1306,14 +1244,6 @@ class SequentialHybridDriver(Node):
                 ),
             )
         ]
-        if cone_zone_seen and not any(
-            self._normalize_class_name(item.class_name) in vehicle_names
-            for item in vehicles
-        ):
-            # A multi-cone corridor owns this observation. Cancel any
-            # one-cone avoidance candidate before the cone command arrives.
-            self.avoidance_controller.reset()
-            self.avoidance_state = self.avoidance_controller.state()
         selected = None
         selected_sector = None
         selected_distance = float("inf")

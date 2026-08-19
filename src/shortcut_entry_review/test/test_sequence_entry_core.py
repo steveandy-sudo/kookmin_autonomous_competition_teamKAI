@@ -1,20 +1,15 @@
-import math
-
 import cv2
 import numpy as np
 
 from shortcut_entry_review.sequence_entry_core import (
     EntrySequencePhase,
-    LineHypothesis,
     SequenceEntryConfig,
     SequenceAwareEntrySelector,
     branch_point_distance_m,
-    estimate_branch_point,
     pixels_to_vehicle_path,
     select_entry_handoff_condition,
     spatial_steering_gate,
     update_w1_steering_delay_counts,
-    w1_entry_trigger_ready,
     w1_steering_delay_ready,
 )
 
@@ -23,30 +18,7 @@ WIDTH = 640
 HEIGHT = 660
 
 
-def test_red_intersection_can_trigger_before_legacy_distance_gate():
-    assert w1_entry_trigger_ready(
-        branch_distance_m=1.03,
-        spatial_gate_ready=False,
-        start_on_intersection=True,
-    )
-    assert not w1_entry_trigger_ready(
-        branch_distance_m=1.03,
-        spatial_gate_ready=False,
-        start_on_intersection=False,
-    )
-    assert not w1_entry_trigger_ready(
-        branch_distance_m=math.inf,
-        spatial_gate_ready=True,
-        start_on_intersection=True,
-    )
-
-
-def make_phase_masks(
-    *,
-    include_y1: bool,
-    aligned: bool = False,
-    include_w1: bool = True,
-):
+def make_phase_masks(*, include_y1: bool, aligned: bool = False):
     white = np.zeros((HEIGHT, WIDTH), dtype=np.uint8)
     yellow = np.zeros_like(white)
     if aligned:
@@ -56,8 +28,7 @@ def make_phase_masks(
         # W1 and Y1 turn toward vehicle-left when read near-to-far.  W2 and
         # Y2 are deliberately thicker and more central but have the opposite
         # tangent, matching the annotated A/B topology.
-        if include_w1:
-            cv2.line(white, (170, 540), (78, 330), 12, cv2.LINE_AA)
+        cv2.line(white, (170, 540), (78, 330), 12, cv2.LINE_AA)
         cv2.line(white, (250, 610), (325, 245), 22, cv2.LINE_AA)
         cv2.line(yellow, (450, 610), (500, 280), 22, cv2.LINE_AA)
         if include_y1:
@@ -65,174 +36,28 @@ def make_phase_masks(
     return white, yellow
 
 
-def lock_w1(selector: SequenceAwareEntrySelector):
-    selector.process(
-        *make_phase_masks(include_y1=False, include_w1=False)
-    )
-    w2_locked = selector.process(
-        *make_phase_masks(include_y1=False, include_w1=False)
-    )
-    first_branch = selector.process(*make_phase_masks(include_y1=False))
-    w1_locked = selector.process(*make_phase_masks(include_y1=False))
-    return w2_locked, first_branch, w1_locked
-
-
-def lock_y1(selector: SequenceAwareEntrySelector):
-    lock_w1(selector)
-    first = selector.process(*make_phase_masks(include_y1=True))
-    second = selector.process(*make_phase_masks(include_y1=True))
-    return first, second
-
-
-def test_w2_is_tracked_before_left_diverging_w1_can_lock():
+def test_w1_first_frame_disables_rule_but_lone_y2_is_never_substituted():
     selector = SequenceAwareEntrySelector()
-    w2_locked, first_branch, result = lock_w1(selector)
+    white, yellow = make_phase_masks(include_y1=False)
 
-    assert w2_locked.phase == EntrySequencePhase.LEFT4_ARMED
-    assert w2_locked.w2 is not None
-    assert w2_locked.w1 is None
-    assert not w2_locked.ready
-    # The long, clearly separated, left-positive branch satisfies the strict
-    # one-frame fast path.  W2 still had to be locked first.
-    assert first_branch.phase == EntrySequencePhase.W1_LOCKED
-    assert selector.w1_fast_locked
+    result = selector.process(white, yellow)
+
     assert result.phase == EntrySequencePhase.W1_LOCKED
     assert result.ready
     assert result.path_valid
     assert result.w1 is not None
-    assert result.w2 is not None
     assert result.w1.direction_dx_dy > 0.15
-    assert result.w1.mean_x_ratio < result.w2.mean_x_ratio
     assert result.y1 is None
-    assert not result.used_synthetic_y1
+    assert result.used_synthetic_y1
     assert "W2/Y2 ignored" in result.reason
 
 
-def test_w1_confirmation_keeps_matching_hit_across_one_missing_frame():
-    selector = SequenceAwareEntrySelector(
-        SequenceEntryConfig(w1_fast_lock_enabled=False)
-    )
-    no_w1 = make_phase_masks(include_y1=False, include_w1=False)
-    with_w1 = make_phase_masks(include_y1=False, include_w1=True)
-
-    selector.process(*no_w1)
-    selector.process(*no_w1)
-    first = selector.process(*with_w1)
-    missing = selector.process(*no_w1)
-    locked = selector.process(*with_w1)
-
-    assert first.phase == EntrySequencePhase.LEFT4_ARMED
-    assert missing.phase == EntrySequencePhase.LEFT4_ARMED
-    assert locked.phase == EntrySequencePhase.W1_LOCKED
-    assert selector.w1_confirmations == 2
-    assert not selector.w1_fast_locked
-
-
-def test_w1_separation_is_measured_only_in_shared_observed_y_range():
-    def line(
-        slope: float,
-        intercept: float,
-        minimum_y: float,
-        maximum_y: float,
-    ) -> LineHypothesis:
-        midpoint_y = 0.5 * (minimum_y + maximum_y)
-        return LineHypothesis(
-            color="white",
-            coefficients=(slope, intercept),
-            mean_x_ratio=slope * midpoint_y + intercept,
-            mean_y_ratio=midpoint_y,
-            near_x_ratio=slope * maximum_y + intercept,
-            far_x_ratio=slope * minimum_y + intercept,
-            minimum_y_ratio=minimum_y,
-            maximum_y_ratio=maximum_y,
-            direction_dx_dy=slope,
-            heading_from_vehicle_rad=0.0,
-            vertical_span_ratio=maximum_y - minimum_y,
-            fit_rmse_ratio=0.0,
-            support_length_ratio=maximum_y - minimum_y,
-        )
-
+def test_y1_confirms_stage_but_does_not_change_w1_steering_geometry():
     selector = SequenceAwareEntrySelector()
-    # W1 is visibly left of W2 across y=0.20..0.40, but extending W1 to W2's
-    # old y=0.90 anchor would put it to the right and reject it.
-    w1 = line(0.50, 0.08, 0.20, 0.40)
-    w2 = line(-0.10, 0.38, 0.18, 0.90)
+    selector.process(*make_phase_masks(include_y1=False))
 
-    separation, _ = selector._w1_branch_metrics(w1, w2)
-
-    assert np.isclose(separation, 0.12)
-    assert selector._is_w1_branch(w1, w2)
-    assert w2.x_ratio_at(0.90) - w1.x_ratio_at(0.90) < 0.0
-
-
-def test_w1_acquisition_rejects_far_fragment_until_branch_reaches_lower_bev():
-    def line(
-        slope: float,
-        intercept: float,
-        minimum_y: float,
-        maximum_y: float,
-    ) -> LineHypothesis:
-        midpoint_y = 0.5 * (minimum_y + maximum_y)
-        return LineHypothesis(
-            color="white",
-            coefficients=(slope, intercept),
-            mean_x_ratio=slope * midpoint_y + intercept,
-            mean_y_ratio=midpoint_y,
-            near_x_ratio=slope * maximum_y + intercept,
-            far_x_ratio=slope * minimum_y + intercept,
-            minimum_y_ratio=minimum_y,
-            maximum_y_ratio=maximum_y,
-            direction_dx_dy=slope,
-            heading_from_vehicle_rad=math.atan(slope),
-            vertical_span_ratio=maximum_y - minimum_y,
-            fit_rmse_ratio=0.01,
-            support_length_ratio=maximum_y - minimum_y,
-        )
-
-    selector = SequenceAwareEntrySelector()
-    w2 = line(-0.20, 0.47, 0.25, 0.90)
-    # Both hypotheses describe the same left-positive line.  Only the second
-    # observation reaches the near/lower portion where the labelled W1 first
-    # becomes real in the review bag.
-    far_fragment = line(0.55, -0.10, 0.43, 0.69)
-    lower_branch = line(0.55, -0.10, 0.52, 0.78)
-    lower_w2_edge = line(0.25, 0.1175, 0.52, 0.78)
-
-    assert selector._is_w1_branch(far_fragment, w2)
-    assert not selector._is_w1_acquisition_candidate(far_fragment, w2)
-    assert selector._acquire_w1((far_fragment, w2), w2) is None
-
-    assert selector._is_w1_acquisition_candidate(lower_branch, w2)
-    assert selector._acquire_w1((lower_branch, w2), w2) is lower_branch
-
-    assert selector._is_w1_branch(lower_w2_edge, w2)
-    assert not selector._is_w1_acquisition_candidate(lower_w2_edge, w2)
-
-
-def test_continuing_w2_alone_never_creates_w1_or_red_intersection():
-    selector = SequenceAwareEntrySelector()
-    results = [
-        selector.process(
-            *make_phase_masks(include_y1=False, include_w1=False)
-        )
-        for _ in range(6)
-    ]
-
-    assert results[-1].w2 is not None
-    assert all(result.w1 is None for result in results)
-    assert all(not result.ready for result in results)
-    estimate = estimate_branch_point(
-        results[-1].w1,
-        results[-1].white_candidates,
-        forward_range_m=1.5,
-        tracked_w2=results[-1].w2,
-    )
-    assert not np.isfinite(estimate.distance_m)
-
-
-def test_y1_confirmation_switches_path_from_w1_to_yellow_centerline():
-    selector = SequenceAwareEntrySelector()
-    first, second = lock_y1(selector)
+    first = selector.process(*make_phase_masks(include_y1=True))
+    second = selector.process(*make_phase_masks(include_y1=True))
 
     assert first.phase == EntrySequencePhase.W1_LOCKED
     assert first.y1 is None
@@ -242,31 +67,26 @@ def test_y1_confirmation_switches_path_from_w1_to_yellow_centerline():
     separation = second.y1.mean_x_ratio - second.w1.mean_x_ratio
     assert 0.17 <= separation <= 0.46
     assert second.y1.direction_dx_dy > 0.15
-    assert not second.used_synthetic_y1
-    assert "PATH=Y1 direct" in second.reason
-    for x_px, y_px in second.path_pixels:
-        row_ratio = y_px / HEIGHT
-        assert np.isclose(
-            x_px / WIDTH,
-            second.y1.x_ratio_at(row_ratio),
-        )
+    assert second.used_synthetic_y1
 
 
-def test_entry_path_follows_w1_directly_before_y1_confirmation():
+def test_entry_path_uses_sixty_percent_w1_and_forty_percent_y1():
     config = SequenceEntryConfig(w1_path_weight=0.60)
     selector = SequenceAwareEntrySelector(config)
-    _, _, result = lock_w1(selector)
+    result = selector.process(*make_phase_masks(include_y1=False))
 
     assert result.w1 is not None
-    assert result.y1 is None
-    assert not result.used_synthetic_y1
-    assert "PATH=W1 direct" in result.reason
+    assert result.used_synthetic_y1
     for x_px, y_px in result.path_pixels:
         row_ratio = y_px / HEIGHT
-        assert np.isclose(
-            x_px / WIDTH,
-            result.w1.x_ratio_at(row_ratio),
+        white_x = result.w1.x_ratio_at(row_ratio)
+        synthetic_yellow_x = (
+            white_x + config.expected_pair_separation_ratio
         )
+        expected_x = 0.60 * white_x + 0.40 * synthetic_yellow_x
+        midpoint_x = 0.50 * (white_x + synthetic_yellow_x)
+        assert np.isclose(x_px / WIDTH, expected_x)
+        assert x_px / WIDTH < midpoint_x
 
 
 def test_w1_identity_does_not_jump_to_nearer_w2_before_y1_exists():
@@ -277,9 +97,6 @@ def test_w1_identity_does_not_jump_to_nearer_w2_before_y1_exists():
     cv2.line(first_white, (165, 525), (90, 340), 12, cv2.LINE_AA)
     cv2.line(first_white, (225, 610), (275, 250), 22, cv2.LINE_AA)
     cv2.line(first_yellow, (410, 610), (450, 280), 22, cv2.LINE_AA)
-    selector.process(first_white, first_yellow)
-    selector.process(first_white, first_yellow)
-    selector.process(first_white, first_yellow)
     first = selector.process(first_white, first_yellow)
     assert first.w1 is not None
 
@@ -296,13 +113,13 @@ def test_w1_identity_does_not_jump_to_nearer_w2_before_y1_exists():
     assert second.w1.direction_dx_dy > 0.15
     assert second.w1.mean_x_ratio < 0.22
     assert second.y1 is None
-    assert not second.used_synthetic_y1
+    assert second.used_synthetic_y1
 
 
 def test_short_y1_component_below_general_hough_span_can_lock():
     selector = SequenceAwareEntrySelector()
     white, yellow = make_phase_masks(include_y1=False)
-    lock_w1(selector)
+    selector.process(white, yellow)
 
     with_short_y1 = yellow.copy()
     # A 22 px-high semantic dash is deliberately shorter than the general
@@ -319,44 +136,32 @@ def test_short_y1_component_below_general_hough_span_can_lock():
     assert second.y1.mean_x_ratio < 0.55
 
 
-def test_right_leaning_white_line_cannot_replace_locked_left_w1():
+def test_locked_pair_tracks_when_both_boundaries_rotate_past_zero_slope():
     selector = SequenceAwareEntrySelector()
-    _, locked = lock_y1(selector)
+    selector.process(*make_phase_masks(include_y1=False))
+    selector.process(*make_phase_masks(include_y1=True))
+    locked = selector.process(*make_phase_masks(include_y1=True))
     assert locked.y1 is not None
-    assert locked.w1 is not None
-    locked_w1_slope = locked.w1.direction_dx_dy
-    assert locked_w1_slope >= selector.config.acquisition_slope_minimum
 
     white = np.zeros((HEIGHT, WIDTH), dtype=np.uint8)
-    _, yellow = make_phase_masks(include_y1=True)
-    # Negative dx/dy leans toward vehicle-right in canonical BEV.  These are
-    # the false W1 segments captured in the review screenshots.
+    yellow = np.zeros_like(white)
     cv2.line(white, (165, 600), (205, 300), 12, cv2.LINE_AA)
+    cv2.line(yellow, (355, 600), (395, 300), 12, cv2.LINE_AA)
 
-    held = [selector.process(white, yellow) for _ in range(2)]
-    unavailable = selector.process(white, yellow)
+    result = selector.process(white, yellow)
 
-    assert all(result.w1 is not None for result in held)
-    assert all(result.w1.direction_dx_dy > 0.0 for result in held)
-    assert all(
-        np.isclose(result.w1.direction_dx_dy, locked_w1_slope)
-        for result in held
-    )
-    assert unavailable.w1 is None
-    assert unavailable.y1 is not None
-    assert unavailable.path_valid
-    assert "PATH=Y1 direct" in unavailable.reason
-    for x_px, y_px in unavailable.path_pixels:
-        row_ratio = y_px / HEIGHT
-        assert np.isclose(
-            x_px / WIDTH,
-            unavailable.y1.x_ratio_at(row_ratio),
-        )
+    assert result.w1 is not None
+    assert result.y1 is not None
+    assert result.w1.direction_dx_dy < 0.0
+    assert result.y1.direction_dx_dy < 0.0
+    assert result.path_valid
 
 
 def test_forward_alignment_hands_entry_to_existing_shortcut_cruise_by_order():
     selector = SequenceAwareEntrySelector()
-    lock_y1(selector)
+    selector.process(*make_phase_masks(include_y1=False))
+    selector.process(*make_phase_masks(include_y1=True))
+    selector.process(*make_phase_masks(include_y1=True))
 
     results = [
         selector.process(*make_phase_masks(include_y1=True, aligned=True))
@@ -512,7 +317,7 @@ def test_entry_handoff_uses_active_steering_time_as_final_fallback():
 
 def test_branch_distance_uses_second_white_only_as_spatial_gate():
     selector = SequenceAwareEntrySelector()
-    _, _, result = lock_w1(selector)
+    result = selector.process(*make_phase_masks(include_y1=False))
 
     distance = branch_point_distance_m(
         result.w1,
@@ -522,15 +327,3 @@ def test_branch_distance_uses_second_white_only_as_spatial_gate():
 
     assert np.isfinite(distance)
     assert 0.0 <= distance <= 1.5
-
-    estimate = estimate_branch_point(
-        result.w1,
-        result.white_candidates,
-        forward_range_m=1.5,
-        tracked_w2=result.w2,
-    )
-    assert estimate.w2 is not None
-    assert estimate.w2 is not result.w1
-    assert np.isclose(estimate.distance_m, distance)
-    assert np.isfinite(estimate.intersection_x_ratio)
-    assert np.isfinite(estimate.intersection_y_ratio)

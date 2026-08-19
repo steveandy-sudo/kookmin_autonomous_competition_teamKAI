@@ -35,7 +35,15 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "control_latency_preview_sec",
-                default_value="0.30",
+                default_value="0.20",
+            ),
+            DeclareLaunchArgument(
+                "curve_control_latency_preview_sec",
+                default_value="0.40",
+            ),
+            DeclareLaunchArgument(
+                "curve_control_latency_minimum_hold_sec",
+                default_value="0.50",
             ),
             Node(
                 package="xycar_rule_drive",
@@ -61,6 +69,18 @@ def generate_launch_description():
                         "control_latency_preview_sec": ParameterValue(
                             LaunchConfiguration(
                                 "control_latency_preview_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "curve_control_latency_preview_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "curve_control_latency_preview_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "curve_control_latency_minimum_hold_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "curve_control_latency_minimum_hold_sec"
                             ),
                             value_type=float,
                         ),

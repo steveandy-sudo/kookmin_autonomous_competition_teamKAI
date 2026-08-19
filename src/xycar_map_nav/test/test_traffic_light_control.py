@@ -28,6 +28,30 @@ def make_controller(**overrides):
     return TrafficLightController(TrafficLightConfig(**values))
 
 
+def test_default_stop_trigger_does_not_require_minimum_box_area():
+    controller = TrafficLightController(TrafficLightConfig())
+    frame = TrafficLightFrame(red=observation(area=0.0001))
+
+    controller.observe(now_sec=0.0, frame=frame)
+    decision = controller.observe(now_sec=0.1, frame=frame)
+
+    assert decision.action == TrafficLightAction.STOP
+
+
+def test_default_green_release_does_not_require_minimum_box_area():
+    controller = TrafficLightController(TrafficLightConfig())
+    red = TrafficLightFrame(red=observation(area=0.0001))
+    green = TrafficLightFrame(green=observation(area=0.0001))
+
+    controller.observe(now_sec=0.0, frame=red)
+    controller.observe(now_sec=0.1, frame=red)
+    controller.observe(now_sec=0.2, frame=green)
+    decision = controller.observe(now_sec=0.3, frame=green)
+
+    assert decision.action == TrafficLightAction.CLEAR
+    assert decision.signal_name == "green_4"
+
+
 def test_far_red_box_does_not_stop_vehicle():
     controller = make_controller()
 

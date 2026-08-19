@@ -2,10 +2,8 @@ from shortcut_entry_review.shortcut_candidate_mux_node import (
     entry_speed_cap,
     enforce_directional_hold,
     held_w1_candidate,
-    rate_limit_steering,
     rule_handoff_candidate,
     rule_search_candidate,
-    semantic_entry_control_available,
     semantic_entry_candidate,
     shortcut_core_candidate,
 )
@@ -61,49 +59,6 @@ def test_entry_hold_prevents_w1_from_flipping_out_of_left_turn():
     assert enforce_directional_hold(
         candidate_angle=-42.0, hold_command=-30.0
     ) == -42.0
-
-
-def test_w1_steering_rate_limit_prevents_red_box_command_jump():
-    assert rate_limit_steering(
-        previous_angle=6.0,
-        target_angle=-30.0,
-        maximum_rate=90.0,
-        dt_sec=0.05,
-    ) == 1.5
-    assert rate_limit_steering(
-        previous_angle=-28.0,
-        target_angle=-30.0,
-        maximum_rate=90.0,
-        dt_sec=0.05,
-    ) == -30.0
-
-
-def test_semantic_entry_requires_spatial_gate_ready():
-    common = {
-        "path_valid": True,
-        "phase": 1.0,
-        "command_age_sec": 0.05,
-        "timeout_sec": 0.35,
-    }
-
-    assert not semantic_entry_control_available(
-        entry_ready=False,
-        **common,
-    )
-    assert semantic_entry_control_available(
-        entry_ready=True,
-        **common,
-    )
-
-
-def test_semantic_entry_rejects_stale_controller_command_after_gate():
-    assert not semantic_entry_control_available(
-        path_valid=True,
-        entry_ready=True,
-        phase=1.0,
-        command_age_sec=0.36,
-        timeout_sec=0.35,
-    )
 
 
 def test_shortcut_entry_speed_caps_rule_without_accelerating_degraded_path():

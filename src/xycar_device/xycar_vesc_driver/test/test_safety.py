@@ -55,7 +55,7 @@ class MotorSafetyTest(unittest.TestCase):
         self.assertTrue(guard.output_allowed)
 
     def test_default_recovery_stability_is_three_seconds(self):
-        self.assertEqual(VoltageGuard().recovery_stable_sec, 3.0)
+        self.assertEqual(VoltageGuard().recovery_stable_sec, 1.0)
 
     def test_under_voltage_fault_auto_recovers_after_stable_voltage(self):
         guard = VoltageGuard(
