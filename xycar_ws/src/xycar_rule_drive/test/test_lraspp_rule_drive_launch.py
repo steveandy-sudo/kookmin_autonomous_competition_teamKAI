@@ -40,6 +40,8 @@ def test_lraspp_rule_launch_keeps_real_car_tuning_adjustable():
         "straight_stanley_softening_mps",
         "opposed_stanley_weight",
         "control_latency_preview_sec",
+        "curve_control_latency_preview_sec",
+        "curve_control_latency_minimum_hold_sec",
         "angle_command_min",
         "angle_command_max",
         "perception_rate_hz",
