@@ -30,7 +30,7 @@ The legacy conversion constants are preserved. The node directly publishes
 - `drive_enabled` is false.
 - firmware must be 2.18;
 - commands stop after a 0.5 second publisher timeout;
-- acceleration is moderately slew-limited at `0.6 m/s^2`; set
+- acceleration is moderately slew-limited at `0.4 m/s^2`; set
   `acceleration_slew_enabled:=false` only when immediate application is
   intentionally required;
 - fresh VESC telemetry is required;

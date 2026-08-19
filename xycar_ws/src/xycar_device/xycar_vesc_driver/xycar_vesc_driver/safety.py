@@ -17,7 +17,7 @@ class VoltageGuard:
     limit_voltage: float = 7.5
     stop_voltage: float = 6.0
     recovery_voltage: float = 8.0
-    recovery_stable_sec: float = 3.0
+    recovery_stable_sec: float = 1.0
     auto_recover: bool = False
     state: str = NORMAL
     voltage: float = math.nan

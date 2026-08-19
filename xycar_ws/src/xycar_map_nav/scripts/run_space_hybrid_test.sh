@@ -864,13 +864,14 @@ if ! kill -0 "$launch_pid" 2>/dev/null; then
 fi
 
 # Keep the complete launch output in CONTROL_LOG while forwarding only
-# operator-relevant mission transitions to this terminal in real time.
+# failures that need immediate operator attention. Stable driving-mode changes
+# and stop reasons are printed by space_drive_gate itself.
 setsid bash -c '
   log_file="$1"
   owner_pid="$2"
   stdbuf -oL tail --pid="$owner_pid" -n 0 -F "$log_file" 2>/dev/null |
     stdbuf -oL grep --line-buffered -E \
-      "\\[MISSION\\]|\\[YOLO object\\]|SHORTCUT HANDOFF|SHORTCUT CONTROL SWITCHED|SHORTCUT candidate (enabled|disabled)|shortcut LR-ASPP camera input (enabled|disabled)|candidate stale|safe stop"
+      "W1 spatial gate arrived after search timeout|W1 search timeout|candidate stale|safe stop|process has died|Traceback|ERROR"
 ' _ "$CONTROL_LOG" "$launch_pid" &
 mission_log_pid=$!
 

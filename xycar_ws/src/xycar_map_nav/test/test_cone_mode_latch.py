@@ -19,23 +19,36 @@ def observe(latch, *, yolo=True, distance=0.8, confidence=0.8, speed=3.0):
     )
 
 
-def test_cone_requires_confirmed_yolo_lidar_entry():
+def test_cone_requires_confirmed_yolo_and_valid_command_entry():
     latch = make_latch()
     for _ in range(3):
         assert observe(latch, yolo=False) == ConeModeEvent.NONE
-    for _ in range(3):
-        assert observe(latch, distance=3.2) == ConeModeEvent.NONE
     assert observe(latch) == ConeModeEvent.NONE
     assert observe(latch) == ConeModeEvent.NONE
     assert observe(latch) == ConeModeEvent.STARTED
     assert latch.active
 
 
-def test_cone_accepts_lidar_cluster_within_three_meters():
+def test_cone_entry_ignores_distance_by_default():
     latch = make_latch()
 
-    assert observe(latch, distance=2.8) == ConeModeEvent.NONE
-    assert observe(latch, distance=2.8) == ConeModeEvent.NONE
+    assert observe(latch, distance=float("inf")) == ConeModeEvent.NONE
+    assert observe(latch, distance=float("inf")) == ConeModeEvent.NONE
+    assert (
+        observe(latch, distance=float("inf"))
+        == ConeModeEvent.STARTED
+    )
+
+
+def test_optional_cone_distance_gate_restores_legacy_behavior():
+    latch = ConeModeLatch(
+        ConeModeConfig(
+            entry_frames=1,
+            entry_distance_enabled=True,
+            entry_distance_m=3.0,
+        )
+    )
+    assert observe(latch, distance=3.2) == ConeModeEvent.NONE
     assert observe(latch, distance=2.8) == ConeModeEvent.STARTED
 
 
