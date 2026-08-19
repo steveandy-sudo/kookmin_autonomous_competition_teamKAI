@@ -28,8 +28,8 @@
    - 반복되는 객체 검출과 경로 상태 로그는 터미널에서 줄이고 전체 launch 로그에는 그대로 보존합니다.
 
 3. 실차 주행 rosbag
-   - 이름: `8_19_first_drive`
-   - 로컬 위치: `/home/xytron/rosbags/integrated_drive/8_19_first_drive`
+   - 기록 이름: `8_19_first_drive`
+   - 현재 로컬 폴더: `/home/xytron/rosbags/integrated_drive/8_19_first_drive_지름길_신호등_곡선_콘_장애물회피`
    - 기록 시각: `2026-08-19 10:42:21~10:47:17 KST`
    - 길이: `296.2초`, 메시지 `110,925개`, Zstd 압축 크기 `1.6GiB`
    - 주요 평균 주기: 압축 카메라 `29.74Hz`, Canonical `9.48Hz`, LiDAR `9.63Hz`, VESC `49.98Hz`, 최종 모터 명령 `20.06Hz`
