@@ -230,7 +230,9 @@ SHORTCUT
 
 ### W1/W2 지름길 진입 로직
 
-현재 지름길 진입은 W1/W2 기하 기반 방식만 사용한다.
+통합 주행에서는 `--shortcut-mode w1`과 `--shortcut-mode yellow_count` 중 하나를 선택한다. 옵션을 생략하면 기존 W1/W2 방식인 `w1`을 사용하며 두 인지·제어 노드는 동시에 실행되지 않는다.
+
+#### 방식 1: `w1`
 
 1. `left_4` 진입 시퀀스가 열리면 흰선 후보 중 기존 진행 방향으로 이어지는 선을 W2로 먼저 추적한다.
 2. W2 왼쪽에서 차량 기준 왼쪽으로 갈라지고, BEV 하단까지 충분히 내려오며, W2와 최소 간격을 확보한 흰선만 W1 후보로 인정한다. 기본 확인은 최근 4개 인지 프레임 중 2회이며, 길이·기울기·분리도가 충분한 후보는 빠른 잠금 조건을 적용한다.
@@ -240,6 +242,44 @@ SHORTCUT
 6. 진입 후 최소 `0.30 m` 진행한 상태에서 정렬, W1/Y1 동시 추적 또는 Y1 확인 후 W1 소실 조건이 만족되면 기존 노란 중앙선 RULE 주행으로 인계한다. 시각 조건이 끝까지 만족되지 않아도 W1 조향 시작 후 최대 `1.3 s`가 지나면 RULE로 복귀한다.
 
 지름길 내부 속도 명령 상한은 기본 `9.0`이며, 통합 실행 명령에서 지정한 전체 속도 상한이 더 낮으면 최종 출력은 그 값을 넘지 않는다. 주요 조절값은 `SHORTCUT_W1_STEERING_START_DELAY_FRAMES`, `SHORTCUT_MINIMUM_ENTRY_PROGRESS_M`, `SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC`, `SHORTCUT_W1_STEERING_HOLD_SEC`, `SHORTCUT_ENTRY_SPEED_COMMAND`, `SHORTCUT_ENTRY_STEERING_RATE_LIMIT_CMD_PER_SEC` 환경변수로 변경할 수 있다.
+
+W1 방식의 터미널 이벤트 색상은 다음과 같다.
+
+| 색상 | 이벤트 |
+| --- | --- |
+| 노랑 | `left_4` 검출 누적 및 검출 확정 뒤 소실 누적 |
+| 핑크 | 유효한 W1/W2 교차점이 생겨 W1 직접 조향을 실제 시작한 순간 |
+| 초록 | 지름길 후보가 완료되고 최종 선택기가 노란 X-bin RULE 주행으로 복귀한 순간 |
+
+#### 방식 2: `yellow_count`
+
+1. 공통 YOLO 판단에서 `left_4`를 2개 프레임 확인하고, 이어서 2개 프레임 동안 사라지면 노란선 카운트 인지를 시작한다.
+2. W1 방식과 동일한 `kookmin_lane_lraspp_mbv3s_256x144.pt` 모델의 노란 클래스 마스크만 사용하며, W1 입력과 동일한 mask-only BEV 투영을 적용한다.
+3. 노란 점선 성분이 BEV 카운트 띠에 2개 인지 프레임 동안 들어온 뒤 2개 인지 프레임 동안 빠져나가면 한 개가 사라진 것으로 센다. 카운트 띠 아래에 남아 있는 이전 점선은 다음 점선과 합치지 않는다.
+4. 첫 번째 이탈은 노란색 `YELLOW LINE DISAPPEARED 1/2`, 두 번째 이탈은 노란색 `YELLOW LINE DISAPPEARED 2/2` 로그로 기록한다.
+5. 두 번째 이탈 즉시 기본 `-42` 좌조향 후보를 출력한다. 진입 속도 명령 상한은 `9.0`이며 실제 모터 출력은 통합 선택기와 Space 안전 게이트만 소유한다.
+6. `--shortcut-return-sec`로 정한 시간이 지나면 완료 신호와 최신 RULE 후보를 내보낸다. 최종 선택기가 RULE 권한으로 돌아간 실제 순간에만 초록색 복귀 로그를 출력한다.
+7. RULE 후보가 오래됐으면 강제조향 타이머를 시작하지 않고 안전 정지 후보를 내며, RULE 후보가 정상화된 시점부터 지정 시간을 잰다.
+
+`yellow_count`의 강제 조향값은 `--shortcut-angle`로 `-42~0`, 유지 시간은 `--shortcut-return-sec`로 `0.1~5.0`초 범위에서 지정한다.
+
+### Xycar `kty_publish` 통합 주행
+
+소스를 갱신하고 한 번 빌드한 뒤 아래 명령 하나만 실행한다. 질문에는 Enter를 눌러 기본값을 사용할 수 있고, 모든 검사 뒤 `READY`가 나오면 Space로 출발한다. 주행 중 Space를 다시 누르면 즉시 정지하고, 다시 누르면 재개한다.
+
+W1/W2 방식:
+
+```bash
+cd /home/xytron/kty_publish && unset XYCAR_WS && XYCAR_TEST_PROFILE=integrated XYCAR_STEERING_ONLY=false XYCAR_ENABLE_RVIZ=false bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh 4 --shortcut-mode w1
+```
+
+노란선 2개 이탈 방식, 강제 좌조향 `-42`, `0.7`초 뒤 RULE 복귀:
+
+```bash
+cd /home/xytron/kty_publish && unset XYCAR_WS && XYCAR_TEST_PROFILE=integrated XYCAR_STEERING_ONLY=false XYCAR_ENABLE_RVIZ=false bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh 4 --shortcut-mode yellow_count --shortcut-angle -42 --shortcut-return-sec 0.7
+```
+
+첫 번째 숫자 `4`는 전체 주행 속도 상한이다. 실차 저속 확인이 끝난 뒤 필요한 값으로 올린다.
 
 ## 9. 현재 검증 상태 및 향후 확인
 

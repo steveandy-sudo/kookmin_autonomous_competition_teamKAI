@@ -17,6 +17,27 @@ from rclpy.qos import (
 from std_msgs.msg import Bool, Float32, Float32MultiArray, String
 
 
+def rate_limit_steering(
+    *,
+    previous_angle: float,
+    target_angle: float,
+    maximum_rate: float,
+    dt_sec: float,
+) -> float:
+    """Limit a steering transition while preserving its requested direction."""
+    previous = float(previous_angle)
+    target = float(target_angle)
+    rate = max(0.0, float(maximum_rate))
+    elapsed = max(0.0, float(dt_sec))
+    if rate <= 0.0 or elapsed <= 0.0:
+        return target if rate <= 0.0 else previous
+    maximum_delta = rate * elapsed
+    return previous + min(
+        maximum_delta,
+        max(-maximum_delta, target - previous),
+    )
+
+
 def semantic_entry_candidate(
     *,
     rule_command: tuple[float, float],
@@ -107,6 +128,23 @@ def held_w1_candidate(
     )
 
 
+def semantic_entry_control_available(
+    *,
+    path_valid: bool,
+    entry_ready: bool,
+    phase: float,
+    command_age_sec: float,
+    timeout_sec: float,
+) -> bool:
+    """Allow W1 steering only after the selected entry trigger is ready."""
+    return bool(
+        path_valid
+        and entry_ready
+        and float(phase) >= 1.0
+        and float(command_age_sec) <= max(0.0, float(timeout_sec))
+    )
+
+
 class ShortcutCandidateMuxNode(Node):
     """Publish one hybrid shortcut candidate without owning /xycar_motor."""
 
@@ -128,6 +166,7 @@ class ShortcutCandidateMuxNode(Node):
         self.declare_parameter(
             "path_valid_topic", "/shortcut/entry/path_valid"
         )
+        self.declare_parameter("entry_ready_topic", "/shortcut/entry/ready")
         self.declare_parameter(
             "cruise_handoff_topic", "/shortcut/entry/cruise_enabled"
         )
@@ -137,8 +176,10 @@ class ShortcutCandidateMuxNode(Node):
         self.declare_parameter("control_rate_hz", 20.0)
         self.declare_parameter("candidate_timeout_sec", 0.35)
         self.declare_parameter("rule_command_timeout_sec", 0.35)
-        self.declare_parameter("w1_steering_hold_sec", 1.0)
+        self.declare_parameter("w1_steering_hold_sec", 1.3)
         self.declare_parameter("entry_direction_hold_command", -30.0)
+        self.declare_parameter("entry_direction_hold_enabled", False)
+        self.declare_parameter("entry_steering_rate_limit_cmd_per_sec", 90.0)
         self.declare_parameter("entry_speed_command", 9.0)
         self.declare_parameter("handoff_to_rule", True)
         self.declare_parameter("default_enabled", False)
@@ -153,6 +194,7 @@ class ShortcutCandidateMuxNode(Node):
             self.get_parameter("default_enabled").value
         )
         self.path_valid = False
+        self.entry_ready = False
         self.cruise_handoff = False
         self.phase = 0.0
         self.entry_command = (0.0, 0.0)
@@ -168,6 +210,8 @@ class ShortcutCandidateMuxNode(Node):
         self.last_steering_log_time = float("-inf")
         self.last_valid_w1_angle = 0.0
         self.last_valid_w1_time = float("-inf")
+        self.last_output_angle: float | None = None
+        self.last_output_time = time.monotonic()
 
         self.create_subscription(
             Bool,
@@ -179,6 +223,12 @@ class ShortcutCandidateMuxNode(Node):
             Bool,
             str(self.get_parameter("path_valid_topic").value),
             self.on_path_valid,
+            state_qos,
+        )
+        self.create_subscription(
+            Bool,
+            str(self.get_parameter("entry_ready_topic").value),
+            self.on_entry_ready,
             state_qos,
         )
         self.create_subscription(
@@ -235,6 +285,7 @@ class ShortcutCandidateMuxNode(Node):
         enabled = bool(message.data)
         if self.processing_enabled and not enabled:
             self.path_valid = False
+            self.entry_ready = False
             self.cruise_handoff = False
             self.phase = 0.0
             self.entry_command_time = float("-inf")
@@ -244,10 +295,15 @@ class ShortcutCandidateMuxNode(Node):
             self.steering_blend = 0.0
             self.last_valid_w1_angle = 0.0
             self.last_valid_w1_time = float("-inf")
+            self.last_output_angle = None
+            self.last_output_time = time.monotonic()
         self.processing_enabled = enabled
 
     def on_path_valid(self, message: Bool) -> None:
         self.path_valid = bool(message.data)
+
+    def on_entry_ready(self, message: Bool) -> None:
+        self.entry_ready = bool(message.data)
 
     def on_cruise_handoff(self, message: Bool) -> None:
         requested = bool(message.data)
@@ -258,8 +314,8 @@ class ShortcutCandidateMuxNode(Node):
             self.legacy_control_logged = False
             if bool(self.get_parameter("handoff_to_rule").value):
                 self.get_logger().warning(
-                    "\033[95m[MISSION] SHORTCUT ENTRY COMPLETE -> "
-                    "REQUEST YELLOW XBIN RULE\033[0m"
+                    "[MISSION] SHORTCUT ENTRY COMPLETE -> "
+                    "REQUEST YELLOW XBIN RULE"
                 )
             else:
                 self.get_logger().warning(
@@ -317,6 +373,7 @@ class ShortcutCandidateMuxNode(Node):
         if not self.processing_enabled:
             return
         now = time.monotonic()
+        output_dt_sec = min(0.25, max(0.0, now - self.last_output_time))
         timeout = float(self.get_parameter("candidate_timeout_sec").value)
         rule_fresh = (
             now - self.rule_command_time
@@ -327,6 +384,8 @@ class ShortcutCandidateMuxNode(Node):
                 Float32MultiArray(data=[0.0, 0.0, 0.0, 0.0])
             )
             self.publish_status("RULE candidate stale; safe stop")
+            self.last_output_angle = 0.0
+            self.last_output_time = now
             return
         entry_speed = entry_speed_cap(
             rule_speed=self.rule_command[1],
@@ -362,10 +421,12 @@ class ShortcutCandidateMuxNode(Node):
             else:
                 command = (0.0, 0.0, 0.0, 4.0)
                 self.publish_status("legacy cruise candidate stale; safe stop")
-        elif (
-            self.path_valid
-            and self.phase >= 1.0
-            and now - self.entry_command_time <= timeout
+        elif semantic_entry_control_available(
+            path_valid=self.path_valid,
+            entry_ready=self.entry_ready,
+            phase=self.phase,
+            command_age_sec=now - self.entry_command_time,
+            timeout_sec=timeout,
         ):
             blend = float(self.steering_blend)
             command = semantic_entry_candidate(
@@ -374,17 +435,27 @@ class ShortcutCandidateMuxNode(Node):
                 steering_blend=blend,
                 phase=self.phase,
             )
-            output_angle = enforce_directional_hold(
-                candidate_angle=command[0],
-                hold_command=float(
-                    self.get_parameter("entry_direction_hold_command").value
-                ),
-            )
+            output_angle = float(command[0])
+            if bool(self.get_parameter("entry_direction_hold_enabled").value):
+                output_angle = enforce_directional_hold(
+                    candidate_angle=output_angle,
+                    hold_command=float(
+                        self.get_parameter("entry_direction_hold_command").value
+                    ),
+                )
+            if self.last_output_angle is not None:
+                output_angle = rate_limit_steering(
+                    previous_angle=self.last_output_angle,
+                    target_angle=output_angle,
+                    maximum_rate=float(
+                        self.get_parameter(
+                            "entry_steering_rate_limit_cmd_per_sec"
+                        ).value
+                    ),
+                    dt_sec=output_dt_sec,
+                )
             command = (output_angle, command[1], command[2], command[3])
             command = (command[0], entry_speed, command[2], command[3])
-            # A valid semantic path means W1 has been observed. Apply the
-            # directional hold immediately; the spatial gate still controls
-            # the later authority latch and completion criteria.
             self.last_valid_w1_angle = float(output_angle)
             self.last_valid_w1_time = now
             if now - self.last_steering_log_time >= 0.5:
@@ -424,6 +495,8 @@ class ShortcutCandidateMuxNode(Node):
         self.candidate_publisher.publish(
             Float32MultiArray(data=[float(value) for value in command])
         )
+        self.last_output_angle = float(command[0])
+        self.last_output_time = now
 
 
 def main() -> None:

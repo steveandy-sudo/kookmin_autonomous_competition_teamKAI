@@ -59,6 +59,9 @@ SOURCE_CODES = {
     CandidateSource.RL: 0.0,
     CandidateSource.RULE: 1.0,
 }
+ANSI_YELLOW = "\033[93m"
+ANSI_GREEN = "\033[92m"
+ANSI_RESET = "\033[0m"
 
 
 def cone_disarm_hold_active(
@@ -954,8 +957,8 @@ class SequentialHybridDriver(Node):
             )
             self.shortcut_processing_pub.publish(Bool(data=False))
             self.get_logger().warning(
-                "\033[95m[MISSION] CONTROL SWITCHED -> "
-                "YELLOW XBIN RULE\033[0m"
+                f"{ANSI_GREEN}[MISSION] CONTROL SWITCHED -> "
+                f"YELLOW XBIN RULE{ANSI_RESET}"
             )
         elif event == ShortcutModeEvent.REARMED:
             self.get_logger().info("[MISSION] left_4 trigger rearmed")
@@ -1143,10 +1146,11 @@ class SequentialHybridDriver(Node):
             )
             if count != self.last_left_detect_count:
                 self.get_logger().info(
-                    "[MISSION] left_4 DETECTED "
+                    f"{ANSI_YELLOW}[MISSION] left_4 DETECTED "
                     f"confidence={traffic_frame.left.confidence:.2f} "
                     f"{count}/"
                     f"{int(self.get_parameter('shortcut_yolo_required_frames').value)}"
+                    f"{ANSI_RESET}"
                 )
                 self.last_left_detect_count = count
             self.last_left_absence_count = 0
@@ -1157,9 +1161,10 @@ class SequentialHybridDriver(Node):
             )
             if count != self.last_left_absence_count:
                 self.get_logger().info(
-                    "[MISSION] left_4 ABSENT "
+                    f"{ANSI_YELLOW}[MISSION] left_4 ABSENT "
                     f"{count}/"
                     f"{int(self.get_parameter('shortcut_yolo_absence_frames').value)}"
+                    f"{ANSI_RESET}"
                 )
                 self.last_left_absence_count = count
         self._handle_traffic_shortcut_request(now)
@@ -1763,6 +1768,7 @@ class SequentialHybridDriver(Node):
                 12: "Y1_LOCKED_ENTRY",
                 13: "W1_Y1_ENTRY",
                 14: "SEMANTIC_HANDOFF",
+                15: "YELLOW_COUNT_FORCE",
             }
             source_label = "SHORTCUT_" + phase_names.get(
                 int(round(self.shortcut_phase_code)), "UNKNOWN"

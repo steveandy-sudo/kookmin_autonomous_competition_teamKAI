@@ -13,6 +13,98 @@ if [[ ! -x "$WORKSPACE/src/xycar_map_nav/scripts/run_space_hybrid_test.sh" ]]; t
   WORKSPACE="$SOURCE_WORKSPACE"
 fi
 export XYCAR_WS="$WORKSPACE"
+
+# Keep the real-car one-terminal launcher compatible with the shortcut
+# selector exposed by run_space_hybrid_test.sh. Positional driving parameters
+# may appear before or after these named options.
+SHORTCUT_STRATEGY="${SHORTCUT_STRATEGY:-w1}"
+SHORTCUT_YELLOW_COUNT_FORCE_ANGLE="${SHORTCUT_YELLOW_COUNT_FORCE_ANGLE:--42.0}"
+SHORTCUT_YELLOW_COUNT_RETURN_SEC="${SHORTCUT_YELLOW_COUNT_RETURN_SEC:-0.7}"
+declare -a POSITIONAL_ARGS=()
+while (( $# > 0 )); do
+  case "$1" in
+    --shortcut-mode)
+      if (( $# < 2 )); then
+        echo "ERROR: --shortcut-mode requires w1 or yellow_count." >&2
+        exit 2
+      fi
+      SHORTCUT_STRATEGY="$2"
+      shift 2
+      ;;
+    --shortcut-mode=*)
+      SHORTCUT_STRATEGY="${1#*=}"
+      shift
+      ;;
+    --shortcut-angle)
+      if (( $# < 2 )); then
+        echo "ERROR: --shortcut-angle requires a value from -42 to 0." >&2
+        exit 2
+      fi
+      SHORTCUT_YELLOW_COUNT_FORCE_ANGLE="$2"
+      shift 2
+      ;;
+    --shortcut-angle=*)
+      SHORTCUT_YELLOW_COUNT_FORCE_ANGLE="${1#*=}"
+      shift
+      ;;
+    --shortcut-return-sec)
+      if (( $# < 2 )); then
+        echo "ERROR: --shortcut-return-sec requires seconds." >&2
+        exit 2
+      fi
+      SHORTCUT_YELLOW_COUNT_RETURN_SEC="$2"
+      shift 2
+      ;;
+    --shortcut-return-sec=*)
+      SHORTCUT_YELLOW_COUNT_RETURN_SEC="${1#*=}"
+      shift
+      ;;
+    --help|-h)
+      echo "Usage: $0 [speed] [lookahead] [stanley_percent] [left_offset_cm] [options]"
+      echo "  --shortcut-mode w1|yellow_count"
+      echo "  --shortcut-angle -42..0          (yellow_count only)"
+      echo "  --shortcut-return-sec 0.1..5.0   (yellow_count only)"
+      exit 0
+      ;;
+    --)
+      shift
+      while (( $# > 0 )); do
+        POSITIONAL_ARGS+=("$1")
+        shift
+      done
+      ;;
+    -*)
+      echo "ERROR: unknown option: $1" >&2
+      exit 2
+      ;;
+    *)
+      POSITIONAL_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+set -- "${POSITIONAL_ARGS[@]}"
+
+case "$SHORTCUT_STRATEGY" in
+  w1|yellow_count) ;;
+  *)
+    echo "ERROR: --shortcut-mode must be w1 or yellow_count." >&2
+    exit 2
+    ;;
+esac
+if [[ ! "$SHORTCUT_YELLOW_COUNT_FORCE_ANGLE" =~ ^-?[0-9]+([.][0-9]+)?$ ]] || \
+  ! awk -v value="$SHORTCUT_YELLOW_COUNT_FORCE_ANGLE" \
+    'BEGIN { exit !(value >= -42.0 && value <= 0.0) }'; then
+  echo "ERROR: --shortcut-angle must be from -42 to 0." >&2
+  exit 2
+fi
+if [[ ! "$SHORTCUT_YELLOW_COUNT_RETURN_SEC" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
+  ! awk -v value="$SHORTCUT_YELLOW_COUNT_RETURN_SEC" \
+    'BEGIN { exit !(value >= 0.1 && value <= 5.0) }'; then
+  echo "ERROR: --shortcut-return-sec must be from 0.1 to 5.0 seconds." >&2
+  exit 2
+fi
+
 CAMERA_DEVICE="/dev/v4l/by-id/usb-HD_USB_Camera_HD_USB_Camera-video-index0"
 SPEED_COMMAND="${1:-${SPEED_COMMAND:-25.0}}"
 CURVATURE_SPEED_CONTROL_ENABLED="${CURVATURE_SPEED_CONTROL_ENABLED:-true}"
@@ -482,6 +574,8 @@ export DEGRADED_PATH_MINIMUM_SPAN_M
 export STRAIGHT_RIGHT_OFFSET_CM
 export ADAPTIVE_STEERING_SPEED_ENABLED STEERING_TURN_SPEED_COMMAND
 export STEERING_SLOWDOWN_START_ANGLE STEERING_FULL_SLOWDOWN_ANGLE
+export SHORTCUT_STRATEGY SHORTCUT_YELLOW_COUNT_FORCE_ANGLE
+export SHORTCUT_YELLOW_COUNT_RETURN_SEC
 
 "$WORKSPACE/src/xycar_map_nav/scripts/run_space_hybrid_test.sh" \
   "$SPEED_COMMAND" "$LOOKAHEAD_DISTANCE" "$STANLEY_PERCENT" \

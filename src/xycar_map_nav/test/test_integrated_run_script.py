@@ -87,3 +87,22 @@ def test_low_speed_profile_derives_curve_defaults_from_requested_cap() -> None:
         assert source.index('SPEED_COMMAND="$(awk') < source.index(
             "curve_default=\"$(awk"
         )
+
+
+def test_both_real_car_scripts_expose_the_two_shortcut_strategies() -> None:
+    for script in (RUN_SCRIPT, COMPLETE_SCRIPT):
+        source = script.read_text(encoding="utf-8")
+
+        assert "--shortcut-mode" in source
+        assert "w1|yellow_count" in source
+        assert "--shortcut-angle" in source
+        assert "--shortcut-return-sec" in source
+
+
+def test_integrated_launch_starts_only_the_selected_shortcut_strategy() -> None:
+    source = LAUNCH_FILE.read_text(encoding="utf-8")
+
+    assert 'DeclareLaunchArgument("shortcut_strategy", default_value="w1")' in source
+    assert '"\' == \'w1\'"' in source
+    assert '"\' == \'yellow_count\'"' in source
+    assert "yellow_count_shortcut_control.launch.py" in source

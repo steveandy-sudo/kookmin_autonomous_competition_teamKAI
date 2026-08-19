@@ -4,7 +4,11 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import (
+    LaunchConfiguration,
+    PathJoinSubstitution,
+    PythonExpression,
+)
 from launch_ros.actions import Node, SetParameter
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
@@ -30,6 +34,13 @@ def generate_launch_description():
             FindPackageShare("shortcut_entry_review"),
             "launch",
             "shortcut_entry_semantic_control.launch.py",
+        ]
+    )
+    yellow_count_shortcut_launch = PathJoinSubstitution(
+        [
+            FindPackageShare("xycar_map_nav"),
+            "launch",
+            "yellow_count_shortcut_control.launch.py",
         ]
     )
     rule_base = PathJoinSubstitution(
@@ -145,8 +156,17 @@ def generate_launch_description():
                 "start_object_detection", default_value="true"
             ),
             DeclareLaunchArgument("start_shortcut", default_value="true"),
+            DeclareLaunchArgument("shortcut_strategy", default_value="w1"),
             DeclareLaunchArgument(
                 "shortcut_handoff_to_rule", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "shortcut_yellow_count_forced_steering_command",
+                default_value="-42.0",
+            ),
+            DeclareLaunchArgument(
+                "shortcut_yellow_count_forced_steering_sec",
+                default_value="0.7",
             ),
             DeclareLaunchArgument(
                 "object_model_path",
@@ -188,14 +208,14 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "shortcut_w1_steering_start_delay_frames",
-                default_value="4",
+                default_value="0",
             ),
             DeclareLaunchArgument(
                 "shortcut_w1_steering_delay_missing_tolerance_frames",
                 default_value="2",
             ),
             DeclareLaunchArgument(
-                "shortcut_minimum_entry_progress_m", default_value="0.50"
+                "shortcut_minimum_entry_progress_m", default_value="0.30"
             ),
             DeclareLaunchArgument(
                 "shortcut_pair_track_handoff_required_frames",
@@ -205,14 +225,18 @@ def generate_launch_description():
                 "shortcut_w1_loss_handoff_enabled", default_value="true"
             ),
             DeclareLaunchArgument(
-                "shortcut_maximum_entry_steering_sec", default_value="1.5"
+                "shortcut_maximum_entry_steering_sec", default_value="1.3"
             ),
             DeclareLaunchArgument(
-                "shortcut_w1_steering_hold_sec", default_value="1.0"
+                "shortcut_w1_steering_hold_sec", default_value="1.3"
             ),
             DeclareLaunchArgument(
                 "shortcut_entry_direction_hold_command",
                 default_value="-30.0",
+            ),
+            DeclareLaunchArgument(
+                "shortcut_entry_steering_rate_limit_cmd_per_sec",
+                default_value="90.0",
             ),
             DeclareLaunchArgument(
                 "shortcut_entry_speed_command", default_value="9.0"
@@ -1045,7 +1069,17 @@ def generate_launch_description():
             ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(shortcut_semantic_launch),
-                condition=IfCondition(LaunchConfiguration("start_shortcut")),
+                condition=IfCondition(
+                    PythonExpression(
+                        [
+                            "'",
+                            LaunchConfiguration("start_shortcut"),
+                            "' == 'true' and '",
+                            LaunchConfiguration("shortcut_strategy"),
+                            "' == 'w1'",
+                        ]
+                    )
+                ),
                 launch_arguments={
                     "source_topic": (
                         "/wide_camera_mjpeg/image_raw/compressed"
@@ -1057,6 +1091,9 @@ def generate_launch_description():
                     "rule_command_topic": "/hybrid/rule_candidate",
                     "handoff_to_rule": LaunchConfiguration(
                         "shortcut_handoff_to_rule"
+                    ),
+                    "entry_steering_rate_limit_cmd_per_sec": LaunchConfiguration(
+                        "shortcut_entry_steering_rate_limit_cmd_per_sec"
                     ),
                     "w1_path_weight": LaunchConfiguration(
                         "shortcut_w1_path_weight"
@@ -1109,6 +1146,47 @@ def generate_launch_description():
                     "default_enabled": "false",
                     "use_sim_time": "false",
                     "show_opencv_windows": "false",
+                }.items(),
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(yellow_count_shortcut_launch),
+                condition=IfCondition(
+                    PythonExpression(
+                        [
+                            "'",
+                            LaunchConfiguration("start_shortcut"),
+                            "' == 'true' and '",
+                            LaunchConfiguration("shortcut_strategy"),
+                            "' == 'yellow_count'",
+                        ]
+                    )
+                ),
+                launch_arguments={
+                    "source_topic": (
+                        "/wide_camera_mjpeg/image_raw/compressed"
+                    ),
+                    "processing_enabled_topic": (
+                        "/hybrid/shortcut_processing_enabled"
+                    ),
+                    "rule_command_topic": "/hybrid/rule_candidate",
+                    "candidate_topic": "/hybrid/shortcut_candidate",
+                    "ready_topic": "/shortcut/entry/ready",
+                    "lane_model": LaunchConfiguration(
+                        "shortcut_lane_model"
+                    ),
+                    "camera_yaml": object_camera_yaml,
+                    "forced_steering_command": LaunchConfiguration(
+                        "shortcut_yellow_count_forced_steering_command"
+                    ),
+                    "forced_steering_sec": LaunchConfiguration(
+                        "shortcut_yellow_count_forced_steering_sec"
+                    ),
+                    "entry_speed_command": LaunchConfiguration(
+                        "shortcut_entry_speed_command"
+                    ),
+                    "yellow_pass_target": "2",
+                    "yellow_visible_frames": "2",
+                    "yellow_absent_frames": "2",
                 }.items(),
             ),
             Node(
