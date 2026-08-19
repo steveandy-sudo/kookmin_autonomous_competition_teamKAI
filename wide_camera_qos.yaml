@@ -1,5 +1,0 @@
-/wide_camera_mjpeg/image_raw/compressed:
-  history: keep_last
-  depth: 10
-  reliability: reliable
-  durability: volatile
