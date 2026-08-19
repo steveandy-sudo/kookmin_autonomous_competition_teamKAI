@@ -19,7 +19,6 @@ class ConeModeConfig:
     entry_frames: int = 3
     exit_frames: int = 1
     exit_absence_sec: float = 0.0
-    entry_distance_enabled: bool = False
     entry_distance_m: float = 3.0
 
 
@@ -44,13 +43,10 @@ class ConeModeLatch:
         yolo_confirmed: bool,
         lidar_distance_m: float,
     ) -> ConeModeEvent:
-        distance_valid = not self.config.entry_distance_enabled or (
-            math.isfinite(float(lidar_distance_m))
-            and float(lidar_distance_m) <= self.config.entry_distance_m
-        )
         valid_entry = (
             bool(yolo_confirmed)
-            and distance_valid
+            and math.isfinite(float(lidar_distance_m))
+            and float(lidar_distance_m) <= self.config.entry_distance_m
             and float(confidence) >= self.config.entry_confidence
             and float(speed_command) > 0.0
         )
