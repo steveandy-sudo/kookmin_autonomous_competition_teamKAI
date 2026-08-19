@@ -12,7 +12,7 @@ canonical_stanley_pursuit_driver:
     # moving a visibly correct centerline across the vehicle center.
     control_latency_preview_sec: 0.20
     # Confirmed curves retain the measured-delay preview for earlier response.
-    curve_control_latency_preview_sec: 0.35
+    curve_control_latency_preview_sec: 0.40
     curve_control_latency_minimum_hold_sec: 0.50
     steering_lead_time_sec: 0.08
     steering_max_lead_command: 6.0

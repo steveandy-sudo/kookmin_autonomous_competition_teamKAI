@@ -342,7 +342,7 @@ prompt_float OPPOSED_STANLEY_PERCENT \
 prompt_float CONTROL_LATENCY_PREVIEW_SEC \
   "Straight control latency preview [s]" 0.20 0.0 2.0
 prompt_float CURVE_CONTROL_LATENCY_PREVIEW_SEC \
-  "Curve control latency preview [s]" 0.35 0.0 2.0
+  "Curve control latency preview [s]" 0.40 0.0 2.0
 prompt_float CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC \
   "Curve latency preview minimum hold [s]" 0.50 0.0 5.0
 prompt_float STRAIGHT_PATH_CURVATURE_THRESHOLD \

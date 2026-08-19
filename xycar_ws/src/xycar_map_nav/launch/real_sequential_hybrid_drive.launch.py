@@ -285,7 +285,7 @@ def generate_launch_description():
                 "control_latency_preview_sec", default_value="0.20"
             ),
             DeclareLaunchArgument(
-                "curve_control_latency_preview_sec", default_value="0.35"
+                "curve_control_latency_preview_sec", default_value="0.40"
             ),
             DeclareLaunchArgument(
                 "curve_control_latency_minimum_hold_sec",
