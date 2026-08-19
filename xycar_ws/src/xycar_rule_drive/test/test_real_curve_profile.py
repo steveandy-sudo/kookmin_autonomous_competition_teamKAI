@@ -16,6 +16,8 @@ def test_simulation_defaults_remain_unchanged():
     assert parameters["extend_fused_path_to_white"] is False
     assert parameters["temporal_path_ego_compensation_enabled"] is False
     assert parameters["control_latency_preview_sec"] == 0.10
+    assert parameters["curve_control_latency_preview_sec"] == 0.10
+    assert parameters["curve_control_latency_minimum_hold_sec"] == 0.50
 
 
 def test_real_profile_enables_measured_delay_compensation():
@@ -23,7 +25,9 @@ def test_real_profile_enables_measured_delay_compensation():
     assert parameters["use_sim_time"] is False
     assert parameters["extend_fused_path_to_white"] is True
     assert parameters["temporal_path_ego_compensation_enabled"] is True
-    assert parameters["control_latency_preview_sec"] == 0.35
+    assert parameters["control_latency_preview_sec"] == 0.20
+    assert parameters["curve_control_latency_preview_sec"] == 0.35
+    assert parameters["curve_control_latency_minimum_hold_sec"] == 0.50
     assert parameters["curve_detection_near_x_m"] == 0.20
     assert parameters["curve_detection_far_x_m"] == 1.20
     assert parameters["curve_detection_segment_count"] == 1

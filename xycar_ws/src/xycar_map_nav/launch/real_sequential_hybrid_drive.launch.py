@@ -282,7 +282,14 @@ def generate_launch_description():
                 "opposed_stanley_weight", default_value="0.70"
             ),
             DeclareLaunchArgument(
-                "control_latency_preview_sec", default_value="0.35"
+                "control_latency_preview_sec", default_value="0.20"
+            ),
+            DeclareLaunchArgument(
+                "curve_control_latency_preview_sec", default_value="0.35"
+            ),
+            DeclareLaunchArgument(
+                "curve_control_latency_minimum_hold_sec",
+                default_value="0.50",
             ),
             DeclareLaunchArgument(
                 "curve_detection_near_x_m", default_value="0.20"
@@ -625,6 +632,12 @@ def generate_launch_description():
                     "control_latency_preview_sec": LaunchConfiguration(
                         "control_latency_preview_sec"
                     ),
+                    "curve_control_latency_preview_sec": LaunchConfiguration(
+                        "curve_control_latency_preview_sec"
+                    ),
+                    "curve_control_latency_minimum_hold_sec": LaunchConfiguration(
+                        "curve_control_latency_minimum_hold_sec"
+                    ),
                     "steering_current_weight": LaunchConfiguration(
                         "steering_current_weight"
                     ),
@@ -807,6 +820,18 @@ def generate_launch_description():
                         "control_latency_preview_sec": ParameterValue(
                             LaunchConfiguration(
                                 "control_latency_preview_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "curve_control_latency_preview_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "curve_control_latency_preview_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "curve_control_latency_minimum_hold_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "curve_control_latency_minimum_hold_sec"
                             ),
                             value_type=float,
                         ),

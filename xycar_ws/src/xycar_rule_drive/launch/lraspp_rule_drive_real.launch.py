@@ -114,7 +114,13 @@ def generate_launch_description():
             "opposed_stanley_weight", default_value="0.70"
         ),
         DeclareLaunchArgument(
-            "control_latency_preview_sec", default_value="0.35"
+            "control_latency_preview_sec", default_value="0.20"
+        ),
+        DeclareLaunchArgument(
+            "curve_control_latency_preview_sec", default_value="0.35"
+        ),
+        DeclareLaunchArgument(
+            "curve_control_latency_minimum_hold_sec", default_value="0.50"
         ),
         DeclareLaunchArgument(
             "curve_detection_near_x_m", default_value="0.15"
@@ -291,6 +297,12 @@ def generate_launch_description():
                 ),
                 "control_latency_preview_sec": _as_float(
                     "control_latency_preview_sec"
+                ),
+                "curve_control_latency_preview_sec": _as_float(
+                    "curve_control_latency_preview_sec"
+                ),
+                "curve_control_latency_minimum_hold_sec": _as_float(
+                    "curve_control_latency_minimum_hold_sec"
                 ),
                 "curve_detection_near_x_m": _as_float(
                     "curve_detection_near_x_m"

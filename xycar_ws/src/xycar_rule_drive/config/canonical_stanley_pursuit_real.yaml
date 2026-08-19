@@ -8,9 +8,12 @@ canonical_stanley_pursuit_driver:
     temporal_path_ego_compensation_enabled: true
     prefer_remembered_yellow_on_loss: true
 
-    # The 2026-07-24 bags measured about 0.37 s from camera exposure to yaw
-    # response. Start below that estimate and validate at speed 4, 6, then 8.
-    control_latency_preview_sec: 0.35
+    # Keep straight prediction conservative to prevent prior steering from
+    # moving a visibly correct centerline across the vehicle center.
+    control_latency_preview_sec: 0.20
+    # Confirmed curves retain the measured-delay preview for earlier response.
+    curve_control_latency_preview_sec: 0.35
+    curve_control_latency_minimum_hold_sec: 0.50
     steering_lead_time_sec: 0.08
     steering_max_lead_command: 6.0
 

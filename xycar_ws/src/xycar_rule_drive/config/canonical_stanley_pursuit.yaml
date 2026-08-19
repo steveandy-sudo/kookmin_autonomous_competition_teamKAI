@@ -60,6 +60,8 @@ canonical_stanley_pursuit_driver:
     # Use only the measured steering onset delay. A full 7 Hz frame preview
     # over-rotates the short 1.5 m path and causes alternating full-lock commands.
     control_latency_preview_sec: 0.10
+    curve_control_latency_preview_sec: 0.10
+    curve_control_latency_minimum_hold_sec: 0.50
     # Pure Pursuit handles position. At high speed, keep Stanley's lateral
     # term small so heading recovery wins over cutting back across the lane.
     stanley_gain: 1.15

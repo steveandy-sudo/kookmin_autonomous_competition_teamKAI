@@ -38,6 +38,8 @@ STRAIGHT_STANLEY_GAIN="${STRAIGHT_STANLEY_GAIN:-}"
 STRAIGHT_STANLEY_SOFTENING_MPS="${STRAIGHT_STANLEY_SOFTENING_MPS:-}"
 OPPOSED_STANLEY_PERCENT="${OPPOSED_STANLEY_PERCENT:-}"
 CONTROL_LATENCY_PREVIEW_SEC="${CONTROL_LATENCY_PREVIEW_SEC:-}"
+CURVE_CONTROL_LATENCY_PREVIEW_SEC="${CURVE_CONTROL_LATENCY_PREVIEW_SEC:-}"
+CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC="${CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC:-}"
 STRAIGHT_PATH_CURVATURE_THRESHOLD="${STRAIGHT_PATH_CURVATURE_THRESHOLD:-0.24}"
 STEERING_CURRENT_WEIGHT="${STEERING_CURRENT_WEIGHT:-0.35}"
 STEERING_CURVE_CURRENT_WEIGHT="${STEERING_CURVE_CURRENT_WEIGHT:-0.80}"
@@ -338,7 +340,11 @@ prompt_float STRAIGHT_STANLEY_SOFTENING_MPS \
 prompt_float OPPOSED_STANLEY_PERCENT \
   "Opposed-term Stanley percentage" 70.0 0.0 100.0
 prompt_float CONTROL_LATENCY_PREVIEW_SEC \
-  "Control latency preview [s]" 0.35 0.0 2.0
+  "Straight control latency preview [s]" 0.20 0.0 2.0
+prompt_float CURVE_CONTROL_LATENCY_PREVIEW_SEC \
+  "Curve control latency preview [s]" 0.35 0.0 2.0
+prompt_float CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC \
+  "Curve latency preview minimum hold [s]" 0.50 0.0 5.0
 prompt_float STRAIGHT_PATH_CURVATURE_THRESHOLD \
   "Straight/curve curvature threshold [rad/m]" 0.24 0.0 5.0
 prompt_float STEERING_CURRENT_WEIGHT \
@@ -418,6 +424,8 @@ straight_stanley_softening_mps: $STRAIGHT_STANLEY_SOFTENING_MPS
 opposed_stanley_percent: $OPPOSED_STANLEY_PERCENT
 opposed_stanley_weight: $OPPOSED_STANLEY_WEIGHT
 control_latency_preview_sec: $CONTROL_LATENCY_PREVIEW_SEC
+curve_control_latency_preview_sec: $CURVE_CONTROL_LATENCY_PREVIEW_SEC
+curve_control_latency_minimum_hold_sec: $CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC
 straight_path_curvature_threshold: $STRAIGHT_PATH_CURVATURE_THRESHOLD
 steering_current_weight: $STEERING_CURRENT_WEIGHT
 steering_curve_current_weight: $STEERING_CURVE_CURRENT_WEIGHT
@@ -718,7 +726,7 @@ echo "Curve control: LD=${LOOKAHEAD_DISTANCE}m, Stanley=${STANLEY_PERCENT}%"
 echo "Control points: PP X=${PURE_PURSUIT_CONTROL_X_M}m, Stanley X=${STANLEY_CONTROL_X_M}m"
 echo "Curve Stanley: gain=$STANLEY_GAIN, soft=${STANLEY_SOFTENING_MPS}m/s"
 echo "Straight Stanley: ${STRAIGHT_STANLEY_PERCENT}%, gain=$STRAIGHT_STANLEY_GAIN, soft=${STRAIGHT_STANLEY_SOFTENING_MPS}m/s"
-echo "Opposed Stanley: ${OPPOSED_STANLEY_PERCENT}%, latency preview=${CONTROL_LATENCY_PREVIEW_SEC}s"
+echo "Opposed Stanley: ${OPPOSED_STANLEY_PERCENT}%, latency preview=straight ${CONTROL_LATENCY_PREVIEW_SEC}s/curve ${CURVE_CONTROL_LATENCY_PREVIEW_SEC}s, curve minimum hold=${CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC}s"
 echo "Straight/curve threshold: ${STRAIGHT_PATH_CURVATURE_THRESHOLD}rad/m"
 echo "Steering smoothing: straight ${STEERING_CURRENT_WEIGHT}/${STEERING_RATE_LIMIT_CMD_PER_SEC}, curve ${STEERING_CURVE_CURRENT_WEIGHT}/${STEERING_CURVE_RATE_LIMIT_CMD_PER_SEC}"
 echo "Steering lead: ${STEERING_LEAD_TIME_SEC}s, max ${STEERING_MAX_LEAD_COMMAND} command"
@@ -784,6 +792,8 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   straight_stanley_softening_mps:="$STRAIGHT_STANLEY_SOFTENING_MPS" \
   opposed_stanley_weight:="$OPPOSED_STANLEY_WEIGHT" \
   control_latency_preview_sec:="$CONTROL_LATENCY_PREVIEW_SEC" \
+  curve_control_latency_preview_sec:="$CURVE_CONTROL_LATENCY_PREVIEW_SEC" \
+  curve_control_latency_minimum_hold_sec:="$CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC" \
   straight_path_curvature_threshold:="$STRAIGHT_PATH_CURVATURE_THRESHOLD" \
   steering_current_weight:="$STEERING_CURRENT_WEIGHT" \
   steering_curve_current_weight:="$STEERING_CURVE_CURRENT_WEIGHT" \
