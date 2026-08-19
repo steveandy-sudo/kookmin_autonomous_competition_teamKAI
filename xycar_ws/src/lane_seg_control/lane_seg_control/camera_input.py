@@ -7,6 +7,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 import yaml
+from sensor_msgs.msg import Image
+from std_msgs.msg import Header
 
 
 def decode_compressed_bgr(
@@ -16,6 +18,102 @@ def decode_compressed_bgr(
     if encoded.size == 0:
         return None
     return cv2.imdecode(encoded, cv2.IMREAD_COLOR)
+
+
+def raw_image_to_bgr(message: Image) -> np.ndarray:
+    """Convert a ROS raw image to contiguous BGR without cv_bridge."""
+    encoding = str(message.encoding).lower()
+    channels_by_encoding = {
+        "mono8": 1,
+        "bgr8": 3,
+        "rgb8": 3,
+        "bgra8": 4,
+        "rgba8": 4,
+    }
+    channels = channels_by_encoding.get(encoding)
+    if channels is None:
+        raise ValueError(
+            f"unsupported raw camera encoding: {message.encoding}"
+        )
+    width = int(message.width)
+    height = int(message.height)
+    step = int(message.step)
+    if width <= 0 or height <= 0 or step < width * channels:
+        raise ValueError(
+            f"invalid raw image layout: {width}x{height}, step={step}"
+        )
+    data = np.frombuffer(message.data, dtype=np.uint8)
+    required = height * step
+    if data.size < required:
+        raise ValueError(
+            f"raw image payload is short: {data.size} < {required}"
+        )
+    rows = data[:required].reshape(height, step)
+    pixels = rows[:, : width * channels]
+    if channels == 1:
+        frame = pixels.reshape(height, width)
+        return cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+    frame = pixels.reshape(height, width, channels)
+    if encoding == "rgb8":
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+    elif encoding == "bgra8":
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+    elif encoding == "rgba8":
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
+    return np.ascontiguousarray(frame)
+
+
+def raw_image_to_mono(message: Image) -> np.ndarray:
+    """Convert a ROS raw image to contiguous mono8 without cv_bridge."""
+    encoding = str(message.encoding).lower()
+    if encoding == "mono8":
+        width = int(message.width)
+        height = int(message.height)
+        step = int(message.step)
+        data = np.frombuffer(message.data, dtype=np.uint8)
+        required = height * step
+        if width <= 0 or height <= 0 or step < width or data.size < required:
+            raise ValueError(
+                f"invalid mono8 image layout: {width}x{height}, "
+                f"step={step}, bytes={data.size}"
+            )
+        return np.ascontiguousarray(
+            data[:required].reshape(height, step)[:, :width]
+        )
+    return cv2.cvtColor(raw_image_to_bgr(message), cv2.COLOR_BGR2GRAY)
+
+
+def cv_image_to_message(
+    frame: np.ndarray,
+    encoding: str,
+    header: Header,
+) -> Image:
+    """Convert a uint8 OpenCV image to ROS Image without cv_bridge."""
+    normalized = str(encoding).lower()
+    image = np.ascontiguousarray(frame)
+    if image.dtype != np.uint8:
+        raise ValueError(f"unsupported image dtype: {image.dtype}")
+    if normalized == "mono8" and image.ndim == 2:
+        channels = 1
+    elif (
+        normalized in {"bgr8", "rgb8"}
+        and image.ndim == 3
+        and image.shape[2] == 3
+    ):
+        channels = 3
+    else:
+        raise ValueError(
+            f"image shape {image.shape} does not match encoding {encoding}"
+        )
+    message = Image()
+    message.header = header
+    message.height = int(image.shape[0])
+    message.width = int(image.shape[1])
+    message.encoding = normalized
+    message.is_bigendian = False
+    message.step = message.width * channels
+    message.data = image.tobytes()
+    return message
 
 
 def scale_camera_matrix(

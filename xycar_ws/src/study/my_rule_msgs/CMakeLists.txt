@@ -7,6 +7,7 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/Centerline.msg"
   "msg/ObjectDetection.msg"
   "msg/ObjectDetectionArray.msg"
   DEPENDENCIES geometry_msgs std_msgs

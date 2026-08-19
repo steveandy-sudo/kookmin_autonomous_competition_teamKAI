@@ -2,6 +2,7 @@ from xycar_rule_drive.keyboard_teleop import (
     hold_speed_command,
     hold_steering_command,
     ramped_steering_command,
+    stepped_speed_command,
 )
 
 
@@ -49,3 +50,16 @@ def test_holding_drive_key_commands_fixed_speed() -> None:
 
 def test_releasing_drive_key_stops() -> None:
     assert hold_speed_command(False, 17.0) == 0.0
+
+
+def test_terminal_speed_increases_by_configured_step() -> None:
+    assert stepped_speed_command(4.0, 2.0, -5.0, 10.0) == 6.0
+
+
+def test_terminal_speed_decreases_through_zero_into_reverse() -> None:
+    assert stepped_speed_command(0.0, -2.0, -5.0, 10.0) == -2.0
+
+
+def test_terminal_speed_is_clamped_to_limits() -> None:
+    assert stepped_speed_command(10.0, 2.0, -5.0, 10.0) == 10.0
+    assert stepped_speed_command(-5.0, -2.0, -5.0, 10.0) == -5.0

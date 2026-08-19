@@ -9,7 +9,6 @@ import cv2
 import message_filters
 import numpy as np
 import rclpy
-from cv_bridge import CvBridge
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
@@ -28,6 +27,11 @@ from lane_seg_control.white_lane_fitter import (
     fit_yellow_centerline_reference,
     normalize_yellow_fragments,
     render_white_lane_fit_debug,
+)
+from lane_seg_control.camera_input import (
+    cv_image_to_message,
+    raw_image_to_bgr,
+    raw_image_to_mono,
 )
 
 
@@ -455,7 +459,6 @@ class CanonicalAdapterNode(Node):
         self.declare_parameter("sync_slop_sec", 0.08)
         self.declare_parameter("debug_rate_hz", 1.0)
 
-        self.bridge = CvBridge()
         self.input_is_bev = bool(self.get_parameter("input_is_bev").value)
         self.geometry: BevGeometry | None = None
         self.geometry_input_size: tuple[int, int] | None = None
@@ -669,15 +672,9 @@ class CanonicalAdapterNode(Node):
         self, image_message: Image, white_message: Image, yellow_message: Image
     ) -> None:
         try:
-            image = self.bridge.imgmsg_to_cv2(
-                image_message, desired_encoding="bgr8"
-            )
-            white = self.bridge.imgmsg_to_cv2(
-                white_message, desired_encoding="mono8"
-            )
-            yellow = self.bridge.imgmsg_to_cv2(
-                yellow_message, desired_encoding="mono8"
-            )
+            image = raw_image_to_bgr(image_message)
+            white = raw_image_to_mono(white_message)
+            yellow = raw_image_to_mono(yellow_message)
         except Exception as exc:
             self.get_logger().error(f"lane mask conversion failed: {exc}")
             return
@@ -740,8 +737,7 @@ class CanonicalAdapterNode(Node):
                 if publisher.get_subscription_count() > 0:
                     outputs.append((publisher, frame, encoding))
         for publisher, frame, encoding in outputs:
-            output_message = self.bridge.cv2_to_imgmsg(frame, encoding=encoding)
-            output_message.header = header
+            output_message = cv_image_to_message(frame, encoding, header)
             publisher.publish(output_message)
 
         stamp_ns = (
@@ -765,8 +761,7 @@ class CanonicalAdapterNode(Node):
             selected = (bev_white > 0) | (bev_yellow > 0)
             blended = cv2.addWeighted(debug, 0.55, overlay, 0.45, 0.0)
             debug[selected] = blended[selected]
-            debug_message = self.bridge.cv2_to_imgmsg(debug, encoding="bgr8")
-            debug_message.header = header
+            debug_message = cv_image_to_message(debug, "bgr8", header)
             self.debug_pub.publish(debug_message)
             self.last_debug_bucket = debug_bucket
 
@@ -783,10 +778,9 @@ class CanonicalAdapterNode(Node):
                 white_fit,
                 yellow_reference,
             )
-            debug_message = self.bridge.cv2_to_imgmsg(
-                canonical_debug, encoding="bgr8"
+            debug_message = cv_image_to_message(
+                canonical_debug, "bgr8", header
             )
-            debug_message.header = header
             self.canonical_fit_debug_pub.publish(debug_message)
             self.last_canonical_fit_debug_bucket = debug_bucket
 

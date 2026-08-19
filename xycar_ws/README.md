@@ -1,0 +1,261 @@
+# kookmin_autonomous_competition_teamKAI — `main`
+
+ROS 2 Humble 기반 Xycar 룰베이스 자율주행 프로젝트다. 현재 코드는 다음 기능을 하나의 주행 선택기와 최종 Space 안전 게이트로 통합한다.
+
+- X-bin 차선 인지와 Canonical 경로 생성
+- Stanley + Pure Pursuit 차선 추종
+- LiDAR 기반 정적 장애물 감시와 YOLO + LiDAR 차량 회피
+- LiDAR 기반 라바콘 통로 주행과 단일 라바콘 회피
+- 4구 신호등 정지·출발 및 `left_4` 연계 지름길 주행
+- ROS 2 VESC 구동
+
+- 미니 PC 워크스페이스: `/home/xytron/xycar_ws`
+- ROS 배포판: ROS 2 Humble
+
+## 1. 프로젝트 개요 및 저장소 구조
+
+```text
+kookmin_autonomous_competition_teamKAI/
+├── README.md
+├── .gitignore
+└── src/
+    ├── kaiev26_msgs/                 # Canonical 차선·도로 메시지
+    ├── lane_seg_control/             # X-bin/LR-ASPP 차선 인지
+    ├── shortcut_entry_review/        # 지름길 진입·인계 시퀀스
+    ├── study/
+    │   ├── my_rule/                  # YOLO 객체 인지·LiDAR 라바콘
+    │   └── my_rule_msgs/             # 객체 인지 메시지
+    ├── wide_camera/                  # 광각 MJPEG 카메라
+    ├── xycar_map_nav/                # 미션 선택·회피·최종 Space 게이트
+    ├── xycar_perception/             # 카메라 보정·Canonical 공통 코드
+    ├── xycar_rule_drive/             # Stanley + Pure Pursuit 추종
+    └── xycar_device/
+        ├── xycar_lidar/
+        ├── xycar_msgs/
+        └── xycar_vesc_driver/
+```
+
+주요 노드:
+
+| 노드 | 역할 |
+| --- | --- |
+| `wide_camera_node` | `1280x1024` MJPEG 영상 발행 |
+| `lane_seg_lraspp_inference` | X-bin/LR-ASPP 모델 추론과 Canonical 경로 생성 |
+| `canonical_stanley_pursuit_driver` | Canonical 경로 추종 후보 명령 생성 |
+| `my_rule_object_detection_node` | 저주기 YOLO 객체·신호등 판단 |
+| `my_rule_cone_node` | LiDAR 라바콘 중앙 경로 생성 |
+| `sequential_hybrid_driver` | 차선·라바콘·회피·신호등·지름길 후보 선택 |
+| `shortcut_sequence_entry` | W1 진입선과 지름길 시퀀스 판단 |
+| `space_drive_gate` | Space 입력 확인 후에만 `/xycar_motor` 최종 발행 |
+| `xycar_vesc_driver` | VESC 직렬 구동·고장 감시·상태 발행 |
+
+## 2. 전체 주행 로직과 핵심 원리
+
+- `run_complete_space_hybrid.sh`가 카메라·LiDAR·VESC를 실행하고 장치와 토픽을 검사한다.
+- `run_space_hybrid_test.sh`가 차선 인지, 객체 인지, 라바콘, 장애물 회피, 신호등, 지름길 및 최종 Space 게이트를 실행한다.
+- 최종 선택 우선순위는 `TRAFFIC > SHORTCUT > CONE > YOLO+LiDAR AVOIDANCE > RULE`이다.
+
+```text
+카메라 1280x1024
+├─ X-bin 차선 모델 → Canonical 경로 → Stanley + Pure Pursuit ┐
+├─ 객체 YOLO 3 Hz → cone·car·4구 신호등                  ├─ 통합 선택기
+└─ 지름길 전용 LR-ASPP → W1 진입·추종                     │
+LiDAR → 정적 장애물·라바콘 경계·차량 거리                  ┘
+                                      ↓
+                               Space 안전 게이트
+                                      ↓
+                                /xycar_motor
+                                      ↓
+                              ROS 2 VESC driver
+```
+
+## 3. 차선 인지·경로 생성·차선 추종
+
+1. 주행 카메라 영상을 `kookmin_far_centerline_xbin_512x288.pt`에 입력한다.
+2. 노란 중앙선 위치와 흰 차선 연장 정보를 이용해 전방 Canonical 경로를 만든다.
+3. Stanley의 횡오차 제어와 Pure Pursuit의 미리보기 조향을 혼합한다.
+4. 직선·곡선·짧거나 기억된 경로를 분류해 속도 후보를 제한한다.
+5. 차선이 완전히 끊기면 stale command를 사용하지 않고 안전 정지 조건으로 전환한다.
+
+실행 인자의 속도는 최종 출력 상한이다. 예를 들어 실행 인자를 `4`로 주면 라바콘·회피·지름길 내부 후보가 더 높아도 실제 최종 속도는 `4`를 넘지 않는다.
+
+| 항목 | 현재 값 |
+| --- | ---: |
+| 실행 가능 속도 인자 | 3.0~30.0 |
+| 저속 실차 확인 권장값 | 4.0 |
+| 차선 인지 상한 | 20 Hz |
+| 차선 추종 후보 명령 | 10 Hz |
+| 최종 선택·안전 게이트 | 20 Hz |
+
+## 4. LiDAR 기반 라바콘·장애물 주행
+
+### 라바콘
+
+1. 전방 `-94~94도`, `0.18~2.20 m` LiDAR 점을 사용한다.
+2. DBSCAN과 시간 누적을 이용해 라바콘 후보 군집을 만든다.
+3. YOLO에서 기준 신뢰도 이상의 콘이 두 개 이상이면 라바콘 통로로 분류한다.
+4. 좌우 경계의 중점 또는 한쪽 경계와 학습한 통로 폭으로 중앙 경로를 만든다.
+5. 끊긴 경계는 제한 거리 안에서 연결하고, 추정 경로의 조향 변화는 별도로 제한한다.
+6. 기준 콘이 한 개만 보이면 라바콘 통로가 아니라 국소 장애물 회피 대상으로 전달한다.
+
+| 항목 | 값 |
+| --- | ---: |
+| 예상 통로 폭 | 0.85 m |
+| 허용 통로 폭 | 0.68~0.98 m |
+| 통합 런치 내부 라바콘 속도 후보 | 8.0 |
+| 물리 조향 명령 한계 | 42 |
+| 추정 경로 1회 조향 변화 제한 | 4° |
+| 센서 존재 유지 시간 | 0.50초 |
+
+### 정적·차량 장애물 회피
+
+- `lidar_obstacle.py`가 주행 경로상의 LiDAR 군집과 좌우 통과 공간을 확인한다.
+- YOLO의 `red_car`, `green_car`는 공통 `car` 클래스로 정규화한다.
+- 차량 박스의 카메라 방위와 LiDAR 군집을 결합해 거리와 회피 방향을 정한다.
+- 노란 중앙선 위치와 직선 안정성을 이용해 좌우 횡방향 목표를 연속적으로 이동한다.
+- 회피 내부 속도 후보는 최대 `8.0`이며 실행 인자의 최종 속도 상한을 다시 적용받는다.
+- 신호등 기둥에 해당하는 LiDAR 구간은 차량 장애물 결합 대상에서 제외한다.
+
+## 5. 통합 주행 실행 매뉴얼
+
+빌드:
+
+```bash
+cd /home/xytron/xycar_ws
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install
+```
+
+속도 상한 `4`의 전체 통합 주행:
+
+```bash
+cd /home/xytron/xycar_ws
+unset XYCAR_WS
+
+XYCAR_TEST_PROFILE=integrated \
+XYCAR_STEERING_ONLY=false \
+XYCAR_ENABLE_RVIZ=false \
+bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh 4
+```
+
+장치·토픽 검사 후 `READY`가 표시되면 `Space`를 눌러 모터 출력을 허용한다. 다시 `Space`를 누르면 정지한다.
+
+조향만 확인할 때:
+
+```bash
+cd /home/xytron/xycar_ws
+unset XYCAR_WS
+
+XYCAR_TEST_PROFILE=integrated \
+XYCAR_STEERING_ONLY=true \
+XYCAR_ENABLE_RVIZ=false \
+bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh
+```
+
+RViz는 별도 터미널에서 실행한다.
+
+```bash
+source /opt/ros/humble/setup.bash
+source /home/xytron/xycar_ws/install/setup.bash
+export ROS_DOMAIN_ID=7
+ros2 launch my_rule drive_visualization_rviz.launch.py
+```
+
+## 6. 주요 설정값·주기 및 안전 주의사항
+
+| 항목 | 설정 주기 |
+| --- | ---: |
+| 광각 카메라 | 장치 설정 최대 30 Hz |
+| 차선 인지 상한 | 20 Hz |
+| 차선 추종 명령 | 10 Hz |
+| 객체 YOLO | 3 Hz |
+| 주행 선택·Space 게이트 | 20 Hz |
+
+주요 설정:
+
+- 차선 인지: `lane_seg_control/launch/lane_seg_far_centerline_extended_real.launch.py`
+- 차선 제어: `xycar_rule_drive/config/canonical_stanley_pursuit_real.yaml`
+- 라바콘: `study/my_rule/config/cone_control.yaml`
+- 객체 YOLO: `study/my_rule/config/object_detection.yaml`
+- 회피·선택기: `xycar_map_nav/config/sequential_hybrid_real.yaml`
+- 센서 런치: `xycar_map_nav/launch/real_hybrid_test_sensors.launch.py`
+- 통합 런치: `xycar_map_nav/launch/real_sequential_hybrid_drive.launch.py`
+
+통합 launch의 인지·판단 노드는 `/xycar_motor`를 직접 발행하지 않는다. 실제 모터 출력은 `space_drive_gate`가 활성화되고 VESC 드라이버가 정상 상태일 때만 허용된다. 저전압·과전류·USB 단절 fault가 발생하면 배터리와 배선 원인을 확인한 뒤 재실행해야 한다.
+
+## 7. 현재 AI 모델
+
+### 차선 모델
+
+- 일반 차선주행: `lane_seg_control/models/kookmin_far_centerline_xbin_512x288.pt`
+- 지름길 진입: `xycar_perception/models/kookmin_lane_lraspp_mbv3s_256x144.pt`
+- 역할: 노란 중앙선과 흰 차선 연장을 이용한 Canonical 경로 생성
+
+### 객체 모델
+
+- 파일: `study/my_rule/models/final.pt`
+- 형식: Ultralytics YOLO detection
+- 실행 주기: `3 Hz`
+
+| 원본 클래스 | 사용 방식 |
+| --- | --- |
+| `cone` | 다중 콘 통로 진입 또는 단일 콘 장애물 회피 |
+| `red_car`, `green_car` | `car`로 정규화하여 차량 장애물 회피 |
+| `red_4`, `yellow_4` | 두 프레임 확인 후 정지 유지 |
+| `green_4` | 두 프레임 확인 후 정지 해제 |
+| `left_4` | 지름길 진입 시퀀스 요청 |
+| `null_4` | 미션 판단에서 사용하지 않음 |
+
+## 8. 통합 주행 상태
+
+```text
+SPACE DISARMED
+  └─ Space → RUNNING/RULE
+
+RUNNING
+  ├─ red_4 또는 yellow_4 2회 → TRAFFIC STOP
+  ├─ left_4 확인·소실 → SHORTCUT SEARCH → SHORTCUT
+  ├─ cone 2개 이상 + LiDAR → CONE_RULE
+  ├─ car 또는 단일 cone + LiDAR → AVOIDANCE
+  └─ 그 외 → RULE
+
+TRAFFIC STOP
+  └─ green_4 2회 → RUNNING
+
+SHORTCUT
+  └─ 진입·추종·T 출구 완료 → RULE
+```
+
+지름길은 `left_4`를 두 프레임 확인한 뒤 표지가 사라지고 설정된 접근 지연이 지난 시점에 시작한다. W1 경로를 먼저 추종하고 인계 조건이나 손실 조건을 만족하면 기존 RULE 제어로 자연스럽게 연결한다.
+
+## 9. 현재 검증 상태 및 향후 확인
+
+- 정리된 12개 ROS 패키지 전체 `colcon build --symlink-install` 성공
+- 차선·라바콘·객체·지름길·통합 선택·VESC 안전 핵심 테스트 301개 통과
+- 센서를 연결하지 않은 shadow 통합 launch에서 차선, YOLO, 라바콘, 지름길 및 selector 노드 기동 확인
+- YDLIDAR upstream 코드 스타일과 `xycar_msgs/package.xml` XML 태그 순서 lint는 기존 상태로 남아 있다.
+
+향후 실차 확인:
+
+1. 속도 상한 `4`에서 차선 직선·곡선 조향 확인
+2. 라바콘 양쪽 경계·한쪽 경계·경계 단절·탈출 확인
+3. 단일 라바콘과 차량 장애물 회피 방향·복귀 확인
+4. 빨간불 정지 위치와 초록불 재출발 확인
+5. 지름길 W1 진입점·조향 인계·T 출구 복귀 확인
+
+## 10. 2026-08-19 실차 튜닝 변경과 남은 문제
+
+이번 변경에서는 조향 지연예측을 직선과 곡선으로 분리했다.
+
+- 직선 지연예측: `0.20초`
+- 곡선 지연예측: `0.35초`
+- 곡선 상태가 한 번 확정되면 곡선 지연예측을 최소 `0.50초` 유지
+- 곡선 속도 판정과 감속 상태는 기존 히스테리시스를 그대로 사용
+
+현재 실차에서 추가 확인이 필요한 문제는 다음과 같다.
+
+1. 초록불 객체가 간헐적으로 지름길 트리거로 해석되는 현상이 있다. 객체 클래스, confidence와 실제 미션 전환 로그를 함께 확인해야 한다.
+2. 낮은 진입 속도에서는 지름길의 고정 조향 또는 공간 gate가 차량 이동거리와 맞지 않아 너무 빠르게 회전하는 경우가 있다.
+3. 라바콘이 보이는데도 `CONE_RULE` 진입이 자주 누락된다. YOLO 연속 검출, LiDAR 콘 군집과 cone 후보 명령을 같은 시점으로 검증해야 한다.
+4. 지연예측 분리 전에는 통과하던 곡선이 변경 후 불안정해진 사례가 있어 `0.20/0.35/0.50초` 설정을 동일 구간 rosbag으로 비교해야 한다.
+5. 직선 고속 주행 중 곡선을 늦게 확정하면 곡선 감속이 시작되기 전에 차량이 바깥쪽으로 이탈한다. 곡선 선행 판정 시점과 속도 제한 적용 시점을 우선 확인해야 한다.

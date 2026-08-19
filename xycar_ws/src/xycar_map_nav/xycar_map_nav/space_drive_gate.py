@@ -17,6 +17,8 @@ from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
 from std_msgs.msg import Bool, Float32MultiArray, String
 
+from .space_drive_gate_core import GateCandidateMode
+from .space_drive_gate_core import RuleToConeSteeringBlend
 from .space_drive_gate_core import SpaceDriveGateController
 
 
@@ -24,6 +26,9 @@ STATUS_PATTERN = re.compile(
     r"state=(?P<state>\S+)\s+source=(?P<source>\S+)\s+"
     r"mode_label=(?P<label>\S+).*?reason=(?P<reason>.*)$"
 )
+RULE_DIAGNOSTICS_CURVE_SPEED_MODE_INDEX = 37
+RULE_DIAGNOSTICS_DEGRADED_SPEED_MODE_INDEX = 38
+RULE_DIAGNOSTICS_CLASSIFIED_SPEED_INDEX = 39
 
 
 def active_drive_mode(source: str, mode_label: str) -> str:
@@ -39,6 +44,8 @@ def active_drive_mode(source: str, mode_label: str) -> str:
         return avoidance_modes[mode_label]
     if mode_label == "CONE_RULE" or source == "CONE_RULE":
         return "CONE"
+    if source == "SHORTCUT":
+        return "SHORTCUT"
     if source == "RULE":
         return "RULE"
     if source == "RL":
@@ -179,7 +186,15 @@ class SpaceDriveGate(Node):
                 ).value
             ),
         )
+        self.rule_to_cone_blend = RuleToConeSteeringBlend(
+            maximum_rate_command_per_sec=float(
+                self.get_parameter(
+                    "rule_to_cone_steering_rate_command_per_sec"
+                ).value
+            )
+        )
         self.candidate = (0.0, 0.0)
+        self.candidate_mode = GateCandidateMode.UNKNOWN
         self.candidate_time = float("-inf")
         self.selector_status = "waiting for selector status"
         self.source = "UNKNOWN"
@@ -190,6 +205,8 @@ class SpaceDriveGate(Node):
         self.has_started = False
         self.last_display_key = ""
         self.avoidance_debug: list[float] | None = None
+        self.rule_path_speed_mode = "UNKNOWN"
+        self.rule_path_speed_command = float("nan")
         self.rl_message_times: deque[float] = deque(maxlen=30)
         self.stdin_is_tty = sys.stdin.isatty()
         self.original_terminal_settings = None
@@ -225,6 +242,12 @@ class SpaceDriveGate(Node):
             self._on_avoidance_debug,
             10,
         )
+        self.create_subscription(
+            Float32MultiArray,
+            str(self.get_parameter("rule_diagnostics_topic").value),
+            self._on_rule_diagnostics,
+            10,
+        )
         self.motor_pub = self.create_publisher(
             Float32MultiArray,
             str(self.get_parameter("motor_topic").value),
@@ -238,7 +261,11 @@ class SpaceDriveGate(Node):
         self._publish_armed()
         rate_hz = max(1.0, float(self.get_parameter("publish_rate_hz").value))
         self.timer = self.create_timer(1.0 / rate_hz, self._on_timer)
-        self.get_logger().info("READY")
+        self.get_logger().info(
+            "READY; RULE->CONE steering blend="
+            f"{self.rule_to_cone_blend.maximum_rate_command_per_sec:.1f} "
+            "command/s"
+        )
 
     def _declare_parameters(self) -> None:
         self.declare_parameter(
@@ -251,6 +278,9 @@ class SpaceDriveGate(Node):
         self.declare_parameter(
             "avoidance_debug_topic", "/hybrid/avoidance_debug"
         )
+        self.declare_parameter(
+            "rule_diagnostics_topic", "/rule_drive/diagnostics"
+        )
         self.declare_parameter("avoidance_target_label", "vehicle")
         self.declare_parameter("avoidance_yolo_min_confidence", 0.45)
         self.declare_parameter("avoidance_entry_distance_m", 1.20)
@@ -262,16 +292,24 @@ class SpaceDriveGate(Node):
         self.declare_parameter("maximum_abs_angle_command", 42.0)
         self.declare_parameter("steering_only", False)
         self.declare_parameter("adaptive_steering_speed_enabled", True)
-        self.declare_parameter("turn_speed_command", 8.0)
-        self.declare_parameter("slowdown_start_angle_command", 20.0)
+        self.declare_parameter("turn_speed_command", 12.0)
+        self.declare_parameter("slowdown_start_angle_command", 18.0)
         self.declare_parameter("full_slowdown_angle_command", 42.0)
         self.declare_parameter("candidate_timeout_sec", 0.40)
         self.declare_parameter("publish_rate_hz", 20.0)
+        self.declare_parameter(
+            "rule_to_cone_steering_rate_command_per_sec", 60.0
+        )
 
     def _on_candidate(self, message: Float32MultiArray) -> None:
         if len(message.data) < 2:
             return
         self.candidate = (float(message.data[0]), float(message.data[1]))
+        self.candidate_mode = (
+            RuleToConeSteeringBlend._mode(message.data[2])
+            if len(message.data) >= 3
+            else GateCandidateMode.UNKNOWN
+        )
         self.candidate_time = time.monotonic()
 
     def _on_selector_status(self, message: String) -> None:
@@ -289,6 +327,30 @@ class SpaceDriveGate(Node):
 
     def _on_avoidance_debug(self, message: Float32MultiArray) -> None:
         self.avoidance_debug = [float(value) for value in message.data]
+
+    def _on_rule_diagnostics(self, message: Float32MultiArray) -> None:
+        if len(message.data) <= RULE_DIAGNOSTICS_CLASSIFIED_SPEED_INDEX:
+            return
+        if (
+            float(
+                message.data[RULE_DIAGNOSTICS_DEGRADED_SPEED_MODE_INDEX]
+            )
+            > 0.5
+        ):
+            mode = "DEGRADED"
+        elif (
+            float(message.data[RULE_DIAGNOSTICS_CURVE_SPEED_MODE_INDEX])
+            > 0.5
+        ):
+            mode = "CURVE"
+        else:
+            mode = "STRAIGHT"
+        if mode != self.rule_path_speed_mode:
+            self.last_display_key = ""
+        self.rule_path_speed_mode = mode
+        self.rule_path_speed_command = float(
+            message.data[RULE_DIAGNOSTICS_CLASSIFIED_SPEED_INDEX]
+        )
 
     def _rl_rate_hz(self, now: float) -> float:
         if not self.rl_message_times or now - self.rl_message_times[-1] > 1.0:
@@ -322,7 +384,8 @@ class SpaceDriveGate(Node):
         arm_state = "RUN" if self.controller.armed else "STOP"
         drive_mode = active_drive_mode(self.source, self.mode_label)
         key = (
-            f"{arm_state}:{drive_mode}:{self.selector_state}:{output.reason}"
+            f"{arm_state}:{drive_mode}:{self.selector_state}:{output.reason}:"
+            f"{self.rule_path_speed_mode}"
         )
         if key == self.last_display_key:
             return
@@ -331,9 +394,15 @@ class SpaceDriveGate(Node):
             if drive_mode == "MODEL"
             else ""
         )
+        path_speed = ""
+        if drive_mode == "RULE" and self.rule_path_speed_mode != "UNKNOWN":
+            path_speed = (
+                f" | PATH={self.rule_path_speed_mode}"
+                f"({self.rule_path_speed_command:.1f})"
+            )
         self.get_logger().info(
             f"[{arm_state}] MODE={drive_mode}{model_hz} | "
-            f"SPEED={output.speed_command:.1f}"
+            f"SPEED={output.speed_command:.1f}{path_speed}"
         )
         if drive_mode.startswith("AVOIDANCE_"):
             self.get_logger().info(
@@ -378,12 +447,35 @@ class SpaceDriveGate(Node):
             self._handle_key(key)
         now = time.monotonic()
         self._publish_armed()
-        output = self.controller.command(
-            candidate_fresh=(
-                now - self.candidate_time
-                <= float(self.get_parameter("candidate_timeout_sec").value)
+        candidate_fresh = (
+            now - self.candidate_time
+            <= float(self.get_parameter("candidate_timeout_sec").value)
+        )
+        blend_was_active = self.rule_to_cone_blend.active
+        candidate_angle = self.rule_to_cone_blend.apply(
+            self.candidate[0],
+            candidate_mode=self.candidate_mode,
+            now_sec=now,
+            output_enabled=bool(
+                self.controller.armed
+                and candidate_fresh
+                and (
+                    self.controller.steering_only
+                    or self.candidate[1] > 0.0
+                )
             ),
-            candidate_angle_command=self.candidate[0],
+        )
+        if not blend_was_active and self.rule_to_cone_blend.active:
+            self.get_logger().warning(
+                "[조향 연결] RULE -> CONE 전환 완화 시작 "
+                f"({self.rule_to_cone_blend.maximum_rate_command_per_sec:.1f} "
+                "command/s)"
+            )
+        elif blend_was_active and not self.rule_to_cone_blend.active:
+            self.get_logger().info("[조향 연결] CONE 목표각 연결 완료")
+        output = self.controller.command(
+            candidate_fresh=candidate_fresh,
+            candidate_angle_command=candidate_angle,
             candidate_speed_command=self.candidate[1],
         )
         self.motor_pub.publish(

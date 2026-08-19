@@ -27,6 +27,17 @@ __pycache__/
 *.mp4
 *.avi
 
+# Local rosbag exports and extracted camera captures
+/rosbag2_*/
+/*-20??????T??????Z-?-???/
+/camera_*/
+
+# Local perception datasets and training/benchmark outputs
+/--- 3-4---- --.v2i.yolov8/
+/lane_model_compare_*/
+/runs/
+/yolo*.pt
+
 # Imitation-learning datasets and trained weights
 datasets/
 models/
@@ -45,6 +56,12 @@ models/
 xycar_ws/src/lane_seg_control/models/*
 !xycar_ws/src/lane_seg_control/models/best_512.onnx
 !xycar_ws/src/lane_seg_control/models/kookmin_lane_lraspp_mbv3s_256x144.pt
+!xycar_ws/src/lane_seg_control/models/kookmin_yellow_row_centerline_256x144.pt
+!xycar_ws/src/lane_seg_control/models/kookmin_yellow_row_centerline_core_256x144.pt
+!xycar_ws/src/lane_seg_control/models/kookmin_yellow_row_centerline_256x144.metrics.json
+!xycar_ws/src/lane_seg_control/models/kookmin_far_centerline_xbin_512x288.pt
+!xycar_ws/src/lane_seg_control/models/kookmin_far_centerline_xbin_core_512x288.pt
+!xycar_ws/src/lane_seg_control/models/kookmin_far_centerline_xbin_512x288.metrics.json
 generated/
 
 # Generated debug images kept locally during map fitting

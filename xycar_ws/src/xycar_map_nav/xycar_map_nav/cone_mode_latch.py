@@ -18,7 +18,8 @@ class ConeModeConfig:
     entry_confidence: float = 0.35
     entry_frames: int = 3
     exit_frames: int = 1
-    entry_distance_m: float = 1.0
+    exit_absence_sec: float = 1.0
+    entry_distance_m: float = 3.0
 
 
 class ConeModeLatch:
@@ -32,6 +33,7 @@ class ConeModeLatch:
         self.active = False
         self.entry_streak = 0
         self.exit_streak = 0
+        self.absence_started_sec: float | None = None
 
     def observe_command(
         self,
@@ -56,19 +58,34 @@ class ConeModeLatch:
         self.active = True
         self.entry_streak = 0
         self.exit_streak = 0
+        self.absence_started_sec = None
         return ConeModeEvent.STARTED
 
-    def update_presence(self, *, sensor_present: bool) -> ConeModeEvent:
+    def update_presence(
+        self,
+        *,
+        sensor_present: bool,
+        now_sec: float | None = None,
+    ) -> ConeModeEvent:
         if not self.active:
             return ConeModeEvent.NONE
         if bool(sensor_present):
             self.exit_streak = 0
+            self.absence_started_sec = None
             return ConeModeEvent.NONE
 
         self.exit_streak += 1
+        if now_sec is not None and self.absence_started_sec is None:
+            self.absence_started_sec = float(now_sec)
         if self.exit_streak < max(1, int(self.config.exit_frames)):
             return ConeModeEvent.NONE
+        if now_sec is not None:
+            now = float(now_sec)
+            absence_sec = max(0.0, now - self.absence_started_sec)
+            if absence_sec < max(0.0, float(self.config.exit_absence_sec)):
+                return ConeModeEvent.NONE
 
         self.active = False
         self.exit_streak = 0
+        self.absence_started_sec = None
         return ConeModeEvent.FINISHED

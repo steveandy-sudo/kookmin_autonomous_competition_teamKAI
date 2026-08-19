@@ -3,6 +3,9 @@ sequential_hybrid_driver:
     use_sim_time: false
     drive_enabled: false
     gate_arming_required: false
+    # SPACE stops the motor immediately, but a short operator pause inside the
+    # cone course must not erase CONE_RULE and briefly resume normal driving.
+    gate_disarm_cone_hold_sec: 5.0
     drive_armed_topic: /hybrid_gate/drive_armed
     control_rate_hz: 20.0
 
@@ -37,23 +40,31 @@ sequential_hybrid_driver:
 
     # Cone mode may start anywhere. While either YOLO or LiDAR still sees a
     # cone, the selector holds the last valid cone steering command. It exits
-    # after both sensors have been absent for the timeout. One control frame is
-    # used only to apply that timeout result, so no second release delay stacks.
+    # only after both sensors have been absent continuously. The sensor timeout
+    # absorbs transport jitter; the additional absence duration prevents one
+    # missed YOLO frame and one empty LiDAR scan from ending cone mode.
     cone_entry_confidence: 0.35
     cone_exit_confidence: 0.20
     cone_entry_frames: 3
     cone_exit_frames: 1
+    cone_exit_absence_sec: 1.0
     # cone_node publishes a physical wheel target. Convert it to the calibrated
     # Xycar servo command used by the main real-vehicle drive manager.
-    cone_max_target_angle_deg: 26.0
+    cone_max_target_angle_deg: 42.0
     cone_steering_actual_deg: [0.0, 4.0, 10.0, 16.0, 26.0]
     cone_steering_command: [0.0, 10.0, 20.0, 30.0, 42.0]
     cone_yolo_min_confidence: 0.50
     cone_yolo_required_frames: 2
     cone_yolo_timeout_sec: 0.75
-    cone_entry_distance_m: 1.0
+    cone_entry_distance_m: 3.0
     cone_cluster_timeout_sec: 0.50
+    # cone_node emits a command from every accepted LiDAR scan. Use that
+    # timestamp for cone safety instead of a duplicate selector scan callback.
+    cone_command_timeout_sec: 0.35
     cone_sensor_presence_timeout_sec: 0.5
+    # Before entry this topic contains only camera-confirmed candidates. Once
+    # unlocked it follows the same corridor-gated LiDAR geometry used by the
+    # planner, so a slow YOLO frame cannot falsely end an active cone course.
     cone_cluster_topic: /my_rule/cone_clusters
     cone_processing_enabled_topic: /my_rule/cone_processing_enabled
 
@@ -61,10 +72,33 @@ sequential_hybrid_driver:
     # immediately. LiDAR remains distance/space telemetry, not an entry veto.
     # Traffic-light detections are intentionally not consumed here.
     object_detections_topic: /my_rule/object_detections
+    shortcut_enabled: true
+    shortcut_class_name: left_4
+    shortcut_yolo_min_confidence: 0.40
+    shortcut_yolo_required_frames: 2
+    shortcut_yolo_absence_frames: 2
+    shortcut_wait_for_entry_ready: true
+    shortcut_entry_ready_topic: /shortcut/entry/ready
+    shortcut_entry_search_timeout_sec: 12.0
+    shortcut_candidate_timeout_sec: 0.35
+    shortcut_rearm_absence_sec: 1.0
+    shortcut_command_topic: /hybrid/shortcut_candidate
+    shortcut_processing_enabled_topic: /hybrid/shortcut_processing_enabled
+
+    traffic_light_control_enabled: true
+    traffic_light_red_class_name: red_4
+    traffic_light_yellow_class_name: yellow_4
+    traffic_light_green_class_name: green_4
+    traffic_light_min_confidence: 0.50
+    traffic_light_stop_min_box_area_ratio: 0.025
+    traffic_light_go_min_box_area_ratio: 0.025
+    traffic_light_stop_required_frames: 2
+    traffic_light_go_required_frames: 2
+    traffic_light_status_topic: /hybrid/traffic_light_status
     vehicle_class_names: [obstacle_vehicle, car]
     vehicle_yolo_min_confidence: 0.45
     vehicle_yolo_required_frames: 1
-    vehicle_yolo_timeout_sec: 2.50
+    vehicle_yolo_timeout_sec: 1.00
     vehicle_camera_lidar_hfov_deg: 60.0
     vehicle_camera_lidar_padding_deg: 3.0
     vehicle_lidar_min_points: 2
@@ -84,14 +118,13 @@ sequential_hybrid_driver:
     vehicle_avoidance_immediate_on_yolo: true
     vehicle_avoidance_entry_distance_m: 1.20
     vehicle_minimum_side_clearance_m: 0.70
-    # Keep avoidance inside the road: left is reduced by 5 cm and right by
-    # 2 cm from the previous 0.33 m real-vehicle tuning.
-    vehicle_left_offset_m: 0.28
-    vehicle_right_offset_m: 0.31
-    vehicle_offset_rate_mps: 0.35
+    # Shift equally from the calibrated normal-driving centerline.
+    vehicle_left_offset_m: 0.20
+    vehicle_right_offset_m: 0.20
+    vehicle_offset_rate_mps: 0.50
     vehicle_avoidance_speed_limit_command: 8.0
-    vehicle_minimum_avoid_sec: 0.80
-    vehicle_clear_hold_sec: 1.0
+    vehicle_minimum_avoid_sec: 0.50
+    vehicle_clear_hold_sec: 0.50
     vehicle_return_hold_sec: 0.30
     vehicle_return_deadband_m: 0.02
     avoidance_offset_topic: /hybrid/avoidance_lateral_offset

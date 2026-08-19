@@ -14,6 +14,7 @@ setup(
         ("share/" + package_name + "/config", glob("config/*.yaml")),
         ("share/" + package_name + "/config", glob("config/*.json")),
         ("share/" + package_name + "/launch", glob("launch/*.py")),
+        ("share/" + package_name + "/rviz", glob("rviz/*.rviz")),
         ("share/" + package_name + "/scripts", glob("scripts/*.sh")),
         (
             "share/" + package_name + "/models",
@@ -40,6 +41,22 @@ setup(
             (
                 "export_lraspp_bag_montages = "
                 "lane_seg_control.bag_montage_exporter:main"
+            ),
+            (
+                "train_row_centerline = "
+                "lane_seg_control.train_row_centerline:main"
+            ),
+            (
+                "train_far_centerline = "
+                "lane_seg_control.train_far_centerline:main"
+            ),
+            (
+                "steering_compare_viewer = "
+                "lane_seg_control.steering_compare_viewer:main"
+            ),
+            (
+                "camera_path_compare_viewer = "
+                "lane_seg_control.camera_path_compare_viewer:main"
             ),
             "lane_seg_canonical_adapter = lane_seg_control.canonical_adapter_node:main",
             "bev_path_centerline = lane_seg_control.bev_path_centerline_node:main",

@@ -3,15 +3,18 @@
 <package format="3">
   <name>my_rule</name>
   <version>0.0.1</version>
-  <description>YOLO object semantics and LiDAR cone command candidates for integrated rule driving.</description>
+  <description>Integrated lane, object-semantic, and LiDAR cone driving stack.</description>
   <maintainer email="teamkai@example.com">teamkai</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_python</buildtool_depend>
 
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>rviz2</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>kaiev26_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>rosgraph_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>visualization_msgs</exec_depend>
@@ -20,6 +23,11 @@
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>my_rule_msgs</exec_depend>
+  <exec_depend>xycar_perception</exec_depend>
+  <exec_depend>xycar_lidar</exec_depend>
+  <exec_depend>xycar_ultrasonic</exec_depend>
+  <exec_depend>xycar_vesc_driver</exec_depend>
+  <exec_depend>wide_camera</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
   <exec_depend>python3-torch</exec_depend>

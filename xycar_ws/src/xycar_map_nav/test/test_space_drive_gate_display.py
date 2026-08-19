@@ -6,6 +6,7 @@ from xycar_map_nav.space_drive_gate import format_avoidance_basis
 def test_normal_model_and_rule_modes_are_exclusive():
     assert active_drive_mode("RL", "RL/IMITATION") == "MODEL"
     assert active_drive_mode("RULE", "RULE") == "RULE"
+    assert active_drive_mode("SHORTCUT", "SHORTCUT_W1_SEARCH") == "SHORTCUT"
 
 
 def test_cone_and_avoidance_override_base_mode_display():

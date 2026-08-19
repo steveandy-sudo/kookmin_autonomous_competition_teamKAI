@@ -1,0 +1,43 @@
+my_rule_perception_view:
+  ros__parameters:
+    # This process is optional and publishes no control messages.
+    mode: auto
+    view_rate_hz: 5.0
+    panel_width: 640
+    panel_height: 360
+    show_window: true
+
+    camera_topic: /wide_camera_mjpeg/image_raw/compressed
+    scan_topic: /scan
+    canonical_topic: /perception/canonical_road_image
+    canonical_white_topic: /perception/canonical_white_mask
+    canonical_yellow_topic: /perception/canonical_yellow_mask
+    lane_path_topic: /my_rule/connected_lane_path
+    cone_path_topic: /my_rule/cone_path
+    cone_cluster_topic: /my_rule/cone_clusters
+    state_topic: /my_rule/state
+    motor_topic: /xycar_motor
+    yolo_detection_topic: /my_rule/object_detections
+    show_yolo_boxes: true
+
+    camera_timeout_sec: 1.0
+    data_timeout_sec: 1.0
+    rect_balance: 0.3
+
+    # Same rectified-camera ROI used by lane_perception.yaml.
+    src_tl_x_ratio: 0.36875
+    src_tl_y_ratio: 0.482421875
+    src_tr_x_ratio: 0.7078125
+    src_tr_y_ratio: 0.474609375
+    src_br_x_ratio: 0.99375
+    src_br_y_ratio: 0.59765625
+    src_bl_x_ratio: 0.0359375
+    src_bl_y_ratio: 0.607421875
+
+    canonical_lateral_range_m: 1.4
+    canonical_forward_range_m: 1.5
+    lidar_to_rear_axle_m: 0.42
+    lidar_projection_min_range_m: 0.18
+    lidar_projection_max_range_m: 3.0
+    topdown_forward_range_m: 2.5
+    topdown_lateral_range_m: 2.0
