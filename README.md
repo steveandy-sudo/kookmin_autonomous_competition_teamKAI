@@ -14,18 +14,25 @@ kookmin_autonomous_competition_teamKAI/
 ├── README.md
 ├── .gitignore
 └── src/
+    ├── il_data_tools/                # rosbag 데이터셋 생성·분석
     ├── kaiev26_msgs/                 # Canonical 차선·도로 메시지
+    ├── lane_bev_tools/               # BEV 경로 미리보기 도구
     ├── lane_seg_control/             # X-bin/LR-ASPP 차선 인지
     ├── shortcut_entry_review/        # 지름길 진입·인계 시퀀스
     ├── study/
     │   ├── my_rule/                  # 객체 인지·LiDAR 라바콘 주행
     │   └── my_rule_msgs/             # 객체 인지 메시지
+    ├── track_drive_sve/              # W1/W2 지름길 예비 주행
     ├── wide_camera/                  # 광각 MJPEG 카메라
+    ├── xycar_device/                 # LiDAR·VESC·차량 메시지
+    ├── xycar_gazebo_bridge/          # 오프라인·시뮬레이션 검증 브리지
     ├── xycar_map_nav/                # 미션 선택·회피·최종 Space 게이트
     ├── xycar_perception/             # 카메라 보정·Canonical 공통 코드
-    ├── xycar_rule_drive/             # Stanley + Pure Pursuit 추종
-    └── xycar_device/                 # LiDAR·VESC·차량 장치 드라이버
+    ├── xycar_rl/                     # rosbag 정책 분석·시뮬레이션 도구
+    └── xycar_rule_drive/             # Stanley + Pure Pursuit 추종
 ```
+
+실차 통합주행과 함께 W1/W2 지름길 예비 방식, 라바콘 단독시험, rosbag 재생 분석 및 RViz 검증에 필요한 패키지만 유지한다. 기록한 rosbag은 Git 저장소 밖의 `/home/xytron/rosbags`에 날짜·용도별로 보관한다.
 
 주요 노드:
 
@@ -103,8 +110,10 @@ cd /home/xytron/xycar_ws && unset XYCAR_WS && XYCAR_TEST_PROFILE=integrated XYCA
 | 곡선·짧거나 기억된 경로 속도 | 11 |
 | 라바콘 속도 | 8 |
 | `red_car` / `green_car` 회피 상한 | 8 / 15 |
+| 지름길 감지 기준 | `yellow_count`, 노란 점선 2개 |
+| 지름길 강제 조향 / RULE 복귀 | -37 / 1.2초 |
 
-실행 스크립트는 다른 ROS 워크스페이스의 환경을 제거하고 `/home/xytron/xycar_ws/install_xycar_only`만 사용한다. 이 전용 설치 결과는 `build_xycar_only.sh`로 생성한다. 통합 launch의 인지·판단 노드는 `/xycar_motor`를 직접 발행하지 않으며, 실제 출력은 Space 게이트와 VESC 안전 조건이 모두 정상일 때만 허용된다.
+실행 스크립트는 다른 ROS 워크스페이스의 환경을 제거하고 `/home/xytron/xycar_ws/install_xycar_only`만 사용한다. 이 전용 설치 결과는 `bash src/xycar_map_nav/scripts/build_xycar_only.sh`로 생성한다. 통합 launch의 인지·판단 노드는 `/xycar_motor`를 직접 발행하지 않으며, 실제 출력은 Space 게이트와 VESC 안전 조건이 모두 정상일 때만 허용된다. 시각화가 필요할 때만 실행 명령의 `XYCAR_ENABLE_RVIZ=false`를 `true`로 바꾼다.
 
 ## 7. 현재 AI 모델
 
