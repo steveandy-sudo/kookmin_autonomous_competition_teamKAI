@@ -24,6 +24,7 @@ from rclpy.signals import SignalHandlerOptions
 from sensor_msgs.msg import Image, LaserScan
 from std_msgs.msg import Bool, Float32, Float32MultiArray, String
 from std_srvs.srv import Trigger
+from xycar_msgs.msg import XycarVescState
 
 from .corner_survey_core import measure_sector, SectorMeasurement
 from .cone_mode_latch import ConeModeConfig
@@ -49,6 +50,8 @@ from .traffic_light_control import TrafficLightConfig
 from .traffic_light_control import TrafficLightController
 from .traffic_light_control import TrafficLightFrame
 from .space_drive_gate_core import GateCandidateMode
+from .yolo_lidar_avoidance import ShortcutAvoidanceSuppression
+from .yolo_lidar_avoidance import ShortcutAvoidanceSuppressionConfig
 from .yolo_lidar_avoidance import YoloLidarAvoidanceConfig
 from .yolo_lidar_avoidance import YoloLidarAvoidanceController
 from .yolo_lidar_avoidance import YoloLidarAvoidanceMode
@@ -59,6 +62,10 @@ SOURCE_CODES = {
     CandidateSource.RL: 0.0,
     CandidateSource.RULE: 1.0,
 }
+ANSI_YELLOW = "\033[93m"
+ANSI_GREEN = "\033[92m"
+ANSI_BLUE = "\033[94m"
+ANSI_RESET = "\033[0m"
 
 
 def cone_disarm_hold_active(
@@ -106,6 +113,137 @@ def cone_processing_requested(
     )
 
 
+def cone_approach_speed_limit(
+    *,
+    enabled: bool,
+    cone_active: bool,
+    shortcut_active: bool,
+    yolo_frames: int,
+    yolo_age_sec: float,
+    yolo_timeout_sec: float,
+    confirmed_yolo_frames: int,
+    yolo_confidence: float,
+    strong_yolo_confidence: float,
+    cluster_count: int,
+    cluster_age_sec: float,
+    cluster_timeout_sec: float,
+    first_yolo_speed_command: float,
+    confirmed_speed_command: float,
+) -> tuple[float | None, str]:
+    """Return a speed-only cone-entry cap before CONE takes steering.
+
+    The first central camera detection starts an early deceleration while RULE
+    continues to steer. A strong first frame, a second weak frame, or a
+    camera-gated LiDAR cluster applies the validated cone-course speed.
+    Steering authority remains protected by the independent high-confidence
+    and three-command cone latch.
+    """
+    if not enabled or cone_active or shortcut_active:
+        return None, "none"
+    yolo_fresh = bool(
+        int(yolo_frames) > 0
+        and 0.0 <= float(yolo_age_sec) <= max(0.0, float(yolo_timeout_sec))
+    )
+    cluster_fresh = bool(
+        int(cluster_count) > 0
+        and 0.0
+        <= float(cluster_age_sec)
+        <= max(0.0, float(cluster_timeout_sec))
+    )
+    if cluster_fresh or (
+        yolo_fresh
+        and float(yolo_confidence) >= float(strong_yolo_confidence)
+    ) or (
+        yolo_fresh and int(yolo_frames) >= max(1, int(confirmed_yolo_frames))
+    ):
+        return max(0.0, float(confirmed_speed_command)), "confirmed"
+    if yolo_fresh:
+        return max(0.0, float(first_yolo_speed_command)), "first_yolo"
+    return None, "none"
+
+
+def cone_approach_brake_decision(
+    *,
+    enabled: bool,
+    cone_active: bool,
+    shortcut_active: bool,
+    cluster_count: int,
+    cluster_age_sec: float,
+    cluster_timeout_sec: float,
+    cluster_forward_distance_m: float,
+    vehicle_speed_mps: float,
+    vehicle_speed_age_sec: float,
+    vehicle_speed_timeout_sec: float,
+    target_speed_mps: float,
+    deceleration_mps2: float,
+    response_time_sec: float,
+    distance_margin_m: float,
+    hard_stop_distance_m: float,
+    stale_speed_stop_distance_m: float,
+) -> tuple[bool, float, str]:
+    """Decide whether pre-entry braking must be latched."""
+    if not enabled or cone_active or shortcut_active:
+        return False, 0.0, "inactive"
+    cluster_fresh = bool(
+        int(cluster_count) > 0
+        and 0.0
+        <= float(cluster_age_sec)
+        <= max(0.0, float(cluster_timeout_sec))
+        and math.isfinite(float(cluster_forward_distance_m))
+    )
+    if not cluster_fresh:
+        return False, 0.0, "no_fresh_cluster"
+    forward = max(0.0, float(cluster_forward_distance_m))
+    hard_stop = max(0.0, float(hard_stop_distance_m))
+    if forward <= hard_stop:
+        return True, hard_stop, "hard_distance"
+    speed_fresh = bool(
+        math.isfinite(float(vehicle_speed_mps))
+        and 0.0
+        <= float(vehicle_speed_age_sec)
+        <= max(0.0, float(vehicle_speed_timeout_sec))
+    )
+    if not speed_fresh:
+        fallback = max(0.0, float(stale_speed_stop_distance_m))
+        return forward <= fallback, fallback, "speed_stale"
+    speed = abs(float(vehicle_speed_mps))
+    target = max(0.0, float(target_speed_mps))
+    deceleration = max(1.0e-6, float(deceleration_mps2))
+    braking_distance = 0.0
+    if speed > target:
+        braking_distance = (speed * speed - target * target) / (
+            2.0 * deceleration
+        )
+    required = (
+        speed * max(0.0, float(response_time_sec))
+        + braking_distance
+        + max(0.0, float(distance_margin_m))
+    )
+    return forward <= required, required, "braking_distance"
+
+
+def cone_brake_hold_release_ready(
+    *,
+    cone_active: bool,
+    cone_command_fresh: bool,
+    vehicle_speed_mps: float,
+    vehicle_speed_age_sec: float,
+    vehicle_speed_timeout_sec: float,
+    release_speed_mps: float,
+) -> bool:
+    """Release a latched entry brake only with steering and safe speed."""
+    return bool(
+        cone_active
+        and cone_command_fresh
+        and math.isfinite(float(vehicle_speed_mps))
+        and 0.0
+        <= float(vehicle_speed_age_sec)
+        <= max(0.0, float(vehicle_speed_timeout_sec))
+        and abs(float(vehicle_speed_mps))
+        <= max(0.0, float(release_speed_mps))
+    )
+
+
 def interpolate_command(
     target_angle_deg: float,
     actual_angles_deg: Sequence[float],
@@ -139,6 +277,44 @@ def is_avoidance_detection(
         class_name in vehicle_names
         and float(confidence) >= float(vehicle_min_confidence)
     )
+
+
+def avoidance_speed_limit_for_vehicle_class(
+    class_name: str,
+    *,
+    default_speed_limit_command: float,
+    red_car_speed_limit_command: float,
+    green_car_speed_limit_command: float,
+) -> float:
+    """Select the speed limit without merging the model's car classes."""
+    normalized = (
+        str(class_name)
+        .strip()
+        .lower()
+        .replace("-", "_")
+        .replace(" ", "_")
+    )
+    if normalized == "red_car":
+        return max(0.0, float(red_car_speed_limit_command))
+    if normalized == "green_car":
+        return max(0.0, float(green_car_speed_limit_command))
+    return max(0.0, float(default_speed_limit_command))
+
+
+def shortcut_suppresses_vehicle_class(
+    class_name: str,
+    *,
+    suppression_active: bool,
+) -> bool:
+    """The shortcut exception applies to green_car, never red_car."""
+    normalized = (
+        str(class_name)
+        .strip()
+        .lower()
+        .replace("-", "_")
+        .replace(" ", "_")
+    )
+    return bool(suppression_active and normalized == "green_car")
 
 
 def preferred_avoidance_mode_from_yellow_reference(
@@ -239,6 +415,25 @@ class SequentialHybridDriver(Node):
                 ),
             )
         )
+        self.shortcut_avoidance_suppression = ShortcutAvoidanceSuppression(
+            ShortcutAvoidanceSuppressionConfig(
+                enabled=bool(
+                    self.get_parameter(
+                        "vehicle_avoidance_shortcut_suppression_enabled"
+                    ).value
+                ),
+                release_left_angle_command=float(
+                    self.get_parameter(
+                        "vehicle_avoidance_shortcut_release_left_angle_command"
+                    ).value
+                ),
+                release_required_frames=int(
+                    self.get_parameter(
+                        "vehicle_avoidance_shortcut_release_required_frames"
+                    ).value
+                ),
+            )
+        )
         self.traffic_light_controller = TrafficLightController(
             TrafficLightConfig(
                 minimum_confidence=float(
@@ -312,9 +507,19 @@ class SequentialHybridDriver(Node):
         self.cone_yolo_frames = 0
         self.cone_yolo_time = float("-inf")
         self.cone_yolo_confidence = 0.0
+        self.cone_approach_yolo_frames = 0
+        self.cone_approach_yolo_time = float("-inf")
+        self.cone_approach_yolo_confidence = 0.0
         self.cone_lidar_distance_m = float("inf")
+        self.cone_lidar_forward_distance_m = float("inf")
         self.cone_cluster_count = 0
         self.cone_cluster_time = float("-inf")
+        self.vehicle_speed_mps = float("inf")
+        self.vehicle_speed_time = float("-inf")
+        self.cone_approach_brake_hold_active = False
+        self.cone_approach_brake_release_frames = 0
+        self.cone_approach_brake_required_distance_m = 0.0
+        self.cone_approach_brake_reason = "none"
         self.latest_scan: LaserScan | None = None
         self.tracked_vehicle_sector: tuple[float, float] | None = None
         self.tracked_vehicle_sector_time = float("-inf")
@@ -516,6 +721,12 @@ class SequentialHybridDriver(Node):
             10,
         )
         self.create_subscription(
+            XycarVescState,
+            str(self.get_parameter("vesc_state_topic").value),
+            self._on_vesc_state,
+            10,
+        )
+        self.create_subscription(
             Bool,
             str(self.get_parameter("shortcut_entry_ready_topic").value),
             self._on_shortcut_entry_ready,
@@ -664,7 +875,29 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("cone_yolo_min_confidence", 0.50)
         self.declare_parameter("cone_yolo_required_frames", 2)
         self.declare_parameter("cone_yolo_timeout_sec", 0.75)
-        self.declare_parameter("cone_entry_distance_m", 3.0)
+        self.declare_parameter("cone_approach_slowdown_enabled", True)
+        self.declare_parameter("cone_approach_yolo_min_confidence", 0.40)
+        self.declare_parameter("cone_approach_center_min_ratio", 0.20)
+        self.declare_parameter("cone_approach_center_max_ratio", 0.80)
+        self.declare_parameter("cone_approach_first_speed_command", 15.0)
+        self.declare_parameter("cone_approach_confirmed_speed_command", 8.0)
+        self.declare_parameter("cone_approach_target_speed_mps", 0.65)
+        self.declare_parameter("cone_approach_deceleration_mps2", 1.50)
+        self.declare_parameter("cone_approach_response_time_sec", 0.10)
+        self.declare_parameter("cone_approach_brake_margin_m", 0.10)
+        self.declare_parameter("cone_approach_hard_stop_distance_m", 0.35)
+        self.declare_parameter(
+            "cone_approach_stale_speed_stop_distance_m", 0.80
+        )
+        self.declare_parameter("cone_approach_release_speed_mps", 0.80)
+        self.declare_parameter("cone_approach_release_frames", 2)
+        self.declare_parameter("vehicle_speed_timeout_sec", 0.25)
+        self.declare_parameter("vesc_state_topic", "/vehicle/vesc_state")
+        # 2026-08-20 competition-course bags: the successful entry first
+        # produced three valid cone paths at forward x=0.883/0.797/0.701 m.
+        # A 0.95 m gate preserves that sequence while rejecting the premature
+        # hand-pushed transition observed at x=1.320 m.
+        self.declare_parameter("cone_entry_distance_m", 0.95)
         self.declare_parameter("cone_cluster_timeout_sec", 0.50)
         self.declare_parameter("cone_command_timeout_sec", 0.35)
         self.declare_parameter("cone_sensor_presence_timeout_sec", 0.5)
@@ -689,7 +922,8 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("shortcut_candidate_timeout_sec", 0.35)
         self.declare_parameter("shortcut_rearm_absence_sec", 1.0)
         self.declare_parameter(
-            "vehicle_class_names", ["obstacle_vehicle", "car"]
+            "vehicle_class_names",
+            ["obstacle_vehicle", "red_car", "green_car"],
         )
         self.declare_parameter(
             "traffic_light_class_names",
@@ -756,6 +990,15 @@ class SequentialHybridDriver(Node):
         )
         self.declare_parameter("vehicle_avoidance_enabled", True)
         self.declare_parameter(
+            "vehicle_avoidance_shortcut_suppression_enabled", True
+        )
+        self.declare_parameter(
+            "vehicle_avoidance_shortcut_release_left_angle_command", -8.0
+        )
+        self.declare_parameter(
+            "vehicle_avoidance_shortcut_release_required_frames", 2
+        )
+        self.declare_parameter(
             "vehicle_avoidance_immediate_on_yolo", True
         )
         self.declare_parameter("vehicle_avoidance_entry_distance_m", 1.20)
@@ -764,6 +1007,12 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("vehicle_right_offset_m", 0.20)
         self.declare_parameter("vehicle_offset_rate_mps", 0.50)
         self.declare_parameter("vehicle_avoidance_speed_limit_command", 4.0)
+        self.declare_parameter(
+            "vehicle_red_car_avoidance_speed_limit_command", 8.0
+        )
+        self.declare_parameter(
+            "vehicle_green_car_avoidance_speed_limit_command", 15.0
+        )
         self.declare_parameter("vehicle_minimum_avoid_sec", 0.50)
         self.declare_parameter("vehicle_clear_hold_sec", 0.50)
         self.declare_parameter("vehicle_return_hold_sec", 0.30)
@@ -831,6 +1080,35 @@ class SequentialHybridDriver(Node):
             return
         self.rule_command = (float(message.data[0]), float(message.data[1]))
         self.rule_command_time = time.monotonic()
+        if self.shortcut_avoidance_suppression.observe_rule_angle(
+            self.rule_command[0]
+        ):
+            required = max(
+                1,
+                int(
+                    self.get_parameter(
+                        "vehicle_avoidance_shortcut_release_required_frames"
+                    ).value
+                ),
+            )
+            self.get_logger().warning(
+                f"{ANSI_BLUE}[MISSION] GREEN_CAR AVOIDANCE RESTORED; "
+                f"RULE LEFT STEERING {required}/{required} "
+                f"angle={self.rule_command[0]:.1f}{ANSI_RESET}"
+            )
+
+    def _on_vesc_state(self, message: XycarVescState) -> None:
+        speed = abs(float(message.speed_mps))
+        if not math.isfinite(speed):
+            return
+        self.vehicle_speed_mps = speed
+        self.vehicle_speed_time = time.monotonic()
+
+    def _reset_cone_approach_brake(self) -> None:
+        self.cone_approach_brake_hold_active = False
+        self.cone_approach_brake_release_frames = 0
+        self.cone_approach_brake_required_distance_m = 0.0
+        self.cone_approach_brake_reason = "none"
 
     def _on_drive_armed(self, message: Bool) -> None:
         armed = bool(message.data)
@@ -855,12 +1133,15 @@ class SequentialHybridDriver(Node):
                 scan_fresh=False,
                 force_inactive=True,
             )
+            if not self.cone_bypass.active:
+                self._reset_cone_approach_brake()
         elif not self.drive_armed and armed:
             self.gate_disarmed_time = float("-inf")
         self.drive_armed = armed
 
     def _reset_shortcut_state(self) -> None:
         self.shortcut_latch.reset()
+        self.shortcut_avoidance_suppression.reset()
         self.traffic_light_controller.reset()
         self.traffic_light_decision = (
             self.traffic_light_controller.latest_decision
@@ -936,6 +1217,7 @@ class SequentialHybridDriver(Node):
 
     def _handle_shortcut_event(self, event: ShortcutModeEvent) -> None:
         if event == ShortcutModeEvent.STARTED:
+            self.shortcut_avoidance_suppression.start_shortcut()
             self.cone_bypass.reset()
             self.avoidance_controller.reset()
             self.avoidance_state = self.avoidance_controller.state()
@@ -945,6 +1227,7 @@ class SequentialHybridDriver(Node):
                 "[MISSION] SHORTCUT ENTRY CONTROL ACTIVE"
             )
         elif event == ShortcutModeEvent.FINISHED:
+            self.shortcut_avoidance_suppression.start_rule_handoff()
             self.shortcut_entry_search_active = False
             self.shortcut_entry_search_started_time = float("-inf")
             self.shortcut_entry_ready = False
@@ -954,8 +1237,8 @@ class SequentialHybridDriver(Node):
             )
             self.shortcut_processing_pub.publish(Bool(data=False))
             self.get_logger().warning(
-                "\033[95m[MISSION] CONTROL SWITCHED -> "
-                "YELLOW XBIN RULE\033[0m"
+                f"{ANSI_GREEN}[MISSION] CONTROL SWITCHED -> "
+                f"YELLOW XBIN RULE{ANSI_RESET}"
             )
         elif event == ShortcutModeEvent.REARMED:
             self.get_logger().info("[MISSION] left_4 trigger rearmed")
@@ -1143,10 +1426,11 @@ class SequentialHybridDriver(Node):
             )
             if count != self.last_left_detect_count:
                 self.get_logger().info(
-                    "[MISSION] left_4 DETECTED "
+                    f"{ANSI_YELLOW}[MISSION] left_4 DETECTED "
                     f"confidence={traffic_frame.left.confidence:.2f} "
                     f"{count}/"
                     f"{int(self.get_parameter('shortcut_yolo_required_frames').value)}"
+                    f"{ANSI_RESET}"
                 )
                 self.last_left_detect_count = count
             self.last_left_absence_count = 0
@@ -1157,9 +1441,10 @@ class SequentialHybridDriver(Node):
             )
             if count != self.last_left_absence_count:
                 self.get_logger().info(
-                    "[MISSION] left_4 ABSENT "
+                    f"{ANSI_YELLOW}[MISSION] left_4 ABSENT "
                     f"{count}/"
                     f"{int(self.get_parameter('shortcut_yolo_absence_frames').value)}"
+                    f"{ANSI_RESET}"
                 )
                 self.last_left_absence_count = count
         self._handle_traffic_shortcut_request(now)
@@ -1178,6 +1463,44 @@ class SequentialHybridDriver(Node):
         if cone_seen:
             self.cone_yolo_time = now
             self.cone_yolo_confidence = cone_confidence
+        center_min = float(
+            self.get_parameter("cone_approach_center_min_ratio").value
+        )
+        center_max = float(
+            self.get_parameter("cone_approach_center_max_ratio").value
+        )
+        approach_confidences = (
+            [
+                float(item.confidence)
+                for item in message.detections
+                if (
+                    self._normalize_class_name(item.class_name) == "cone"
+                    and min(center_min, center_max)
+                    <= (float(item.xmin) + float(item.xmax))
+                    / (2.0 * float(image_width))
+                    <= max(center_min, center_max)
+                )
+            ]
+            if image_width > 0
+            else []
+        )
+        approach_confidence = max(approach_confidences, default=0.0)
+        central_cone_seen = bool(
+            approach_confidence
+            >= float(
+                self.get_parameter(
+                    "cone_approach_yolo_min_confidence"
+                ).value
+            )
+        )
+        self.cone_approach_yolo_frames = (
+            self.cone_approach_yolo_frames + 1
+            if central_cone_seen
+            else 0
+        )
+        if central_cone_seen:
+            self.cone_approach_yolo_time = now
+            self.cone_approach_yolo_confidence = approach_confidence
 
         traffic_light_names = {
             self._normalize_class_name(value)
@@ -1241,6 +1564,12 @@ class SequentialHybridDriver(Node):
                     self.get_parameter(
                         "cone_as_vehicle_min_confidence"
                     ).value
+                ),
+            )
+            and not shortcut_suppresses_vehicle_class(
+                self._normalize_class_name(item.class_name),
+                suppression_active=(
+                    self.shortcut_avoidance_suppression.active
                 ),
             )
         ]
@@ -1367,6 +1696,11 @@ class SequentialHybridDriver(Node):
                 self.avoidance_side_basis_code = -1.0
         else:
             side_decision_allowed = False
+        selected_class_name = (
+            self._normalize_class_name(selected.class_name)
+            if selected is not None
+            else ""
+        )
         self.avoidance_controller.observe_yolo(
             now_sec=now,
             detected=selected is not None,
@@ -1374,6 +1708,29 @@ class SequentialHybridDriver(Node):
             lidar_distance_m=selected_distance,
             preferred_mode=preferred_mode,
             side_decision_allowed=side_decision_allowed,
+            target_class_name=selected_class_name,
+            speed_limit_command=(
+                avoidance_speed_limit_for_vehicle_class(
+                    selected_class_name,
+                    default_speed_limit_command=float(
+                        self.get_parameter(
+                            "vehicle_avoidance_speed_limit_command"
+                        ).value
+                    ),
+                    red_car_speed_limit_command=float(
+                        self.get_parameter(
+                            "vehicle_red_car_avoidance_speed_limit_command"
+                        ).value
+                    ),
+                    green_car_speed_limit_command=float(
+                        self.get_parameter(
+                            "vehicle_green_car_avoidance_speed_limit_command"
+                        ).value
+                    ),
+                )
+                if selected is not None
+                else None
+            ),
         )
         self._publish_cone_processing_gate(now)
 
@@ -1415,8 +1772,8 @@ class SequentialHybridDriver(Node):
         )
 
     def _on_cone_clusters(self, message: PoseArray) -> None:
-        distances = [
-            math.hypot(
+        points = [
+            (
                 float(pose.position.x),
                 float(pose.position.y),
             )
@@ -1427,7 +1784,12 @@ class SequentialHybridDriver(Node):
                 and math.isfinite(float(pose.position.y))
             )
         ]
+        distances = [math.hypot(x, y) for x, y in points]
         self.cone_lidar_distance_m = min(distances, default=float("inf"))
+        self.cone_lidar_forward_distance_m = min(
+            (x for x, _y in points),
+            default=float("inf"),
+        )
         self.cone_cluster_count = len(distances)
         self.cone_cluster_time = time.monotonic()
 
@@ -1463,7 +1825,7 @@ class SequentialHybridDriver(Node):
         requested = cone_processing_requested(
             shortcut_active=self.shortcut_latch.active,
             cone_active=self.cone_bypass.active,
-            yolo_age_sec=now - self.cone_yolo_time,
+            yolo_age_sec=now - self.cone_approach_yolo_time,
             yolo_timeout_sec=float(
                 self.get_parameter("cone_yolo_timeout_sec").value
             ),
@@ -1487,9 +1849,13 @@ class SequentialHybridDriver(Node):
     def _handle_cone_event(self, event: ConeModeEvent) -> None:
         if event == ConeModeEvent.STARTED:
             self.get_logger().warning(
-                "CONE_RULE START; YOLO+LiDAR cone confirmed"
+                "CONE_RULE START; YOLO+LiDAR cone confirmed; "
+                f"forward={self.cone_lidar_forward_distance_m:.3f}m, "
+                "gate="
+                f"{float(self.get_parameter('cone_entry_distance_m').value):.3f}m"
             )
         elif event == ConeModeEvent.FINISHED:
+            self._reset_cone_approach_brake()
             self.get_logger().warning(
                 "CONE_RULE FINISHED; YOLO and LiDAR cones both disappeared"
             )
@@ -1515,7 +1881,7 @@ class SequentialHybridDriver(Node):
             speed_command=speed,
             yolo_confirmed=self._cone_yolo_confirmed(now),
             lidar_distance_m=(
-                self.cone_lidar_distance_m
+                self.cone_lidar_forward_distance_m
                 if now - self.cone_cluster_time
                 <= float(
                     self.get_parameter("cone_cluster_timeout_sec").value
@@ -1630,6 +1996,17 @@ class SequentialHybridDriver(Node):
             self.controller.source = CandidateSource.RULE
         self._reset_shortcut_state()
         self.cone_bypass.reset()
+        self.cone_yolo_frames = 0
+        self.cone_yolo_time = float("-inf")
+        self.cone_yolo_confidence = 0.0
+        self.cone_approach_yolo_frames = 0
+        self.cone_approach_yolo_time = float("-inf")
+        self.cone_approach_yolo_confidence = 0.0
+        self.cone_lidar_distance_m = float("inf")
+        self.cone_lidar_forward_distance_m = float("inf")
+        self.cone_cluster_count = 0
+        self.cone_cluster_time = float("-inf")
+        self._reset_cone_approach_brake()
         self.avoidance_controller.reset()
         self.avoidance_state = self.avoidance_controller.state()
         self.avoidance_offset_pub.publish(Float32(data=0.0))
@@ -1763,6 +2140,7 @@ class SequentialHybridDriver(Node):
                 12: "Y1_LOCKED_ENTRY",
                 13: "W1_Y1_ENTRY",
                 14: "SEMANTIC_HANDOFF",
+                15: "YELLOW_COUNT_FORCE",
             }
             source_label = "SHORTCUT_" + phase_names.get(
                 int(round(self.shortcut_phase_code)), "UNKNOWN"
@@ -2102,6 +2480,7 @@ class SequentialHybridDriver(Node):
                     speed_command=speed,
                     reason=(
                         f"{self.avoidance_state.mode.value}; "
+                        f"target={self.avoidance_state.target_class_name}; "
                         f"LiDAR={self.avoidance_state.tracked_distance_m:.2f}m, "
                         f"offset={self.avoidance_state.lateral_offset_m:+.2f}m"
                     ),
@@ -2114,6 +2493,206 @@ class SequentialHybridDriver(Node):
                     speed_command=0.0,
                     reason="avoidance lane-rule command stale",
                 )
+        approach_limit, approach_stage = cone_approach_speed_limit(
+            enabled=bool(
+                self.get_parameter("cone_approach_slowdown_enabled").value
+            ),
+            cone_active=self.cone_bypass.active,
+            shortcut_active=bool(
+                self.shortcut_latch.active
+                or self.shortcut_entry_search_active
+            ),
+            yolo_frames=self.cone_approach_yolo_frames,
+            yolo_age_sec=now - self.cone_approach_yolo_time,
+            yolo_timeout_sec=float(
+                self.get_parameter("cone_yolo_timeout_sec").value
+            ),
+            confirmed_yolo_frames=int(
+                self.get_parameter("cone_yolo_required_frames").value
+            ),
+            yolo_confidence=self.cone_approach_yolo_confidence,
+            strong_yolo_confidence=float(
+                self.get_parameter("cone_yolo_min_confidence").value
+            ),
+            cluster_count=self.cone_cluster_count,
+            cluster_age_sec=now - self.cone_cluster_time,
+            cluster_timeout_sec=float(
+                self.get_parameter("cone_cluster_timeout_sec").value
+            ),
+            first_yolo_speed_command=float(
+                self.get_parameter(
+                    "cone_approach_first_speed_command"
+                ).value
+            ),
+            confirmed_speed_command=float(
+                self.get_parameter(
+                    "cone_approach_confirmed_speed_command"
+                ).value
+            ),
+        )
+        if (
+            approach_limit is not None
+            and output.state == HybridState.RUNNING
+            and output.speed_command > 0.0
+        ):
+            if output.speed_command > approach_limit:
+                output = replace(
+                    output,
+                    speed_command=float(approach_limit),
+                    reason=(
+                        f"cone approach {approach_stage}; "
+                        f"RULE steering retained; cap={approach_limit:.1f}"
+                    ),
+                )
+
+        shortcut_controls = bool(
+            self.shortcut_latch.active
+            or self.shortcut_entry_search_active
+        )
+        if shortcut_controls:
+            self._reset_cone_approach_brake()
+        else:
+            vehicle_speed_age_sec = now - self.vehicle_speed_time
+            brake_required, required_distance_m, brake_reason = (
+                cone_approach_brake_decision(
+                    enabled=bool(
+                        self.get_parameter(
+                            "cone_approach_slowdown_enabled"
+                        ).value
+                    ),
+                    cone_active=self.cone_bypass.active,
+                    shortcut_active=shortcut_controls,
+                    cluster_count=self.cone_cluster_count,
+                    cluster_age_sec=now - self.cone_cluster_time,
+                    cluster_timeout_sec=float(
+                        self.get_parameter(
+                            "cone_cluster_timeout_sec"
+                        ).value
+                    ),
+                    cluster_forward_distance_m=(
+                        self.cone_lidar_forward_distance_m
+                    ),
+                    vehicle_speed_mps=self.vehicle_speed_mps,
+                    vehicle_speed_age_sec=vehicle_speed_age_sec,
+                    vehicle_speed_timeout_sec=float(
+                        self.get_parameter(
+                            "vehicle_speed_timeout_sec"
+                        ).value
+                    ),
+                    target_speed_mps=float(
+                        self.get_parameter(
+                            "cone_approach_target_speed_mps"
+                        ).value
+                    ),
+                    deceleration_mps2=float(
+                        self.get_parameter(
+                            "cone_approach_deceleration_mps2"
+                        ).value
+                    ),
+                    response_time_sec=float(
+                        self.get_parameter(
+                            "cone_approach_response_time_sec"
+                        ).value
+                    ),
+                    distance_margin_m=float(
+                        self.get_parameter(
+                            "cone_approach_brake_margin_m"
+                        ).value
+                    ),
+                    hard_stop_distance_m=float(
+                        self.get_parameter(
+                            "cone_approach_hard_stop_distance_m"
+                        ).value
+                    ),
+                    stale_speed_stop_distance_m=float(
+                        self.get_parameter(
+                            "cone_approach_stale_speed_stop_distance_m"
+                        ).value
+                    ),
+                )
+            )
+            if (
+                not self.cone_approach_brake_hold_active
+                and brake_required
+                and output.state == HybridState.RUNNING
+                and output.speed_command > 0.0
+            ):
+                self.cone_approach_brake_hold_active = True
+                self.cone_approach_brake_release_frames = 0
+                self.cone_approach_brake_required_distance_m = (
+                    required_distance_m
+                )
+                self.cone_approach_brake_reason = brake_reason
+                self.get_logger().warning(
+                    "CONE ENTRY BRAKE START; "
+                    f"reason={brake_reason}, "
+                    f"forward={self.cone_lidar_forward_distance_m:.3f}m, "
+                    f"required={required_distance_m:.3f}m, "
+                    f"speed={self.vehicle_speed_mps:.3f}m/s"
+                )
+
+            if self.cone_approach_brake_hold_active:
+                cone_command_fresh = command_timestamp_is_fresh(
+                    now_sec=now,
+                    command_time_sec=self.last_valid_cone_command_time,
+                    timeout_sec=float(
+                        self.get_parameter(
+                            "cone_command_timeout_sec"
+                        ).value
+                    ),
+                )
+                release_ready = cone_brake_hold_release_ready(
+                    cone_active=self.cone_bypass.active,
+                    cone_command_fresh=cone_command_fresh,
+                    vehicle_speed_mps=self.vehicle_speed_mps,
+                    vehicle_speed_age_sec=vehicle_speed_age_sec,
+                    vehicle_speed_timeout_sec=float(
+                        self.get_parameter(
+                            "vehicle_speed_timeout_sec"
+                        ).value
+                    ),
+                    release_speed_mps=float(
+                        self.get_parameter(
+                            "cone_approach_release_speed_mps"
+                        ).value
+                    ),
+                )
+                self.cone_approach_brake_release_frames = (
+                    self.cone_approach_brake_release_frames + 1
+                    if release_ready
+                    else 0
+                )
+                release_frames = max(
+                    1,
+                    int(
+                        self.get_parameter(
+                            "cone_approach_release_frames"
+                        ).value
+                    ),
+                )
+                if self.cone_approach_brake_release_frames >= release_frames:
+                    self.get_logger().warning(
+                        "CONE ENTRY BRAKE RELEASE; "
+                        f"speed={self.vehicle_speed_mps:.3f}m/s, "
+                        f"frames={self.cone_approach_brake_release_frames}"
+                    )
+                    self._reset_cone_approach_brake()
+                else:
+                    output = replace(
+                        output,
+                        state=HybridState.SENSOR_STOP,
+                        angle_command=0.0,
+                        speed_command=0.0,
+                        reason=(
+                            "cone entry brake hold; "
+                            f"v={self.vehicle_speed_mps:.2f}m/s, "
+                            "forward="
+                            f"{self.cone_lidar_forward_distance_m:.2f}m, "
+                            "required="
+                            f"{self.cone_approach_brake_required_distance_m:.2f}m, "
+                            f"trigger={self.cone_approach_brake_reason}"
+                        ),
+                    )
         if self.cone_bypass.active:
             candidate_mode = GateCandidateMode.CONE
         elif (
@@ -2171,6 +2750,13 @@ class SequentialHybridDriver(Node):
                 float(self.traffic_light_decision.box_area_ratio),
                 float(now - self.scan_time),
                 float(now - self.last_valid_cone_command_time),
+                float(self.vehicle_speed_mps),
+                float(now - self.vehicle_speed_time),
+                float(self.cone_lidar_forward_distance_m),
+                float(self.cone_approach_brake_hold_active),
+                float(self.cone_bypass.entry_streak),
+                float(self.cone_approach_yolo_confidence),
+                float(self.cone_approach_brake_required_distance_m),
             ]
         )
         self.diagnostics_pub.publish(diagnostics)

@@ -398,7 +398,7 @@ class SpaceDriveGate(Node):
         self.declare_parameter("candidate_timeout_sec", 0.40)
         self.declare_parameter("publish_rate_hz", 20.0)
         self.declare_parameter(
-            "rule_to_cone_steering_rate_command_per_sec", 60.0
+            "rule_to_cone_steering_rate_command_per_sec", 180.0
         )
 
     def _on_candidate(self, message: Float32MultiArray) -> None:

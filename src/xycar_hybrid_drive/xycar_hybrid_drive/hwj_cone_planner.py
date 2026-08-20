@@ -51,7 +51,7 @@ class ConePlannerConfig:
     cone_min_drive_speed: float = 9.5
     cone_speed_steer_exponent: float = 1.0
     cone_speed_confidence_floor_ratio: float = 0.35
-    cone_straight_boost_speed: float = 21.0
+    cone_straight_boost_speed: float = 17.0
     cone_straight_boost_min_confidence: float = 0.75
     cone_straight_boost_min_path_distance_m: float = 1.35
     cone_straight_boost_full_angle_deg: float = 1.0

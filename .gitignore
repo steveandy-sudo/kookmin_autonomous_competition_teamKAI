@@ -2,6 +2,8 @@
 build/
 install/
 log/
+build_xycar_only/
+install_xycar_only/
 log_*/
 
 # Python caches and test artifacts

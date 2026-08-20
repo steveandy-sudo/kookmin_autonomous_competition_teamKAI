@@ -534,7 +534,7 @@ class HybridDriveNode(CanonicalStanleyPursuitDriver):
         self.declare_parameter("hybrid_cone_wheelbase_m", 0.33)
         self.declare_parameter("hybrid_cone_speed", 17.0)
         self.declare_parameter("hybrid_cone_min_drive_speed", 9.5)
-        self.declare_parameter("hybrid_cone_straight_boost_speed", 21.0)
+        self.declare_parameter("hybrid_cone_straight_boost_speed", 17.0)
 
     def _cone_planner_config(self) -> ConePlannerConfig:
         return ConePlannerConfig(

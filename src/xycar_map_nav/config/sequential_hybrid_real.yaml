@@ -58,7 +58,30 @@ sequential_hybrid_driver:
     cone_yolo_min_confidence: 0.50
     cone_yolo_required_frames: 2
     cone_yolo_timeout_sec: 0.75
-    cone_entry_distance_m: 3.0
+    # Actual competition-course bags 20260820_135355 (collision) and 140013
+    # (success) showed that a fixed 0.80 m stop is too coarse. Start planning
+    # from a 0.40-confidence central cone, retain 0.50 for steering authority,
+    # and stop only when measured VESC speed needs more distance than remains.
+    cone_approach_slowdown_enabled: true
+    cone_approach_yolo_min_confidence: 0.40
+    cone_approach_center_min_ratio: 0.20
+    cone_approach_center_max_ratio: 0.80
+    cone_approach_first_speed_command: 15.0
+    cone_approach_confirmed_speed_command: 8.0
+    cone_approach_target_speed_mps: 0.65
+    cone_approach_deceleration_mps2: 1.50
+    cone_approach_response_time_sec: 0.10
+    cone_approach_brake_margin_m: 0.10
+    cone_approach_hard_stop_distance_m: 0.35
+    cone_approach_stale_speed_stop_distance_m: 0.80
+    cone_approach_release_speed_mps: 0.80
+    cone_approach_release_frames: 2
+    vehicle_speed_timeout_sec: 0.25
+    vesc_state_topic: /vehicle/vesc_state
+    # Steering handoff uses the nearest cone's forward x, not radial range.
+    # Bag-derived boundary: success=0.883/0.797/0.701 m (3 valid frames),
+    # premature hand-push transition=1.320 m, late collision start=0.513 m.
+    cone_entry_distance_m: 0.95
     cone_cluster_timeout_sec: 0.50
     # cone_node emits a command from every accepted LiDAR scan. Use that
     # timestamp for cone safety instead of a duplicate selector scan callback.
@@ -99,7 +122,7 @@ sequential_hybrid_driver:
     traffic_light_stop_required_frames: 2
     traffic_light_go_required_frames: 2
     traffic_light_status_topic: /hybrid/traffic_light_status
-    vehicle_class_names: [obstacle_vehicle, car]
+    vehicle_class_names: [obstacle_vehicle, red_car, green_car]
     vehicle_yolo_min_confidence: 0.45
     vehicle_yolo_required_frames: 1
     vehicle_yolo_timeout_sec: 1.00
@@ -117,6 +140,11 @@ sequential_hybrid_driver:
     yellow_straight_max_rmse_px: 3.0
     yellow_straight_min_span_ratio: 0.20
     vehicle_avoidance_enabled: true
+    # Ignore only the course-side green_car from shortcut entry through the
+    # two sustained RULE left-steering frames after shortcut handoff.
+    vehicle_avoidance_shortcut_suppression_enabled: true
+    vehicle_avoidance_shortcut_release_left_angle_command: -8.0
+    vehicle_avoidance_shortcut_release_required_frames: 2
     vehicle_avoidance_immediate_on_yolo: true
     vehicle_avoidance_entry_distance_m: 1.20
     vehicle_minimum_side_clearance_m: 0.70
@@ -124,7 +152,11 @@ sequential_hybrid_driver:
     vehicle_left_offset_m: 0.20
     vehicle_right_offset_m: 0.20
     vehicle_offset_rate_mps: 0.50
+    # red_car retains the validated avoidance speed; green_car uses the same
+    # path/steering state machine with a higher speed limit.
     vehicle_avoidance_speed_limit_command: 8.0
+    vehicle_red_car_avoidance_speed_limit_command: 8.0
+    vehicle_green_car_avoidance_speed_limit_command: 15.0
     vehicle_minimum_avoid_sec: 0.50
     vehicle_clear_hold_sec: 0.50
     vehicle_return_hold_sec: 0.30

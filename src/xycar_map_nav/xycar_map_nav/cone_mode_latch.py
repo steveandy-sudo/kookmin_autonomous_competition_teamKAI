@@ -19,11 +19,17 @@ class ConeModeConfig:
     entry_frames: int = 3
     exit_frames: int = 1
     exit_absence_sec: float = 0.0
-    entry_distance_m: float = 3.0
+    # Forward x distance to the nearest camera-confirmed cone cluster.
+    entry_distance_m: float = 0.95
 
 
 class ConeModeLatch:
-    """Enter on confirmed cone sensors and release only after both disappear."""
+    """Enter on confirmed cone sensors and release only after both disappear.
+
+    ``lidar_distance_m`` is the longitudinal (forward x) distance.  Keeping
+    this gate longitudinal avoids granting steering authority too early for a
+    cone that is laterally far from the vehicle.
+    """
 
     def __init__(self, config: ConeModeConfig) -> None:
         self.config = config

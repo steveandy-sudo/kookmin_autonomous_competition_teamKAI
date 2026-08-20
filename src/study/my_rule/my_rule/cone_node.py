@@ -120,8 +120,26 @@ class ConeNode(Node):
         self.declare_parameter("max_cone_diameter_m", 0.3)
         self.declare_parameter("angle_bin_deg", 12.0)
         self.declare_parameter("group_grow_distance_m", 0.5)
-        self.declare_parameter("boundary_gap_max_m", 0.85)
+        # Cones on one physical boundary were measured 0.25~0.35 m apart.
+        # Direct neighbours may use a little tolerance, while a longer edge is
+        # accepted only as one missing cone and only with tangent support.
+        self.declare_parameter("boundary_expected_spacing_m", 0.30)
+        self.declare_parameter("boundary_direct_gap_max_m", 0.50)
+        self.declare_parameter("boundary_missing_gap_min_m", 0.50)
+        self.declare_parameter("boundary_gap_max_m", 0.75)
         self.declare_parameter("boundary_gap_max_turn_deg", 55.0)
+        # The 2026-07-21 venue bags contain plausible same-boundary gaps up to
+        # about 1.0 m.  Keep the ordinary graph gate at 0.75 m and expose a
+        # stricter, final-left-only continuation gate for those sparse spans.
+        self.declare_parameter("boundary_extended_gap_max_m", 1.05)
+        self.declare_parameter("boundary_extended_gap_max_turn_deg", 30.0)
+        self.declare_parameter("boundary_extended_path_tube_m", 0.15)
+        self.declare_parameter("boundary_extended_required_frames", 2)
+        self.declare_parameter("boundary_extended_match_distance_m", 0.25)
+        self.declare_parameter("boundary_extended_min_track_cones", 2)
+        self.declare_parameter("boundary_identity_memory_frames", 6)
+        self.declare_parameter("boundary_identity_match_distance_m", 0.35)
+        self.declare_parameter("boundary_identity_swap_margin_m", 0.08)
         self.declare_parameter("seed_min_angle_deg", 20.0)
         self.declare_parameter("seed_max_angle_deg", 100.0)
         self.declare_parameter("seed_max_range_m", 3.0)
@@ -129,6 +147,10 @@ class ConeNode(Node):
         self.declare_parameter("single_boundary_min_cones", 2)
         self.declare_parameter("single_boundary_min_span_m", 0.20)
         self.declare_parameter("single_boundary_switch_frames", 3)
+        # A short paired observation should preserve the established physical
+        # boundary identity, but several consecutive paired scans are enough
+        # to re-anchor both sides before the next one-sided section.
+        self.declare_parameter("paired_boundary_reanchor_frames", 3)
         self.declare_parameter(
             "single_boundary_reacquire_min_fused_clusters", 3
         )
@@ -155,11 +177,10 @@ class ConeNode(Node):
         self.declare_parameter("cone_min_drive_speed", 9.0)
         self.declare_parameter("cone_speed_steer_exponent", 1.0)
         self.declare_parameter("cone_speed_confidence_floor_ratio", 0.35)
-        # Keep the vehicle-tested 9.0~17 profile for bends. A higher target is
-        # allowed only when a fresh bilateral path is long, confident and
-        # straight throughout the preview window.
+        # Keep the vehicle-tested 9.0~17 profile. A fresh, confident and
+        # straight bilateral path may reach 17, but no longer exceeds it.
         self.declare_parameter("cone_preview_speed_control", True)
-        self.declare_parameter("cone_straight_boost_speed", 21.0)
+        self.declare_parameter("cone_straight_boost_speed", 17.0)
         self.declare_parameter("cone_straight_boost_min_confidence", 0.75)
         self.declare_parameter("cone_straight_boost_min_path_distance_m", 1.35)
         self.declare_parameter("cone_straight_boost_full_angle_deg", 1.0)
@@ -178,6 +199,14 @@ class ConeNode(Node):
         self.declare_parameter("min_corridor_width_m", 0.68)
         self.declare_parameter("max_corridor_width_m", 0.98)
         self.declare_parameter("expected_corridor_width_m", 0.85)
+        # Recent indoor bags contain path-consistent bilateral observations up
+        # to 1.05 m during the final left, while the venue bags stay below
+        # 0.95 m.  Wider observations are temporary and never update the
+        # nominal corridor-width learner.
+        self.declare_parameter("final_left_pair_max_width_m", 1.10)
+        self.declare_parameter("final_left_pair_max_forward_delta_m", 0.45)
+        self.declare_parameter("final_left_wide_pair_path_deviation_m", 0.20)
+        self.declare_parameter("final_left_wide_pair_required_frames", 2)
         self.declare_parameter("corridor_width_learning_enabled", True)
         self.declare_parameter("corridor_width_learning_alpha", 0.20)
         self.declare_parameter("corridor_width_max_update_m", 0.04)
@@ -192,7 +221,42 @@ class ConeNode(Node):
         self.declare_parameter("max_path_target_jump_m", 0.45)
         self.declare_parameter("inferred_max_path_target_jump_m", 0.25)
         self.declare_parameter("inferred_path_target_rate_mps", 0.80)
+        # A measured bilateral corridor is normally the best source, but its
+        # first frames after a one-sided fallback can be paired differently.
+        # Keep the one-sided slew limit briefly while the pair stabilises.
+        self.declare_parameter("paired_reacquire_frames", 3)
+        self.declare_parameter("paired_reacquire_min_target_jump_m", 0.08)
+        self.declare_parameter("paired_reacquire_path_target_rate_mps", 0.65)
         self.declare_parameter("path_target_rate_max_dt_sec", 0.12)
+        self.declare_parameter("path_max_heading_range_deg", 120.0)
+        # Control paths are expressed at the rear axle.  A path ordered around
+        # the LiDAR origin can end closer to the rear axle after a tight turn;
+        # Pure Pursuit would then start from the last sample and lose all
+        # forward arc.  These guards keep ordering and continuity in the actual
+        # controller frame without assuming that x is monotonic.
+        self.declare_parameter("path_min_control_arc_m", 0.20)
+        # A one-sided offset is less observable than a paired centre path.
+        # Do not let a very short fragment replace an established turn: at the
+        # 2026-08-19 162.17 s failure a 0.37 m left-offset fragment replaced a
+        # 1.47 m right-turn path and briefly commanded the opposite sign.
+        self.declare_parameter("single_boundary_min_control_arc_m", 0.50)
+        # The four 2026-08-20 fixed-speed failures accepted one-sided paths
+        # whose first point was 1.0~1.9 m ahead.  The successful pass never
+        # started a one-sided path farther than 0.73 m in the same final bend.
+        self.declare_parameter("final_left_single_path_max_start_m", 0.85)
+        self.declare_parameter("final_left_reversal_target_margin_m", 0.01)
+        self.declare_parameter("path_orientation_start_margin_m", 0.04)
+        # Lateral slew limiting translates an inferred path. That translation
+        # can make a late sample much closer to the rear axle than sample zero,
+        # invalidating the path ordering assumed by Pure Pursuit.
+        self.declare_parameter("path_start_nearest_max_fraction", 0.20)
+        self.declare_parameter("path_start_nearest_distance_margin_m", 0.05)
+        self.declare_parameter("path_heading_jump_threshold_deg", 55.0)
+        self.declare_parameter("path_heading_jump_required_frames", 2)
+        self.declare_parameter("path_heading_confirmation_tolerance_deg", 20.0)
+        self.declare_parameter("path_heading_probe_distance_m", 0.35)
+        self.declare_parameter("path_reversal_min_lateral_m", 0.12)
+        self.declare_parameter("path_reversal_required_frames", 2)
         self.declare_parameter("steering_median_window", 1)
         self.declare_parameter("steering_max_delta_deg", 14.0)
         self.declare_parameter("inferred_steering_max_delta_deg", 10.0)
@@ -201,12 +265,72 @@ class ConeNode(Node):
             "inferred_steering_max_rate_deg_per_sec", 100.0
         )
         self.declare_parameter("steering_rate_max_dt_sec", 0.12)
+        self.declare_parameter("sharp_curve_preview_enabled", True)
+        self.declare_parameter("sharp_curve_heading_threshold_deg", 22.0)
+        self.declare_parameter("sharp_curve_steering_gain", 1.18)
+        # The standalone cone course has a measured left -> right -> large-left
+        # sequence.  A pending phase catches the first measured turn-back even
+        # when bilateral geometry is sparse; once committed, a one-frame path
+        # failure must not release or reverse the known final turn.
+        self.declare_parameter("cone_turn_sequence_guard_enabled", True)
+        self.declare_parameter("cone_first_left_enter_steer_deg", 5.0)
+        self.declare_parameter("cone_right_enter_steer_deg", 8.0)
+        self.declare_parameter("cone_final_left_pending_steer_deg", 3.0)
+        self.declare_parameter("cone_final_left_enter_steer_deg", 5.0)
+        self.declare_parameter("cone_final_left_pending_frames", 2)
+        self.declare_parameter("cone_final_left_pending_hold_steer_deg", 5.0)
+        # Venue command medians are -10.7~-13.3 deg, their tight peaks are
+        # -16.2~-17.1 deg, and the successful fixed-8 indoor pass reached
+        # -21.9 deg.  Ramp through that measured envelope only while geometry
+        # is missing, held, or trying to unwind the final left.
+        self.declare_parameter("cone_final_left_min_hold_steer_deg", 12.0)
+        self.declare_parameter("cone_final_left_fallback_target_deg", 16.5)
+        self.declare_parameter("cone_final_left_fallback_max_steer_deg", 22.0)
+        self.declare_parameter("cone_final_left_fallback_ramp_deg_per_sec", 10.0)
+        self.declare_parameter("cone_final_left_recovery_speed", 4.0)
+        self.declare_parameter("cone_final_left_recovery_frames", 20)
+        self.declare_parameter("cone_final_left_recovery_max_sec", 2.00)
+        # Straightening is geometry-triggered, not time-triggered. The three
+        # 2026-07-21 venue runs peaked at 16.2~17.1 deg and only then unwound.
+        self.declare_parameter("cone_final_left_release_min_peak_deg", 15.0)
+        # The 2026-08-20 03:11 failure peaked at only 14.0 deg in raw geometry
+        # even though the guarded output had already delivered -22 deg for
+        # more than one second.  In that case accept a lower measured peak
+        # only after a sufficiently strong guarded turn was actually held.
+        self.declare_parameter(
+            "cone_final_left_release_guarded_min_peak_deg", 12.0
+        )
+        self.declare_parameter(
+            "cone_final_left_release_guarded_output_deg", 21.0
+        )
+        self.declare_parameter(
+            "cone_final_left_release_guarded_hold_sec", 0.60
+        )
+        self.declare_parameter("cone_final_left_release_margin_deg", 3.0)
+        self.declare_parameter("cone_final_left_release_required_frames", 2)
+        self.declare_parameter(
+            "cone_final_left_release_recovery_rate_deg_per_sec", 3.0
+        )
+        self.declare_parameter("cone_final_left_exit_steer_deg", 3.0)
+        self.declare_parameter("cone_final_left_exit_frames", 3)
         self.declare_parameter("allow_nearest_gate_fallback", True)
         self.declare_parameter("fallback_pair_min_lateral_separation_m", 0.4)
         self.declare_parameter("fallback_pair_max_center_offset_m", 0.65)
-        self.declare_parameter("blind_recovery_frames", 10)
+        self.declare_parameter("blind_recovery_frames", 5)
+        self.declare_parameter("blind_recovery_max_sec", 0.35)
+        # A rejected malformed path still provides cone-presence evidence.
+        # Preserve the established turn with decay long enough to move through
+        # that brief occlusion instead of stopping in an unrecoverable view.
+        self.declare_parameter("invalid_inferred_recovery_frames", 10)
+        self.declare_parameter("invalid_inferred_recovery_max_sec", 1.00)
         self.declare_parameter("blind_recovery_min_clusters", 2)
         self.declare_parameter("blind_recovery_steer_decay", 0.92)
+        # Recovery is a safety exception to a nominal fixed-speed profile.
+        # Creep while geometry is invalid and do not unwind a confirmed final
+        # left into the right-hand cone boundary.
+        self.declare_parameter("blind_recovery_speed", 4.0)
+        self.declare_parameter("invalid_inferred_recovery_speed", 3.0)
+        self.declare_parameter("invalid_inferred_recovery_steer_decay", 1.0)
         self.declare_parameter("diagnostics_log_period_sec", 0.50)
 
         self.scan_qos = QoSProfile(
@@ -297,10 +421,49 @@ class ConeNode(Node):
         self.active_inferred_boundary: Optional[str] = None
         self.pending_inferred_boundary: Optional[str] = None
         self.pending_inferred_frames = 0
+        self.paired_boundary_frames = 0
+        self.wide_pair_candidate_frames = 0
+        self.last_wide_pair_width_m = 0.0
+        self.last_observed_pair_width_m = 0.0
+        self.wide_pair_active = False
+        self.extended_boundary_candidates = {0: None, 1: None}
+        self.extended_boundary_candidate_frames = {0: 0, 1: 0}
+        self.current_yolo_confirmed_clusters: List[Point2] = []
+        self.previous_left_boundary: List[Point2] = []
+        self.previous_right_boundary: List[Point2] = []
+        self.left_boundary_memory_age = 0
+        self.right_boundary_memory_age = 0
+        self.pending_path_reversal_sign = 0
+        self.pending_path_reversal_frames = 0
+        self.pending_path_heading_deg: Optional[float] = None
+        self.pending_path_heading_frames = 0
+        self.last_path_heading_deg: Optional[float] = None
+        self.last_path_nearest_index = 0
+        self.last_path_remaining_arc_m = 0.0
+        self.last_path_orientation_reversed = False
+        self.last_path_rejection_reason = "none"
+        self.invalid_inferred_recovery_active = False
+        self.accepted_path_source = "none"
+        self.paired_reacquire_frames = 0
         self.steering_history = deque(maxlen=max(1, int(self.get_parameter("steering_median_window").value)))
         self.stabilized_steering: Optional[float] = None
         self.last_valid_steering = 0.0
+        self.cone_turn_phase = "approach"
+        self.final_left_pending_frames = 0
+        self.final_left_pending_started_at: Optional[float] = None
+        self.final_left_committed_at: Optional[float] = None
+        self.final_left_fallback_started_at: Optional[float] = None
+        self.final_left_strong_hold_started_at: Optional[float] = None
+        self.final_left_peak_steering = 0.0
+        self.final_left_measured_peak_steering = 0.0
+        self.final_left_release_frames = 0
+        self.final_left_release_reference_steering = 0.0
+        self.final_left_release_reference_time: Optional[float] = None
+        self.final_left_exit_frames = 0
         self.blind_recovery_count = 0
+        self.blind_recovery_started_at: Optional[float] = None
+        self.last_recovery_angle = 0.0
+        self.last_recovery_speed = 0.0
         self.had_valid_path = False
         self.processing_gate_enabled = bool(
             self.get_parameter("processing_gate_enabled").value
@@ -452,6 +615,34 @@ class ConeNode(Node):
         default = float(self.get_parameter("expected_corridor_width_m").value)
         learned = float(getattr(self, "learned_corridor_width_m", default))
         return float(np.clip(learned, minimum, maximum))
+
+    def final_left_phase_active(self, *, include_pending: bool = False) -> bool:
+        phase = str(getattr(self, "cone_turn_phase", "approach"))
+        committed = phase in (
+            "final_left",
+            "final_left_committed",
+            "final_left_releasing",
+        )
+        return committed or (include_pending and phase == "final_left_pending")
+
+    def point_is_yolo_confirmed(self, point: Point2) -> bool:
+        match_distance = max(
+            0.03,
+            float(
+                self.get_parameter(
+                    "sparse_cluster_match_distance_m"
+                ).value
+            ),
+        )
+        return any(
+            math.hypot(point[0] - confirmed[0], point[1] - confirmed[1])
+            <= match_distance
+            for confirmed in getattr(
+                self,
+                "current_yolo_confirmed_clusters",
+                [],
+            )
+        )
 
     def update_corridor_width(self, measured_widths: Sequence[float]) -> None:
         """Learn the RC-course width only from a reliable bilateral frame."""
@@ -809,10 +1000,49 @@ class ConeNode(Node):
         self.active_inferred_boundary = None
         self.pending_inferred_boundary = None
         self.pending_inferred_frames = 0
+        self.paired_boundary_frames = 0
+        self.wide_pair_candidate_frames = 0
+        self.last_wide_pair_width_m = 0.0
+        self.last_observed_pair_width_m = 0.0
+        self.wide_pair_active = False
+        self.extended_boundary_candidates = {0: None, 1: None}
+        self.extended_boundary_candidate_frames = {0: 0, 1: 0}
+        self.current_yolo_confirmed_clusters = []
+        self.previous_left_boundary = []
+        self.previous_right_boundary = []
+        self.left_boundary_memory_age = 0
+        self.right_boundary_memory_age = 0
+        self.pending_path_reversal_sign = 0
+        self.pending_path_reversal_frames = 0
+        self.pending_path_heading_deg = None
+        self.pending_path_heading_frames = 0
+        self.last_path_heading_deg = None
+        self.last_path_nearest_index = 0
+        self.last_path_remaining_arc_m = 0.0
+        self.last_path_orientation_reversed = False
+        self.last_path_rejection_reason = "none"
+        self.invalid_inferred_recovery_active = False
+        self.accepted_path_source = "none"
+        self.paired_reacquire_frames = 0
         self.steering_history.clear()
         self.stabilized_steering = None
         self.last_valid_steering = 0.0
+        self.cone_turn_phase = "approach"
+        self.final_left_pending_frames = 0
+        self.final_left_pending_started_at = None
+        self.final_left_committed_at = None
+        self.final_left_fallback_started_at = None
+        self.final_left_strong_hold_started_at = None
+        self.final_left_peak_steering = 0.0
+        self.final_left_measured_peak_steering = 0.0
+        self.final_left_release_frames = 0
+        self.final_left_release_reference_steering = 0.0
+        self.final_left_release_reference_time = None
+        self.final_left_exit_frames = 0
         self.blind_recovery_count = 0
+        self.blind_recovery_started_at = None
+        self.last_recovery_angle = 0.0
+        self.last_recovery_speed = 0.0
         self.had_valid_path = False
 
     def scan_callback(self, msg: LaserScan) -> None:
@@ -831,13 +1061,16 @@ class ConeNode(Node):
         clusters = self.cluster_cones(points)
         clusters = self.filter_front_clusters_by_angle(clusters)
         self.publish_cluster_array(self.lidar_cluster_pub, clusters)
-        fused_clusters = self.associate_clusters_with_yolo(
+        yolo_confirmed_clusters = self.associate_clusters_with_yolo(
             clusters,
             scan_stamp_ns=scan_stamp_ns,
         )
+        self.current_yolo_confirmed_clusters = list(
+            yolo_confirmed_clusters
+        )
         fused_clusters = self.recover_corridor_partners(
             clusters,
-            fused_clusters,
+            yolo_confirmed_clusters,
         )
         self.publish_cluster_array(self.fused_cluster_pub, fused_clusters)
         planning_clusters = self.select_planning_clusters(
@@ -850,6 +1083,10 @@ class ConeNode(Node):
         self.publish_clusters(planning_clusters)
 
         left_cones, right_cones = self.form_cone_groups(planning_clusters)
+        left_cones, right_cones = self.stabilize_boundary_identity(
+            left_cones,
+            right_cones,
+        )
         midpoints = self.calculate_midpoints(left_cones, right_cones)
         boundary_switch_pending = (
             self.pending_inferred_boundary is not None
@@ -876,10 +1113,8 @@ class ConeNode(Node):
             if self.publish_blind_recovery(len(planning_clusters)):
                 self.publish_diagnostics(
                     raw_angle=self.last_valid_steering,
-                    output_angle=self.last_valid_steering,
-                    speed=float(
-                        self.get_parameter("cone_min_drive_speed").value
-                    ),
+                    output_angle=float(self.last_recovery_angle),
+                    speed=float(self.last_recovery_speed),
                     confidence=max(
                         0.21,
                         float(self.get_parameter("min_confidence").value)
@@ -915,13 +1150,19 @@ class ConeNode(Node):
             return
 
         raw_angle = self.pure_pursuit(path)
+        # Phase recognition consumes the fresh geometric demand before output
+        # rate limiting.  This preserves the measured right-to-left transition
+        # that was hidden by steering slew in guarded bag 022406.
+        self.update_cone_turn_phase(raw_angle)
         angle = self.stabilize_steering(raw_angle)
+        angle = self.apply_cone_turn_phase_guard(angle)
         confidence = self.path_confidence(evidence_midpoint_count)
         speed = self.compute_speed(angle, confidence, path)
         self.last_valid_steering = angle
         self.had_valid_path = True
         if not self.path_is_held:
             self.blind_recovery_count = 0
+            self.blind_recovery_started_at = None
         self.publish_cmd(angle, speed, confidence)
         self.publish_diagnostics(
             raw_angle=raw_angle,
@@ -1081,6 +1322,182 @@ class ConeNode(Node):
             used_bins.add(bin_idx)
         return filtered
 
+    def order_connected_points(
+        self,
+        points: Sequence[Point2],
+        *,
+        maximum_gap_m: Optional[float] = None,
+    ) -> List[Point2]:
+        """Order a 2-D cone/path chain without assuming that x is monotonic.
+
+        Tight cone courses can turn close to 90 degrees, where sorting by
+        forward x shortens, reverses or crosses the path.  Start at the point
+        nearest the vehicle and walk the locally connected chain instead.  The
+        measured 0.25~0.35 m cone spacing is used as a soft preference; local
+        tangent continuity prevents a walk from doubling back.
+        """
+        unique: List[Point2] = []
+        for raw_x, raw_y in points:
+            point = (float(raw_x), float(raw_y))
+            if not any(math.hypot(point[0] - x, point[1] - y) < 1.0e-5 for x, y in unique):
+                unique.append(point)
+        if len(unique) < 2:
+            return unique
+
+        expected = max(
+            0.05,
+            float(self.get_parameter("boundary_expected_spacing_m").value),
+        )
+        maximum_gap = (
+            float("inf")
+            if maximum_gap_m is None
+            else max(0.01, float(maximum_gap_m))
+        )
+        maximum_turn = math.radians(
+            max(
+                90.0,
+                float(self.get_parameter("path_max_heading_range_deg").value),
+            )
+        )
+        start = min(unique, key=lambda point: math.hypot(*point))
+        ordered = [start]
+        remaining = [point for point in unique if point != start]
+
+        while remaining:
+            endpoint = ordered[-1]
+            previous_tangent = None
+            if len(ordered) >= 2:
+                previous = ordered[-2]
+                tangent = np.asarray(
+                    [endpoint[0] - previous[0], endpoint[1] - previous[1]],
+                    dtype=np.float64,
+                )
+                norm = float(np.linalg.norm(tangent))
+                if norm > 1.0e-6:
+                    previous_tangent = tangent / norm
+
+            candidates = []
+            for point in remaining:
+                vector = np.asarray(
+                    [point[0] - endpoint[0], point[1] - endpoint[1]],
+                    dtype=np.float64,
+                )
+                distance = float(np.linalg.norm(vector))
+                if distance <= 1.0e-6 or distance > maximum_gap:
+                    continue
+                turn = 0.0
+                if previous_tangent is not None:
+                    direction = vector / distance
+                    turn = math.acos(
+                        float(
+                            np.clip(
+                                np.dot(previous_tangent, direction),
+                                -1.0,
+                                1.0,
+                            )
+                        )
+                    )
+                    if turn > maximum_turn:
+                        continue
+                # Distance dominates. Spacing and turn are tie-breakers that
+                # retain a physical cone boundary through a tight bend.
+                cost = (
+                    distance
+                    + 0.35 * abs(distance - expected)
+                    + 0.18 * expected * turn
+                )
+                candidates.append((cost, distance, point))
+            if not candidates:
+                break
+            _cost, _distance, selected = min(candidates)
+            ordered.append(selected)
+            remaining.remove(selected)
+        return ordered
+
+    @staticmethod
+    def boundary_match_score(
+        boundary: Sequence[Point2],
+        reference: Sequence[Point2],
+    ) -> float:
+        if not boundary or not reference:
+            return float("inf")
+        return float(
+            np.mean(
+                [
+                    min(
+                        math.hypot(point[0] - old[0], point[1] - old[1])
+                        for old in reference
+                    )
+                    for point in boundary
+                ]
+            )
+        )
+
+    def stabilize_boundary_identity(
+        self,
+        left: Sequence[Point2],
+        right: Sequence[Point2],
+    ) -> Tuple[List[Point2], List[Point2]]:
+        """Keep physical left/right boundary identity through partial views.
+
+        The instantaneous seed bearing can change side during a large bend.
+        Short memory prevents the visible boundary from being reinterpreted as
+        the opposite side, while expiring quickly enough not to encode a fixed
+        competition-course shape.
+        """
+        left_values = list(left)
+        right_values = list(right)
+        previous_left = list(getattr(self, "previous_left_boundary", []))
+        previous_right = list(getattr(self, "previous_right_boundary", []))
+        match_limit = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "boundary_identity_match_distance_m"
+                ).value
+            ),
+        )
+        swap_margin = max(
+            0.0,
+            float(self.get_parameter("boundary_identity_swap_margin_m").value),
+        )
+
+        if left_values and right_values and previous_left and previous_right:
+            normal = self.boundary_match_score(left_values, previous_left) + self.boundary_match_score(right_values, previous_right)
+            swapped = self.boundary_match_score(left_values, previous_right) + self.boundary_match_score(right_values, previous_left)
+            if swapped + swap_margin < normal:
+                left_values, right_values = right_values, left_values
+        elif left_values and not right_values and previous_right:
+            right_score = self.boundary_match_score(left_values, previous_right)
+            left_score = self.boundary_match_score(left_values, previous_left)
+            if right_score <= match_limit and right_score + swap_margin < left_score:
+                right_values, left_values = left_values, []
+        elif right_values and not left_values and previous_left:
+            left_score = self.boundary_match_score(right_values, previous_left)
+            right_score = self.boundary_match_score(right_values, previous_right)
+            if left_score <= match_limit and left_score + swap_margin < right_score:
+                left_values, right_values = right_values, []
+
+        memory_frames = max(
+            0,
+            int(self.get_parameter("boundary_identity_memory_frames").value),
+        )
+        if left_values:
+            self.previous_left_boundary = list(left_values)
+            self.left_boundary_memory_age = 0
+        else:
+            self.left_boundary_memory_age = getattr(self, "left_boundary_memory_age", 0) + 1
+            if self.left_boundary_memory_age > memory_frames:
+                self.previous_left_boundary = []
+        if right_values:
+            self.previous_right_boundary = list(right_values)
+            self.right_boundary_memory_age = 0
+        else:
+            self.right_boundary_memory_age = getattr(self, "right_boundary_memory_age", 0) + 1
+            if self.right_boundary_memory_age > memory_frames:
+                self.previous_right_boundary = []
+        return left_values, right_values
+
     def form_cone_groups(self, centers: Sequence[Point2]) -> Tuple[List[Point2], List[Point2]]:
         min_angle = float(self.get_parameter("seed_min_angle_deg").value)
         max_angle = float(self.get_parameter("seed_max_angle_deg").value)
@@ -1110,14 +1527,24 @@ class ConeNode(Node):
         is the 2-D RC equivalent of the old graph walk, with a much smaller
         metric threshold appropriate to the present course.
         """
-        groups = [sorted(list(left), key=lambda point: point[0]),
-                  sorted(list(right), key=lambda point: point[0])]
+        direct_gap = max(
+            0.01,
+            float(self.get_parameter("boundary_direct_gap_max_m").value),
+        )
+        missing_gap_min = max(
+            direct_gap,
+            float(self.get_parameter("boundary_missing_gap_min_m").value),
+        )
+        groups = [
+            self.order_connected_points(left, maximum_gap_m=direct_gap),
+            self.order_connected_points(right, maximum_gap_m=direct_gap),
+        ]
         used = set(groups[0]) | set(groups[1])
-        maximum_gap = max(
+        normal_maximum_gap = max(
             float(self.get_parameter("group_grow_distance_m").value),
             float(self.get_parameter("boundary_gap_max_m").value),
         )
-        maximum_turn = math.radians(
+        normal_maximum_turn = math.radians(
             max(
                 0.0,
                 float(
@@ -1125,9 +1552,47 @@ class ConeNode(Node):
                 ),
             )
         )
+        final_left = self.final_left_phase_active(include_pending=True)
+        extended_maximum_gap = normal_maximum_gap
+        if final_left:
+            extended_maximum_gap = max(
+                normal_maximum_gap,
+                float(
+                    self.get_parameter(
+                        "boundary_extended_gap_max_m"
+                    ).value
+                ),
+            )
+        extended_maximum_turn = math.radians(
+            max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "boundary_extended_gap_max_turn_deg"
+                    ).value
+                ),
+            )
+        )
+        extended_tube = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "boundary_extended_path_tube_m"
+                ).value
+            ),
+        )
+        extended_minimum_track = max(
+            2,
+            int(
+                self.get_parameter(
+                    "boundary_extended_min_track_cones"
+                ).value
+            ),
+        )
 
         while True:
-            best = None
+            normal_candidates = []
+            extended_by_side = {}
             for side, group in enumerate(groups):
                 if len(group) < 2:
                     continue
@@ -1141,30 +1606,124 @@ class ConeNode(Node):
                     continue
                 tangent /= tangent_norm
                 for point in centers:
-                    if point in used or point[0] < endpoint[0] - 0.05:
+                    if point in used:
                         continue
                     vector = np.asarray(
                         [point[0] - endpoint[0], point[1] - endpoint[1]],
                         dtype=np.float64,
                     )
                     distance = float(np.linalg.norm(vector))
-                    if distance <= 1.0e-6 or distance > maximum_gap:
+                    if (
+                        distance < missing_gap_min
+                        or distance > extended_maximum_gap
+                    ):
                         continue
                     direction = vector / distance
                     turn = math.acos(
                         float(np.clip(np.dot(tangent, direction), -1.0, 1.0))
                     )
-                    if turn > maximum_turn:
+                    expected = float(
+                        self.get_parameter("boundary_expected_spacing_m").value
+                    )
+                    # This branch represents one missing cone, so prefer a gap
+                    # close to twice the measured adjacent-cone spacing.
+                    candidate = (
+                        abs(distance - 2.0 * expected) + 0.35 * turn,
+                        side,
+                        point,
+                    )
+                    if distance <= normal_maximum_gap:
+                        if turn <= normal_maximum_turn:
+                            normal_candidates.append(candidate)
                         continue
-                    candidate = (distance + 0.35 * turn, side, point)
-                    if best is None or candidate < best:
-                        best = candidate
-            if best is None:
-                break
+
+                    # A 0.75~1.05 m continuation is admitted only inside the
+                    # committed course trend and inside a narrow extrapolated
+                    # tangent tube.  This is deliberately stricter than simply
+                    # enlarging the nearest-neighbour radius around furniture.
+                    if (
+                        not final_left
+                        or len(group) < extended_minimum_track
+                        or turn > extended_maximum_turn
+                    ):
+                        continue
+                    cross_track = abs(
+                        tangent[0] * vector[1]
+                        - tangent[1] * vector[0]
+                    )
+                    if cross_track > extended_tube:
+                        continue
+                    current = extended_by_side.get(side)
+                    if current is None or candidate < current:
+                        extended_by_side[side] = candidate
+
+            if normal_candidates:
+                best = min(normal_candidates)
+            else:
+                confirmed_extended = []
+                required = max(
+                    1,
+                    int(
+                        self.get_parameter(
+                            "boundary_extended_required_frames"
+                        ).value
+                    ),
+                )
+                match_distance = max(
+                    0.0,
+                    float(
+                        self.get_parameter(
+                            "boundary_extended_match_distance_m"
+                        ).value
+                    ),
+                )
+                for side in (0, 1):
+                    if side not in extended_by_side:
+                        self.extended_boundary_candidates[side] = None
+                        self.extended_boundary_candidate_frames[side] = 0
+                for side, candidate in extended_by_side.items():
+                    _cost, _candidate_side, point = candidate
+                    previous = getattr(
+                        self,
+                        "extended_boundary_candidates",
+                        {0: None, 1: None},
+                    ).get(side)
+                    if self.point_is_yolo_confirmed(point):
+                        frames = required
+                    elif (
+                        previous is not None
+                        and math.hypot(
+                            point[0] - previous[0],
+                            point[1] - previous[1],
+                        )
+                        <= match_distance
+                    ):
+                        frames = int(
+                            getattr(
+                                self,
+                                "extended_boundary_candidate_frames",
+                                {0: 0, 1: 0},
+                            ).get(side, 0)
+                        ) + 1
+                    else:
+                        frames = 1
+                    self.extended_boundary_candidates[side] = point
+                    self.extended_boundary_candidate_frames[side] = frames
+                    if frames >= required:
+                        confirmed_extended.append(candidate)
+                if not confirmed_extended:
+                    break
+                best = min(confirmed_extended)
+
             _cost, side, point = best
             groups[side].append(point)
-            groups[side].sort(key=lambda value: value[0])
+            groups[side] = self.order_connected_points(
+                groups[side],
+                maximum_gap_m=extended_maximum_gap,
+            )
             used.add(point)
+            self.extended_boundary_candidates[side] = None
+            self.extended_boundary_candidate_frames[side] = 0
         return groups[0], groups[1]
 
     def grow_groups_competitively(
@@ -1174,7 +1733,10 @@ class ConeNode(Node):
         centers: Sequence[Point2],
     ) -> Tuple[List[Point2], List[Point2]]:
         """Grow both boundaries together so the first side cannot consume the other."""
-        threshold = float(self.get_parameter("group_grow_distance_m").value)
+        threshold = min(
+            float(self.get_parameter("group_grow_distance_m").value),
+            float(self.get_parameter("boundary_direct_gap_max_m").value),
+        )
         groups = [[left_seed], [right_seed]]
         used = {left_seed, right_seed}
 
@@ -1194,8 +1756,8 @@ class ConeNode(Node):
             groups[side].append(point)
             used.add(point)
 
-        left = sorted(groups[0], key=lambda p: p[0])
-        right = sorted(groups[1], key=lambda p: p[0])
+        left = self.order_connected_points(groups[0], maximum_gap_m=threshold)
+        right = self.order_connected_points(groups[1], maximum_gap_m=threshold)
         return left, right
 
     def find_seed(
@@ -1218,7 +1780,10 @@ class ConeNode(Node):
         return best
 
     def grow_group(self, seed: Point2, centers: Sequence[Point2], used: set) -> List[Point2]:
-        threshold = float(self.get_parameter("group_grow_distance_m").value)
+        threshold = min(
+            float(self.get_parameter("group_grow_distance_m").value),
+            float(self.get_parameter("boundary_direct_gap_max_m").value),
+        )
         group: List[Point2] = []
         queue = deque([seed])
         used.add(seed)
@@ -1231,31 +1796,131 @@ class ConeNode(Node):
                 if math.hypot(p[0] - base[0], p[1] - base[1]) <= threshold:
                     used.add(p)
                     queue.append(p)
-        return group
+        return self.order_connected_points(group, maximum_gap_m=threshold)
 
     def calculate_midpoints(self, left: Sequence[Point2], right: Sequence[Point2]) -> List[Point2]:
         self.midpoints_inferred = False
         self.midpoint_source = "none"
         if not left and not right:
+            self.paired_boundary_frames = 0
             self.pending_inferred_boundary = None
             self.pending_inferred_frames = 0
             return []
         if not left or not right:
+            self.paired_boundary_frames = 0
             return self.infer_midpoints_from_single_boundary(left, right)
-        max_forward_delta = float(self.get_parameter("pair_max_forward_delta_m").value)
+        max_forward_delta = float(
+            self.get_parameter("pair_max_forward_delta_m").value
+        )
         min_width = float(self.get_parameter("min_corridor_width_m").value)
         max_width = float(self.get_parameter("max_corridor_width_m").value)
         expected_width = self.effective_corridor_width()
+        final_left = self.final_left_phase_active(include_pending=True)
+        allowed_max_width = max_width
+        if final_left:
+            allowed_max_width = max(
+                max_width,
+                float(
+                    self.get_parameter(
+                        "final_left_pair_max_width_m"
+                    ).value
+                ),
+            )
+            max_forward_delta = max(
+                max_forward_delta,
+                float(
+                    self.get_parameter(
+                        "final_left_pair_max_forward_delta_m"
+                    ).value
+                ),
+            )
 
-        candidates = []
+        ordinary_candidates = []
+        wide_candidates = []
+        observed_widths = []
+        rear_offset = float(self.get_parameter("lidar_to_rear_axle_m").value)
+        maximum_wide_path_deviation = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "final_left_wide_pair_path_deviation_m"
+                ).value
+            ),
+        )
         for left_index, left_point in enumerate(left):
             for right_index, right_point in enumerate(right):
                 forward_delta = abs(left_point[0] - right_point[0])
                 width = math.hypot(left_point[0] - right_point[0], left_point[1] - right_point[1])
-                if forward_delta > max_forward_delta or not min_width <= width <= max_width:
+                if (
+                    forward_delta > max_forward_delta
+                    or not min_width <= width <= allowed_max_width
+                ):
                     continue
+                observed_widths.append(width)
                 cost = 2.0 * forward_delta + abs(width - expected_width)
-                candidates.append((cost, left_index, right_index, width))
+                candidate = (cost, left_index, right_index, width)
+                if width <= max_width:
+                    ordinary_candidates.append(candidate)
+                    continue
+                if not self.prev_path:
+                    continue
+                midpoint_rear = (
+                    0.5 * (left_point[0] + right_point[0]) + rear_offset,
+                    0.5 * (left_point[1] + right_point[1]),
+                )
+                if (
+                    self.point_to_path_distance(midpoint_rear, self.prev_path)
+                    > maximum_wide_path_deviation
+                ):
+                    continue
+                wide_candidates.append(candidate)
+
+        self.last_observed_pair_width_m = max(observed_widths, default=0.0)
+        required_wide_frames = max(
+            1,
+            int(
+                self.get_parameter(
+                    "final_left_wide_pair_required_frames"
+                ).value
+            ),
+        )
+        yolo_anchored_wide = any(
+            self.point_is_yolo_confirmed(left[left_index])
+            or self.point_is_yolo_confirmed(right[right_index])
+            for _cost, left_index, right_index, _width in wide_candidates
+        )
+        if wide_candidates:
+            representative_width = float(
+                np.median(
+                    np.asarray(
+                        [candidate[3] for candidate in wide_candidates],
+                        dtype=np.float64,
+                    )
+                )
+            )
+            if (
+                abs(
+                    representative_width
+                    - float(getattr(self, "last_wide_pair_width_m", 0.0))
+                )
+                <= 0.15
+            ):
+                self.wide_pair_candidate_frames = int(
+                    getattr(self, "wide_pair_candidate_frames", 0)
+                ) + 1
+            else:
+                self.wide_pair_candidate_frames = 1
+            self.last_wide_pair_width_m = representative_width
+        else:
+            self.wide_pair_candidate_frames = 0
+            self.last_wide_pair_width_m = 0.0
+        allow_wide = bool(wide_candidates) and (
+            yolo_anchored_wide
+            or self.wide_pair_candidate_frames >= required_wide_frames
+        )
+        candidates = list(ordinary_candidates)
+        if allow_wide:
+            candidates.extend(wide_candidates)
 
         used_left = set()
         used_right = set()
@@ -1274,10 +1939,37 @@ class ConeNode(Node):
             )
             used_left.add(left_index)
             used_right.add(right_index)
-            paired_widths.append(width)
-        midpoints = sorted(midpoints, key=lambda p: p[0])
+            # A temporary expanded corridor controls from the measured
+            # midpoint, but never drags the nominal half-width used by a later
+            # one-sided fallback toward furniture or a one-frame outlier.
+            if width <= max_width:
+                paired_widths.append(width)
+        midpoints = self.order_connected_points(
+            midpoints,
+            maximum_gap_m=float(
+                self.get_parameter("path_gap_fill_max_m").value
+            ),
+        )
         minimum_bilateral = max(2, int(self.get_parameter("min_path_midpoints").value))
         if len(midpoints) >= minimum_bilateral:
+            self.wide_pair_active = any(
+                width > max_width
+                for _cost, left_index, right_index, width in sorted(candidates)
+                if left_index in used_left and right_index in used_right
+            )
+            self.paired_boundary_frames = int(
+                getattr(self, "paired_boundary_frames", 0)
+            ) + 1
+            reanchor_frames = max(
+                1,
+                int(
+                    self.get_parameter(
+                        "paired_boundary_reanchor_frames"
+                    ).value
+                ),
+            )
+            if self.paired_boundary_frames >= reanchor_frames:
+                self.active_inferred_boundary = None
             self.update_corridor_width(paired_widths)
             # Two measured boundaries constrain the corridor directly. A denser
             # single boundary must never replace this path just because it has
@@ -1289,6 +1981,8 @@ class ConeNode(Node):
             self.pending_inferred_boundary = None
             self.pending_inferred_frames = 0
             return midpoints
+        self.wide_pair_active = False
+        self.paired_boundary_frames = 0
         inferred = self.infer_midpoints_from_richer_boundary(left, right)
         if inferred:
             return inferred
@@ -1429,8 +2123,15 @@ class ConeNode(Node):
         """Return the longest locally connected segment and discard background outliers."""
         if not boundary:
             return []
-        threshold = float(self.get_parameter("group_grow_distance_m").value)
-        ordered = sorted(boundary, key=lambda p: p[0])
+        threshold = float(
+            self.get_parameter("boundary_direct_gap_max_m").value
+        )
+        ordered = self.order_connected_points(
+            boundary,
+            maximum_gap_m=float(
+                self.get_parameter("boundary_gap_max_m").value
+            ),
+        )
         segments: List[List[Point2]] = [[ordered[0]]]
         for point in ordered[1:]:
             previous = segments[-1][-1]
@@ -1449,7 +2150,10 @@ class ConeNode(Node):
     def boundary_is_sufficient(self, boundary: Sequence[Point2], minimum: int) -> bool:
         if len(boundary) < minimum:
             return False
-        span = max(point[0] for point in boundary) - min(point[0] for point in boundary)
+        span = sum(
+            math.hypot(second[0] - first[0], second[1] - first[1])
+            for first, second in zip(boundary, boundary[1:])
+        )
         return span >= float(self.get_parameter("single_boundary_min_span_m").value)
 
     def infer_midpoints_from_single_boundary(
@@ -1513,7 +2217,12 @@ class ConeNode(Node):
         return min(candidates, key=lambda item: item[0])[1]
 
     def offset_boundary_to_center(self, boundary: Sequence[Point2], is_left_boundary: bool) -> List[Point2]:
-        points = sorted(boundary, key=lambda p: p[0])
+        points = self.order_connected_points(
+            boundary,
+            maximum_gap_m=float(
+                self.get_parameter("boundary_gap_max_m").value
+            ),
+        )
         expected_width = self.effective_corridor_width()
         half_width = expected_width * 0.5
         default_centerline: List[Point2] = []
@@ -1566,16 +2275,18 @@ class ConeNode(Node):
 
             if path_score(opposite_centerline) < path_score(default_centerline):
                 default_centerline = opposite_centerline
-        return sorted(default_centerline, key=lambda p: p[0])
+        return default_centerline
 
     def bridge_midpoint_gaps(
         self,
         midpoints: Sequence[Point2],
     ) -> List[Point2]:
         """Densify a plausible centre-path gap without crossing a large void."""
-        points = sorted(
+        points = self.order_connected_points(
             [(float(x), float(y)) for x, y in midpoints],
-            key=lambda point: point[0],
+            maximum_gap_m=float(
+                self.get_parameter("path_gap_fill_max_m").value
+            ),
         )
         if len(points) < 2:
             return points
@@ -1608,7 +2319,10 @@ class ConeNode(Node):
             segments,
             key=lambda segment: (
                 len(segment),
-                segment[-1][0] - segment[0][0],
+                sum(
+                    math.hypot(b[0] - a[0], b[1] - a[1])
+                    for a, b in zip(segment, segment[1:])
+                ),
                 -math.hypot(*segment[0]),
             ),
         )
@@ -1659,52 +2373,496 @@ class ConeNode(Node):
                 )
                 bridged.append((float(value[0]), float(value[1])))
             bridged.append(second)
-        return sorted(bridged, key=lambda point: point[0])
+        return bridged
 
     def interpolate_path(self, midpoints: Sequence[Point2]) -> List[Point2]:
         min_midpoints = max(1, int(self.get_parameter("min_path_midpoints").value))
         if len(midpoints) < min_midpoints:
             return self.hold_previous_path()
+        # Path following is performed around the rear axle, whereas cone
+        # clusters are measured around the LiDAR.  Order the chain only after
+        # moving it into the controller frame.  Ordering before this transform
+        # can make the final point of a 90-degree bend closer to the rear axle
+        # than the first point and leaves Pure Pursuit with no forward samples.
         rear_offset = float(self.get_parameter("lidar_to_rear_axle_m").value)
-        pts = sorted([(x + rear_offset, y) for x, y in midpoints], key=lambda p: p[0])
+        controller_points = [
+            (float(x) + rear_offset, float(y)) for x, y in midpoints
+        ]
+        pts = self.order_connected_points(
+            controller_points,
+            maximum_gap_m=float(
+                self.get_parameter("path_gap_fill_max_m").value
+            ),
+        )
         if len(pts) == 1:
             return self.accept_new_path(pts)
-        xs = np.array([p[0] for p in pts], dtype=np.float32)
-        ys = np.array([p[1] for p in pts], dtype=np.float32)
-        unique_xs, unique_idx = np.unique(xs, return_index=True)
-        unique_ys = ys[unique_idx]
-        if len(unique_xs) < min_midpoints:
+        values = np.asarray(pts, dtype=np.float64)
+        segment_lengths = np.linalg.norm(np.diff(values, axis=0), axis=1)
+        keep = np.concatenate(([True], segment_lengths > 1.0e-5))
+        values = values[keep]
+        if len(values) < min_midpoints:
             return self.hold_previous_path()
-        if float(unique_xs.max() - unique_xs.min()) < float(self.get_parameter("min_path_span_m").value):
+        segment_lengths = np.linalg.norm(np.diff(values, axis=0), axis=1)
+        arclength = np.concatenate(([0.0], np.cumsum(segment_lengths)))
+        if float(arclength[-1]) < float(
+            self.get_parameter("min_path_span_m").value
+        ):
             return self.hold_previous_path()
         sample_count = max(2, int(self.get_parameter("path_sample_count").value))
-        interp_x = np.linspace(float(unique_xs.min()), float(unique_xs.max()), sample_count)
+        interp_s = np.linspace(0.0, float(arclength[-1]), sample_count)
         method = str(self.get_parameter("path_interpolation_method").value).lower().strip()
         if method in ("cubic", "cubic_spline", "spline"):
-            interp_y = self.cubic_interpolate(unique_xs, unique_ys, interp_x)
+            interp_x = self.cubic_interpolate(
+                arclength,
+                values[:, 0],
+                interp_s,
+            )
+            interp_y = self.cubic_interpolate(
+                arclength,
+                values[:, 1],
+                interp_s,
+            )
         else:
-            interp_y = np.interp(interp_x, unique_xs, unique_ys)
+            interp_x = np.interp(interp_s, arclength, values[:, 0])
+            interp_y = np.interp(interp_s, arclength, values[:, 1])
         new_path = [(float(x), float(y)) for x, y in zip(interp_x, interp_y)]
         return self.accept_new_path(new_path)
 
+    @staticmethod
+    def path_max_heading_step_deg(path: Sequence[Point2]) -> float:
+        if len(path) < 3:
+            return 0.0
+        points = np.asarray(path, dtype=np.float64)
+        deltas = np.diff(points, axis=0)
+        usable = np.linalg.norm(deltas, axis=1) > 1.0e-5
+        deltas = deltas[usable]
+        if len(deltas) < 2:
+            return 0.0
+        headings = np.unwrap(np.arctan2(deltas[:, 1], deltas[:, 0]))
+        return float(np.max(np.abs(np.diff(headings))) * 180.0 / math.pi)
+
+    @staticmethod
+    def path_heading_demand_deg(
+        path: Sequence[Point2],
+        maximum_distance_m: float,
+    ) -> float:
+        if len(path) < 2:
+            return 0.0
+        headings = []
+        for first, second in zip(path, path[1:]):
+            if min(math.hypot(*first), math.hypot(*second)) > maximum_distance_m:
+                continue
+            dx = second[0] - first[0]
+            dy = second[1] - first[1]
+            if math.hypot(dx, dy) > 1.0e-5:
+                headings.append(abs(math.degrees(math.atan2(dy, dx))))
+        return max(headings, default=0.0)
+
+    @staticmethod
+    def path_arc_length(
+        path: Sequence[Point2],
+        start_index: int = 0,
+    ) -> float:
+        points = list(path)
+        if len(points) < 2:
+            return 0.0
+        start = int(np.clip(start_index, 0, len(points) - 1))
+        return float(
+            sum(
+                math.hypot(
+                    second[0] - first[0],
+                    second[1] - first[1],
+                )
+                for first, second in zip(points[start:], points[start + 1 :])
+            )
+        )
+
+    @staticmethod
+    def path_nearest_index(path: Sequence[Point2]) -> int:
+        if not path:
+            return 0
+        return min(
+            range(len(path)),
+            key=lambda index: math.hypot(*path[index]),
+        )
+
+    def path_start_is_consistent(self, path: Sequence[Point2]) -> bool:
+        """Return false when a path loops materially closer to the rear axle.
+
+        Monotonic x is intentionally not required, so legitimate 90-degree
+        and S-shaped paths remain valid. A late sample is rejected only when it
+        is materially closer to the controller origin than sample zero. Such a
+        curve cannot safely be followed from sample zero and matches the 8/19
+        opposite-steering failure (nearest index 84 of 100).
+        """
+        points = list(path)
+        if len(points) < 2:
+            return False
+        nearest_index = self.path_nearest_index(points)
+        max_fraction = float(
+            np.clip(
+                self.get_parameter(
+                    "path_start_nearest_max_fraction"
+                ).value,
+                0.0,
+                1.0,
+            )
+        )
+        maximum_start_index = max(
+            1,
+            int(math.floor((len(points) - 1) * max_fraction)),
+        )
+        if nearest_index <= maximum_start_index:
+            return True
+        margin = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "path_start_nearest_distance_margin_m"
+                ).value
+            ),
+        )
+        start_distance = math.hypot(*points[0])
+        nearest_distance = math.hypot(*points[nearest_index])
+        return nearest_distance + margin >= start_distance
+
+    @staticmethod
+    def path_heading_at_distance_deg(
+        path: Sequence[Point2],
+        probe_distance_m: float,
+    ) -> float:
+        """Return a forward path tangent without assuming monotonic x."""
+        points = list(path)
+        if len(points) < 2:
+            return 0.0
+        target = max(0.0, float(probe_distance_m))
+        travelled = 0.0
+        selected = None
+        for first, second in zip(points, points[1:]):
+            dx = second[0] - first[0]
+            dy = second[1] - first[1]
+            segment = math.hypot(dx, dy)
+            if segment <= 1.0e-6:
+                continue
+            selected = (dx, dy)
+            if travelled + segment >= target:
+                break
+            travelled += segment
+        if selected is None:
+            return 0.0
+        return float(math.degrees(math.atan2(selected[1], selected[0])))
+
+    @staticmethod
+    def heading_difference_deg(first: float, second: float) -> float:
+        return float(abs((float(first) - float(second) + 180.0) % 360.0 - 180.0))
+
+    def normalize_control_path(self, path: Sequence[Point2]) -> List[Point2]:
+        """Orient an open path from the rear axle toward the visible course.
+
+        Upstream geometry normally already provides this ordering.  The
+        endpoint check is a final guard for sparse/reconstructed paths and does
+        not sort by x, so a legitimate 90-degree or S-shaped path is retained.
+        """
+        values: List[Point2] = []
+        for raw_x, raw_y in path:
+            point = (float(raw_x), float(raw_y))
+            if not values or math.hypot(
+                point[0] - values[-1][0],
+                point[1] - values[-1][1],
+            ) > 1.0e-6:
+                values.append(point)
+        reversed_path = False
+        if len(values) >= 2:
+            margin = max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "path_orientation_start_margin_m"
+                    ).value
+                ),
+            )
+            first_distance = math.hypot(*values[0])
+            last_distance = math.hypot(*values[-1])
+            if last_distance + margin < first_distance:
+                values.reverse()
+                reversed_path = True
+        self.last_path_orientation_reversed = reversed_path
+        return values
+
+    @staticmethod
+    def point_at_path_distance(
+        path: Sequence[Point2],
+        target_distance_m: float,
+    ) -> Point2:
+        if not path:
+            return (0.0, 0.0)
+        points = list(path)
+        # Accepted paths are explicitly ordered in the rear-axle controller
+        # frame.  Searching the whole curve for the Euclidean nearest sample can
+        # select the final sample of a hairpin and reduce the forward arc to
+        # zero, producing alternating saturated steering commands.
+        start_index = 0
+        previous = (0.0, 0.0)
+        distance = 0.0
+        for point in points[start_index:]:
+            segment = math.hypot(
+                point[0] - previous[0],
+                point[1] - previous[1],
+            )
+            if segment > 1.0e-6 and distance + segment >= target_distance_m:
+                ratio = float(
+                    np.clip(
+                        (target_distance_m - distance) / segment,
+                        0.0,
+                        1.0,
+                    )
+                )
+                return (
+                    previous[0] + ratio * (point[0] - previous[0]),
+                    previous[1] + ratio * (point[1] - previous[1]),
+                )
+            distance += segment
+            previous = point
+        return points[-1]
+
     def accept_new_path(self, new_path: List[Point2]) -> List[Point2]:
+        new_path = self.normalize_control_path(new_path)
+        if not new_path:
+            self.last_path_rejection_reason = "empty"
+            return self.hold_previous_path()
         if self.prev_path is not None and len(self.prev_path) > 1 and len(new_path) == 1:
+            self.last_path_rejection_reason = "single_point"
             return self.hold_previous_path()
         source = str(getattr(self, "midpoint_source", "none"))
-        inferred = source in (
+        single_boundary_sources = (
+            "left_offset",
+            "right_offset",
+            "nearest_gate",
+        )
+        final_left_guard = (
+            bool(
+                self.get_parameter(
+                    "cone_turn_sequence_guard_enabled"
+                ).value
+            )
+            and self.final_left_phase_active(include_pending=True)
+        )
+        if final_left_guard and source in single_boundary_sources:
+            maximum_start_distance = max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "final_left_single_path_max_start_m"
+                    ).value
+                ),
+            )
+            start_distance = math.hypot(*new_path[0])
+            if (
+                maximum_start_distance > 0.0
+                and start_distance > maximum_start_distance
+            ):
+                self.last_path_rejection_reason = "distant_single_boundary"
+                self.invalid_inferred_recovery_active = True
+                return self.hold_previous_path()
+
+        # Once the measured left->right sequence has started turning back, no
+        # path source is allowed to reintroduce a right-hand target.  This also
+        # covers paired_reacquire, which produced +15 deg in bag 022406.
+        if final_left_guard:
+            reversal_margin = max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "final_left_reversal_target_margin_m"
+                    ).value
+                ),
+            )
+            if self.path_target_lateral(new_path) < -reversal_margin:
+                self.last_path_rejection_reason = "final_left_reversal"
+                self.invalid_inferred_recovery_active = True
+                return self.hold_previous_path()
+        minimum_control_arc = max(
+            0.0,
+            float(self.get_parameter("path_min_control_arc_m").value),
+        )
+        remaining_arc = self.path_arc_length(new_path)
+        if (
+            self.prev_path is not None
+            and len(new_path) > 1
+            and remaining_arc < minimum_control_arc
+        ):
+            self.last_path_rejection_reason = "short_path"
+            return self.hold_previous_path()
+        single_boundary_minimum_arc = max(
+            minimum_control_arc,
+            float(
+                self.get_parameter(
+                    "single_boundary_min_control_arc_m"
+                ).value
+            ),
+        )
+        if (
+            source in single_boundary_sources
+            and remaining_arc < single_boundary_minimum_arc
+        ):
+            self.last_path_rejection_reason = "short_single_boundary"
+            self.invalid_inferred_recovery_active = True
+            return self.hold_previous_path()
+        maximum_heading_step = max(
+            0.0,
+            float(self.get_parameter("path_max_heading_range_deg").value),
+        )
+        if (
+            maximum_heading_step > 0.0
+            and self.path_max_heading_step_deg(new_path) > maximum_heading_step
+        ):
+            self.last_path_rejection_reason = "heading_step"
+            return self.hold_previous_path()
+        inferred_sources = (
             "left_offset",
             "right_offset",
             "nearest_gate",
             "paired_sparse",
+            "paired_reacquire",
         )
+        previous_source = str(
+            getattr(self, "accepted_path_source", "none")
+        )
+        probe_distance = max(
+            0.05,
+            float(
+                self.get_parameter(
+                    "path_heading_probe_distance_m"
+                ).value
+            ),
+        )
+        new_heading = self.path_heading_at_distance_deg(
+            new_path,
+            probe_distance,
+        )
+        previous_heading = getattr(self, "last_path_heading_deg", None)
+        heading_threshold = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "path_heading_jump_threshold_deg"
+                ).value
+            ),
+        )
+        heading_required = max(
+            1,
+            int(
+                self.get_parameter(
+                    "path_heading_jump_required_frames"
+                ).value
+            ),
+        )
+        heading_jump = (
+            previous_heading is not None
+            and self.heading_difference_deg(new_heading, previous_heading)
+            > heading_threshold
+        )
+        if heading_jump and heading_required > 1:
+            tolerance = max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "path_heading_confirmation_tolerance_deg"
+                    ).value
+                ),
+            )
+            pending_heading = getattr(self, "pending_path_heading_deg", None)
+            if (
+                pending_heading is not None
+                and self.heading_difference_deg(new_heading, pending_heading)
+                <= tolerance
+            ):
+                self.pending_path_heading_frames = int(
+                    getattr(self, "pending_path_heading_frames", 0)
+                ) + 1
+            else:
+                self.pending_path_heading_deg = new_heading
+                self.pending_path_heading_frames = 1
+            if self.pending_path_heading_frames < heading_required:
+                self.last_path_rejection_reason = "heading_pending"
+                return self.hold_previous_path()
+        else:
+            self.pending_path_heading_deg = None
+            self.pending_path_heading_frames = 0
         previous_target = (
             self.path_target_lateral(self.prev_path)
             if self.prev_path is not None
             else getattr(self, "last_path_target_lateral", None)
         )
         new_target = self.path_target_lateral(new_path)
+        reacquire_active = int(
+            getattr(self, "paired_reacquire_frames", 0)
+        ) > 0
+        reacquire_jump = (
+            previous_target is not None
+            and abs(float(new_target) - float(previous_target))
+            >= max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "paired_reacquire_min_target_jump_m"
+                    ).value
+                ),
+            )
+        )
+        paired_reacquire = source == "paired" and (
+            reacquire_active
+            or (previous_source in inferred_sources and reacquire_jump)
+        )
+        if paired_reacquire:
+            self.paired_reacquire_frames = int(
+                getattr(self, "paired_reacquire_frames", 0)
+            ) + 1
+            required = max(
+                1,
+                int(self.get_parameter("paired_reacquire_frames").value),
+            )
+            if self.paired_reacquire_frames <= required:
+                source = "paired_reacquire"
+                self.midpoint_source = source
+            else:
+                self.paired_reacquire_frames = 0
+        elif source != "paired_reacquire":
+            self.paired_reacquire_frames = 0
+        inferred = source in inferred_sources
         self.last_raw_path_target_lateral = new_target
         self.path_target_limit_applied = False
+        reversal_threshold = max(
+            0.0,
+            float(self.get_parameter("path_reversal_min_lateral_m").value),
+        )
+        reversal_required = max(
+            1,
+            int(self.get_parameter("path_reversal_required_frames").value),
+        )
+        abrupt_reversal = (
+            previous_target is not None
+            and abs(float(previous_target)) >= reversal_threshold
+            and abs(float(new_target)) >= reversal_threshold
+            and float(previous_target) * float(new_target) < 0.0
+        )
+        if abrupt_reversal and reversal_required > 1:
+            new_sign = 1 if new_target > 0.0 else -1
+            if getattr(self, "pending_path_reversal_sign", 0) == new_sign:
+                self.pending_path_reversal_frames = getattr(
+                    self,
+                    "pending_path_reversal_frames",
+                    0,
+                ) + 1
+            else:
+                self.pending_path_reversal_sign = new_sign
+                self.pending_path_reversal_frames = 1
+            if self.pending_path_reversal_frames < reversal_required:
+                self.last_path_rejection_reason = "reversal_pending"
+                return self.hold_previous_path()
+        else:
+            self.pending_path_reversal_sign = 0
+            self.pending_path_reversal_frames = 0
         if inferred and previous_target is not None:
             # A single boundary is geometrically underconstrained. Limit its
             # lateral output continuously instead of rejecting it until the
@@ -1713,11 +2871,16 @@ class ConeNode(Node):
             now = float(
                 getattr(self, "current_scan_time", None) or time.monotonic()
             )
+            rate_parameter = (
+                "paired_reacquire_path_target_rate_mps"
+                if source == "paired_reacquire"
+                else "inferred_path_target_rate_mps"
+            )
             rate = max(
                 0.0,
                 float(
                     self.get_parameter(
-                        "inferred_path_target_rate_mps"
+                        rate_parameter
                     ).value
                 ),
             )
@@ -1752,23 +2915,49 @@ class ConeNode(Node):
                     max_step,
                     delta,
                 )
-                lateral_shift = new_target - limited_target
-                new_path = [
-                    (float(x), float(y) - lateral_shift)
-                    for x, y in new_path
-                ]
+                # The path target is selected by arc distance, so translating
+                # y also changes the origin-to-path arc slightly. Iterate the
+                # translation to honour the requested lateral-rate bound.
+                for _ in range(4):
+                    current_target = self.path_target_lateral(new_path)
+                    residual = current_target - limited_target
+                    if abs(residual) <= 1.0e-4:
+                        break
+                    new_path = [
+                        (float(x), float(y) - residual)
+                        for x, y in new_path
+                    ]
                 new_target = self.path_target_lateral(new_path)
         elif self.prev_path is not None:
             max_jump = float(
                 self.get_parameter("max_path_target_jump_m").value
             )
             if abs(new_target - previous_target) > max_jump:
+                self.last_path_rejection_reason = "target_jump"
                 return self.hold_previous_path()
+        if (
+            source in inferred_sources
+            and not self.path_start_is_consistent(new_path)
+        ):
+            # Do not centre a malformed one-sided curve by translation and
+            # then follow it from the wrong end. Keep the previous valid turn;
+            # if it ages out, bounded blind recovery bridges the interval until
+            # paired geometry returns.
+            self.last_path_rejection_reason = "late_nearest_return"
+            self.invalid_inferred_recovery_active = True
+            return self.hold_previous_path()
         self.path_miss_count = 0
         self.path_is_held = False
         self.prev_path = new_path
+        self.accepted_path_source = source
         self.last_path_target_lateral = new_target
         self.last_output_path_target_lateral = new_target
+        self.last_path_heading_deg = self.path_heading_at_distance_deg(
+            new_path,
+            probe_distance,
+        )
+        self.last_path_nearest_index = self.path_nearest_index(new_path)
+        self.last_path_remaining_arc_m = self.path_arc_length(new_path)
         accepted_at = float(
             getattr(self, "current_scan_time", None) or time.monotonic()
         )
@@ -1776,6 +2965,12 @@ class ConeNode(Node):
         self.last_path_update_time = accepted_at
         self.geometry_reference_path = list(new_path)
         self.geometry_reference_time = accepted_at
+        self.pending_path_reversal_sign = 0
+        self.pending_path_reversal_frames = 0
+        self.pending_path_heading_deg = None
+        self.pending_path_heading_frames = 0
+        self.last_path_rejection_reason = "none"
+        self.invalid_inferred_recovery_active = False
         return self.prev_path
 
     def hold_previous_path(self) -> List[Point2]:
@@ -1805,10 +3000,7 @@ class ConeNode(Node):
         if not path:
             return 0.0
         lookahead = float(self.get_parameter("lookahead_min_m").value)
-        for x, y in path:
-            if x >= lookahead:
-                return float(y)
-        return float(path[-1][1])
+        return float(self.point_at_path_distance(path, lookahead)[1])
 
     def cubic_interpolate(self, xs: np.ndarray, ys: np.ndarray, interp_x: np.ndarray) -> np.ndarray:
         if xs.size < 3:
@@ -1872,15 +3064,50 @@ class ConeNode(Node):
         far_angle = self.pure_pursuit_at_distance(path, far_distance)
         far_weight = float(np.clip(self.get_parameter("far_preview_weight").value, 0.0, 1.0))
         gain = max(0.0, float(self.get_parameter("steering_gain").value))
-        angle_cmd = gain * ((1.0 - far_weight) * near_angle + far_weight * far_angle)
+        angle_cmd = gain * (
+            (1.0 - far_weight) * near_angle + far_weight * far_angle
+        )
+        heading_demand = self.path_heading_demand_deg(
+            path,
+            float(self.get_parameter("lookahead_max_m").value),
+        )
+        if (
+            bool(self.get_parameter("sharp_curve_preview_enabled").value)
+            and heading_demand
+            >= float(
+                self.get_parameter(
+                    "sharp_curve_heading_threshold_deg"
+                ).value
+            )
+        ):
+            close_angle = self.pure_pursuit_at_distance(
+                path,
+                max(
+                    0.30,
+                    min(lookahead, 0.72 * lookahead),
+                ),
+            )
+            reference = near_angle if abs(near_angle) > 1.0e-3 else close_angle
+            same_direction = [
+                candidate
+                for candidate in (close_angle, near_angle, far_angle)
+                if reference == 0.0 or candidate * reference >= 0.0
+            ]
+            if same_direction:
+                sharp_angle = max(same_direction, key=abs)
+                angle_cmd = max(
+                    0.0,
+                    float(
+                        self.get_parameter(
+                            "sharp_curve_steering_gain"
+                        ).value
+                    ),
+                ) * sharp_angle
         limit = float(self.get_parameter("max_steer_cmd").value)
         return float(np.clip(angle_cmd, -limit, limit))
 
     def pure_pursuit_at_distance(self, path: Sequence[Point2], lookahead: float) -> float:
-        dists = np.array([math.hypot(x, y) for x, y in path], dtype=np.float32)
-        candidates = np.where(dists > lookahead)[0]
-        idx = int(candidates[0]) if candidates.size > 0 else len(path) - 1
-        tx, ty = path[idx]
+        tx, ty = self.point_at_path_distance(path, lookahead)
         ld = max(1e-6, math.hypot(tx, ty))
         alpha = math.atan2(ty, tx)
         wheelbase = float(self.get_parameter("wheelbase_m").value)
@@ -1904,6 +3131,428 @@ class ConeNode(Node):
             )
         )
 
+    def update_cone_turn_phase(self, angle: float) -> None:
+        """Latch the measured left -> right -> large-left cone sequence.
+
+        The first raw turn-back observation arms a pending phase.  A second
+        observation may come from the held copy of that same left path; this
+        is deliberate because the next sparse scan is exactly where the
+        2026-08-20 failures replaced the turn with a right/straight path.
+        """
+        if not bool(
+            self.get_parameter("cone_turn_sequence_guard_enabled").value
+        ):
+            return
+
+        phase = str(getattr(self, "cone_turn_phase", "approach"))
+        source = str(getattr(self, "midpoint_source", "none"))
+        value = float(angle)
+        pending_armed_now = False
+        fresh_trusted = (
+            not self.path_is_held
+            and source not in ("none", "reacquire_pending")
+        )
+        first_left = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "cone_first_left_enter_steer_deg"
+                ).value
+            ),
+        )
+        right_turn = max(
+            0.0,
+            float(self.get_parameter("cone_right_enter_steer_deg").value),
+        )
+        pending_left = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "cone_final_left_pending_steer_deg"
+                ).value
+            ),
+        )
+        commit_left = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "cone_final_left_enter_steer_deg"
+                ).value
+            ),
+        )
+
+        if phase == "approach" and fresh_trusted and value <= -first_left:
+            self.cone_turn_phase = "first_left"
+            return
+        if phase == "first_left" and fresh_trusted and value >= right_turn:
+            self.cone_turn_phase = "right"
+            return
+        if (
+            phase == "right"
+            and fresh_trusted
+            and value <= -pending_left
+        ):
+            self.cone_turn_phase = "final_left_pending"
+            self.final_left_pending_frames = (
+                1 if value <= -commit_left else 0
+            )
+            now_value = getattr(self, "current_scan_time", None)
+            now = time.monotonic() if now_value is None else float(now_value)
+            self.final_left_pending_started_at = now
+            self.final_left_strong_hold_started_at = None
+            self.final_left_peak_steering = min(0.0, value)
+            self.final_left_measured_peak_steering = min(0.0, value)
+            self.final_left_release_frames = 0
+            self.final_left_release_reference_steering = 0.0
+            self.final_left_release_reference_time = None
+            self.final_left_exit_frames = 0
+            phase = "final_left_pending"
+            pending_armed_now = True
+
+        if phase == "final_left_pending":
+            if value <= -commit_left and not pending_armed_now:
+                # Do not count an unrelated stale command before pending is
+                # armed, but permit its own held left path to confirm entry.
+                self.final_left_pending_frames = int(
+                    getattr(self, "final_left_pending_frames", 0)
+                ) + 1
+            required = max(
+                1,
+                int(
+                    self.get_parameter(
+                        "cone_final_left_pending_frames"
+                    ).value
+                ),
+            )
+            if self.final_left_pending_frames >= required:
+                self.cone_turn_phase = "final_left_committed"
+                now_value = getattr(self, "current_scan_time", None)
+                now = time.monotonic() if now_value is None else float(now_value)
+                self.final_left_committed_at = now
+                self.final_left_fallback_started_at = None
+                self.final_left_strong_hold_started_at = None
+                self.final_left_peak_steering = min(
+                    float(getattr(self, "final_left_peak_steering", 0.0)),
+                    value,
+                )
+                self.final_left_measured_peak_steering = min(
+                    float(
+                        getattr(
+                            self,
+                            "final_left_measured_peak_steering",
+                            0.0,
+                        )
+                    ),
+                    value,
+                )
+                self.final_left_release_frames = 0
+                self.final_left_exit_frames = 0
+            return
+
+        exit_angle = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "cone_final_left_exit_steer_deg"
+                ).value
+            ),
+        )
+        exit_required = max(
+            1,
+            int(
+                self.get_parameter(
+                    "cone_final_left_exit_frames"
+                ).value
+            ),
+        )
+
+        if phase == "final_left_releasing":
+            if fresh_trusted and source == "paired":
+                now_value = getattr(self, "current_scan_time", None)
+                now = time.monotonic() if now_value is None else float(now_value)
+                self.final_left_release_reference_steering = value
+                self.final_left_release_reference_time = now
+                if value >= -exit_angle:
+                    self.final_left_exit_frames = int(
+                        getattr(self, "final_left_exit_frames", 0)
+                    ) + 1
+                else:
+                    self.final_left_exit_frames = 0
+                if self.final_left_exit_frames >= exit_required:
+                    self.cone_turn_phase = "complete"
+            else:
+                self.final_left_exit_frames = 0
+            return
+
+        if phase not in ("final_left", "final_left_committed"):
+            return
+
+        self.final_left_peak_steering = min(
+            float(getattr(self, "final_left_peak_steering", 0.0)),
+            value,
+        )
+        self.final_left_measured_peak_steering = min(
+            float(
+                getattr(
+                    self,
+                    "final_left_measured_peak_steering",
+                    0.0,
+                )
+            ),
+            value,
+        )
+        minimum_release_peak = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "cone_final_left_release_min_peak_deg"
+                ).value
+            ),
+        )
+        guarded_release_peak = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "cone_final_left_release_guarded_min_peak_deg"
+                ).value
+            ),
+        )
+        guarded_hold_sec = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "cone_final_left_release_guarded_hold_sec"
+                ).value
+            ),
+        )
+        release_margin = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "cone_final_left_release_margin_deg"
+                ).value
+            ),
+        )
+        now_value = getattr(self, "current_scan_time", None)
+        now = time.monotonic() if now_value is None else float(now_value)
+        strong_hold_started_at = getattr(
+            self,
+            "final_left_strong_hold_started_at",
+            None,
+        )
+        guarded_turn_delivered = bool(
+            self.final_left_measured_peak_steering
+            <= -guarded_release_peak
+            and strong_hold_started_at is not None
+            and now - float(strong_hold_started_at) >= guarded_hold_sec
+        )
+        measured_peak_ready = bool(
+            self.final_left_measured_peak_steering
+            <= -minimum_release_peak
+        )
+        release_observed = (
+            fresh_trusted
+            and source == "paired"
+            and (measured_peak_ready or guarded_turn_delivered)
+            and value
+            >= self.final_left_measured_peak_steering + release_margin
+        )
+        if release_observed:
+            self.final_left_release_frames = int(
+                getattr(self, "final_left_release_frames", 0)
+            ) + 1
+        elif fresh_trusted:
+            self.final_left_release_frames = 0
+        release_required = max(
+            1,
+            int(
+                self.get_parameter(
+                    "cone_final_left_release_required_frames"
+                ).value
+            ),
+        )
+        if (
+            self.final_left_release_frames >= release_required
+        ):
+            self.cone_turn_phase = "final_left_releasing"
+            self.final_left_release_reference_steering = value
+            self.final_left_release_reference_time = now
+            self.final_left_exit_frames = 0
+
+    def final_left_fallback_angle(self, angle: float) -> float:
+        """Ramp a committed blind/ambiguous final left through measured data."""
+        minimum = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "cone_final_left_min_hold_steer_deg"
+                ).value
+            ),
+        )
+        target = max(
+            minimum,
+            float(
+                self.get_parameter(
+                    "cone_final_left_fallback_target_deg"
+                ).value
+            ),
+        )
+        maximum = max(
+            target,
+            float(
+                self.get_parameter(
+                    "cone_final_left_fallback_max_steer_deg"
+                ).value
+            ),
+        )
+        rate = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "cone_final_left_fallback_ramp_deg_per_sec"
+                ).value
+            ),
+        )
+        now_value = getattr(self, "current_scan_time", None)
+        now = time.monotonic() if now_value is None else float(now_value)
+        if getattr(self, "final_left_fallback_started_at", None) is None:
+            self.final_left_fallback_started_at = now
+        elapsed = max(0.0, now - float(self.final_left_fallback_started_at))
+        magnitude = min(maximum, minimum + rate * elapsed)
+        value = min(
+            float(angle),
+            float(getattr(self, "final_left_peak_steering", 0.0)),
+            -magnitude,
+        )
+        strong_output = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "cone_final_left_release_guarded_output_deg"
+                ).value
+            ),
+        )
+        if value <= -strong_output:
+            if getattr(
+                self,
+                "final_left_strong_hold_started_at",
+                None,
+            ) is None:
+                self.final_left_strong_hold_started_at = now
+        self.final_left_peak_steering = min(
+            float(getattr(self, "final_left_peak_steering", 0.0)),
+            value,
+        )
+        return value
+
+    def final_left_release_recovery_angle(self) -> float:
+        """Continue an already observed unwind without restoring peak lock."""
+        reference = float(
+            getattr(self, "final_left_release_reference_steering", 0.0)
+        )
+        now_value = getattr(self, "current_scan_time", None)
+        now = time.monotonic() if now_value is None else float(now_value)
+        reference_time = getattr(
+            self,
+            "final_left_release_reference_time",
+            None,
+        )
+        if reference_time is None:
+            self.final_left_release_reference_time = now
+            reference_time = now
+        rate = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "cone_final_left_release_recovery_rate_deg_per_sec"
+                ).value
+            ),
+        )
+        elapsed = max(0.0, now - float(reference_time))
+        return min(0.0, reference + rate * elapsed)
+
+    def apply_cone_turn_phase_guard(self, angle: float) -> float:
+        """Keep an ambiguous/held final-left path from unwinding the turn."""
+        value = float(angle)
+        if not bool(
+            self.get_parameter(
+                "cone_turn_sequence_guard_enabled"
+            ).value
+        ):
+            return value
+
+        phase = str(getattr(self, "cone_turn_phase", "approach"))
+        if phase == "final_left_pending":
+            pending_hold = max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "cone_final_left_pending_hold_steer_deg"
+                    ).value
+                ),
+            )
+            return min(value, -pending_hold)
+
+        source = str(getattr(self, "midpoint_source", "none"))
+        if phase == "final_left_releasing":
+            if not self.path_is_held and source == "paired":
+                self.final_left_fallback_started_at = None
+                return value
+            return self.final_left_release_recovery_angle()
+        if phase not in ("final_left", "final_left_committed"):
+            return value
+
+        # The successful indoor run unwound on fresh bilateral geometry from
+        # -18.7 to -2.7 deg.  The failed run offered the same signal (-13.6 to
+        # -8.6), but the old minimum-hold check overwrote it with -22 deg.
+        if not self.path_is_held and source == "paired":
+            minimum_hold = max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "cone_final_left_min_hold_steer_deg"
+                    ).value
+                ),
+            )
+            minimum_release_peak = max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "cone_final_left_release_min_peak_deg"
+                    ).value
+                ),
+            )
+            measured_peak = float(
+                getattr(self, "final_left_measured_peak_steering", 0.0)
+            )
+            if value <= -minimum_hold or measured_peak <= -minimum_release_peak:
+                self.final_left_fallback_started_at = None
+                self.final_left_peak_steering = min(
+                    float(getattr(self, "final_left_peak_steering", 0.0)),
+                    value,
+                )
+                return value
+            return self.final_left_fallback_angle(value)
+
+        inferred = source in (
+            "left_offset",
+            "right_offset",
+            "nearest_gate",
+            "paired_sparse",
+            "paired_reacquire",
+            "reacquire_pending",
+            "none",
+        )
+        if self.path_is_held or inferred:
+            return self.final_left_fallback_angle(value)
+
+        self.final_left_fallback_started_at = None
+        self.final_left_peak_steering = min(
+            float(getattr(self, "final_left_peak_steering", 0.0)),
+            value,
+        )
+        return value
+
     def stabilize_steering(self, angle: float) -> float:
         self.steering_history.append(float(angle))
         if len(self.steering_history) < self.steering_history.maxlen:
@@ -1912,7 +3561,13 @@ class ConeNode(Node):
             filtered = float(np.median(np.asarray(self.steering_history, dtype=np.float32)))
 
         source = str(getattr(self, "midpoint_source", "none"))
-        inferred = source in ("left_offset", "right_offset", "nearest_gate", "paired_sparse")
+        inferred = source in (
+            "left_offset",
+            "right_offset",
+            "nearest_gate",
+            "paired_sparse",
+            "paired_reacquire",
+        )
         rate_parameter = (
             "inferred_steering_max_rate_deg_per_sec"
             if inferred
@@ -1975,7 +3630,7 @@ class ConeNode(Node):
         source = str(getattr(self, "midpoint_source", "none"))
         if source == "paired":
             return min(1.0, 0.5 + 0.2 * max(0, midpoint_count - 1))
-        if source in ("left_offset", "right_offset"):
+        if source in ("left_offset", "right_offset", "paired_reacquire"):
             confidence = 0.38 + 0.06 * max(0, midpoint_count - 1)
             cap = float(self.get_parameter("single_boundary_confidence_cap").value)
             return float(np.clip(confidence, 0.0, cap))
@@ -2078,7 +3733,7 @@ class ConeNode(Node):
             hold_ratio = self.held_path_progress()
             speed = minimum + (speed - minimum) * (1.0 - 0.55 * hold_ratio)
         source = str(getattr(self, "midpoint_source", "none"))
-        if source in ("left_offset", "right_offset"):
+        if source in ("left_offset", "right_offset", "paired_reacquire"):
             speed = min(speed, float(self.get_parameter("single_boundary_max_speed").value))
         elif source == "nearest_gate":
             speed = minimum
@@ -2098,15 +3753,92 @@ class ConeNode(Node):
 
     def publish_blind_recovery(self, cluster_count: int) -> bool:
         max_frames = max(0, int(self.get_parameter("blind_recovery_frames").value))
+        max_seconds = max(
+            0.0,
+            float(self.get_parameter("blind_recovery_max_sec").value),
+        )
+        invalid_inferred = bool(
+            getattr(self, "invalid_inferred_recovery_active", False)
+        )
+        if invalid_inferred:
+            max_frames = max(
+                max_frames,
+                int(
+                    self.get_parameter(
+                        "invalid_inferred_recovery_frames"
+                    ).value
+                ),
+            )
+            max_seconds = max(
+                max_seconds,
+                float(
+                    self.get_parameter(
+                        "invalid_inferred_recovery_max_sec"
+                    ).value
+                ),
+            )
+        if self.final_left_phase_active():
+            max_frames = max(
+                max_frames,
+                int(
+                    self.get_parameter(
+                        "cone_final_left_recovery_frames"
+                    ).value
+                ),
+            )
+            max_seconds = max(
+                max_seconds,
+                float(
+                    self.get_parameter(
+                        "cone_final_left_recovery_max_sec"
+                    ).value
+                ),
+            )
         min_clusters = max(1, int(self.get_parameter("blind_recovery_min_clusters").value))
         if not self.had_valid_path or cluster_count < min_clusters or self.blind_recovery_count >= max_frames:
             return False
 
+        now_value = getattr(self, "current_scan_time", None)
+        now = time.monotonic() if now_value is None else float(now_value)
+        if getattr(self, "blind_recovery_started_at", None) is None:
+            self.blind_recovery_started_at = now
+        if (
+            max_seconds > 0.0
+            and now - float(self.blind_recovery_started_at) > max_seconds
+        ):
+            return False
+
         self.blind_recovery_count += 1
-        decay = float(np.clip(self.get_parameter("blind_recovery_steer_decay").value, 0.0, 1.0))
-        angle = self.last_valid_steering * (decay ** self.blind_recovery_count)
-        speed = float(self.get_parameter("cone_min_drive_speed").value)
+        decay_parameter = (
+            "invalid_inferred_recovery_steer_decay"
+            if invalid_inferred
+            else "blind_recovery_steer_decay"
+        )
+        decay = float(
+            np.clip(self.get_parameter(decay_parameter).value, 0.0, 1.0)
+        )
+        base_angle = float(self.last_valid_steering)
+        phase = str(getattr(self, "cone_turn_phase", "approach"))
+        if phase == "final_left_releasing":
+            angle = self.final_left_release_recovery_angle()
+            speed_parameter = "cone_final_left_recovery_speed"
+        elif self.final_left_phase_active():
+            angle = self.final_left_fallback_angle(base_angle)
+            speed_parameter = "cone_final_left_recovery_speed"
+        else:
+            angle = base_angle * (decay ** self.blind_recovery_count)
+            speed_parameter = (
+                "invalid_inferred_recovery_speed"
+                if invalid_inferred
+                else "blind_recovery_speed"
+            )
+        speed = min(
+            float(self.get_parameter("cone_min_drive_speed").value),
+            max(0.0, float(self.get_parameter(speed_parameter).value)),
+        )
         confidence = max(0.21, float(self.get_parameter("min_confidence").value) * 0.75)
+        self.last_recovery_angle = angle
+        self.last_recovery_speed = speed
         self.publish_cmd(angle, speed, confidence)
         return True
 
@@ -2132,7 +3864,10 @@ class ConeNode(Node):
         [raw_steer, output_steer, speed, confidence, scan_dt, scan_hz,
          yolo_age, lidar_n, fused_n, planning_n, left_n, right_n, path_n,
          learned_width, source_code, held, raw_path_y, output_path_y,
-         path_limit_applied, geometry_unlocked]
+         path_limit_applied, geometry_unlocked, path_nearest_index,
+         path_remaining_arc, path_orientation_reversed, turn_phase_code,
+         observed_pair_width, temporary_wide_pair, measured_final_left_peak,
+         guarded_strong_hold_age, final_left_release_frames]
         """
         source = str(getattr(self, "midpoint_source", "none"))
         source_codes = {
@@ -2143,10 +3878,34 @@ class ConeNode(Node):
             "nearest_gate": 4.0,
             "paired_sparse": 5.0,
             "reacquire_pending": 6.0,
+            "paired_reacquire": 7.0,
         }
+        phase_codes = {
+            "approach": 0.0,
+            "first_left": 1.0,
+            "right": 2.0,
+            "final_left_pending": 3.0,
+            "final_left": 4.0,
+            "final_left_committed": 4.0,
+            "final_left_releasing": 5.0,
+            "complete": 6.0,
+        }
+        phase = str(getattr(self, "cone_turn_phase", "approach"))
         yolo_age = self.yolo_box_age_sec(scan_stamp_ns)
         if not math.isfinite(yolo_age):
             yolo_age = -1.0
+        strong_hold_started_at = getattr(
+            self,
+            "final_left_strong_hold_started_at",
+            None,
+        )
+        now_value = getattr(self, "current_scan_time", None)
+        now = time.monotonic() if now_value is None else float(now_value)
+        strong_hold_age = (
+            max(0.0, now - float(strong_hold_started_at))
+            if strong_hold_started_at is not None
+            else -1.0
+        )
         scan_hz = 1.0 / scan_dt if scan_dt > 1.0e-6 else 0.0
         message = Float32MultiArray()
         message.data = [
@@ -2172,6 +3931,19 @@ class ConeNode(Node):
             1.0
             if getattr(self, "geometry_planning_unlocked", False)
             else 0.0,
+            float(getattr(self, "last_path_nearest_index", 0)),
+            float(getattr(self, "last_path_remaining_arc_m", 0.0)),
+            1.0
+            if getattr(self, "last_path_orientation_reversed", False)
+            else 0.0,
+            phase_codes.get(phase, -1.0),
+            float(getattr(self, "last_observed_pair_width_m", 0.0)),
+            1.0 if getattr(self, "wide_pair_active", False) else 0.0,
+            float(
+                getattr(self, "final_left_measured_peak_steering", 0.0)
+            ),
+            float(strong_hold_age),
+            float(getattr(self, "final_left_release_frames", 0)),
         ]
         self.diagnostics_pub.publish(message)
 
@@ -2183,7 +3955,15 @@ class ConeNode(Node):
             f"steer={raw_angle:+.1f}->{output_angle:+.1f}deg "
             f"path_y={getattr(self, 'last_raw_path_target_lateral', 0.0):+.3f}->"
             f"{getattr(self, 'last_output_path_target_lateral', 0.0):+.3f}m "
-            f"held={int(self.path_is_held)}"
+            f"held={int(self.path_is_held)} "
+            f"phase={phase} "
+            f"pair_width={getattr(self, 'last_observed_pair_width_m', 0.0):.3f}m "
+            f"wide={int(getattr(self, 'wide_pair_active', False))} "
+            "release="
+            f"{getattr(self, 'final_left_measured_peak_steering', 0.0):+.1f}/"
+            f"{strong_hold_age:.2f}s/"
+            f"{getattr(self, 'final_left_release_frames', 0)} "
+            f"reject={getattr(self, 'last_path_rejection_reason', 'none')}"
         )
         self.status_pub.publish(String(data=status))
         now_value = getattr(self, "current_scan_time", None)

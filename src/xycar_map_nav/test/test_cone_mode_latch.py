@@ -2,6 +2,9 @@ from xycar_map_nav.cone_mode_latch import ConeModeConfig
 from xycar_map_nav.cone_mode_latch import ConeModeEvent
 from xycar_map_nav.cone_mode_latch import ConeModeLatch
 from xycar_map_nav.sequential_hybrid_driver import command_timestamp_is_fresh
+from xycar_map_nav.sequential_hybrid_driver import cone_approach_brake_decision
+from xycar_map_nav.sequential_hybrid_driver import cone_approach_speed_limit
+from xycar_map_nav.sequential_hybrid_driver import cone_brake_hold_release_ready
 from xycar_map_nav.sequential_hybrid_driver import cone_disarm_hold_active
 from xycar_map_nav.sequential_hybrid_driver import cone_processing_requested
 
@@ -29,27 +32,50 @@ def test_cone_requires_confirmed_yolo_and_valid_command_entry():
     assert latch.active
 
 
-def test_cone_entry_ignores_distance_by_default():
+def test_cone_entry_rejects_missing_forward_distance_by_default():
     latch = make_latch()
 
-    assert observe(latch, distance=float("inf")) == ConeModeEvent.NONE
-    assert observe(latch, distance=float("inf")) == ConeModeEvent.NONE
-    assert (
-        observe(latch, distance=float("inf"))
-        == ConeModeEvent.STARTED
-    )
+    for _ in range(3):
+        assert observe(latch, distance=float("inf")) == ConeModeEvent.NONE
+    assert not latch.active
 
 
-def test_optional_cone_distance_gate_restores_legacy_behavior():
+def test_configured_cone_forward_distance_gate():
     latch = ConeModeLatch(
         ConeModeConfig(
             entry_frames=1,
-            entry_distance_enabled=True,
             entry_distance_m=3.0,
         )
     )
     assert observe(latch, distance=3.2) == ConeModeEvent.NONE
     assert observe(latch, distance=2.8) == ConeModeEvent.STARTED
+
+
+def test_bag_optimized_handoff_preserves_success_and_delays_early_entry():
+    latch = ConeModeLatch(
+        ConeModeConfig(entry_frames=3, entry_distance_m=0.95)
+    )
+
+    # Hand-pushed monitor bag transitioned prematurely at forward x=1.320 m.
+    for _ in range(3):
+        assert observe(latch, distance=1.320) == ConeModeEvent.NONE
+
+    # Competition-course success bag's three valid planner frames.
+    assert observe(latch, distance=0.883) == ConeModeEvent.NONE
+    assert observe(latch, distance=0.797) == ConeModeEvent.NONE
+    assert observe(latch, distance=0.701) == ConeModeEvent.STARTED
+
+
+def test_bag_optimized_handoff_does_not_further_delay_late_failure_case():
+    latch = ConeModeLatch(
+        ConeModeConfig(entry_frames=3, entry_distance_m=0.95)
+    )
+
+    # All three frames from the late collision run still qualify immediately;
+    # excessive entry speed is handled by the separate dynamic brake hold.
+    assert observe(latch, distance=0.513) == ConeModeEvent.NONE
+    assert observe(latch, distance=0.331) == ConeModeEvent.NONE
+    assert observe(latch, distance=0.173) == ConeModeEvent.STARTED
 
 
 def test_yolo_presence_holds_last_cone_mode_when_command_is_invalid():
@@ -194,4 +220,143 @@ def test_cone_planning_is_requested_while_motor_gate_is_stopped():
         cone_active=False,
         yolo_age_sec=0.80,
         yolo_timeout_sec=0.75,
+    )
+
+
+def approach_limit(**overrides):
+    values = {
+        "enabled": True,
+        "cone_active": False,
+        "shortcut_active": False,
+        "yolo_frames": 0,
+        "yolo_age_sec": float("inf"),
+        "yolo_timeout_sec": 0.75,
+        "confirmed_yolo_frames": 2,
+        "yolo_confidence": 0.0,
+        "strong_yolo_confidence": 0.50,
+        "cluster_count": 0,
+        "cluster_age_sec": float("inf"),
+        "cluster_timeout_sec": 0.50,
+        "first_yolo_speed_command": 15.0,
+        "confirmed_speed_command": 8.0,
+    }
+    values.update(overrides)
+    return cone_approach_speed_limit(**values)
+
+
+def test_first_central_cone_yolo_caps_speed_without_steering_handoff():
+    assert approach_limit(
+        yolo_frames=1,
+        yolo_age_sec=0.1,
+        yolo_confidence=0.42,
+    ) == (
+        15.0,
+        "first_yolo",
+    )
+
+
+def test_strong_first_yolo_immediately_uses_validated_cone_speed():
+    assert approach_limit(
+        yolo_frames=1,
+        yolo_age_sec=0.1,
+        yolo_confidence=0.62,
+    ) == (8.0, "confirmed")
+
+
+def test_second_yolo_or_fused_cluster_uses_validated_cone_speed():
+    assert approach_limit(yolo_frames=2, yolo_age_sec=0.1) == (
+        8.0,
+        "confirmed",
+    )
+    assert approach_limit(cluster_count=1, cluster_age_sec=0.1) == (
+        8.0,
+        "confirmed",
+    )
+
+
+def brake_decision(**overrides):
+    values = {
+        "enabled": True,
+        "cone_active": False,
+        "shortcut_active": False,
+        "cluster_count": 1,
+        "cluster_age_sec": 0.1,
+        "cluster_timeout_sec": 0.50,
+        "cluster_forward_distance_m": 1.0,
+        "vehicle_speed_mps": 0.0,
+        "vehicle_speed_age_sec": 0.05,
+        "vehicle_speed_timeout_sec": 0.25,
+        "target_speed_mps": 0.65,
+        "deceleration_mps2": 1.50,
+        "response_time_sec": 0.10,
+        "distance_margin_m": 0.10,
+        "hard_stop_distance_m": 0.35,
+        "stale_speed_stop_distance_m": 0.80,
+    }
+    values.update(overrides)
+    return cone_approach_brake_decision(**values)
+
+
+def test_success_bag_speed_does_not_trigger_unnecessary_entry_stop():
+    required, distance, reason = brake_decision(
+        cluster_forward_distance_m=0.797,
+        vehicle_speed_mps=0.686,
+    )
+    assert not required
+    assert 0.18 < distance < 0.19
+    assert reason == "braking_distance"
+
+
+def test_failure_bag_speed_triggers_entry_brake_before_handoff():
+    required, distance, reason = brake_decision(
+        cluster_forward_distance_m=0.714,
+        vehicle_speed_mps=1.432,
+    )
+    assert required
+    assert 0.78 < distance < 0.80
+    assert reason == "braking_distance"
+
+
+def test_entry_brake_has_hard_distance_and_stale_speed_fallbacks():
+    assert brake_decision(
+        cluster_forward_distance_m=0.34,
+    ) == (True, 0.35, "hard_distance")
+    assert brake_decision(
+        cluster_forward_distance_m=0.79,
+        vehicle_speed_age_sec=0.30,
+    ) == (True, 0.80, "speed_stale")
+
+
+def test_latched_brake_releases_only_with_fresh_cone_steering_at_safe_speed():
+    values = {
+        "cone_active": True,
+        "cone_command_fresh": True,
+        "vehicle_speed_mps": 0.75,
+        "vehicle_speed_age_sec": 0.05,
+        "vehicle_speed_timeout_sec": 0.25,
+        "release_speed_mps": 0.80,
+    }
+    assert cone_brake_hold_release_ready(**values)
+    assert not cone_brake_hold_release_ready(
+        **{**values, "vehicle_speed_mps": 1.016}
+    )
+    assert not cone_brake_hold_release_ready(
+        **{**values, "cone_command_fresh": False}
+    )
+
+
+def test_cone_approach_cap_does_not_override_active_missions_or_stale_data():
+    assert approach_limit(
+        cone_active=True,
+        yolo_frames=2,
+        yolo_age_sec=0.1,
+    ) == (None, "none")
+    assert approach_limit(
+        shortcut_active=True,
+        yolo_frames=2,
+        yolo_age_sec=0.1,
+    ) == (None, "none")
+    assert approach_limit(yolo_frames=2, yolo_age_sec=0.8) == (
+        None,
+        "none",
     )

@@ -69,6 +69,8 @@ class ObjectDetectionNode(Node):
             "cpu_threads": 2,
             "opencv_threads": 1,
             "car_confidence": 0.45,
+            "red_car_confidence": 0.45,
+            "green_car_confidence": 0.45,
             "obstacle_vehicle_confidence": 0.45,
             "cone_confidence": 0.50,
             "red_confidence": 0.50,
@@ -123,6 +125,8 @@ class ObjectDetectionNode(Node):
 
         self.thresholds = {
             "car": self.parameter_float("car_confidence"),
+            "red_car": self.parameter_float("red_car_confidence"),
+            "green_car": self.parameter_float("green_car_confidence"),
             "obstacle_vehicle": self.parameter_float(
                 "obstacle_vehicle_confidence"
             ),

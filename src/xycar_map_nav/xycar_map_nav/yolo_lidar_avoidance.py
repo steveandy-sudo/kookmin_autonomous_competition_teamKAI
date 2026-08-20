@@ -48,6 +48,7 @@ class YoloLidarAvoidanceState:
     speed_limit_command: float | None
     tracked_distance_m: float
     yolo_confidence: float
+    target_class_name: str
 
     @property
     def controls_vehicle(self) -> bool:
@@ -57,6 +58,52 @@ class YoloLidarAvoidanceState:
             YoloLidarAvoidanceMode.AVOID_RIGHT,
             YoloLidarAvoidanceMode.RETURN_CENTER,
         }
+
+
+@dataclass(frozen=True)
+class ShortcutAvoidanceSuppressionConfig:
+    enabled: bool = True
+    release_left_angle_command: float = -8.0
+    release_required_frames: int = 2
+
+
+class ShortcutAvoidanceSuppression:
+    """Keep vehicle avoidance disabled through the post-shortcut left turn."""
+
+    def __init__(self, config: ShortcutAvoidanceSuppressionConfig) -> None:
+        self.config = config
+        self.reset()
+
+    def reset(self) -> None:
+        self.active = False
+        self.rule_handoff = False
+        self.left_frames = 0
+
+    def start_shortcut(self) -> None:
+        self.active = bool(self.config.enabled)
+        self.rule_handoff = False
+        self.left_frames = 0
+
+    def start_rule_handoff(self) -> None:
+        if not self.active:
+            return
+        self.rule_handoff = True
+        self.left_frames = 0
+
+    def observe_rule_angle(self, angle_command: float) -> bool:
+        """Release after consecutive post-handoff left-steering frames."""
+        if not self.active or not self.rule_handoff:
+            return False
+        threshold = min(0.0, float(self.config.release_left_angle_command))
+        if float(angle_command) <= threshold:
+            self.left_frames += 1
+        else:
+            self.left_frames = 0
+        if self.left_frames < max(1, int(self.config.release_required_frames)):
+            return False
+        self.active = False
+        self.rule_handoff = False
+        return True
 
 
 class YoloLidarAvoidanceController:
@@ -78,6 +125,10 @@ class YoloLidarAvoidanceController:
         self.preferred_mode: YoloLidarAvoidanceMode | None = None
         self.preferred_candidate: YoloLidarAvoidanceMode | None = None
         self.preferred_candidate_frames = 0
+        self.active_speed_limit_command = float(
+            self.config.speed_limit_command
+        )
+        self.target_class_name = ""
 
     def observe_yolo(
         self,
@@ -88,6 +139,8 @@ class YoloLidarAvoidanceController:
         lidar_distance_m: float,
         preferred_mode: YoloLidarAvoidanceMode | None = None,
         side_decision_allowed: bool = True,
+        target_class_name: str = "",
+        speed_limit_command: float | None = None,
     ) -> None:
         valid = (
             bool(detected)
@@ -98,6 +151,16 @@ class YoloLidarAvoidanceController:
             return
         self.yolo_time = float(now_sec)
         self.yolo_confidence = float(confidence)
+        if str(target_class_name).strip():
+            self.target_class_name = str(target_class_name).strip().lower()
+        if (
+            speed_limit_command is not None
+            and math.isfinite(float(speed_limit_command))
+        ):
+            self.active_speed_limit_command = max(
+                0.0,
+                float(speed_limit_command),
+            )
         if math.isfinite(float(lidar_distance_m)):
             self.tracked_distance_m = float(lidar_distance_m)
         active_avoidance = self.mode in {
@@ -245,7 +308,7 @@ class YoloLidarAvoidanceController:
             YoloLidarAvoidanceMode.AVOID_RIGHT,
             YoloLidarAvoidanceMode.RETURN_CENTER,
         }:
-            speed_limit = self.config.speed_limit_command
+            speed_limit = self.active_speed_limit_command
         else:
             speed_limit = None
         return YoloLidarAvoidanceState(
@@ -254,6 +317,7 @@ class YoloLidarAvoidanceController:
             speed_limit_command=speed_limit,
             tracked_distance_m=self.tracked_distance_m,
             yolo_confidence=self.yolo_confidence,
+            target_class_name=self.target_class_name,
         )
 
     def _choose_avoidance_side(

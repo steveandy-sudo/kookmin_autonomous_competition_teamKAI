@@ -79,25 +79,47 @@ def generate_launch_description():
             "spatial_gate_blend_distance_m", default_value="0.25"
         ),
         DeclareLaunchArgument(
-            "w1_steering_start_delay_frames", default_value="4"
+            "w1_start_on_intersection", default_value="true"
+        ),
+        DeclareLaunchArgument(
+            "w1_steering_start_delay_frames", default_value="0"
         ),
         DeclareLaunchArgument(
             "w1_steering_delay_missing_tolerance_frames", default_value="2"
         ),
-        DeclareLaunchArgument("minimum_entry_progress_m", default_value="0.50"),
+        DeclareLaunchArgument("minimum_entry_progress_m", default_value="0.30"),
         DeclareLaunchArgument(
             "pair_track_handoff_required_frames", default_value="2"
         ),
         DeclareLaunchArgument("w1_loss_handoff_enabled", default_value="true"),
         DeclareLaunchArgument(
-            "maximum_entry_steering_sec", default_value="1.5"
+            "maximum_entry_steering_sec", default_value="1.3"
         ),
-        DeclareLaunchArgument("w1_steering_hold_sec", default_value="1.0"),
+        DeclareLaunchArgument("w1_steering_hold_sec", default_value="1.3"),
         DeclareLaunchArgument(
             "entry_direction_hold_command", default_value="-30.0"
         ),
+        DeclareLaunchArgument(
+            "entry_direction_hold_enabled", default_value="false"
+        ),
+        DeclareLaunchArgument(
+            "entry_steering_rate_limit_cmd_per_sec", default_value="90.0"
+        ),
         DeclareLaunchArgument("entry_speed_command", default_value="9.0"),
         DeclareLaunchArgument("w1_path_weight", default_value="0.60"),
+        DeclareLaunchArgument(
+            "w1_acquisition_required_frames", default_value="2"
+        ),
+        DeclareLaunchArgument(
+            "w1_acquisition_window_frames", default_value="4"
+        ),
+        DeclareLaunchArgument("w1_fast_lock_enabled", default_value="true"),
+        DeclareLaunchArgument(
+            "w1_acquisition_minimum_max_y_ratio", default_value="0.72"
+        ),
+        DeclareLaunchArgument(
+            "w1_acquisition_minimum_distance_ratio", default_value="0.065"
+        ),
         DeclareLaunchArgument(
             "candidate_topic", default_value="/hybrid/shortcut_candidate"
         ),
@@ -195,6 +217,10 @@ def generate_launch_description():
                     LaunchConfiguration("spatial_gate_blend_distance_m"),
                     value_type=float,
                 ),
+                "w1_start_on_intersection": ParameterValue(
+                    LaunchConfiguration("w1_start_on_intersection"),
+                    value_type=bool,
+                ),
                 "w1_steering_start_delay_frames": ParameterValue(
                     LaunchConfiguration("w1_steering_start_delay_frames"),
                     value_type=int,
@@ -223,6 +249,30 @@ def generate_launch_description():
                 ),
                 "w1_path_weight": ParameterValue(
                     LaunchConfiguration("w1_path_weight"), value_type=float
+                ),
+                "w1_acquisition_required_frames": ParameterValue(
+                    LaunchConfiguration("w1_acquisition_required_frames"),
+                    value_type=int,
+                ),
+                "w1_acquisition_window_frames": ParameterValue(
+                    LaunchConfiguration("w1_acquisition_window_frames"),
+                    value_type=int,
+                ),
+                "w1_fast_lock_enabled": ParameterValue(
+                    LaunchConfiguration("w1_fast_lock_enabled"),
+                    value_type=bool,
+                ),
+                "w1_acquisition_minimum_max_y_ratio": ParameterValue(
+                    LaunchConfiguration(
+                        "w1_acquisition_minimum_max_y_ratio"
+                    ),
+                    value_type=float,
+                ),
+                "w1_acquisition_minimum_distance_ratio": ParameterValue(
+                    LaunchConfiguration(
+                        "w1_acquisition_minimum_distance_ratio"
+                    ),
+                    value_type=float,
                 ),
                 "show_opencv_windows": ParameterValue(
                     LaunchConfiguration("show_opencv_windows"), value_type=bool
@@ -289,6 +339,7 @@ def generate_launch_description():
             {
                 "processing_enabled_topic": processing_topic,
                 "default_enabled": ParameterValue(default_enabled, value_type=bool),
+                "entry_ready_topic": "/shortcut/entry/ready",
                 "candidate_topic": LaunchConfiguration("candidate_topic"),
                 "rule_command_topic": LaunchConfiguration(
                     "rule_command_topic"
@@ -302,6 +353,16 @@ def generate_launch_description():
                 ),
                 "entry_direction_hold_command": ParameterValue(
                     LaunchConfiguration("entry_direction_hold_command"),
+                    value_type=float,
+                ),
+                "entry_direction_hold_enabled": ParameterValue(
+                    LaunchConfiguration("entry_direction_hold_enabled"),
+                    value_type=bool,
+                ),
+                "entry_steering_rate_limit_cmd_per_sec": ParameterValue(
+                    LaunchConfiguration(
+                        "entry_steering_rate_limit_cmd_per_sec"
+                    ),
                     value_type=float,
                 ),
                 "entry_speed_command": ParameterValue(

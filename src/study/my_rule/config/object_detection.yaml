@@ -21,6 +21,8 @@
     opencv_threads: 1
 
     car_confidence: 0.45
+    red_car_confidence: 0.45
+    green_car_confidence: 0.45
     # Reserved dynamic-obstacle class. It is accepted when a future model
     # exports the class, but is intentionally not a required class today.
     obstacle_vehicle_confidence: 0.45
@@ -34,9 +36,9 @@
     left_4_confidence: 0.40
     yellow_centerline_confidence: 0.45
 
-    # The 2026-08-04 detector separates traffic-light hardware variants and
-    # red/green vehicles. Convert those raw labels into stable mission names.
-    class_aliases: [green_car=car, red_car=car]
+    # Preserve the model's two vehicle classes so the drive controller can
+    # apply class-specific avoidance speed limits.
+    class_aliases: [red_car=red_car, green_car=green_car]
 
     # At the first start only, YOLO owns the complete traffic-light box and
     # lightweight HSV checks only that exact box at camera-rate. The one-shot
@@ -54,4 +56,4 @@
     startup_green_required_frames: 2
 
     # null_4 is deliberately ignored by all mission triggers.
-    required_classes: [car, cone, red_4, yellow_4, green_4, left_4]
+    required_classes: [red_car, green_car, cone, red_4, yellow_4, green_4, left_4]

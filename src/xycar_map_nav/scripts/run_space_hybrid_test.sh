@@ -5,8 +5,7 @@ set -eo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 SOURCE_WORKSPACE="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
 WORKSPACE="${XYCAR_WS:-$SOURCE_WORKSPACE}"
-if [[ ! -f "$WORKSPACE/install/setup.bash" ]] || \
-  [[ ! -f "$WORKSPACE/src/xycar_map_nav/launch/real_sequential_hybrid_drive.launch.py" ]]; then
+if [[ ! -f "$WORKSPACE/src/xycar_map_nav/launch/real_sequential_hybrid_drive.launch.py" ]]; then
   if [[ -n "${XYCAR_WS:-}" ]]; then
     echo "[경고] XYCAR_WS=$XYCAR_WS 는 현재 통합 주행 workspace가 아닙니다."
     echo "[자동 복구] $SOURCE_WORKSPACE 를 사용합니다."
@@ -14,6 +13,97 @@ if [[ ! -f "$WORKSPACE/install/setup.bash" ]] || \
   WORKSPACE="$SOURCE_WORKSPACE"
 fi
 export XYCAR_WS="$WORKSPACE"
+INSTALL_PREFIX="${XYCAR_INSTALL_PREFIX:-$WORKSPACE/install_xycar_only}"
+if [[ ! -f "$INSTALL_PREFIX/setup.bash" ]]; then
+  echo "[오류] xycar_ws 단독 설치 결과가 없습니다: $INSTALL_PREFIX/setup.bash" >&2
+  echo "먼저 다음 명령을 실행하세요:" >&2
+  echo "  bash $WORKSPACE/src/xycar_map_nav/scripts/build_xycar_only.sh" >&2
+  exit 1
+fi
+export XYCAR_INSTALL_PREFIX="$INSTALL_PREFIX"
+
+SHORTCUT_STRATEGY="${SHORTCUT_STRATEGY:-w1}"
+SHORTCUT_YELLOW_COUNT_TARGET="${SHORTCUT_YELLOW_COUNT_TARGET:-2}"
+SHORTCUT_YELLOW_COUNT_FORCE_ANGLE="${SHORTCUT_YELLOW_COUNT_FORCE_ANGLE:--42.0}"
+SHORTCUT_YELLOW_COUNT_RETURN_SEC="${SHORTCUT_YELLOW_COUNT_RETURN_SEC:-0.7}"
+declare -a POSITIONAL_ARGS=()
+while (( $# > 0 )); do
+  case "$1" in
+    --shortcut-mode)
+      if (( $# < 2 )); then
+        echo "ERROR: --shortcut-mode requires w1 or yellow_count." >&2
+        exit 2
+      fi
+      SHORTCUT_STRATEGY="$2"
+      shift 2
+      ;;
+    --shortcut-mode=*)
+      SHORTCUT_STRATEGY="${1#*=}"
+      shift
+      ;;
+    --shortcut-yellow-count)
+      if (( $# < 2 )); then
+        echo "ERROR: --shortcut-yellow-count requires 1 or 2." >&2
+        exit 2
+      fi
+      SHORTCUT_YELLOW_COUNT_TARGET="$2"
+      shift 2
+      ;;
+    --shortcut-yellow-count=*)
+      SHORTCUT_YELLOW_COUNT_TARGET="${1#*=}"
+      shift
+      ;;
+    --shortcut-angle)
+      if (( $# < 2 )); then
+        echo "ERROR: --shortcut-angle requires a value from -42 to 0." >&2
+        exit 2
+      fi
+      SHORTCUT_YELLOW_COUNT_FORCE_ANGLE="$2"
+      shift 2
+      ;;
+    --shortcut-angle=*)
+      SHORTCUT_YELLOW_COUNT_FORCE_ANGLE="${1#*=}"
+      shift
+      ;;
+    --shortcut-return-sec)
+      if (( $# < 2 )); then
+        echo "ERROR: --shortcut-return-sec requires seconds." >&2
+        exit 2
+      fi
+      SHORTCUT_YELLOW_COUNT_RETURN_SEC="$2"
+      shift 2
+      ;;
+    --shortcut-return-sec=*)
+      SHORTCUT_YELLOW_COUNT_RETURN_SEC="${1#*=}"
+      shift
+      ;;
+    --help|-h)
+      echo "Usage: $0 [speed] [lookahead] [stanley_percent] [left_offset_cm] [options]"
+      echo "  --shortcut-mode w1|yellow_count"
+      echo "  --shortcut-yellow-count 1|2     (yellow_count only, default: 2)"
+      echo "  --shortcut-angle -42..0          (yellow_count only)"
+      echo "  --shortcut-return-sec 0.1..5.0   (yellow_count only)"
+      exit 0
+      ;;
+    --)
+      shift
+      while (( $# > 0 )); do
+        POSITIONAL_ARGS+=("$1")
+        shift
+      done
+      ;;
+    -*)
+      echo "ERROR: unknown option: $1" >&2
+      exit 2
+      ;;
+    *)
+      POSITIONAL_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+set -- "${POSITIONAL_ARGS[@]}"
+
 SPEED_COMMAND="${1:-${SPEED_COMMAND:-25.0}}"
 CURVATURE_SPEED_CONTROL_ENABLED="${CURVATURE_SPEED_CONTROL_ENABLED:-true}"
 # Leave these empty unless the operator explicitly overrides them. Their safe
@@ -60,19 +150,23 @@ STEERING_FULL_SLOWDOWN_ANGLE="${STEERING_FULL_SLOWDOWN_ANGLE:-}"
 CONTROL_LOG="/tmp/xycar_hybrid_control_$(date +%Y%m%d_%H%M%S).log"
 RUN_CONFIG_FILE="${XYCAR_HYBRID_RUN_CONFIG_FILE:-/tmp/xycar_hybrid_run_config.yaml}"
 CONE_SPEED_COMMAND="8.0"
+CONE_APPROACH_YOLO_MIN_CONFIDENCE="${CONE_APPROACH_YOLO_MIN_CONFIDENCE:-0.40}"
 CONE_SENSOR_PRESENCE_TIMEOUT_SEC="${CONE_SENSOR_PRESENCE_TIMEOUT_SEC:-0.5}"
-SHORTCUT_W1_STEERING_START_DELAY_FRAMES="${SHORTCUT_W1_STEERING_START_DELAY_FRAMES:-4}"
+RULE_TO_CONE_STEERING_RATE_COMMAND_PER_SEC="${RULE_TO_CONE_STEERING_RATE_COMMAND_PER_SEC:-180.0}"
+SHORTCUT_W1_STEERING_START_DELAY_FRAMES="${SHORTCUT_W1_STEERING_START_DELAY_FRAMES:-0}"
 SHORTCUT_W1_STEERING_DELAY_MISSING_TOLERANCE_FRAMES="${SHORTCUT_W1_STEERING_DELAY_MISSING_TOLERANCE_FRAMES:-2}"
-SHORTCUT_MINIMUM_ENTRY_PROGRESS_M="${SHORTCUT_MINIMUM_ENTRY_PROGRESS_M:-0.50}"
+SHORTCUT_MINIMUM_ENTRY_PROGRESS_M="${SHORTCUT_MINIMUM_ENTRY_PROGRESS_M:-0.30}"
 SHORTCUT_PAIR_TRACK_HANDOFF_REQUIRED_FRAMES="${SHORTCUT_PAIR_TRACK_HANDOFF_REQUIRED_FRAMES:-2}"
 SHORTCUT_W1_LOSS_HANDOFF_ENABLED="${SHORTCUT_W1_LOSS_HANDOFF_ENABLED:-true}"
-SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC="${SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC:-1.5}"
-SHORTCUT_W1_STEERING_HOLD_SEC="${SHORTCUT_W1_STEERING_HOLD_SEC:-1.0}"
+SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC="${SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC:-1.3}"
+SHORTCUT_W1_STEERING_HOLD_SEC="${SHORTCUT_W1_STEERING_HOLD_SEC:-1.3}"
 SHORTCUT_ENTRY_DIRECTION_HOLD_COMMAND="${SHORTCUT_ENTRY_DIRECTION_HOLD_COMMAND:--30.0}"
 SHORTCUT_ENTRY_SPEED_COMMAND="${SHORTCUT_ENTRY_SPEED_COMMAND:-9.0}"
+SHORTCUT_ENTRY_STEERING_RATE_LIMIT_CMD_PER_SEC="${SHORTCUT_ENTRY_STEERING_RATE_LIMIT_CMD_PER_SEC:-90.0}"
 TEST_PROFILE="${XYCAR_TEST_PROFILE:-integrated}"
 ENABLE_RVIZ="${XYCAR_ENABLE_RVIZ:-false}"
 START_CONE="${XYCAR_START_CONE:-true}"
+TRAFFIC_LIGHT_CONTROL_ENABLED="${XYCAR_TRAFFIC_LIGHT_CONTROL_ENABLED:-true}"
 STEERING_ONLY="${XYCAR_STEERING_ONLY:-false}"
 VEHICLE_YOLO_MIN_CONFIDENCE="${VEHICLE_YOLO_MIN_CONFIDENCE:-0.45}"
 CONE_AS_VEHICLE_OBSTACLE="${CONE_AS_VEHICLE_OBSTACLE:-false}"
@@ -168,6 +262,27 @@ prompt_bool() {
   esac
 }
 
+case "$SHORTCUT_STRATEGY" in
+  w1|yellow_count) ;;
+  *)
+    echo "ERROR: --shortcut-mode must be w1 or yellow_count." >&2
+    exit 2
+    ;;
+esac
+case "$SHORTCUT_YELLOW_COUNT_TARGET" in
+  1|2) ;;
+  *)
+    echo "ERROR: --shortcut-yellow-count must be 1 or 2." >&2
+    exit 2
+    ;;
+esac
+prompt_float SHORTCUT_YELLOW_COUNT_FORCE_ANGLE \
+  "yellow_count forced steering command" -42.0 -42.0 0.0
+prompt_float SHORTCUT_YELLOW_COUNT_RETURN_SEC \
+  "yellow_count forced steering duration" 0.7 0.1 5.0
+prompt_bool TRAFFIC_LIGHT_CONTROL_ENABLED \
+  "Traffic-light control" true
+
 if [[ "$CONE_AS_VEHICLE_OBSTACLE" == "true" ]]; then
   AVOIDANCE_TARGET_LABEL=cone
   AVOIDANCE_DISPLAY_CONFIDENCE="$CONE_AS_VEHICLE_MIN_CONFIDENCE"
@@ -248,7 +363,7 @@ else
     "Separate straight/curve speed" true
   if [[ "$CURVATURE_SPEED_CONTROL_ENABLED" == "true" ]]; then
     curve_default="$(awk -v speed="$SPEED_COMMAND" \
-      'BEGIN { printf "%.3f", (speed < 16.0 ? speed : 16.0) }')"
+      'BEGIN { printf "%.3f", (speed < 11.0 ? speed : 11.0) }')"
     prompt_float CURVE_SPEED_COMMAND \
       "Confirmed curve speed command" "$curve_default" 3.0 "$SPEED_COMMAND"
     degraded_default="$(awk -v curve="$CURVE_SPEED_COMMAND" \
@@ -443,11 +558,18 @@ target_left_offset_cm: $LEFT_OFFSET_CM
 target_left_offset_m: $LEFT_OFFSET_M
 straight_target_right_offset_cm: $STRAIGHT_RIGHT_OFFSET_CM
 straight_target_right_offset_m: $STRAIGHT_RIGHT_OFFSET_M
+shortcut_strategy: "$SHORTCUT_STRATEGY"
+shortcut_yellow_count_pass_target: $SHORTCUT_YELLOW_COUNT_TARGET
+shortcut_yellow_count_force_angle: $SHORTCUT_YELLOW_COUNT_FORCE_ANGLE
+shortcut_yellow_count_return_sec: $SHORTCUT_YELLOW_COUNT_RETURN_SEC
 cone_speed_command: $CONE_SPEED_COMMAND
+cone_approach_yolo_min_confidence: $CONE_APPROACH_YOLO_MIN_CONFIDENCE
 cone_sensor_presence_timeout_sec: $CONE_SENSOR_PRESENCE_TIMEOUT_SEC
+rule_to_cone_steering_rate_command_per_sec: $RULE_TO_CONE_STEERING_RATE_COMMAND_PER_SEC
 test_profile: "$TEST_PROFILE"
 enable_rviz: $ENABLE_RVIZ
 start_cone: $START_CONE
+traffic_light_control_enabled: $TRAFFIC_LIGHT_CONTROL_ENABLED
 steering_only: $STEERING_ONLY
 adaptive_steering_speed_enabled: $ADAPTIVE_STEERING_SPEED_ENABLED
 turn_speed_command: $STEERING_TURN_SPEED_COMMAND
@@ -495,12 +617,35 @@ EOF
 mv "$run_config_tmp" "$RUN_CONFIG_FILE"
 
 set +u
+unset AMENT_PREFIX_PATH COLCON_PREFIX_PATH CMAKE_PREFIX_PATH
+unset PYTHONPATH LD_LIBRARY_PATH PKG_CONFIG_PATH ROS_PACKAGE_PATH
+unset _colcon_cd_root
+clean_workspace_path=""
+IFS=: read -r -a path_entries <<< "${PATH:-}"
+for path_entry in "${path_entries[@]}"; do
+  case "$path_entry" in
+    /home/xytron/*/install/*|/home/xytron/*/install_*/*) continue ;;
+  esac
+  clean_workspace_path="${clean_workspace_path:+$clean_workspace_path:}$path_entry"
+done
+export PATH="$clean_workspace_path"
+unset clean_workspace_path path_entries path_entry
 source /opt/ros/humble/setup.bash
-source "$WORKSPACE/install/setup.bash"
+source "$INSTALL_PREFIX/setup.bash"
 set -u
 
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-7}"
 unset ROS_NAMESPACE || true
+
+for required_package in \
+  xycar_map_nav xycar_rule_drive lane_seg_control my_rule; do
+  if ! package_prefix="$(ros2 pkg prefix "$required_package" 2>/dev/null)" || \
+    [[ "$package_prefix" != "$INSTALL_PREFIX/"* ]]; then
+    echo "[오류] $required_package 패키지가 xycar_ws 단독 빌드에서 해석되지 않습니다." >&2
+    echo "현재 경로: ${package_prefix:-찾을 수 없음}" >&2
+    exit 1
+  fi
+done
 
 launch_pid=""
 mission_log_pid=""
@@ -592,6 +737,25 @@ verify_runtime_parameter() {
   printf '  [OK] %-20s %s=%s\n' "$label" "$parameter" "$actual"
 }
 
+verify_runtime_float_parameter() {
+  local node="$1"
+  local parameter="$2"
+  local expected="$3"
+  local label="$4"
+  local actual
+  actual="$(read_double_parameter "$node" "$parameter")"
+  if [[ -z "$actual" ]]; then
+    echo "[문제: $label 확인 실패] $node 의 $parameter 값을 읽지 못했습니다." >&2
+    return 1
+  fi
+  if ! awk -v expected="$expected" -v actual="$actual" \
+    'BEGIN { difference=expected-actual; if (difference<0) difference=-difference; exit !(difference < 0.001) }'; then
+    echo "[문제: $label 불일치] 기대=$expected, 실제=$actual" >&2
+    return 1
+  fi
+  printf '  [OK] %-20s %s=%s\n' "$label" "$parameter" "$actual"
+}
+
 verify_runtime_cruise_speed() {
   local actual
   actual="$(read_double_parameter \
@@ -633,6 +797,17 @@ verify_runtime_control_contract() {
       /canonical_stanley_pursuit_driver shadow_motor_topic \
       /hybrid/rule_candidate "룰 candidate 출력"
     verify_runtime_cruise_speed
+  fi
+  if [[ "$SHORTCUT_STRATEGY" == "yellow_count" ]]; then
+    verify_runtime_parameter \
+      /yellow_count_shortcut_controller yellow_pass_target \
+      "$SHORTCUT_YELLOW_COUNT_TARGET" "지름길 노란선 이탈 개수"
+    verify_runtime_float_parameter \
+      /yellow_count_shortcut_controller forced_steering_command \
+      "$SHORTCUT_YELLOW_COUNT_FORCE_ANGLE" "지름길 강제 조향"
+    verify_runtime_float_parameter \
+      /yellow_count_shortcut_controller forced_steering_sec \
+      "$SHORTCUT_YELLOW_COUNT_RETURN_SEC" "지름길 RULE 복귀시간"
   fi
 }
 
@@ -735,11 +910,19 @@ echo "Curve steering multiplier: ${CURVE_STEERING_MULTIPLIER_ENABLED}, |angle|>=
 echo "Left target correction: ${LEFT_OFFSET_CM}cm"
 echo "Straight-only right correction: ${STRAIGHT_RIGHT_OFFSET_CM}cm"
 echo "Shortcut entry speed cap: ${SHORTCUT_ENTRY_SPEED_COMMAND}"
+if [[ "$SHORTCUT_STRATEGY" == "yellow_count" ]]; then
+  echo "Shortcut strategy: yellow_count | trigger=${SHORTCUT_YELLOW_COUNT_TARGET} | force=${SHORTCUT_YELLOW_COUNT_FORCE_ANGLE} for ${SHORTCUT_YELLOW_COUNT_RETURN_SEC}s -> RULE"
+else
+  echo "Shortcut strategy: w1"
+fi
 echo "Shortcut W1 steering start delay: ${SHORTCUT_W1_STEERING_START_DELAY_FRAMES} valid frames, missing tolerance ${SHORTCUT_W1_STEERING_DELAY_MISSING_TOLERANCE_FRAMES} frames"
 echo "Shortcut handoff: progress ${SHORTCUT_MINIMUM_ENTRY_PROGRESS_M}m, pair ${SHORTCUT_PAIR_TRACK_HANDOFF_REQUIRED_FRAMES} frames, W1-loss fallback ${SHORTCUT_W1_LOSS_HANDOFF_ENABLED}"
 echo "Shortcut W1 steering maximum active time: ${SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC}s"
 echo "Cone speed command: $CONE_SPEED_COMMAND"
+echo "Cone early-detection confidence: $CONE_APPROACH_YOLO_MIN_CONFIDENCE"
+echo "RULE->CONE steering rate: ${RULE_TO_CONE_STEERING_RATE_COMMAND_PER_SEC} command/s"
 echo "Cone sensor-loss hold: ${CONE_SENSOR_PRESENCE_TIMEOUT_SEC}s"
+echo "Traffic-light control: $TRAFFIC_LIGHT_CONTROL_ENABLED"
 if [[ "$VEHICLE_AVOIDANCE_IMMEDIATE_ON_YOLO" == "true" ]]; then
   echo "Avoidance: YOLO>=${VEHICLE_YOLO_MIN_CONFIDENCE}, one-frame immediate entry (LiDAR distance=telemetry), offsets=L${VEHICLE_LEFT_OFFSET_M}/R${VEHICLE_RIGHT_OFFSET_M}m"
 else
@@ -780,6 +963,7 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   degraded_path_minimum_span_m:="$DEGRADED_PATH_MINIMUM_SPAN_M" \
   selector_minimum_speed_command:=3.0 \
   cone_speed_command:="$CONE_SPEED_COMMAND" \
+  cone_approach_yolo_min_confidence:="$CONE_APPROACH_YOLO_MIN_CONFIDENCE" \
   cone_sensor_presence_timeout_sec:="$CONE_SENSOR_PRESENCE_TIMEOUT_SEC" \
   lookahead_distance_m:="$LOOKAHEAD_DISTANCE" \
   pure_pursuit_weight:="$PURE_PURSUIT_WEIGHT" \
@@ -815,7 +999,13 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   start_cone:="$START_CONE" \
   start_object_detection:=true \
   start_shortcut:=true \
+  traffic_light_control_enabled:="$TRAFFIC_LIGHT_CONTROL_ENABLED" \
+  shortcut_strategy:="$SHORTCUT_STRATEGY" \
   shortcut_handoff_to_rule:=true \
+  shortcut_yellow_count_pass_target:="$SHORTCUT_YELLOW_COUNT_TARGET" \
+  shortcut_yellow_count_forced_steering_command:="$SHORTCUT_YELLOW_COUNT_FORCE_ANGLE" \
+  shortcut_yellow_count_forced_steering_sec:="$SHORTCUT_YELLOW_COUNT_RETURN_SEC" \
+  shortcut_entry_steering_rate_limit_cmd_per_sec:="$SHORTCUT_ENTRY_STEERING_RATE_LIMIT_CMD_PER_SEC" \
   shortcut_w1_steering_start_delay_frames:="$SHORTCUT_W1_STEERING_START_DELAY_FRAMES" \
   shortcut_w1_steering_delay_missing_tolerance_frames:="$SHORTCUT_W1_STEERING_DELAY_MISSING_TOLERANCE_FRAMES" \
   shortcut_minimum_entry_progress_m:="$SHORTCUT_MINIMUM_ENTRY_PROGRESS_M" \
@@ -881,7 +1071,7 @@ setsid bash -c '
   owner_pid="$2"
   stdbuf -oL tail --pid="$owner_pid" -n 0 -F "$log_file" 2>/dev/null |
     stdbuf -oL grep --line-buffered -E \
-      "W1 spatial gate arrived after search timeout|W1 search timeout|candidate stale|safe stop|process has died|Traceback|ERROR"
+      "left_4 DETECTED|left_4 ABSENT|RED W1/W2 INTERSECTION|CONTROL SWITCHED|YELLOW_COUNT|YELLOW LINE DISAPPEARED|FORCED LEFT|FORCED TURN|W1 spatial gate arrived after search timeout|W1 search timeout|candidate stale|safe stop|process has died|Traceback|ERROR"
 ' _ "$CONTROL_LOG" "$launch_pid" &
 mission_log_pid=$!
 
@@ -921,6 +1111,7 @@ ros2 run xycar_map_nav space_drive_gate --ros-args \
   -p turn_speed_command:="$STEERING_TURN_SPEED_COMMAND" \
   -p slowdown_start_angle_command:="$STEERING_SLOWDOWN_START_ANGLE" \
   -p full_slowdown_angle_command:="$STEERING_FULL_SLOWDOWN_ANGLE" \
+  -p rule_to_cone_steering_rate_command_per_sec:="$RULE_TO_CONE_STEERING_RATE_COMMAND_PER_SEC" \
   -p avoidance_target_label:="$AVOIDANCE_TARGET_LABEL" \
   -p avoidance_yolo_min_confidence:="$AVOIDANCE_DISPLAY_CONFIDENCE" \
   -p avoidance_entry_distance_m:="$VEHICLE_AVOIDANCE_ENTRY_DISTANCE_M" \

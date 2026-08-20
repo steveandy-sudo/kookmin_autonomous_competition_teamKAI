@@ -13,6 +13,127 @@ if [[ ! -x "$WORKSPACE/src/xycar_map_nav/scripts/run_space_hybrid_test.sh" ]]; t
   WORKSPACE="$SOURCE_WORKSPACE"
 fi
 export XYCAR_WS="$WORKSPACE"
+INSTALL_PREFIX="${XYCAR_INSTALL_PREFIX:-$WORKSPACE/install_xycar_only}"
+if [[ ! -f "$INSTALL_PREFIX/setup.bash" ]]; then
+  echo "[오류] xycar_ws 단독 설치 결과가 없습니다: $INSTALL_PREFIX/setup.bash" >&2
+  echo "먼저 다음 명령을 실행하세요:" >&2
+  echo "  bash $WORKSPACE/src/xycar_map_nav/scripts/build_xycar_only.sh" >&2
+  exit 1
+fi
+export XYCAR_INSTALL_PREFIX="$INSTALL_PREFIX"
+
+# Keep the real-car one-terminal launcher compatible with the shortcut
+# selector exposed by run_space_hybrid_test.sh. Positional driving parameters
+# may appear before or after these named options.
+SHORTCUT_STRATEGY="${SHORTCUT_STRATEGY:-w1}"
+SHORTCUT_YELLOW_COUNT_TARGET="${SHORTCUT_YELLOW_COUNT_TARGET:-2}"
+SHORTCUT_YELLOW_COUNT_FORCE_ANGLE="${SHORTCUT_YELLOW_COUNT_FORCE_ANGLE:--42.0}"
+SHORTCUT_YELLOW_COUNT_RETURN_SEC="${SHORTCUT_YELLOW_COUNT_RETURN_SEC:-0.7}"
+declare -a POSITIONAL_ARGS=()
+while (( $# > 0 )); do
+  case "$1" in
+    --shortcut-mode)
+      if (( $# < 2 )); then
+        echo "ERROR: --shortcut-mode requires w1 or yellow_count." >&2
+        exit 2
+      fi
+      SHORTCUT_STRATEGY="$2"
+      shift 2
+      ;;
+    --shortcut-mode=*)
+      SHORTCUT_STRATEGY="${1#*=}"
+      shift
+      ;;
+    --shortcut-yellow-count)
+      if (( $# < 2 )); then
+        echo "ERROR: --shortcut-yellow-count requires 1 or 2." >&2
+        exit 2
+      fi
+      SHORTCUT_YELLOW_COUNT_TARGET="$2"
+      shift 2
+      ;;
+    --shortcut-yellow-count=*)
+      SHORTCUT_YELLOW_COUNT_TARGET="${1#*=}"
+      shift
+      ;;
+    --shortcut-angle)
+      if (( $# < 2 )); then
+        echo "ERROR: --shortcut-angle requires a value from -42 to 0." >&2
+        exit 2
+      fi
+      SHORTCUT_YELLOW_COUNT_FORCE_ANGLE="$2"
+      shift 2
+      ;;
+    --shortcut-angle=*)
+      SHORTCUT_YELLOW_COUNT_FORCE_ANGLE="${1#*=}"
+      shift
+      ;;
+    --shortcut-return-sec)
+      if (( $# < 2 )); then
+        echo "ERROR: --shortcut-return-sec requires seconds." >&2
+        exit 2
+      fi
+      SHORTCUT_YELLOW_COUNT_RETURN_SEC="$2"
+      shift 2
+      ;;
+    --shortcut-return-sec=*)
+      SHORTCUT_YELLOW_COUNT_RETURN_SEC="${1#*=}"
+      shift
+      ;;
+    --help|-h)
+      echo "Usage: $0 [speed] [lookahead] [stanley_percent] [left_offset_cm] [options]"
+      echo "  --shortcut-mode w1|yellow_count"
+      echo "  --shortcut-yellow-count 1|2     (yellow_count only, default: 2)"
+      echo "  --shortcut-angle -42..0          (yellow_count only)"
+      echo "  --shortcut-return-sec 0.1..5.0   (yellow_count only)"
+      exit 0
+      ;;
+    --)
+      shift
+      while (( $# > 0 )); do
+        POSITIONAL_ARGS+=("$1")
+        shift
+      done
+      ;;
+    -*)
+      echo "ERROR: unknown option: $1" >&2
+      exit 2
+      ;;
+    *)
+      POSITIONAL_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+set -- "${POSITIONAL_ARGS[@]}"
+
+case "$SHORTCUT_STRATEGY" in
+  w1|yellow_count) ;;
+  *)
+    echo "ERROR: --shortcut-mode must be w1 or yellow_count." >&2
+    exit 2
+    ;;
+esac
+case "$SHORTCUT_YELLOW_COUNT_TARGET" in
+  1|2) ;;
+  *)
+    echo "ERROR: --shortcut-yellow-count must be 1 or 2." >&2
+    exit 2
+    ;;
+esac
+if [[ ! "$SHORTCUT_YELLOW_COUNT_FORCE_ANGLE" =~ ^-?[0-9]+([.][0-9]+)?$ ]] || \
+  ! awk -v value="$SHORTCUT_YELLOW_COUNT_FORCE_ANGLE" \
+    'BEGIN { exit !(value >= -42.0 && value <= 0.0) }'; then
+  echo "ERROR: --shortcut-angle must be from -42 to 0." >&2
+  exit 2
+fi
+if [[ ! "$SHORTCUT_YELLOW_COUNT_RETURN_SEC" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
+  ! awk -v value="$SHORTCUT_YELLOW_COUNT_RETURN_SEC" \
+    'BEGIN { exit !(value >= 0.1 && value <= 5.0) }'; then
+  echo "ERROR: --shortcut-return-sec must be from 0.1 to 5.0 seconds." >&2
+  exit 2
+fi
+
 CAMERA_DEVICE="/dev/v4l/by-id/usb-HD_USB_Camera_HD_USB_Camera-video-index0"
 SPEED_COMMAND="${1:-${SPEED_COMMAND:-25.0}}"
 CURVATURE_SPEED_CONTROL_ENABLED="${CURVATURE_SPEED_CONTROL_ENABLED:-true}"
@@ -145,7 +266,7 @@ else
     "직선/곡선 속도 분리 사용" true
   if [[ "$CURVATURE_SPEED_CONTROL_ENABLED" == "true" ]]; then
     curve_default="$(awk -v speed="$SPEED_COMMAND" \
-      'BEGIN { printf "%.3f", (speed < 16.0 ? speed : 16.0) }')"
+      'BEGIN { printf "%.3f", (speed < 11.0 ? speed : 11.0) }')"
     prompt_float CURVE_SPEED_COMMAND \
       "곡선 확정 시 속도 command" "$curve_default" 3.0 "$SPEED_COMMAND"
     degraded_default="$(awk -v curve="$CURVE_SPEED_COMMAND" \
@@ -296,12 +417,41 @@ if awk -v speed="$SPEED_COMMAND" 'BEGIN { exit !(speed > 10.0) }'; then
   echo "[주의] command $SPEED_COMMAND은 기존 실차 시험 상한 10을 초과합니다."
 fi
 set +u
+# Do not inherit another colcon workspace (for example ~/xycar_ws) from
+# .bashrc or from a previously sourced terminal.  install_xycar_only was built
+# with /opt/ros/humble as its only underlay.
+unset AMENT_PREFIX_PATH COLCON_PREFIX_PATH CMAKE_PREFIX_PATH
+unset PYTHONPATH LD_LIBRARY_PATH PKG_CONFIG_PATH ROS_PACKAGE_PATH
+unset _colcon_cd_root
+clean_workspace_path=""
+IFS=: read -r -a path_entries <<< "${PATH:-}"
+for path_entry in "${path_entries[@]}"; do
+  case "$path_entry" in
+    /home/xytron/*/install/*|/home/xytron/*/install_*/*) continue ;;
+  esac
+  clean_workspace_path="${clean_workspace_path:+$clean_workspace_path:}$path_entry"
+done
+export PATH="$clean_workspace_path"
+unset clean_workspace_path path_entries path_entry
 source /opt/ros/humble/setup.bash
-source "$WORKSPACE/install/setup.bash"
+source "$INSTALL_PREFIX/setup.bash"
 set -u
 
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-7}"
 unset ROS_NAMESPACE || true
+
+for required_package in \
+  xycar_map_nav xycar_rule_drive lane_seg_control my_rule wide_camera \
+  xycar_vesc_driver; do
+  if ! package_prefix="$(ros2 pkg prefix "$required_package" 2>/dev/null)" || \
+    [[ "$package_prefix" != "$INSTALL_PREFIX/"* ]]; then
+    echo "[오류] $required_package 패키지가 xycar_ws 단독 빌드에서 해석되지 않습니다." >&2
+    echo "현재 경로: ${package_prefix:-찾을 수 없음}" >&2
+    echo "다시 빌드: bash $WORKSPACE/src/xycar_map_nav/scripts/build_xycar_only.sh" >&2
+    exit 1
+  fi
+done
+echo "xycar_ws 단독 실행 환경: $INSTALL_PREFIX"
 
 cleanup() {
   set +e
@@ -482,6 +632,8 @@ export DEGRADED_PATH_MINIMUM_SPAN_M
 export STRAIGHT_RIGHT_OFFSET_CM
 export ADAPTIVE_STEERING_SPEED_ENABLED STEERING_TURN_SPEED_COMMAND
 export STEERING_SLOWDOWN_START_ANGLE STEERING_FULL_SLOWDOWN_ANGLE
+export SHORTCUT_STRATEGY SHORTCUT_YELLOW_COUNT_FORCE_ANGLE
+export SHORTCUT_YELLOW_COUNT_RETURN_SEC SHORTCUT_YELLOW_COUNT_TARGET
 
 "$WORKSPACE/src/xycar_map_nav/scripts/run_space_hybrid_test.sh" \
   "$SPEED_COMMAND" "$LOOKAHEAD_DISTANCE" "$STANLEY_PERCENT" \

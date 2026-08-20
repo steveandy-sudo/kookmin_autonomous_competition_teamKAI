@@ -1,12 +1,20 @@
 from xycar_map_nav.lidar_obstacle import LidarPathObstacle
 from xycar_map_nav.yolo_lidar_avoidance import (
+    ShortcutAvoidanceSuppression,
+    ShortcutAvoidanceSuppressionConfig,
     YoloLidarAvoidanceConfig,
     YoloLidarAvoidanceController,
     YoloLidarAvoidanceMode,
 )
 from xycar_map_nav.sequential_hybrid_driver import is_avoidance_detection
 from xycar_map_nav.sequential_hybrid_driver import (
+    avoidance_speed_limit_for_vehicle_class,
+)
+from xycar_map_nav.sequential_hybrid_driver import (
     preferred_avoidance_mode_from_yellow_reference,
+)
+from xycar_map_nav.sequential_hybrid_driver import (
+    shortcut_suppresses_vehicle_class,
 )
 from xycar_map_nav.sequential_hybrid_driver import (
     straight_road_side_decision_allowed,
@@ -24,6 +32,103 @@ def obstacle(left=1.2, right=0.5, distance=1.0, lateral=0.0):
         left_clearance_m=left,
         right_clearance_m=right,
     )
+
+
+def test_shortcut_suppression_releases_after_two_post_handoff_left_frames():
+    suppression = ShortcutAvoidanceSuppression(
+        ShortcutAvoidanceSuppressionConfig(
+            release_left_angle_command=-8.0,
+            release_required_frames=2,
+        )
+    )
+
+    suppression.start_shortcut()
+    assert suppression.active
+    assert not suppression.observe_rule_angle(-20.0)
+    assert suppression.left_frames == 0
+
+    suppression.start_rule_handoff()
+    assert not suppression.observe_rule_angle(-9.0)
+    assert suppression.left_frames == 1
+    assert not suppression.observe_rule_angle(-7.9)
+    assert suppression.left_frames == 0
+    assert not suppression.observe_rule_angle(-12.0)
+    assert suppression.observe_rule_angle(-10.0)
+    assert not suppression.active
+
+
+def test_shortcut_suppression_can_be_disabled():
+    suppression = ShortcutAvoidanceSuppression(
+        ShortcutAvoidanceSuppressionConfig(enabled=False)
+    )
+    suppression.start_shortcut()
+    suppression.start_rule_handoff()
+    assert not suppression.active
+    assert not suppression.observe_rule_angle(-42.0)
+
+
+def test_shortcut_suppresses_only_green_car():
+    assert shortcut_suppresses_vehicle_class(
+        "green_car",
+        suppression_active=True,
+    )
+    assert not shortcut_suppresses_vehicle_class(
+        "red_car",
+        suppression_active=True,
+    )
+    assert not shortcut_suppresses_vehicle_class(
+        "green_car",
+        suppression_active=False,
+    )
+
+
+def test_red_and_green_car_use_separate_avoidance_speed_limits():
+    common = {
+        "default_speed_limit_command": 8.0,
+        "red_car_speed_limit_command": 8.0,
+        "green_car_speed_limit_command": 15.0,
+    }
+    assert avoidance_speed_limit_for_vehicle_class(
+        "red_car",
+        **common,
+    ) == 8.0
+    assert avoidance_speed_limit_for_vehicle_class(
+        "green_car",
+        **common,
+    ) == 15.0
+    assert avoidance_speed_limit_for_vehicle_class(
+        "obstacle_vehicle",
+        **common,
+    ) == 8.0
+
+
+def test_selected_vehicle_class_speed_persists_during_avoidance():
+    controller = YoloLidarAvoidanceController(
+        YoloLidarAvoidanceConfig(
+            immediate_on_yolo=True,
+            preferred_side_required_frames=1,
+            yolo_required_frames=1,
+            speed_limit_command=8.0,
+        )
+    )
+    controller.observe_yolo(
+        now_sec=0.0,
+        detected=True,
+        confidence=0.9,
+        lidar_distance_m=2.0,
+        preferred_mode=YoloLidarAvoidanceMode.AVOID_LEFT,
+        target_class_name="green_car",
+        speed_limit_command=15.0,
+    )
+    state = controller.step(
+        now_sec=0.1,
+        dt_sec=0.1,
+        obstacle=None,
+        cone_active=False,
+    )
+    assert state.mode == YoloLidarAvoidanceMode.AVOID_LEFT
+    assert state.target_class_name == "green_car"
+    assert state.speed_limit_command == 15.0
 
 
 def test_cone_is_only_an_avoidance_candidate_in_temporary_test_mode():

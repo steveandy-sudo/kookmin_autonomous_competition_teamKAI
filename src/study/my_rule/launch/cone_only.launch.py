@@ -1,13 +1,60 @@
 """Launch only the camera-YOLO + LiDAR cone-driving stack."""
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
+
+
+def _cone_node_for_speed_profile(context, *, my_rule_share, perception_share):
+    profile = LaunchConfiguration("cone_speed_profile").perform(context).strip().lower()
+    # Adaptive cone-speed execution is intentionally disabled.  The validated
+    # fixed profile keeps every normal-path speed input at 10 while preserving
+    # the final-left path-loss recovery speed of 4.
+    if profile != "fixed":
+        raise RuntimeError(
+            "adaptive cone speed is disabled; cone_speed_profile must be 'fixed', "
+            f"got {profile!r}"
+        )
+
+    final_left_recovery_speed = float(
+        LaunchConfiguration("cone_final_left_recovery_speed").perform(context)
+    )
+    fixed_speed = float(LaunchConfiguration("cone_drive_speed").perform(context))
+    speeds = {
+        "cone_speed": fixed_speed,
+        "cone_min_drive_speed": fixed_speed,
+        "cone_straight_boost_speed": fixed_speed,
+        "single_boundary_max_speed": fixed_speed,
+        "cone_final_left_recovery_speed": final_left_recovery_speed,
+    }
+
+    return [
+        Node(
+            package="my_rule",
+            executable="cone_node",
+            name="my_rule_cone_node",
+            output="screen",
+            parameters=[
+                PathJoinSubstitution([my_rule_share, "config", "cone_control.yaml"]),
+                {
+                    "cone_yolo_association_enabled": True,
+                    **speeds,
+                    "camera_yaml": PathJoinSubstitution(
+                        [
+                            perception_share,
+                            "config",
+                            "wide_camera_fisheye_1280x1024.yaml",
+                        ]
+                    ),
+                },
+            ],
+        )
+    ]
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -72,7 +119,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
             {
                 "model_path": PathJoinSubstitution(
-                    [my_rule_share, "models", "kookmin_objects_best_20260804.pt"]
+                    [my_rule_share, "models", "final.pt"]
                 ),
                 "startup_signal_hsv_enabled": False,
                 "camera_yaml": PathJoinSubstitution(
@@ -85,24 +132,12 @@ def generate_launch_description() -> LaunchDescription:
             },
         ],
     )
-    cone = Node(
-        package="my_rule",
-        executable="cone_node",
-        name="my_rule_cone_node",
-        output="screen",
-        parameters=[
-            PathJoinSubstitution([my_rule_share, "config", "cone_control.yaml"]),
-            {
-                "cone_yolo_association_enabled": True,
-                "camera_yaml": PathJoinSubstitution(
-                    [
-                        perception_share,
-                        "config",
-                        "wide_camera_fisheye_1280x1024.yaml",
-                    ]
-                ),
-            },
-        ],
+    cone = OpaqueFunction(
+        function=_cone_node_for_speed_profile,
+        kwargs={
+            "my_rule_share": my_rule_share,
+            "perception_share": perception_share,
+        },
     )
     manager = Node(
         package="my_rule",
@@ -124,6 +159,8 @@ def generate_launch_description() -> LaunchDescription:
                 "wait_for_green_at_start": False,
                 "enable_static_obstacle_handling": False,
                 "enable_dynamic_obstacle_handling": False,
+                "cone_manager_recovery_enabled": False,
+                "cone_fresh_stop_is_authoritative": True,
             },
         ],
     )
@@ -159,6 +196,26 @@ def generate_launch_description() -> LaunchDescription:
                 "motor_port",
                 default_value="/dev/ttyMOTOR",
                 description="VESC serial device owned by the native ROS 2 driver.",
+            ),
+            DeclareLaunchArgument(
+                "cone_speed_profile",
+                default_value="fixed",
+                description="Cone-only speed profile; only fixed is enabled.",
+            ),
+            DeclareLaunchArgument(
+                "cone_drive_speed",
+                default_value="10.0",
+                description=(
+                    "Motor command used by the fixed cone-only speed profile."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "cone_final_left_recovery_speed",
+                default_value="4.0",
+                description=(
+                    "Reduced motor command used only when the final-left "
+                    "path is temporarily lost or rejected."
+                ),
             ),
             camera,
             lidar,

@@ -40,6 +40,13 @@ setup(
             "sim_moving_vehicle_controller = "
             "xycar_map_nav.sim_moving_vehicle_controller:main",
             "space_drive_gate = xycar_map_nav.space_drive_gate:main",
+            "cone_entry_monitor = xycar_map_nav.cone_entry_monitor:main",
+            "shortcut_bag_wheel_gate = "
+            "xycar_map_nav.shortcut_bag_wheel_gate:main",
+            "yellow_count_bag_viewer = "
+            "xycar_map_nav.yellow_count_bag_viewer:main",
+            "yellow_count_shortcut_controller = "
+            "xycar_map_nav.yellow_count_shortcut_controller:main",
         ],
     },
 )

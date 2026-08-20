@@ -31,10 +31,16 @@ my_rule_drive_manager:
     cone_mode_exit_creep_timeout_sec: 1.8
     cone_exit_creep_speed: 8.0
     cone_exit_creep_steer_retention: 0.70
+    # cone_node already owns short path-loss recovery. Never reinterpret its
+    # explicit stop as permission to replay/creep on an older command.
+    cone_manager_recovery_enabled: false
+    cone_fresh_stop_is_authoritative: true
     cone_lane_handoff_duration_sec: 0.65
     cone_lane_handoff_max_speed: 8.0
     minimum_drive_speed: 4.0
     cone_emergency_stop_distance_m: 0.35
+    cone_emergency_clear_distance_m: 0.50
+    cone_emergency_clear_hold_sec: 0.30
     emergency_front_min_angle_deg: -12.0
     emergency_front_max_angle_deg: 12.0
 

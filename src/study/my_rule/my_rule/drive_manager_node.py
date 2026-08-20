@@ -295,10 +295,18 @@ class DriveManagerNode(CanonicalStanleyPursuitDriver):
             "cone_mode_exit_creep_timeout_sec": 1.8,
             "cone_exit_creep_speed": 8.0,
             "cone_exit_creep_steer_retention": 0.70,
+            # A fresh zero/invalid command from cone_node is an intentional
+            # stop, not permission to replay an older steering command.  The
+            # legacy hold/creep behaviour remains available for integrated
+            # course experiments, but is disabled for the safe default.
+            "cone_manager_recovery_enabled": False,
+            "cone_fresh_stop_is_authoritative": True,
             "cone_lane_handoff_duration_sec": 0.65,
             "cone_lane_handoff_max_speed": 8.0,
             "minimum_drive_speed": 4.0,
             "cone_emergency_stop_distance_m": 0.35,
+            "cone_emergency_clear_distance_m": 0.50,
+            "cone_emergency_clear_hold_sec": 0.30,
             "emergency_front_min_angle_deg": -12.0,
             "emergency_front_max_angle_deg": 12.0,
             "motor_publish_rate_hz": 100.0,
@@ -501,6 +509,8 @@ class DriveManagerNode(CanonicalStanleyPursuitDriver):
         self.last_valid_cone_angle = 0.0
         self.last_valid_cone_speed = 0.0
         self.last_valid_cone_time = 0.0
+        self.cone_emergency_latched = False
+        self.cone_emergency_clear_started_at = 0.0
         self.cone_cluster_count = 0
         self.cone_cluster_left_count = 0
         self.cone_cluster_right_count = 0
@@ -3293,6 +3303,45 @@ class DriveManagerNode(CanonicalStanleyPursuitDriver):
             self.get_parameter("cone_emergency_stop_distance_m").value
         )
         if self.cone_mode_active and self.front_distance < emergency:
+            self.cone_emergency_latched = True
+            self.cone_emergency_clear_started_at = 0.0
+        if self.cone_mode_active and self.cone_emergency_latched:
+            clear_distance = max(
+                emergency,
+                float(
+                    self.get_parameter(
+                        "cone_emergency_clear_distance_m"
+                    ).value
+                ),
+            )
+            cone_fresh = (
+                self.cone_command_time > 0.0
+                and now - self.cone_command_time
+                <= float(
+                    self.get_parameter(
+                        "external_cone_cmd_timeout_sec"
+                    ).value
+                )
+                and self.cone_confidence > 0.2
+                and self.cone_speed > 0.0
+            )
+            if self.front_distance >= clear_distance and cone_fresh:
+                if self.cone_emergency_clear_started_at <= 0.0:
+                    self.cone_emergency_clear_started_at = now
+                clear_hold = max(
+                    0.0,
+                    float(
+                        self.get_parameter(
+                            "cone_emergency_clear_hold_sec"
+                        ).value
+                    ),
+                )
+                if now - self.cone_emergency_clear_started_at >= clear_hold:
+                    self.cone_emergency_latched = False
+                    self.cone_emergency_clear_started_at = 0.0
+            else:
+                self.cone_emergency_clear_started_at = 0.0
+        if self.cone_mode_active and self.cone_emergency_latched:
             return 0.0, 0.0, "EMERGENCY_STOP", (
                 f"front={self.front_distance:.2f}m"
             )
@@ -3301,6 +3350,37 @@ class DriveManagerNode(CanonicalStanleyPursuitDriver):
             fresh_timeout = float(
                 self.get_parameter("external_cone_cmd_timeout_sec").value
             )
+            command_age = (
+                now - self.cone_command_time
+                if self.cone_command_time > 0.0
+                else float("inf")
+            )
+            if command_age <= fresh_timeout:
+                if (
+                    bool(
+                        self.get_parameter(
+                            "cone_fresh_stop_is_authoritative"
+                        ).value
+                    )
+                    and (
+                        self.cone_confidence <= 0.2
+                        or self.cone_speed <= 0.0
+                    )
+                ):
+                    return 0.0, 0.0, "CONE_STOP", "fresh_cone_stop"
+                if self.cone_confidence > 0.2 and self.cone_speed > 0.0:
+                    return self.apply_course_signal_overlay(
+                        self.cone_target_to_command(self.cone_angle),
+                        self.cone_speed,
+                        "CONE_SLALOM",
+                        f"confidence={self.cone_confidence:.2f}",
+                        now,
+                    )
+            if not bool(
+                self.get_parameter("cone_manager_recovery_enabled").value
+            ):
+                return 0.0, 0.0, "CONE_STOP", "waiting_fresh_cone_cmd"
+
             age = (
                 now - self.last_valid_cone_time
                 if self.last_valid_cone_time > 0.0
@@ -3366,6 +3446,9 @@ class DriveManagerNode(CanonicalStanleyPursuitDriver):
                     now,
                 )
             return 0.0, 0.0, "CONE_RECOVERY", "waiting_cone_path"
+
+        self.cone_emergency_latched = False
+        self.cone_emergency_clear_started_at = 0.0
 
         if self.handoff_started_at > 0.0:
             duration = max(

@@ -92,4 +92,4 @@ xycar_hybrid_drive:
     hybrid_cone_wheelbase_m: 0.33
     hybrid_cone_speed: 17.0
     hybrid_cone_min_drive_speed: 9.5
-    hybrid_cone_straight_boost_speed: 21.0
+    hybrid_cone_straight_boost_speed: 17.0
