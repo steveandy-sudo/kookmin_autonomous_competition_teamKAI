@@ -49,6 +49,8 @@ from .traffic_light_control import TrafficLightConfig
 from .traffic_light_control import TrafficLightController
 from .traffic_light_control import TrafficLightFrame
 from .space_drive_gate_core import GateCandidateMode
+from .yolo_lidar_avoidance import ShortcutAvoidanceSuppression
+from .yolo_lidar_avoidance import ShortcutAvoidanceSuppressionConfig
 from .yolo_lidar_avoidance import YoloLidarAvoidanceConfig
 from .yolo_lidar_avoidance import YoloLidarAvoidanceController
 from .yolo_lidar_avoidance import YoloLidarAvoidanceMode
@@ -61,6 +63,7 @@ SOURCE_CODES = {
 }
 ANSI_YELLOW = "\033[93m"
 ANSI_GREEN = "\033[92m"
+ANSI_BLUE = "\033[94m"
 ANSI_RESET = "\033[0m"
 
 
@@ -239,6 +242,25 @@ class SequentialHybridDriver(Node):
                 ),
                 rearm_absence_sec=float(
                     self.get_parameter("shortcut_rearm_absence_sec").value
+                ),
+            )
+        )
+        self.shortcut_avoidance_suppression = ShortcutAvoidanceSuppression(
+            ShortcutAvoidanceSuppressionConfig(
+                enabled=bool(
+                    self.get_parameter(
+                        "vehicle_avoidance_shortcut_suppression_enabled"
+                    ).value
+                ),
+                release_left_angle_command=float(
+                    self.get_parameter(
+                        "vehicle_avoidance_shortcut_release_left_angle_command"
+                    ).value
+                ),
+                release_required_frames=int(
+                    self.get_parameter(
+                        "vehicle_avoidance_shortcut_release_required_frames"
+                    ).value
                 ),
             )
         )
@@ -759,6 +781,15 @@ class SequentialHybridDriver(Node):
         )
         self.declare_parameter("vehicle_avoidance_enabled", True)
         self.declare_parameter(
+            "vehicle_avoidance_shortcut_suppression_enabled", True
+        )
+        self.declare_parameter(
+            "vehicle_avoidance_shortcut_release_left_angle_command", -8.0
+        )
+        self.declare_parameter(
+            "vehicle_avoidance_shortcut_release_required_frames", 2
+        )
+        self.declare_parameter(
             "vehicle_avoidance_immediate_on_yolo", True
         )
         self.declare_parameter("vehicle_avoidance_entry_distance_m", 1.20)
@@ -834,6 +865,22 @@ class SequentialHybridDriver(Node):
             return
         self.rule_command = (float(message.data[0]), float(message.data[1]))
         self.rule_command_time = time.monotonic()
+        if self.shortcut_avoidance_suppression.observe_rule_angle(
+            self.rule_command[0]
+        ):
+            required = max(
+                1,
+                int(
+                    self.get_parameter(
+                        "vehicle_avoidance_shortcut_release_required_frames"
+                    ).value
+                ),
+            )
+            self.get_logger().warning(
+                f"{ANSI_BLUE}[MISSION] GREEN_CAR AVOIDANCE RESTORED; "
+                f"RULE LEFT STEERING {required}/{required} "
+                f"angle={self.rule_command[0]:.1f}{ANSI_RESET}"
+            )
 
     def _on_drive_armed(self, message: Bool) -> None:
         armed = bool(message.data)
@@ -864,6 +911,7 @@ class SequentialHybridDriver(Node):
 
     def _reset_shortcut_state(self) -> None:
         self.shortcut_latch.reset()
+        self.shortcut_avoidance_suppression.reset()
         self.traffic_light_controller.reset()
         self.traffic_light_decision = (
             self.traffic_light_controller.latest_decision
@@ -939,6 +987,7 @@ class SequentialHybridDriver(Node):
 
     def _handle_shortcut_event(self, event: ShortcutModeEvent) -> None:
         if event == ShortcutModeEvent.STARTED:
+            self.shortcut_avoidance_suppression.start_shortcut()
             self.cone_bypass.reset()
             self.avoidance_controller.reset()
             self.avoidance_state = self.avoidance_controller.state()
@@ -948,6 +997,7 @@ class SequentialHybridDriver(Node):
                 "[MISSION] SHORTCUT ENTRY CONTROL ACTIVE"
             )
         elif event == ShortcutModeEvent.FINISHED:
+            self.shortcut_avoidance_suppression.start_rule_handoff()
             self.shortcut_entry_search_active = False
             self.shortcut_entry_search_started_time = float("-inf")
             self.shortcut_entry_ready = False
@@ -1372,14 +1422,17 @@ class SequentialHybridDriver(Node):
                 self.avoidance_side_basis_code = -1.0
         else:
             side_decision_allowed = False
-        self.avoidance_controller.observe_yolo(
-            now_sec=now,
-            detected=selected is not None,
-            confidence=(float(selected.confidence) if selected else 0.0),
-            lidar_distance_m=selected_distance,
-            preferred_mode=preferred_mode,
-            side_decision_allowed=side_decision_allowed,
-        )
+        if self.shortcut_avoidance_suppression.active:
+            self.avoidance_controller.reset()
+        else:
+            self.avoidance_controller.observe_yolo(
+                now_sec=now,
+                detected=selected is not None,
+                confidence=(float(selected.confidence) if selected else 0.0),
+                lidar_distance_m=selected_distance,
+                preferred_mode=preferred_mode,
+                side_decision_allowed=side_decision_allowed,
+            )
         self._publish_cone_processing_gate(now)
 
     def _on_yellow_mask(self, message: Image) -> None:
@@ -1872,7 +1925,10 @@ class SequentialHybridDriver(Node):
                 )
             )
         self._publish_cone_processing_gate(now)
-        if self.shortcut_latch.active:
+        if (
+            self.shortcut_latch.active
+            or self.shortcut_avoidance_suppression.active
+        ):
             self.avoidance_controller.reset()
             self.avoidance_state = self.avoidance_controller.state()
         elif (

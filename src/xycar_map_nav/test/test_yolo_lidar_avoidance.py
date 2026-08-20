@@ -1,5 +1,7 @@
 from xycar_map_nav.lidar_obstacle import LidarPathObstacle
 from xycar_map_nav.yolo_lidar_avoidance import (
+    ShortcutAvoidanceSuppression,
+    ShortcutAvoidanceSuppressionConfig,
     YoloLidarAvoidanceConfig,
     YoloLidarAvoidanceController,
     YoloLidarAvoidanceMode,
@@ -24,6 +26,39 @@ def obstacle(left=1.2, right=0.5, distance=1.0, lateral=0.0):
         left_clearance_m=left,
         right_clearance_m=right,
     )
+
+
+def test_shortcut_suppression_releases_after_two_post_handoff_left_frames():
+    suppression = ShortcutAvoidanceSuppression(
+        ShortcutAvoidanceSuppressionConfig(
+            release_left_angle_command=-8.0,
+            release_required_frames=2,
+        )
+    )
+
+    suppression.start_shortcut()
+    assert suppression.active
+    assert not suppression.observe_rule_angle(-20.0)
+    assert suppression.left_frames == 0
+
+    suppression.start_rule_handoff()
+    assert not suppression.observe_rule_angle(-9.0)
+    assert suppression.left_frames == 1
+    assert not suppression.observe_rule_angle(-7.9)
+    assert suppression.left_frames == 0
+    assert not suppression.observe_rule_angle(-12.0)
+    assert suppression.observe_rule_angle(-10.0)
+    assert not suppression.active
+
+
+def test_shortcut_suppression_can_be_disabled():
+    suppression = ShortcutAvoidanceSuppression(
+        ShortcutAvoidanceSuppressionConfig(enabled=False)
+    )
+    suppression.start_shortcut()
+    suppression.start_rule_handoff()
+    assert not suppression.active
+    assert not suppression.observe_rule_angle(-42.0)
 
 
 def test_cone_is_only_an_avoidance_candidate_in_temporary_test_mode():

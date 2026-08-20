@@ -95,6 +95,7 @@ def test_both_real_car_scripts_expose_the_two_shortcut_strategies() -> None:
 
         assert "--shortcut-mode" in source
         assert "w1|yellow_count" in source
+        assert "--shortcut-yellow-count" in source
         assert "--shortcut-angle" in source
         assert "--shortcut-return-sec" in source
 
@@ -106,3 +107,13 @@ def test_integrated_launch_starts_only_the_selected_shortcut_strategy() -> None:
     assert '"\' == \'w1\'"' in source
     assert '"\' == \'yellow_count\'"' in source
     assert "yellow_count_shortcut_control.launch.py" in source
+
+
+def test_integrated_yellow_count_trigger_is_selectable_with_safe_default() -> None:
+    source = LAUNCH_FILE.read_text(encoding="utf-8")
+
+    assert '"shortcut_yellow_count_pass_target", default_value="1"' in source
+    assert '"yellow_pass_target": LaunchConfiguration(' in source
+    assert '"shortcut_yellow_count_pass_target"' in source
+    assert '"yellow_visible_frames": "2"' in source
+    assert '"yellow_absent_frames": "1"' in source

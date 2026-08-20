@@ -161,6 +161,9 @@ def generate_launch_description():
                 "shortcut_handoff_to_rule", default_value="true"
             ),
             DeclareLaunchArgument(
+                "shortcut_yellow_count_pass_target", default_value="1"
+            ),
+            DeclareLaunchArgument(
                 "shortcut_yellow_count_forced_steering_command",
                 default_value="-42.0",
             ),
@@ -1184,9 +1187,11 @@ def generate_launch_description():
                     "entry_speed_command": LaunchConfiguration(
                         "shortcut_entry_speed_command"
                     ),
-                    "yellow_pass_target": "2",
+                    "yellow_pass_target": LaunchConfiguration(
+                        "shortcut_yellow_count_pass_target"
+                    ),
                     "yellow_visible_frames": "2",
-                    "yellow_absent_frames": "2",
+                    "yellow_absent_frames": "1",
                 }.items(),
             ),
             Node(

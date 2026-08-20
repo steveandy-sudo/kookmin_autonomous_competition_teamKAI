@@ -113,6 +113,7 @@ LiDAR → 정적 장애물·라바콘 경계·차량 거리                  ┘
 - YOLO의 `red_car`, `green_car`는 공통 `car` 클래스로 정규화한다.
 - 차량 박스의 카메라 방위와 LiDAR 군집을 결합해 거리와 회피 방향을 정한다.
 - 노란 중앙선 위치와 직선 안정성을 이용해 좌우 횡방향 목표를 연속적으로 이동한다.
+- 지름길 진입부터 RULE 복귀 후 좌조향 command `-8` 이하가 2프레임 연속 유지될 때까지 `green_car` 차량 회피를 억제하며, 해제 순간을 파란색 로그로 알린다.
 - 회피 내부 속도 후보는 최대 `8.0`이며 실행 인자의 최종 속도 상한을 다시 적용받는다.
 - 신호등 기둥에 해당하는 LiDAR 구간은 차량 장애물 결합 대상에서 제외한다.
 
@@ -255,13 +256,13 @@ W1 방식의 터미널 이벤트 색상은 다음과 같다.
 
 1. 공통 YOLO 판단에서 `left_4`를 2개 프레임 확인하고, 이어서 2개 프레임 동안 사라지면 노란선 카운트 인지를 시작한다.
 2. W1 방식과 동일한 `kookmin_lane_lraspp_mbv3s_256x144.pt` 모델의 노란 클래스 마스크만 사용하며, W1 입력과 동일한 mask-only BEV 투영을 적용한다.
-3. 노란 점선 성분이 BEV 카운트 띠에 2개 인지 프레임 동안 들어온 뒤 2개 인지 프레임 동안 빠져나가면 한 개가 사라진 것으로 센다. 카운트 띠 아래에 남아 있는 이전 점선은 다음 점선과 합치지 않는다.
-4. 첫 번째 이탈은 노란색 `YELLOW LINE DISAPPEARED 1/2`, 두 번째 이탈은 노란색 `YELLOW LINE DISAPPEARED 2/2` 로그로 기록한다.
-5. 두 번째 이탈 즉시 기본 `-42` 좌조향 후보를 출력한다. 진입 속도 명령 상한은 `9.0`이며 실제 모터 출력은 통합 선택기와 Space 안전 게이트만 소유한다.
+3. 노란 점선 성분이 BEV 카운트 띠에 2개 인지 프레임 동안 들어온 뒤 첫 번째 부재 프레임이 확인되면 한 개가 사라진 것으로 센다.
+4. 이탈 때마다 선택값에 맞춰 노란색 `YELLOW LINE DISAPPEARED 1/N` 로그로 기록한다.
+5. 선택한 `N`번째 이탈 즉시 기본 `-42` 좌조향 후보를 출력한다. 진입 속도 명령 상한은 `9.0`이며 실제 모터 출력은 통합 선택기와 Space 안전 게이트만 소유한다.
 6. `--shortcut-return-sec`로 정한 시간이 지나면 완료 신호와 최신 RULE 후보를 내보낸다. 최종 선택기가 RULE 권한으로 돌아간 실제 순간에만 초록색 복귀 로그를 출력한다.
 7. RULE 후보가 오래됐으면 강제조향 타이머를 시작하지 않고 안전 정지 후보를 내며, RULE 후보가 정상화된 시점부터 지정 시간을 잰다.
 
-`yellow_count`의 강제 조향값은 `--shortcut-angle`로 `-42~0`, 유지 시간은 `--shortcut-return-sec`로 `0.1~5.0`초 범위에서 지정한다.
+`yellow_count`의 이탈 트리거 개수는 `--shortcut-yellow-count`로 `1` 또는 `2`, 강제 조향값은 `--shortcut-angle`로 `-42~0`, 유지 시간은 `--shortcut-return-sec`로 `0.1~5.0`초 범위에서 지정한다. 기본 이탈 트리거는 `1`개다.
 
 ### Xycar `kty_publish` 통합 주행
 
@@ -273,10 +274,10 @@ W1/W2 방식:
 cd /home/xytron/kty_publish && unset XYCAR_WS && XYCAR_TEST_PROFILE=integrated XYCAR_STEERING_ONLY=false XYCAR_ENABLE_RVIZ=false bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh 4 --shortcut-mode w1
 ```
 
-노란선 2개 이탈 방식, 강제 좌조향 `-42`, `0.7`초 뒤 RULE 복귀:
+노란선 1개 이탈 방식, 강제 좌조향 `-42`, `0.7`초 뒤 RULE 복귀:
 
 ```bash
-cd /home/xytron/kty_publish && unset XYCAR_WS && XYCAR_TEST_PROFILE=integrated XYCAR_STEERING_ONLY=false XYCAR_ENABLE_RVIZ=false bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh 4 --shortcut-mode yellow_count --shortcut-angle -42 --shortcut-return-sec 0.7
+cd /home/xytron/kty_publish && unset XYCAR_WS && XYCAR_TEST_PROFILE=integrated XYCAR_STEERING_ONLY=false XYCAR_ENABLE_RVIZ=false bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh 4 --shortcut-mode yellow_count --shortcut-yellow-count 1 --shortcut-angle -42 --shortcut-return-sec 0.7
 ```
 
 첫 번째 숫자 `4`는 전체 주행 속도 상한이다. 실차 저속 확인이 끝난 뒤 필요한 값으로 올린다.

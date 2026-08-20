@@ -59,6 +59,52 @@ class YoloLidarAvoidanceState:
         }
 
 
+@dataclass(frozen=True)
+class ShortcutAvoidanceSuppressionConfig:
+    enabled: bool = True
+    release_left_angle_command: float = -8.0
+    release_required_frames: int = 2
+
+
+class ShortcutAvoidanceSuppression:
+    """Keep vehicle avoidance disabled through the post-shortcut left turn."""
+
+    def __init__(self, config: ShortcutAvoidanceSuppressionConfig) -> None:
+        self.config = config
+        self.reset()
+
+    def reset(self) -> None:
+        self.active = False
+        self.rule_handoff = False
+        self.left_frames = 0
+
+    def start_shortcut(self) -> None:
+        self.active = bool(self.config.enabled)
+        self.rule_handoff = False
+        self.left_frames = 0
+
+    def start_rule_handoff(self) -> None:
+        if not self.active:
+            return
+        self.rule_handoff = True
+        self.left_frames = 0
+
+    def observe_rule_angle(self, angle_command: float) -> bool:
+        """Release after consecutive post-handoff left-steering frames."""
+        if not self.active or not self.rule_handoff:
+            return False
+        threshold = min(0.0, float(self.config.release_left_angle_command))
+        if float(angle_command) <= threshold:
+            self.left_frames += 1
+        else:
+            self.left_frames = 0
+        if self.left_frames < max(1, int(self.config.release_required_frames)):
+            return False
+        self.active = False
+        self.rule_handoff = False
+        return True
+
+
 class YoloLidarAvoidanceController:
     """Track a YOLO vehicle and apply the configured avoidance entry policy."""
 

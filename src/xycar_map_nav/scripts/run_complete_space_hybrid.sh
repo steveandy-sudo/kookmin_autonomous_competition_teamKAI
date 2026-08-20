@@ -18,6 +18,7 @@ export XYCAR_WS="$WORKSPACE"
 # selector exposed by run_space_hybrid_test.sh. Positional driving parameters
 # may appear before or after these named options.
 SHORTCUT_STRATEGY="${SHORTCUT_STRATEGY:-w1}"
+SHORTCUT_YELLOW_COUNT_TARGET="${SHORTCUT_YELLOW_COUNT_TARGET:-1}"
 SHORTCUT_YELLOW_COUNT_FORCE_ANGLE="${SHORTCUT_YELLOW_COUNT_FORCE_ANGLE:--42.0}"
 SHORTCUT_YELLOW_COUNT_RETURN_SEC="${SHORTCUT_YELLOW_COUNT_RETURN_SEC:-0.7}"
 declare -a POSITIONAL_ARGS=()
@@ -33,6 +34,18 @@ while (( $# > 0 )); do
       ;;
     --shortcut-mode=*)
       SHORTCUT_STRATEGY="${1#*=}"
+      shift
+      ;;
+    --shortcut-yellow-count)
+      if (( $# < 2 )); then
+        echo "ERROR: --shortcut-yellow-count requires 1 or 2." >&2
+        exit 2
+      fi
+      SHORTCUT_YELLOW_COUNT_TARGET="$2"
+      shift 2
+      ;;
+    --shortcut-yellow-count=*)
+      SHORTCUT_YELLOW_COUNT_TARGET="${1#*=}"
       shift
       ;;
     --shortcut-angle)
@@ -62,6 +75,7 @@ while (( $# > 0 )); do
     --help|-h)
       echo "Usage: $0 [speed] [lookahead] [stanley_percent] [left_offset_cm] [options]"
       echo "  --shortcut-mode w1|yellow_count"
+      echo "  --shortcut-yellow-count 1|2     (yellow_count only, default: 1)"
       echo "  --shortcut-angle -42..0          (yellow_count only)"
       echo "  --shortcut-return-sec 0.1..5.0   (yellow_count only)"
       exit 0
@@ -89,6 +103,13 @@ case "$SHORTCUT_STRATEGY" in
   w1|yellow_count) ;;
   *)
     echo "ERROR: --shortcut-mode must be w1 or yellow_count." >&2
+    exit 2
+    ;;
+esac
+case "$SHORTCUT_YELLOW_COUNT_TARGET" in
+  1|2) ;;
+  *)
+    echo "ERROR: --shortcut-yellow-count must be 1 or 2." >&2
     exit 2
     ;;
 esac
@@ -575,7 +596,7 @@ export STRAIGHT_RIGHT_OFFSET_CM
 export ADAPTIVE_STEERING_SPEED_ENABLED STEERING_TURN_SPEED_COMMAND
 export STEERING_SLOWDOWN_START_ANGLE STEERING_FULL_SLOWDOWN_ANGLE
 export SHORTCUT_STRATEGY SHORTCUT_YELLOW_COUNT_FORCE_ANGLE
-export SHORTCUT_YELLOW_COUNT_RETURN_SEC
+export SHORTCUT_YELLOW_COUNT_RETURN_SEC SHORTCUT_YELLOW_COUNT_TARGET
 
 "$WORKSPACE/src/xycar_map_nav/scripts/run_space_hybrid_test.sh" \
   "$SPEED_COMMAND" "$LOOKAHEAD_DISTANCE" "$STANLEY_PERCENT" \

@@ -62,12 +62,12 @@ class YellowCountShortcutController(Node):
         self.declare_parameter("forced_steering_command", -42.0)
         self.declare_parameter("forced_steering_sec", 0.7)
         self.declare_parameter("maximum_abs_steering_command", 42.0)
-        self.declare_parameter("yellow_pass_target", 2)
+        self.declare_parameter("yellow_pass_target", 1)
         self.declare_parameter("yellow_pass_component_minimum_area_px", 80)
         self.declare_parameter("yellow_pass_line_ratio", 0.68)
         self.declare_parameter("yellow_pass_band_half_height_px", 10)
         self.declare_parameter("yellow_visible_frames", 2)
-        self.declare_parameter("yellow_absent_frames", 2)
+        self.declare_parameter("yellow_absent_frames", 1)
 
         state_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -226,7 +226,8 @@ class YellowCountShortcutController(Node):
         self.publish_forced_candidate()
         self.ready_publisher.publish(Bool(data=True))
         self.get_logger().warning(
-            "[MISSION] YELLOW_COUNT 2/2 -> FORCED LEFT "
+            f"[MISSION] YELLOW_COUNT {self.counter.passed}/"
+            f"{self.counter.target} -> FORCED LEFT "
             f"angle={self.forced_angle():+.1f} for "
             f"{self.forced_duration():.3f}s"
         )

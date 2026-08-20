@@ -57,8 +57,8 @@ class YellowCountBagViewer(Node):
         self.declare_parameter("yellow_pass_line_ratio", 0.68)
         self.declare_parameter("yellow_pass_band_half_height_px", 10)
         self.declare_parameter("yellow_visible_frames", 2)
-        self.declare_parameter("yellow_absent_frames", 2)
-        self.declare_parameter("yellow_pass_target", 2)
+        self.declare_parameter("yellow_absent_frames", 1)
+        self.declare_parameter("yellow_pass_target", 1)
         self.declare_parameter(
             "camera_topic", "/wide_camera_mjpeg/image_raw/compressed"
         )
@@ -212,7 +212,8 @@ class YellowCountBagViewer(Node):
         self.steering_triggered = False
         self.steering_trigger_stamp = math.nan
         print(
-            f"{YELLOW}[YELLOW_COUNT 2/2] YELLOW_COUNT MODE ON "
+            f"{YELLOW}[YELLOW_COUNT {self.pass_counter.target}/"
+            f"{self.pass_counter.target}] YELLOW_COUNT MODE ON "
             f"source={source} camera_stamp={self.front_stamp:.9f}{RESET}",
             flush=True,
         )

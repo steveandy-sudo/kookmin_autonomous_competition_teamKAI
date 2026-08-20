@@ -60,6 +60,41 @@ def test_two_debounced_enter_leave_pulses_trigger_once():
     assert counter.triggered
 
 
+def test_first_confirmed_dash_triggers_on_first_absent_frame():
+    counter = YellowBandPassCounter(
+        target=1,
+        visible_frames=2,
+        absent_frames=1,
+    )
+
+    assert counter.update(True) == (False, False, False)
+    assert counter.update(True) == (True, False, False)
+    assert counter.update(False) == (False, True, True)
+    assert counter.passed == 1
+    assert counter.triggered
+
+
+def test_two_selected_dashes_trigger_on_the_second_absent_frame():
+    counter = YellowBandPassCounter(
+        target=2,
+        visible_frames=2,
+        absent_frames=1,
+    )
+
+    events = [counter.update(value) for value in (
+        True,
+        True,
+        False,
+        True,
+        True,
+        False,
+    )]
+    assert events[2] == (False, True, False)
+    assert events[5] == (False, True, True)
+    assert counter.passed == 2
+    assert counter.triggered
+
+
 def test_a_dash_below_the_band_does_not_merge_with_the_next_crossing():
     counter = YellowBandPassCounter(
         target=2,

@@ -61,9 +61,9 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("forced_steering_sec", default_value="0.7"),
             DeclareLaunchArgument("entry_speed_command", default_value="9.0"),
-            DeclareLaunchArgument("yellow_pass_target", default_value="2"),
+            DeclareLaunchArgument("yellow_pass_target", default_value="1"),
             DeclareLaunchArgument("yellow_visible_frames", default_value="2"),
-            DeclareLaunchArgument("yellow_absent_frames", default_value="2"),
+            DeclareLaunchArgument("yellow_absent_frames", default_value="1"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(perception_launch),
                 launch_arguments={

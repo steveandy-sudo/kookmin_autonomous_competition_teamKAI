@@ -16,6 +16,7 @@ fi
 export XYCAR_WS="$WORKSPACE"
 
 SHORTCUT_STRATEGY="${SHORTCUT_STRATEGY:-w1}"
+SHORTCUT_YELLOW_COUNT_TARGET="${SHORTCUT_YELLOW_COUNT_TARGET:-1}"
 SHORTCUT_YELLOW_COUNT_FORCE_ANGLE="${SHORTCUT_YELLOW_COUNT_FORCE_ANGLE:--42.0}"
 SHORTCUT_YELLOW_COUNT_RETURN_SEC="${SHORTCUT_YELLOW_COUNT_RETURN_SEC:-0.7}"
 declare -a POSITIONAL_ARGS=()
@@ -31,6 +32,18 @@ while (( $# > 0 )); do
       ;;
     --shortcut-mode=*)
       SHORTCUT_STRATEGY="${1#*=}"
+      shift
+      ;;
+    --shortcut-yellow-count)
+      if (( $# < 2 )); then
+        echo "ERROR: --shortcut-yellow-count requires 1 or 2." >&2
+        exit 2
+      fi
+      SHORTCUT_YELLOW_COUNT_TARGET="$2"
+      shift 2
+      ;;
+    --shortcut-yellow-count=*)
+      SHORTCUT_YELLOW_COUNT_TARGET="${1#*=}"
       shift
       ;;
     --shortcut-angle)
@@ -60,6 +73,7 @@ while (( $# > 0 )); do
     --help|-h)
       echo "Usage: $0 [speed] [lookahead] [stanley_percent] [left_offset_cm] [options]"
       echo "  --shortcut-mode w1|yellow_count"
+      echo "  --shortcut-yellow-count 1|2     (yellow_count only, default: 1)"
       echo "  --shortcut-angle -42..0          (yellow_count only)"
       echo "  --shortcut-return-sec 0.1..5.0   (yellow_count only)"
       exit 0
@@ -242,6 +256,13 @@ case "$SHORTCUT_STRATEGY" in
   w1|yellow_count) ;;
   *)
     echo "ERROR: --shortcut-mode must be w1 or yellow_count." >&2
+    exit 2
+    ;;
+esac
+case "$SHORTCUT_YELLOW_COUNT_TARGET" in
+  1|2) ;;
+  *)
+    echo "ERROR: --shortcut-yellow-count must be 1 or 2." >&2
     exit 2
     ;;
 esac
@@ -526,6 +547,7 @@ target_left_offset_m: $LEFT_OFFSET_M
 straight_target_right_offset_cm: $STRAIGHT_RIGHT_OFFSET_CM
 straight_target_right_offset_m: $STRAIGHT_RIGHT_OFFSET_M
 shortcut_strategy: "$SHORTCUT_STRATEGY"
+shortcut_yellow_count_pass_target: $SHORTCUT_YELLOW_COUNT_TARGET
 shortcut_yellow_count_force_angle: $SHORTCUT_YELLOW_COUNT_FORCE_ANGLE
 shortcut_yellow_count_return_sec: $SHORTCUT_YELLOW_COUNT_RETURN_SEC
 cone_speed_command: $CONE_SPEED_COMMAND
@@ -739,6 +761,9 @@ verify_runtime_control_contract() {
     verify_runtime_cruise_speed
   fi
   if [[ "$SHORTCUT_STRATEGY" == "yellow_count" ]]; then
+    verify_runtime_parameter \
+      /yellow_count_shortcut_controller yellow_pass_target \
+      "$SHORTCUT_YELLOW_COUNT_TARGET" "지름길 노란선 이탈 개수"
     verify_runtime_float_parameter \
       /yellow_count_shortcut_controller forced_steering_command \
       "$SHORTCUT_YELLOW_COUNT_FORCE_ANGLE" "지름길 강제 조향"
@@ -848,7 +873,7 @@ echo "Left target correction: ${LEFT_OFFSET_CM}cm"
 echo "Straight-only right correction: ${STRAIGHT_RIGHT_OFFSET_CM}cm"
 echo "Shortcut entry speed cap: ${SHORTCUT_ENTRY_SPEED_COMMAND}"
 if [[ "$SHORTCUT_STRATEGY" == "yellow_count" ]]; then
-  echo "Shortcut strategy: yellow_count | force=${SHORTCUT_YELLOW_COUNT_FORCE_ANGLE} for ${SHORTCUT_YELLOW_COUNT_RETURN_SEC}s -> RULE"
+  echo "Shortcut strategy: yellow_count | trigger=${SHORTCUT_YELLOW_COUNT_TARGET} | force=${SHORTCUT_YELLOW_COUNT_FORCE_ANGLE} for ${SHORTCUT_YELLOW_COUNT_RETURN_SEC}s -> RULE"
 else
   echo "Shortcut strategy: w1"
 fi
@@ -934,6 +959,7 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   start_shortcut:=true \
   shortcut_strategy:="$SHORTCUT_STRATEGY" \
   shortcut_handoff_to_rule:=true \
+  shortcut_yellow_count_pass_target:="$SHORTCUT_YELLOW_COUNT_TARGET" \
   shortcut_yellow_count_forced_steering_command:="$SHORTCUT_YELLOW_COUNT_FORCE_ANGLE" \
   shortcut_yellow_count_forced_steering_sec:="$SHORTCUT_YELLOW_COUNT_RETURN_SEC" \
   shortcut_entry_steering_rate_limit_cmd_per_sec:="$SHORTCUT_ENTRY_STEERING_RATE_LIMIT_CMD_PER_SEC" \

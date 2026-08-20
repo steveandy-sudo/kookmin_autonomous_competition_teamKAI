@@ -117,6 +117,11 @@ sequential_hybrid_driver:
     yellow_straight_max_rmse_px: 3.0
     yellow_straight_min_span_ratio: 0.20
     vehicle_avoidance_enabled: true
+    # Ignore the course-side green car from shortcut entry through the first
+    # two sustained RULE left-steering frames after shortcut handoff.
+    vehicle_avoidance_shortcut_suppression_enabled: true
+    vehicle_avoidance_shortcut_release_left_angle_command: -8.0
+    vehicle_avoidance_shortcut_release_required_frames: 2
     vehicle_avoidance_immediate_on_yolo: true
     vehicle_avoidance_entry_distance_m: 1.20
     vehicle_minimum_side_clearance_m: 0.70

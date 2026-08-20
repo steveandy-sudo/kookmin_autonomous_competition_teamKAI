@@ -105,9 +105,9 @@ class YellowBandPassCounter:
     def __init__(
         self,
         *,
-        target: int = 2,
+        target: int = 1,
         visible_frames: int = 2,
-        absent_frames: int = 2,
+        absent_frames: int = 1,
     ) -> None:
         self.target = max(1, int(target))
         self.visible_required = max(1, int(visible_frames))
