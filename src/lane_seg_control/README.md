@@ -235,9 +235,7 @@ Runtime and candidate models are versioned with the source:
 | `models/best_512.onnx` | YOLO segmentation, `512x512` | `cfb87b0d4ff54917728ea2bcfbbd9eca31c5de030652949a452195ac279f5629` |
 | `models/kookmin_lane_lraspp_mbv3s_256x144.pt` | LR-ASPP MobileNetV3-Small TorchScript | `45ab4744f5edee1464441f15681e0b77ab94415a1193558b113c2bd619120fe8` |
 | `models/kookmin_yellow_row_centerline_256x144.pt` | Yellow row-coordinate model with 0.50 visibility-gated mask adapter | `397a8faee199dc246288f398e52f267d8e5b7d09eba68c06d277896db35005e1` |
-| `models/kookmin_yellow_row_centerline_core_256x144.pt` | Direct 48-row coordinate output | `f5ecc1aa0d5d1b4912d8da9cb4d8933f7a884c634ae72987bfbd349e514d6874` |
 | `models/kookmin_far_centerline_xbin_512x288.pt` | Yellow-only 72-row x-bin model with gated mask adapter | `fb70ed54bc30ad3cf50d21f1baaa58ca1d1da31ffcbcc8a10d305a007dd71bbc` |
-| `models/kookmin_far_centerline_xbin_core_512x288.pt` | Direct 128-bin/no-line row logits | `8171025d4f79a3b10bc500542b8745009b68548b5b9ed2f545315d09f752d24e` |
 
 The `kookmin_lane_yolo11n_256` and `kookmin_lane_yolo26n_256` candidates are
 owned by `xycar_perception/models`; local copies under this package are test

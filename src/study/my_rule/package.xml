@@ -25,7 +25,6 @@
   <exec_depend>my_rule_msgs</exec_depend>
   <exec_depend>xycar_perception</exec_depend>
   <exec_depend>xycar_lidar</exec_depend>
-  <exec_depend>xycar_ultrasonic</exec_depend>
   <exec_depend>xycar_vesc_driver</exec_depend>
   <exec_depend>wide_camera</exec_depend>
   <exec_depend>python3-numpy</exec_depend>

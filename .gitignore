@@ -37,7 +37,6 @@ metadata.yaml
 # Large model weights: publish through Git LFS or GitHub Releases
 *.pt
 !src/study/my_rule/models/my_rule_lane.pt
-!src/study/my_rule/models/my_rule_objects.pt
 *.pth
 *.onnx
 *.engine
@@ -51,7 +50,6 @@ src/xycar_application/app_wide_camera_calib/results/
 
 # Package-local generated output
 src/xycar_device/xycar_lidar/YDLidar-SDK/build/
-src/xycar_device/xycar_ultrasonic/log/
 
 # Legacy sample videos
 src/study/my_hough/**/*.mp4

@@ -1,5 +1,0 @@
-ros1_bridge:
-  ros1_package_whitelist:
-    - "xycar_msgs"
-  ros2_package_whitelist:
-    - "xycar_msgs"
