@@ -112,7 +112,7 @@ else
 fi
 prompt_integer VEHICLE_YOLO_REQUIRED_FRAMES "YOLO 연속 확인 프레임" 1 1 30
 VEHICLE_PREFERRED_SIDE_REQUIRED_FRAMES=1
-prompt_float VEHICLE_YOLO_TIMEOUT_SEC "YOLO 검출 유지 시간 [s]" 2.50 0.05 10.0
+prompt_float VEHICLE_YOLO_TIMEOUT_SEC "YOLO 검출 유지 시간 [s]" 1.00 0.05 10.0
 prompt_bool VEHICLE_AVOIDANCE_IMMEDIATE_ON_YOLO \
   "YOLO 차량을 중앙선 좌우로 판단하면 LiDAR 승인 없이 즉시 회피" \
   "$AVOIDANCE_IMMEDIATE_DEFAULT"
@@ -120,13 +120,13 @@ prompt_float VEHICLE_AVOIDANCE_ENTRY_DISTANCE_M \
   "즉시 회피를 끈 경우 회피 진입 거리 [m]" 1.20 0.20 5.0
 prompt_float VEHICLE_MINIMUM_SIDE_CLEARANCE_M \
   "회피할 쪽의 최소 빈 공간 [m]" 0.70 0.10 3.0
-prompt_float VEHICLE_LEFT_OFFSET_M "왼쪽 회피 이동량 [m]" 0.28 0.0 1.5
-prompt_float VEHICLE_RIGHT_OFFSET_M "오른쪽 회피 이동량 [m]" 0.31 0.0 1.5
-prompt_float VEHICLE_OFFSET_RATE_MPS "횡이동 변화율 [m/s]" 0.35 0.01 3.0
+prompt_float VEHICLE_LEFT_OFFSET_M "왼쪽 회피 이동량 [m]" 0.20 0.0 1.5
+prompt_float VEHICLE_RIGHT_OFFSET_M "오른쪽 회피 이동량 [m]" 0.20 0.0 1.5
+prompt_float VEHICLE_OFFSET_RATE_MPS "횡이동 변화율 [m/s]" 0.65 0.01 3.0
 prompt_float VEHICLE_AVOIDANCE_SPEED_LIMIT_COMMAND \
-  "회피 중 속도 상한 command" 8.0 0.0 30.0
-prompt_float VEHICLE_MINIMUM_AVOID_SEC "최소 회피 유지 시간 [s]" 0.80 0.0 10.0
-prompt_float VEHICLE_CLEAR_HOLD_SEC "장애물 소실 확인 시간 [s]" 1.0 0.0 10.0
+  "회피 중 속도 상한 command" 20.0 0.0 30.0
+prompt_float VEHICLE_MINIMUM_AVOID_SEC "최소 회피 유지 시간 [s]" 0.50 0.0 10.0
+prompt_float VEHICLE_CLEAR_HOLD_SEC "장애물 소실 확인 시간 [s]" 0.50 0.0 10.0
 prompt_float VEHICLE_RETURN_HOLD_SEC "중앙 복귀 최소 시간 [s]" 0.30 0.0 10.0
 prompt_float VEHICLE_RETURN_DEADBAND_M "중앙 복귀 완료 오차 [m]" 0.02 0.0 0.5
 prompt_float LIDAR_OBSTACLE_DETECT_DISTANCE_M \

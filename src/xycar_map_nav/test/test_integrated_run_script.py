@@ -155,7 +155,7 @@ def test_integrated_yellow_count_trigger_is_selectable_with_safe_default() -> No
     assert '"yellow_absent_frames": "1"' in source
 
 
-def test_integrated_vehicle_classes_and_speed_limits_remain_separate() -> None:
+def test_integrated_vehicle_classes_use_avoidance_speed_cap() -> None:
     object_config = OBJECT_CONFIG.read_text(encoding="utf-8")
     hybrid_config = HYBRID_CONFIG.read_text(encoding="utf-8")
 
@@ -169,10 +169,10 @@ def test_integrated_vehicle_classes_and_speed_limits_remain_separate() -> None:
         in hybrid_config
     )
     assert (
-        "vehicle_red_car_avoidance_speed_limit_command: 8.0"
+        "vehicle_red_car_avoidance_speed_limit_command: 20.0"
         in hybrid_config
     )
     assert (
-        "vehicle_green_car_avoidance_speed_limit_command: 15.0"
+        "vehicle_green_car_avoidance_speed_limit_command: 20.0"
         in hybrid_config
     )

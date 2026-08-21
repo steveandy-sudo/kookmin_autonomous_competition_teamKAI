@@ -133,6 +133,8 @@ sequential_hybrid_driver:
     # The detector runs at 3 Hz, so 0.5 s still spans a normal frame interval.
     vehicle_lidar_sector_memory_sec: 0.5
     vehicle_preferred_side_required_frames: 1
+    # Recheck obstacle position while avoiding, but reject one-frame side flips.
+    vehicle_active_side_reselection_required_frames: 2
     # Use the fitted yellow divider for avoidance-side selection on curves too.
     vehicle_side_decision_straight_only: false
     vehicle_side_decision_max_rule_angle_command: 8.0
@@ -151,12 +153,10 @@ sequential_hybrid_driver:
     # Shift equally from the calibrated normal-driving centerline.
     vehicle_left_offset_m: 0.20
     vehicle_right_offset_m: 0.20
-    vehicle_offset_rate_mps: 0.50
-    # red_car retains the validated avoidance speed; green_car uses the same
-    # path/steering state machine with a higher speed limit.
-    vehicle_avoidance_speed_limit_command: 8.0
-    vehicle_red_car_avoidance_speed_limit_command: 8.0
-    vehicle_green_car_avoidance_speed_limit_command: 15.0
+    vehicle_offset_rate_mps: 0.65
+    vehicle_avoidance_speed_limit_command: 20.0
+    vehicle_red_car_avoidance_speed_limit_command: 20.0
+    vehicle_green_car_avoidance_speed_limit_command: 20.0
     vehicle_minimum_avoid_sec: 0.50
     vehicle_clear_hold_sec: 0.50
     vehicle_return_hold_sec: 0.30

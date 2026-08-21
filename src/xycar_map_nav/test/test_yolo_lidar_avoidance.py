@@ -580,11 +580,12 @@ def test_immediate_yolo_keeps_driving_until_straight_side_is_decided():
     assert state.lateral_offset_m < 0.0
 
 
-def test_immediate_avoidance_keeps_its_side_across_short_detection_gap():
+def test_immediate_avoidance_reselects_side_after_confirmed_frames():
     controller = YoloLidarAvoidanceController(
         YoloLidarAvoidanceConfig(
             immediate_on_yolo=True,
             yolo_timeout_sec=2.5,
+            active_side_reselection_required_frames=2,
         )
     )
     for now in (0.0, 0.1):
@@ -623,6 +624,21 @@ def test_immediate_avoidance_keeps_its_side_across_short_detection_gap():
         cone_active=False,
     )
     assert state.mode == YoloLidarAvoidanceMode.AVOID_LEFT
+
+    controller.observe_yolo(
+        now_sec=2.3,
+        detected=True,
+        confidence=0.9,
+        lidar_distance_m=2.2,
+        preferred_mode=YoloLidarAvoidanceMode.AVOID_RIGHT,
+    )
+    state = controller.step(
+        now_sec=2.4,
+        dt_sec=0.1,
+        obstacle=None,
+        cone_active=False,
+    )
+    assert state.mode == YoloLidarAvoidanceMode.AVOID_RIGHT
 
 
 def test_both_sides_blocked_waits_instead_of_turning():

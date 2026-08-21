@@ -87,7 +87,9 @@ LiDAR ──── 라바콘 경계·장애물 거리 → CONE/AVOIDANCE 후보 
 
 - 카메라 bbox 방위와 LiDAR 군집을 결합해 장애물 거리와 회피 방향을 정한다.
 - `red_car`와 `green_car`를 별도 클래스로 유지하면서 같은 회피 경로·조향 상태기를 사용한다.
-- `red_car` 회피 속도 상한은 `8`, `green_car` 회피 속도 상한은 `15`이다.
+- 차량 회피 속도 상한은 클래스와 관계없이 `20`이다.
+- 회피 중 반대쪽 판단은 2프레임 연속 확인한 뒤 방향을 재선택한다.
+- 지름길 구간에서는 차량 회피 전환을 억제한다.
 - 통합 주행 전체 속도 상한이 더 낮으면 최종 출력은 그 값을 넘지 않는다.
 
 ## 5. 통합 주행 실행 매뉴얼
@@ -109,7 +111,7 @@ cd /home/xytron/xycar_ws && unset XYCAR_WS && XYCAR_TEST_PROFILE=integrated XYCA
 | 직선 속도 | 25 |
 | 곡선·짧거나 기억된 경로 속도 | 11 |
 | 라바콘 속도 | 8 |
-| `red_car` / `green_car` 회피 상한 | 8 / 15 |
+| `red_car` / `green_car` 회피 상한 | 20 / 20 |
 | 지름길 감지 기준 | `yellow_count`, 노란 점선 2개 |
 | 지름길 강제 조향 / RULE 복귀 | -37 / 1.2초 |
 
@@ -131,8 +133,8 @@ cd /home/xytron/xycar_ws && unset XYCAR_WS && XYCAR_TEST_PROFILE=integrated XYCA
 | 클래스 | 사용 방식 |
 | --- | --- |
 | `cone` | 다중 라바콘 통로 진입 또는 단일 장애물 회피 |
-| `red_car` | 기존 차량 회피, 속도 상한 `8` |
-| `green_car` | 차량 회피, 속도 상한 `15` |
+| `red_car` | 기존 차량 회피, 속도 상한 `20` |
+| `green_car` | 차량 회피, 속도 상한 `20` |
 | `red_4`, `yellow_4`, `green_4` | 최초 신호등 출발 판단 |
 | `left_4` | 지름길 진입 요청 |
 | `null_4` | 미션 판단에서 사용하지 않음 |

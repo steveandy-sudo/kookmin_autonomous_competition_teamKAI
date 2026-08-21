@@ -445,6 +445,10 @@ def generate_launch_description():
                 "vehicle_preferred_side_required_frames", default_value="1"
             ),
             DeclareLaunchArgument(
+                "vehicle_active_side_reselection_required_frames",
+                default_value="2",
+            ),
+            DeclareLaunchArgument(
                 "vehicle_lidar_min_points", default_value="2"
             ),
             DeclareLaunchArgument(
@@ -470,10 +474,18 @@ def generate_launch_description():
             DeclareLaunchArgument("vehicle_left_offset_m", default_value="0.20"),
             DeclareLaunchArgument("vehicle_right_offset_m", default_value="0.20"),
             DeclareLaunchArgument(
-                "vehicle_offset_rate_mps", default_value="0.50"
+                "vehicle_offset_rate_mps", default_value="0.65"
             ),
             DeclareLaunchArgument(
-                "vehicle_avoidance_speed_limit_command", default_value="8.0"
+                "vehicle_avoidance_speed_limit_command", default_value="20.0"
+            ),
+            DeclareLaunchArgument(
+                "vehicle_red_car_avoidance_speed_limit_command",
+                default_value="20.0",
+            ),
+            DeclareLaunchArgument(
+                "vehicle_green_car_avoidance_speed_limit_command",
+                default_value="20.0",
             ),
             DeclareLaunchArgument(
                 "vehicle_minimum_avoid_sec", default_value="0.50"
@@ -1325,6 +1337,12 @@ def generate_launch_description():
                             ),
                             value_type=int,
                         ),
+                        "vehicle_active_side_reselection_required_frames": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_active_side_reselection_required_frames"
+                            ),
+                            value_type=int,
+                        ),
                         "vehicle_side_decision_straight_only": ParameterValue(
                             LaunchConfiguration(
                                 "vehicle_side_decision_straight_only"
@@ -1410,6 +1428,18 @@ def generate_launch_description():
                         "vehicle_avoidance_speed_limit_command": ParameterValue(
                             LaunchConfiguration(
                                 "vehicle_avoidance_speed_limit_command"
+                            ),
+                            value_type=float,
+                        ),
+                        "vehicle_red_car_avoidance_speed_limit_command": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_red_car_avoidance_speed_limit_command"
+                            ),
+                            value_type=float,
+                        ),
+                        "vehicle_green_car_avoidance_speed_limit_command": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_green_car_avoidance_speed_limit_command"
                             ),
                             value_type=float,
                         ),

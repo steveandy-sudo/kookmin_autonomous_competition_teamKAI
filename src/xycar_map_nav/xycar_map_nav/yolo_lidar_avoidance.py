@@ -39,6 +39,7 @@ class YoloLidarAvoidanceConfig:
     return_deadband_m: float = 0.02
     immediate_on_yolo: bool = False
     preferred_side_required_frames: int = 2
+    active_side_reselection_required_frames: int = 2
 
 
 @dataclass(frozen=True)
@@ -181,11 +182,23 @@ class YoloLidarAvoidanceController:
             else:
                 self.preferred_candidate = preferred_mode
                 self.preferred_candidate_frames = 1
-            if self.preferred_candidate_frames >= max(
-                1,
-                int(self.config.preferred_side_required_frames),
-            ):
+            active_side_change = (
+                self.mode
+                in {
+                    YoloLidarAvoidanceMode.AVOID_LEFT,
+                    YoloLidarAvoidanceMode.AVOID_RIGHT,
+                }
+                and preferred_mode != self.mode
+            )
+            required_frames = (
+                self.config.active_side_reselection_required_frames
+                if active_side_change
+                else self.config.preferred_side_required_frames
+            )
+            if self.preferred_candidate_frames >= max(1, int(required_frames)):
                 self.preferred_mode = preferred_mode
+                if active_side_change:
+                    self._transition(preferred_mode, float(now_sec))
         if (
             self.mode == YoloLidarAvoidanceMode.IDLE
             and self.yolo_frames >= max(1, self.config.yolo_required_frames)

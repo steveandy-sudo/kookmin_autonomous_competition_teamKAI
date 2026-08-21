@@ -601,6 +601,11 @@ class SequentialHybridDriver(Node):
                         "vehicle_preferred_side_required_frames"
                     ).value
                 ),
+                active_side_reselection_required_frames=int(
+                    self.get_parameter(
+                        "vehicle_active_side_reselection_required_frames"
+                    ).value
+                ),
             )
         )
         self.avoidance_state = self.avoidance_controller.state()
@@ -980,6 +985,9 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("yellow_straight_max_rmse_px", 3.0)
         self.declare_parameter("yellow_straight_min_span_ratio", 0.20)
         self.declare_parameter("vehicle_preferred_side_required_frames", 1)
+        self.declare_parameter(
+            "vehicle_active_side_reselection_required_frames", 2
+        )
         self.declare_parameter("vehicle_lidar_min_points", 2)
         self.declare_parameter("vehicle_lidar_sector_memory_sec", 0.5)
         self.declare_parameter(
@@ -1005,13 +1013,13 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("vehicle_minimum_side_clearance_m", 0.70)
         self.declare_parameter("vehicle_left_offset_m", 0.20)
         self.declare_parameter("vehicle_right_offset_m", 0.20)
-        self.declare_parameter("vehicle_offset_rate_mps", 0.50)
-        self.declare_parameter("vehicle_avoidance_speed_limit_command", 4.0)
+        self.declare_parameter("vehicle_offset_rate_mps", 0.65)
+        self.declare_parameter("vehicle_avoidance_speed_limit_command", 20.0)
         self.declare_parameter(
-            "vehicle_red_car_avoidance_speed_limit_command", 8.0
+            "vehicle_red_car_avoidance_speed_limit_command", 20.0
         )
         self.declare_parameter(
-            "vehicle_green_car_avoidance_speed_limit_command", 15.0
+            "vehicle_green_car_avoidance_speed_limit_command", 20.0
         )
         self.declare_parameter("vehicle_minimum_avoid_sec", 0.50)
         self.declare_parameter("vehicle_clear_hold_sec", 0.50)
