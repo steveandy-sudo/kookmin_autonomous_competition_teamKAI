@@ -52,7 +52,7 @@ class TrafficLightConfig:
     stop_required_frames: int = 2
     go_required_frames: int = 2
     left_required_frames: int = 2
-    left_absence_frames: int = 1
+    left_absence_frames: int = 2
     left_start_delay_sec: float = 0.75
 
     def __post_init__(self) -> None:
@@ -87,24 +87,6 @@ class TrafficLightDecision:
     signal_name: str
     box_area_ratio: float
     reason: str
-
-
-def left_signal_approach_speed_limit(
-    *,
-    left_detection_frames: int,
-    decision_action: TrafficLightAction,
-    maximum_speed_command: float,
-    blocked_by_active_mission: bool,
-) -> float | None:
-    """Cap RULE speed from the first valid left-arrow frame onward."""
-    if blocked_by_active_mission:
-        return None
-    if (
-        int(left_detection_frames) <= 0
-        and decision_action != TrafficLightAction.LEFT_APPROACH
-    ):
-        return None
-    return max(0.0, float(maximum_speed_command))
 
 
 class TrafficLightController:

@@ -12,7 +12,7 @@ canonical_stanley_pursuit_driver:
     # moving a visibly correct centerline across the vehicle center.
     control_latency_preview_sec: 0.20
     # Confirmed curves retain the measured-delay preview for earlier response.
-    curve_control_latency_preview_sec: 0.35
+    curve_control_latency_preview_sec: 0.40
     curve_control_latency_minimum_hold_sec: 0.50
     steering_lead_time_sec: 0.08
     steering_max_lead_command: 6.0
@@ -21,7 +21,6 @@ canonical_stanley_pursuit_driver:
     # control still uses its independent straight Stanley parameters.
     lookahead_distance_m: 0.30
     pure_pursuit_weight: 0.80
-    stanley_gain: 1.30
     # Use the net heading change over a long baseline. Taking the maximum of
     # three short segments classified straight-path fitting noise as a curve.
     curve_detection_near_x_m: 0.20
@@ -34,11 +33,11 @@ canonical_stanley_pursuit_driver:
     adaptive_curve_minimum_path_reach_m: 1.00
     adaptive_curve_confirmation_frames: 2
     adaptive_curve_release_frames: 2
-    # Keep yellow-referenced curve multiplication available without applying
-    # additional gain by default; never amplify a white fallback.
+    # The 2026-08-07 bags under-steered the first half of the S curve. Boost
+    # only yellow-referenced curve commands; never amplify a white fallback.
     curve_steering_multiplier_enabled: true
     curve_steering_multiplier_activation_command: 10.0
-    curve_steering_multiplier: 1.0
+    curve_steering_multiplier: 1.20
     curve_steering_yellow_reference_only: true
 
     # Begin the second S-curve steering only when the far yellow-centerline
@@ -47,7 +46,7 @@ canonical_stanley_pursuit_driver:
     yellow_curve_reversal_preview_near_x_m: 0.45
     # Use the farthest available 20 cm segment up to 0.90 m. This leaves time
     # for two-frame confirmation and the measured steering response delay.
-    yellow_curve_reversal_preview_far_x_m: 1.00
+    yellow_curve_reversal_preview_far_x_m: 0.90
     yellow_curve_reversal_preview_window_m: 0.20
     yellow_curve_reversal_preview_curvature_per_m: 0.12
     yellow_curve_reversal_preview_pursuit_rad: 0.12

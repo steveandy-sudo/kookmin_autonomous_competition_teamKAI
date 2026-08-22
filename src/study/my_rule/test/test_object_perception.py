@@ -3,7 +3,6 @@ import numpy as np
 from my_rule.perception.object_perception import (
     DetectionRecord,
     apply_class_aliases,
-    classify_two_half_signal_in_box,
     detection_side_counts,
     filter_detections,
     green_hsv_evidence_in_box,
@@ -96,69 +95,6 @@ def test_green_hsv_is_measured_only_inside_detector_box():
     assert evidence.valid
     assert evidence.green_pixels == 400
     assert evidence.pixel_ratio > 0.60
-
-
-def test_two_half_cv_distinguishes_right_concentrated_straight_green():
-    image = np.zeros((40, 160, 3), dtype=np.uint8)
-    image[8:32, 128:152] = (0, 255, 0)
-
-    evidence = classify_two_half_signal_in_box(
-        image,
-        (0, 0, 160, 40),
-        lower_hsv=[35, 60, 100],
-        upper_hsv=[100, 255, 255],
-    )
-
-    assert evidence.valid
-    assert evidence.classification == "green_4"
-    assert not evidence.left_active
-    assert evidence.right_active
-
-
-def test_two_half_cv_ignores_small_near_divider_reflection():
-    image = np.zeros((40, 160, 3), dtype=np.uint8)
-    image[16:20, 81:85] = (0, 255, 0)
-    image[8:32, 128:152] = (0, 255, 0)
-
-    evidence = classify_two_half_signal_in_box(
-        image,
-        (0, 0, 160, 40),
-        lower_hsv=[35, 60, 100],
-        upper_hsv=[100, 255, 255],
-    )
-
-    assert evidence.classification == "green_4"
-    assert evidence.right_dominant_center_x_ratio > 0.15
-
-
-def test_two_half_cv_uses_dominant_green_near_divider_for_left_turn():
-    image = np.zeros((40, 160, 3), dtype=np.uint8)
-    image[8:32, 81:91] = (0, 255, 0)
-
-    evidence = classify_two_half_signal_in_box(
-        image,
-        (0, 0, 160, 40),
-        lower_hsv=[35, 60, 100],
-        upper_hsv=[100, 255, 255],
-    )
-
-    assert evidence.classification == "left_4"
-    assert evidence.right_active
-    assert evidence.right_dominant_center_x_ratio <= 0.15
-
-
-def test_two_half_cv_returns_unknown_without_green_evidence():
-    image = np.full((40, 160, 3), 255, dtype=np.uint8)
-
-    evidence = classify_two_half_signal_in_box(
-        image,
-        (0, 0, 160, 40),
-        lower_hsv=[35, 60, 100],
-        upper_hsv=[100, 255, 255],
-    )
-
-    assert evidence.valid
-    assert evidence.classification == "unknown"
 
 
 def test_cone_side_counts_respect_center_deadband():

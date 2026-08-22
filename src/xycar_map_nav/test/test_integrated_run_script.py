@@ -43,85 +43,6 @@ def test_complete_run_prompts_for_curve_multiplier_first() -> None:
     speed_prompt = source.index('"주행 속도 command')
     assert multiplier_prompt < speed_prompt
     assert source.count('prompt_float CURVE_STEERING_MULTIPLIER \\\n') == 1
-    assert (
-        '"S자/곡선 조향 배수 (1.0=증폭 없음)" 1.0 0.0 3.0'
-        in source
-    )
-
-
-def test_integrated_run_exposes_independent_overall_speed_limit() -> None:
-    run_source = RUN_SCRIPT.read_text(encoding="utf-8")
-    complete_source = COMPLETE_SCRIPT.read_text(encoding="utf-8")
-
-    for source in (run_source, complete_source):
-        assert (
-            'OVERALL_SPEED_LIMIT_COMMAND="${OVERALL_SPEED_LIMIT_COMMAND:-15.0}"'
-            in source
-        )
-    assert (
-        "overall_speed_limit_command: $OVERALL_SPEED_LIMIT_COMMAND"
-        in run_source
-    )
-    assert '-p speed_command:="$OVERALL_SPEED_LIMIT_COMMAND"' in run_source
-
-
-def test_integrated_run_prompts_for_vehicle_avoidance_offsets() -> None:
-    run_source = RUN_SCRIPT.read_text(encoding="utf-8")
-    complete_source = COMPLETE_SCRIPT.read_text(encoding="utf-8")
-    launch_source = LAUNCH_FILE.read_text(encoding="utf-8")
-    config_source = HYBRID_CONFIG.read_text(encoding="utf-8")
-
-    assert 'VEHICLE_LEFT_OFFSET_M="${VEHICLE_LEFT_OFFSET_M:-0.15}"' in run_source
-    assert 'VEHICLE_RIGHT_OFFSET_M="${VEHICLE_RIGHT_OFFSET_M:-0.15}"' in run_source
-    assert 'prompt_float VEHICLE_LEFT_OFFSET_M \\\n' in complete_source
-    assert 'prompt_float VEHICLE_RIGHT_OFFSET_M \\\n' in complete_source
-    assert '"오른쪽 장애물 감지 시 왼쪽 회피 이동량 [m]" 0.15' in complete_source
-    assert '"왼쪽 장애물 감지 시 오른쪽 회피 이동량 [m]" 0.15' in complete_source
-    assert 'export VEHICLE_LEFT_OFFSET_M VEHICLE_RIGHT_OFFSET_M' in complete_source
-    assert '"vehicle_left_offset_m", default_value="0.15"' in launch_source
-    assert '"vehicle_right_offset_m", default_value="0.15"' in launch_source
-    assert "vehicle_left_offset_m: 0.15" in config_source
-    assert "vehicle_right_offset_m: 0.15" in config_source
-
-
-def test_integrated_run_exposes_shortcut_left_lane_preposition_offset() -> None:
-    run_source = RUN_SCRIPT.read_text(encoding="utf-8")
-    launch_source = LAUNCH_FILE.read_text(encoding="utf-8")
-    config_source = HYBRID_CONFIG.read_text(encoding="utf-8")
-
-    assert (
-        'SHORTCUT_LEFT_LANE_OFFSET_M="${SHORTCUT_LEFT_LANE_OFFSET_M:-0.10}"'
-        in run_source
-    )
-    assert (
-        'shortcut_left_lane_offset_m:="$SHORTCUT_LEFT_LANE_OFFSET_M"'
-        in run_source
-    )
-    assert (
-        '"shortcut_left_lane_offset_m", default_value="0.10"'
-        in launch_source
-    )
-    assert "shortcut_left_lane_offset_m: 0.10" in config_source
-
-
-def test_integrated_curve_response_defaults_match_real_profile() -> None:
-    run_source = RUN_SCRIPT.read_text(encoding="utf-8")
-    complete_source = COMPLETE_SCRIPT.read_text(encoding="utf-8")
-    launch_source = LAUNCH_FILE.read_text(encoding="utf-8")
-
-    assert 'CURVE_STEERING_MULTIPLIER:-1.0' in run_source
-    assert '"Curve control latency preview [s]" 0.35' in run_source
-    assert '"곡선 제어 지연 예측 시간 [s]" 0.35' in complete_source
-    assert '"curve_steering_multiplier", default_value="1.0"' in launch_source
-    assert (
-        '"curve_control_latency_preview_sec", default_value="0.35"'
-        in launch_source
-    )
-    assert (
-        '"yellow_curve_reversal_preview_far_x_m",\n'
-        '                default_value="1.00"'
-        in launch_source
-    )
 
 
 def test_integrated_launch_scopes_runtime_overrides_to_exact_nodes() -> None:
@@ -199,50 +120,31 @@ def test_integrated_run_exposes_temporary_traffic_light_disable() -> None:
     assert 'traffic_light_control_enabled:="$TRAFFIC_LIGHT_CONTROL_ENABLED"' in source
     assert '"traffic_light_control_enabled", default_value="true"' in launch_source
     assert 'LaunchConfiguration(\n                                "traffic_light_control_enabled"' in launch_source
-    assert '"shortcut_entry_speed_command": ParameterValue(' in launch_source
-    assert '"shortcut_yolo_absence_frames": 1' in launch_source
-    assert "shortcut_yolo_absence_frames: 1" in HYBRID_CONFIG.read_text(
-        encoding="utf-8"
-    )
-    assert 'VEHICLE_YOLO_TIMEOUT_SEC:-0.50' in source
-    assert '"vehicle_yolo_timeout_sec", default_value="0.50"' in launch_source
 
 
-def test_integrated_run_exposes_temporary_shortcut_disable() -> None:
-    source = RUN_SCRIPT.read_text(encoding="utf-8")
-
-    assert 'START_SHORTCUT="${XYCAR_START_SHORTCUT:-true}"' in source
-    assert 'start_shortcut:="$START_SHORTCUT"' in source
-    assert 'echo "Shortcut control: $START_SHORTCUT"' in source
-
-
-def test_integrated_run_defaults_to_20_12_11_profile() -> None:
+def test_integrated_run_defaults_to_first_finish_25_11_11_profile() -> None:
     run_source = RUN_SCRIPT.read_text(encoding="utf-8")
     complete_source = COMPLETE_SCRIPT.read_text(encoding="utf-8")
     launch_source = LAUNCH_FILE.read_text(encoding="utf-8")
 
     for source in (run_source, complete_source):
-        assert 'SPEED_COMMAND="${1:-${SPEED_COMMAND:-20.0}}"' in source
+        assert 'SPEED_COMMAND="${1:-${SPEED_COMMAND:-25.0}}"' in source
         assert 'CURVATURE_SPEED_CONTROL_ENABLED="${CURVATURE_SPEED_CONTROL_ENABLED:-true}"' in source
         assert 'CURVE_SPEED_COMMAND="${CURVE_SPEED_COMMAND:-}"' in source
         assert 'DEGRADED_PATH_SPEED_COMMAND="${DEGRADED_PATH_SPEED_COMMAND:-}"' in source
         assert 'STRAIGHT_PATH_CURVATURE_THRESHOLD="${STRAIGHT_PATH_CURVATURE_THRESHOLD:-0.24}"' in source
         assert 'STEERING_CURRENT_WEIGHT="${STEERING_CURRENT_WEIGHT:-0.35}"' in source
         assert 'STEERING_CURVE_CURRENT_WEIGHT="${STEERING_CURVE_CURRENT_WEIGHT:-0.80}"' in source
-        assert 'YELLOW_CURVE_REVERSAL_PREVIEW_FAR_X_M="${YELLOW_CURVE_REVERSAL_PREVIEW_FAR_X_M:-1.00}"' in source
-        assert "speed < 12.0 ? speed : 12.0" in source
-        assert "curve < 11.0 ? curve : 11.0" in source
+        assert "speed < 11.0 ? speed : 11.0" in source
+        assert "curve < 15.0 ? curve : 15.0" in source
         assert "12.0 0.0 30.0" in source
-    assert '"speed_command", default_value="20.0"' in launch_source
-    assert '"curve_speed_command", default_value="12.0"' in launch_source
+    assert '"speed_command", default_value="25.0"' in launch_source
+    assert '"curve_speed_command", default_value="11.0"' in launch_source
     assert '"degraded_path_speed_command", default_value="11.0"' in launch_source
     assert '"adaptive_curve_lookahead_m", default_value="0.30"' in launch_source
     assert '"straight_path_curvature_threshold", default_value="0.24"' in launch_source
     assert '"steering_current_weight", default_value="0.35"' in launch_source
     assert '"steering_curve_current_weight", default_value="0.80"' in launch_source
-    assert '"stanley_gain", default_value="1.30"' in launch_source
-    assert '"Curve Stanley cross-track gain" 1.30' in run_source
-    assert '"곡선 Stanley 횡오차 gain" 1.30' in complete_source
 
 
 def test_integrated_run_enables_only_post_mission_s_entry_guard() -> None:
@@ -251,18 +153,8 @@ def test_integrated_run_enables_only_post_mission_s_entry_guard() -> None:
 
     assert 'S_CURVE_ENTRY_GUARD_ENABLED="${S_CURVE_ENTRY_GUARD_ENABLED:-true}"' in run_source
     assert 'S_CURVE_ENTRY_SPEED_CAP_COMMAND="${S_CURVE_ENTRY_SPEED_CAP_COMMAND:-11.0}"' in run_source
-    assert (
-        'S_CURVE_ENTRY_RED_CAR_SPEED_CAP_COMMAND="'
-        '${S_CURVE_ENTRY_RED_CAR_SPEED_CAP_COMMAND:-13.0}"'
-        in run_source
-    )
     assert 's_curve_entry_guard_enabled:="$S_CURVE_ENTRY_GUARD_ENABLED"' in run_source
     assert 's_curve_entry_speed_cap_command:="$S_CURVE_ENTRY_SPEED_CAP_COMMAND"' in run_source
-    assert (
-        's_curve_entry_red_car_speed_cap_command:="'
-        '$S_CURVE_ENTRY_RED_CAR_SPEED_CAP_COMMAND"'
-        in run_source
-    )
     assert "S_CURVE_ENTRY_MAXIMUM_RIGHT_ANGLE_COMMAND" not in run_source
     assert "s_curve_entry_maximum_right_angle_command" not in launch_source
     assert (
@@ -271,16 +163,6 @@ def test_integrated_run_enables_only_post_mission_s_entry_guard() -> None:
     )
     assert (
         '"s_curve_entry_speed_cap_command", default_value="11.0"'
-        in launch_source
-    )
-    assert (
-        '"s_curve_entry_curve_speed_margin_command",\n'
-        '                default_value="1.00",'
-        in launch_source
-    )
-    assert (
-        '"s_curve_entry_red_car_speed_cap_command",\n'
-        '                default_value="13.0",'
         in launch_source
     )
     assert (
@@ -294,8 +176,8 @@ def test_low_speed_profile_derives_curve_defaults_from_requested_cap() -> None:
     for script in (RUN_SCRIPT, COMPLETE_SCRIPT):
         source = script.read_text(encoding="utf-8")
 
-        assert "(speed < 12.0 ? speed : 12.0)" in source
-        assert "(curve < 11.0 ? curve : 11.0)" in source
+        assert "(speed < 11.0 ? speed : 11.0)" in source
+        assert "(curve < 15.0 ? curve : 15.0)" in source
         assert source.index('SPEED_COMMAND="$(awk') < source.index(
             "curve_default=\"$(awk"
         )

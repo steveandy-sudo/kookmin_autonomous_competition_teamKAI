@@ -103,9 +103,7 @@ sequential_hybrid_driver:
     shortcut_class_name: left_4
     shortcut_yolo_min_confidence: 0.40
     shortcut_yolo_required_frames: 2
-    shortcut_yolo_absence_frames: 1
-    shortcut_entry_speed_command: 9.0
-    shortcut_left_lane_offset_m: 0.10
+    shortcut_yolo_absence_frames: 2
     shortcut_wait_for_entry_ready: true
     shortcut_entry_ready_topic: /shortcut/entry/ready
     shortcut_entry_search_timeout_sec: 12.0
@@ -115,16 +113,14 @@ sequential_hybrid_driver:
     shortcut_processing_enabled_topic: /hybrid/shortcut_processing_enabled
 
     # Mission-scoped S-entry slowdown validated on the 2026-08-20 bags.
-    # Shortcut/green-car exits use the conservative cap. Red-car avoidance
-    # keeps a separate cap until the following left curve is confirmed.
+    # Only shortcut and green-car exits arm this guard; RULE steering is kept.
     s_curve_entry_guard_enabled: true
     s_curve_entry_speed_cap_command: 11.0
-    s_curve_entry_red_car_speed_cap_command: 13.0
     s_curve_entry_straight_max_abs_angle_command: 5.0
     s_curve_entry_straight_confirmation_frames: 3
     s_curve_entry_minimum_curve_distance_m: 1.50
     s_curve_entry_left_angle_command: -8.0
-    s_curve_entry_curve_speed_margin_command: 1.00
+    s_curve_entry_curve_speed_margin_command: 0.50
     s_curve_entry_curve_confirmation_frames: 3
     s_curve_entry_overdue_distance_m: 4.50
 
@@ -143,7 +139,7 @@ sequential_hybrid_driver:
     vehicle_class_names: [obstacle_vehicle, red_car, green_car]
     vehicle_yolo_min_confidence: 0.45
     vehicle_yolo_required_frames: 1
-    vehicle_yolo_timeout_sec: 0.50
+    vehicle_yolo_timeout_sec: 1.00
     # Release a stale red-car detection sooner; green-car behavior is unchanged.
     vehicle_red_car_yolo_timeout_sec: 0.30
     vehicle_camera_lidar_hfov_deg: 60.0
@@ -171,8 +167,8 @@ sequential_hybrid_driver:
     vehicle_avoidance_entry_distance_m: 1.20
     vehicle_minimum_side_clearance_m: 0.70
     # Shift equally from the calibrated normal-driving centerline.
-    vehicle_left_offset_m: 0.15
-    vehicle_right_offset_m: 0.15
+    vehicle_left_offset_m: 0.20
+    vehicle_right_offset_m: 0.20
     vehicle_offset_rate_mps: 0.65
     vehicle_avoidance_speed_limit_command: 20.0
     vehicle_red_car_avoidance_speed_limit_command: 20.0

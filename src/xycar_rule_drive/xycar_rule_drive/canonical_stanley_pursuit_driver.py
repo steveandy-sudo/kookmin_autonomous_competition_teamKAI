@@ -1535,7 +1535,7 @@ class CanonicalStanleyPursuitDriver(Node):
             "yellow_curve_reversal_preview_near_x_m", 0.45
         )
         self.declare_parameter(
-            "yellow_curve_reversal_preview_far_x_m", 1.00
+            "yellow_curve_reversal_preview_far_x_m", 0.90
         )
         self.declare_parameter(
             "yellow_curve_reversal_preview_window_m", 0.20

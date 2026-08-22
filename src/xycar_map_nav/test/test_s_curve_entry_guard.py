@@ -1,7 +1,6 @@
 import pytest
 
 from xycar_map_nav.s_curve_entry_guard import green_car_avoidance_completed
-from xycar_map_nav.s_curve_entry_guard import red_car_avoidance_completed
 from xycar_map_nav.s_curve_entry_guard import SCurveEntryEvent
 from xycar_map_nav.s_curve_entry_guard import SCurveEntryGuard
 from xycar_map_nav.s_curve_entry_guard import SCurveEntryGuardConfig
@@ -26,7 +25,7 @@ def update(
     )
 
 
-def test_completed_vehicle_avoidance_is_class_specific() -> None:
+def test_only_completed_green_car_avoidance_is_a_trigger() -> None:
     assert green_car_avoidance_completed(
         previous_controls_vehicle=True,
         previous_target_class_name="green_car",
@@ -35,16 +34,6 @@ def test_completed_vehicle_avoidance_is_class_specific() -> None:
     assert not green_car_avoidance_completed(
         previous_controls_vehicle=True,
         previous_target_class_name="red_car",
-        controls_vehicle=False,
-    )
-    assert red_car_avoidance_completed(
-        previous_controls_vehicle=True,
-        previous_target_class_name="red_car",
-        controls_vehicle=False,
-    )
-    assert not red_car_avoidance_completed(
-        previous_controls_vehicle=True,
-        previous_target_class_name="green_car",
         controls_vehicle=False,
     )
     assert not green_car_avoidance_completed(
@@ -75,36 +64,6 @@ def test_both_explicit_mission_exits_start_command_11_guard(trigger) -> None:
     assert angle == 2.0
     assert speed == 11.0
     assert guard.state().trigger == trigger
-
-
-def test_red_car_exit_starts_command_13_guard() -> None:
-    guard = SCurveEntryGuard(SCurveEntryGuardConfig())
-
-    assert (
-        guard.start(SCurveEntryTrigger.RED_CAR_EXIT)
-        == SCurveEntryEvent.STARTED
-    )
-    assert guard.limit_command(
-        angle_command=2.0,
-        speed_command=25.0,
-    ) == (2.0, 13.0)
-
-
-def test_red_car_guard_releases_on_confirmed_left_without_distance_gate() -> None:
-    guard = SCurveEntryGuard(SCurveEntryGuardConfig())
-    guard.start(SCurveEntryTrigger.RED_CAR_EXIT)
-
-    for _ in range(3):
-        update(guard, angle=1.0, speed=25.0, vehicle_speed=0.2, dt=0.1)
-    assert guard.state().straight_ready
-    assert guard.state().distance_m < 1.50
-
-    assert update(guard, angle=-10.0, speed=25.0) == SCurveEntryEvent.NONE
-    assert update(guard, angle=-12.0, speed=25.0) == SCurveEntryEvent.NONE
-    assert (
-        update(guard, angle=-14.0, speed=25.0)
-        == SCurveEntryEvent.CURVE_HANDOFF
-    )
 
 
 def test_no_trigger_leaves_an_ordinary_corner_unchanged() -> None:
@@ -168,10 +127,10 @@ def test_normal_rule_curve_takes_over_after_three_left_frames() -> None:
         update(guard, angle=0.0, speed=25.0)
     assert guard.state().straight_ready
 
-    assert update(guard, angle=-10.0, speed=12.0) == SCurveEntryEvent.NONE
-    assert update(guard, angle=-13.0, speed=12.0) == SCurveEntryEvent.NONE
+    assert update(guard, angle=-10.0, speed=11.0) == SCurveEntryEvent.NONE
+    assert update(guard, angle=-13.0, speed=11.0) == SCurveEntryEvent.NONE
     assert (
-        update(guard, angle=-18.0, speed=12.0)
+        update(guard, angle=-18.0, speed=11.0)
         == SCurveEntryEvent.CURVE_HANDOFF
     )
     assert not guard.state().active
@@ -179,8 +138,8 @@ def test_normal_rule_curve_takes_over_after_three_left_frames() -> None:
     # Once normal curve mode owns the car, this feature no longer modifies it.
     assert guard.limit_command(
         angle_command=-25.0,
-        speed_command=12.0,
-    ) == (-25.0, 12.0)
+        speed_command=11.0,
+    ) == (-25.0, 11.0)
 
 
 def test_guard_never_raises_a_lower_safety_speed() -> None:

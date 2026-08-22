@@ -32,7 +32,6 @@ from my_rule.perception.camera_input import (
 from my_rule.perception.object_perception import (
     DetectionRecord,
     apply_class_aliases,
-    classify_two_half_signal_in_box,
     filter_detections,
     green_hsv_evidence_in_box,
     normalize_class_name,
@@ -96,17 +95,6 @@ class ObjectDetectionNode(Node):
             "startup_green_min_pixels": 20,
             "startup_green_min_pixel_ratio": 0.015,
             "startup_green_required_frames": 2,
-            "traffic_signal_cv_enabled": True,
-            "traffic_signal_cv_hsv_lower": [35, 60, 100],
-            "traffic_signal_cv_hsv_upper": [100, 255, 255],
-            "traffic_signal_cv_split_ratio": 0.50,
-            "traffic_signal_cv_horizontal_inset_ratio": 0.0,
-            "traffic_signal_cv_vertical_inset_ratio": 0.10,
-            "traffic_signal_cv_min_green_pixels": 4,
-            "traffic_signal_cv_min_green_pixel_ratio": 0.01,
-            "traffic_signal_cv_right_half_minimum_component_pixels": 4,
-            "traffic_signal_cv_right_half_left_max_center_ratio": 0.15,
-            "traffic_signal_cv_fallback_to_yolo": True,
             "required_classes": [
                 "car",
                 "cone",
@@ -127,7 +115,6 @@ class ObjectDetectionNode(Node):
         self.dropped_stale_count = 0
         self.last_log_time = time.monotonic()
         self.last_detection_summary = ""
-        self.last_traffic_signal_cv_state = ""
         self.rectify_lock = threading.Lock()
         self.startup_lock = threading.Lock()
         self.startup_signal_box: tuple[int, int, int, int] | None = None
@@ -523,10 +510,6 @@ class ObjectDetectionNode(Node):
             apply_class_aliases(records, self.class_aliases),
             self.thresholds,
         )
-        accepted, traffic_signal_cv = self.verify_traffic_signals(
-            frame,
-            accepted,
-        )
         self.update_startup_signal_box(accepted, width, height)
         output = ObjectDetectionArray()
         output.header = message.header
@@ -555,16 +538,6 @@ class ObjectDetectionNode(Node):
             self.get_logger().info(f"[YOLO object] {summary}")
             self.last_detection_summary = summary
 
-        cv_summary = " | ".join(traffic_signal_cv)
-        cv_state = " | ".join(
-            item.split(" left_half=", 1)[0] for item in traffic_signal_cv
-        )
-        if cv_summary and cv_state != self.last_traffic_signal_cv_state:
-            self.get_logger().info(f"[traffic light CV] {cv_summary}")
-            self.last_traffic_signal_cv_state = cv_state
-        elif not cv_summary:
-            self.last_traffic_signal_cv_state = ""
-
         if self.debug_pub.get_subscription_count() > 0:
             debug = frame.copy()
             for record in accepted:
@@ -585,37 +558,6 @@ class ObjectDetectionNode(Node):
                     2,
                     cv2.LINE_AA,
                 )
-                if record.class_name in {"green_4", "left_4"}:
-                    split_x = record.xmin + int(
-                        round(
-                            record.width
-                            * self.parameter_float(
-                                "traffic_signal_cv_split_ratio"
-                            )
-                        )
-                    )
-                    cv2.line(
-                        debug,
-                        (split_x, record.ymin),
-                        (split_x, record.ymax),
-                        (255, 180, 0),
-                        1,
-                    )
-                    decision_x = split_x + int(
-                        round(
-                            (record.xmax - split_x)
-                            * self.parameter_float(
-                                "traffic_signal_cv_right_half_left_max_center_ratio"
-                            )
-                        )
-                    )
-                    cv2.line(
-                        debug,
-                        (decision_x, record.ymin),
-                        (decision_x, record.ymax),
-                        (0, 80, 255),
-                        1,
-                    )
             debug_message = cv_image_to_message(
                 debug, "bgr8", message.header
             )
@@ -631,85 +573,6 @@ class ObjectDetectionNode(Node):
                 f"stale={self.dropped_stale_count}"
             )
             self.last_log_time = now
-
-    def verify_traffic_signals(
-        self,
-        frame,
-        records: list[DetectionRecord],
-    ) -> tuple[list[DetectionRecord], list[str]]:
-        """Use two-half HSV evidence to correct green/left YOLO labels."""
-
-        if not bool(self.get_parameter("traffic_signal_cv_enabled").value):
-            return records, []
-        fallback = bool(
-            self.get_parameter("traffic_signal_cv_fallback_to_yolo").value
-        )
-        verified: list[DetectionRecord] = []
-        summaries: list[str] = []
-        for record in records:
-            if record.class_name not in {"green_4", "left_4"}:
-                verified.append(record)
-                continue
-            evidence = classify_two_half_signal_in_box(
-                frame,
-                (record.xmin, record.ymin, record.xmax, record.ymax),
-                lower_hsv=list(
-                    self.get_parameter("traffic_signal_cv_hsv_lower").value
-                ),
-                upper_hsv=list(
-                    self.get_parameter("traffic_signal_cv_hsv_upper").value
-                ),
-                split_ratio=self.parameter_float(
-                    "traffic_signal_cv_split_ratio"
-                ),
-                horizontal_inset_ratio=self.parameter_float(
-                    "traffic_signal_cv_horizontal_inset_ratio"
-                ),
-                vertical_inset_ratio=self.parameter_float(
-                    "traffic_signal_cv_vertical_inset_ratio"
-                ),
-                minimum_green_pixels=int(
-                    self.get_parameter(
-                        "traffic_signal_cv_min_green_pixels"
-                    ).value
-                ),
-                minimum_green_pixel_ratio=self.parameter_float(
-                    "traffic_signal_cv_min_green_pixel_ratio"
-                ),
-                right_half_minimum_component_pixels=int(
-                    self.get_parameter(
-                        "traffic_signal_cv_right_half_minimum_component_pixels"
-                    ).value
-                ),
-                right_half_left_max_center_ratio=self.parameter_float(
-                    "traffic_signal_cv_right_half_left_max_center_ratio"
-                ),
-            )
-            selected_class = evidence.classification
-            if selected_class == "unknown" and fallback:
-                selected_class = record.class_name
-            if selected_class == "unknown":
-                continue
-            verified.append(
-                DetectionRecord(
-                    class_name=selected_class,
-                    class_id=record.class_id,
-                    confidence=record.confidence,
-                    xmin=record.xmin,
-                    ymin=record.ymin,
-                    xmax=record.xmax,
-                    ymax=record.ymax,
-                )
-            )
-            left_ratio, right_ratio = evidence.half_green_ratios
-            summaries.append(
-                f"YOLO={record.class_name} CV={evidence.classification} "
-                f"output={selected_class} "
-                f"left_half={left_ratio:.3f} right_half={right_ratio:.3f} "
-                f"right_blob={evidence.right_dominant_green_pixels}px "
-                f"right_x={evidence.right_dominant_center_x_ratio:.3f}"
-            )
-        return verified, summaries
 
 
 def main(args=None) -> None:

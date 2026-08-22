@@ -135,8 +135,7 @@ if [[ ! "$SHORTCUT_YELLOW_COUNT_RETURN_SEC" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
 fi
 
 CAMERA_DEVICE="/dev/v4l/by-id/usb-HD_USB_Camera_HD_USB_Camera-video-index0"
-SPEED_COMMAND="${1:-${SPEED_COMMAND:-20.0}}"
-OVERALL_SPEED_LIMIT_COMMAND="${OVERALL_SPEED_LIMIT_COMMAND:-15.0}"
+SPEED_COMMAND="${1:-${SPEED_COMMAND:-25.0}}"
 CURVATURE_SPEED_CONTROL_ENABLED="${CURVATURE_SPEED_CONTROL_ENABLED:-true}"
 # Leave these empty unless the operator explicitly overrides them. Their safe
 # defaults depend on SPEED_COMMAND and are calculated after that value is
@@ -162,7 +161,6 @@ OPPOSED_STANLEY_PERCENT="${OPPOSED_STANLEY_PERCENT:-}"
 CONTROL_LATENCY_PREVIEW_SEC="${CONTROL_LATENCY_PREVIEW_SEC:-}"
 CURVE_CONTROL_LATENCY_PREVIEW_SEC="${CURVE_CONTROL_LATENCY_PREVIEW_SEC:-}"
 CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC="${CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC:-}"
-YELLOW_CURVE_REVERSAL_PREVIEW_FAR_X_M="${YELLOW_CURVE_REVERSAL_PREVIEW_FAR_X_M:-1.00}"
 STRAIGHT_PATH_CURVATURE_THRESHOLD="${STRAIGHT_PATH_CURVATURE_THRESHOLD:-0.24}"
 STEERING_CURRENT_WEIGHT="${STEERING_CURRENT_WEIGHT:-0.35}"
 STEERING_CURVE_CURRENT_WEIGHT="${STEERING_CURVE_CURRENT_WEIGHT:-0.80}"
@@ -170,8 +168,6 @@ STEERING_RATE_LIMIT_CMD_PER_SEC="${STEERING_RATE_LIMIT_CMD_PER_SEC:-180.0}"
 STEERING_CURVE_RATE_LIMIT_CMD_PER_SEC="${STEERING_CURVE_RATE_LIMIT_CMD_PER_SEC:-300.0}"
 STEERING_LEAD_TIME_SEC="${STEERING_LEAD_TIME_SEC:-0.08}"
 STEERING_MAX_LEAD_COMMAND="${STEERING_MAX_LEAD_COMMAND:-6.0}"
-VEHICLE_LEFT_OFFSET_M="${VEHICLE_LEFT_OFFSET_M:-}"
-VEHICLE_RIGHT_OFFSET_M="${VEHICLE_RIGHT_OFFSET_M:-}"
 CURVE_STEERING_MULTIPLIER_ENABLED="${CURVE_STEERING_MULTIPLIER_ENABLED:-}"
 CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND="${CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND:-}"
 CURVE_STEERING_MULTIPLIER="${CURVE_STEERING_MULTIPLIER:-}"
@@ -245,7 +241,7 @@ prompt_bool() {
 # Ask for the curve/S-bend gain before every other interactive driving value.
 # An environment override still skips the prompt for scripted repeatability.
 prompt_float CURVE_STEERING_MULTIPLIER \
-  "S자/곡선 조향 배수 (1.0=증폭 없음)" 1.0 0.0 3.0
+  "S자/곡선 조향 배수 (1.0=증폭 없음)" 1.1 0.0 3.0
 prompt_bool CURVE_STEERING_MULTIPLIER_ENABLED \
   "곡선에서 큰 조향 명령 배수 적용" true
 if [[ "$CURVE_STEERING_MULTIPLIER_ENABLED" == "true" ]]; then
@@ -258,8 +254,8 @@ fi
 if [[ "$STEERING_ONLY" == "true" ]]; then
   SPEED_COMMAND=0.0
 elif [[ -z "$SPEED_COMMAND" ]]; then
-  read -r -p "주행 속도 command [3.0-30.0, 기본 20.0]: " SPEED_COMMAND
-  SPEED_COMMAND="${SPEED_COMMAND:-20.0}"
+  read -r -p "주행 속도 command [3.0-30.0, 기본 25.0]: " SPEED_COMMAND
+  SPEED_COMMAND="${SPEED_COMMAND:-25.0}"
 fi
 if [[ "$STEERING_ONLY" != "true" ]]; then
   if [[ ! "$SPEED_COMMAND" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
@@ -273,18 +269,6 @@ if [[ "$STEERING_ONLY" != "true" ]]; then
   fi
 fi
 SPEED_COMMAND="$(awk -v speed="$SPEED_COMMAND" 'BEGIN { printf "%.3f", speed }')"
-OVERALL_SPEED_LIMIT_COMMAND="${OVERALL_SPEED_LIMIT_COMMAND/,/.}"
-if [[ ! "$OVERALL_SPEED_LIMIT_COMMAND" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
-  ! awk -v speed="$OVERALL_SPEED_LIMIT_COMMAND" \
-    'BEGIN { exit !(speed >= 0.0 && speed <= 30.0) }'; then
-  problem \
-    "전체 속도 상한 입력 오류" \
-    "'$OVERALL_SPEED_LIMIT_COMMAND'은 사용할 수 없는 속도 상한입니다." \
-    "0.0부터 30.0 사이 숫자를 사용하세요. 예: 15"
-  exit 2
-fi
-OVERALL_SPEED_LIMIT_COMMAND="$(awk -v speed="$OVERALL_SPEED_LIMIT_COMMAND" \
-  'BEGIN { printf "%.3f", speed }')"
 
 if [[ "$STEERING_ONLY" == "true" ]]; then
   CURVATURE_SPEED_CONTROL_ENABLED=false
@@ -295,11 +279,11 @@ else
     "직선/곡선 속도 분리 사용" true
   if [[ "$CURVATURE_SPEED_CONTROL_ENABLED" == "true" ]]; then
     curve_default="$(awk -v speed="$SPEED_COMMAND" \
-      'BEGIN { printf "%.3f", (speed < 12.0 ? speed : 12.0) }')"
+      'BEGIN { printf "%.3f", (speed < 11.0 ? speed : 11.0) }')"
     prompt_float CURVE_SPEED_COMMAND \
       "곡선 확정 시 속도 command" "$curve_default" 3.0 "$SPEED_COMMAND"
     degraded_default="$(awk -v curve="$CURVE_SPEED_COMMAND" \
-      'BEGIN { printf "%.3f", (curve < 11.0 ? curve : 11.0) }')"
+      'BEGIN { printf "%.3f", (curve < 15.0 ? curve : 15.0) }')"
     prompt_float DEGRADED_PATH_SPEED_COMMAND \
       "짧거나 기억된 경로의 속도 command" "$degraded_default" 3.0 \
       "$CURVE_SPEED_COMMAND"
@@ -373,7 +357,7 @@ prompt_float PURE_PURSUIT_CONTROL_X_M \
 prompt_float STANLEY_CONTROL_X_M \
   "Stanley 제어점 X [m]" 0.16 -1.0 1.0
 prompt_float STANLEY_GAIN \
-  "곡선 Stanley 횡오차 gain" 1.30 0.0 10.0
+  "곡선 Stanley 횡오차 gain" 1.20 0.0 10.0
 prompt_float STANLEY_SOFTENING_MPS \
   "곡선 Stanley 저속 완화값 [m/s]" 0.35 0.01 10.0
 prompt_float STRAIGHT_STANLEY_PERCENT \
@@ -387,11 +371,9 @@ prompt_float OPPOSED_STANLEY_PERCENT \
 prompt_float CONTROL_LATENCY_PREVIEW_SEC \
   "직선 제어 지연 예측 시간 [s]" 0.20 0.0 2.0
 prompt_float CURVE_CONTROL_LATENCY_PREVIEW_SEC \
-  "곡선 제어 지연 예측 시간 [s]" 0.35 0.0 2.0
+  "곡선 제어 지연 예측 시간 [s]" 0.40 0.0 2.0
 prompt_float CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC \
   "곡선 지연 예측 최소 유지 시간 [s]" 0.50 0.0 5.0
-prompt_float YELLOW_CURVE_REVERSAL_PREVIEW_FAR_X_M \
-  "S자 반대 곡선 미리보기 거리 [m]" 1.00 0.50 2.50
 prompt_float STRAIGHT_PATH_CURVATURE_THRESHOLD \
   "직선/곡선 곡률 기준 [rad/m]" 0.24 0.0 5.0
 prompt_float STEERING_CURRENT_WEIGHT \
@@ -406,10 +388,6 @@ prompt_float STEERING_LEAD_TIME_SEC \
   "조향 lead time [s]" 0.08 0.0 1.0
 prompt_float STEERING_MAX_LEAD_COMMAND \
   "최대 조향 lead command" 6.0 0.0 42.0
-prompt_float VEHICLE_LEFT_OFFSET_M \
-  "오른쪽 장애물 감지 시 왼쪽 회피 이동량 [m]" 0.15 0.0 1.5
-prompt_float VEHICLE_RIGHT_OFFSET_M \
-  "왼쪽 장애물 감지 시 오른쪽 회피 이동량 [m]" 0.15 0.0 1.5
 
 LEFT_OFFSET_CM="${LEFT_OFFSET_CM/,/.}"
 if [[ ! "$LEFT_OFFSET_CM" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
@@ -605,7 +583,7 @@ wait_for_message /vehicle/vesc_state VESC
 
 echo
 echo "========== 모든 센서 정상 =========="
-echo "전체 최종 속도 상한: $OVERALL_SPEED_LIMIT_COMMAND | 기본 주행: RULE"
+echo "속도 상한: $SPEED_COMMAND | 기본 주행: RULE"
 if [[ "$CURVATURE_SPEED_CONTROL_ENABLED" == "true" ]]; then
   echo "경로별 속도: 직선 $SPEED_COMMAND | 곡선 $CURVE_SPEED_COMMAND | 짧음/기억 $DEGRADED_PATH_SPEED_COMMAND"
   echo "곡선 속도 전환: 진입 ${CURVE_SPEED_CONFIRMATION_FRAMES}프레임 | 복귀 ${CURVE_SPEED_RELEASE_FRAMES}프레임 | 복귀 기준 ${CURVE_SPEED_EXIT_THRESHOLD_PER_M}rad/m"
@@ -627,12 +605,10 @@ echo "직선 Stanley: ${STRAIGHT_STANLEY_PERCENT}% | gain=${STRAIGHT_STANLEY_GAI
 echo "상충 Stanley: ${OPPOSED_STANLEY_PERCENT}% | 지연 예측=직선 ${CONTROL_LATENCY_PREVIEW_SEC}s/곡선 ${CURVE_CONTROL_LATENCY_PREVIEW_SEC}s | 곡선 최소 유지=${CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC}s"
 echo "직선/곡선 기준: ${STRAIGHT_PATH_CURVATURE_THRESHOLD}rad/m"
 echo "조향 smoothing: 직선 ${STEERING_CURRENT_WEIGHT}/${STEERING_RATE_LIMIT_CMD_PER_SEC}, 곡선 ${STEERING_CURVE_CURRENT_WEIGHT}/${STEERING_CURVE_RATE_LIMIT_CMD_PER_SEC}"
-echo "S자 반대 조향 미리보기 거리: ${YELLOW_CURVE_REVERSAL_PREVIEW_FAR_X_M}m"
 echo "조향 lead: ${STEERING_LEAD_TIME_SEC}s | 최대 ${STEERING_MAX_LEAD_COMMAND} command"
 echo "곡선 조향 배수: ${CURVE_STEERING_MULTIPLIER_ENABLED} | ${CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND} 이상 x${CURVE_STEERING_MULTIPLIER} | 최대 +/-42"
 echo "좌측 주행 보정: ${LEFT_OFFSET_CM}cm"
 echo "직선 전용 우측 보정: ${STRAIGHT_RIGHT_OFFSET_CM}cm"
-echo "차량 회피 이동량: 오른쪽 장애물 -> 왼쪽 ${VEHICLE_LEFT_OFFSET_M}m | 왼쪽 장애물 -> 오른쪽 ${VEHICLE_RIGHT_OFFSET_M}m"
 echo "제어기를 준비합니다. 아직 차량은 정지 상태입니다."
 echo
 
@@ -642,19 +618,16 @@ export STRAIGHT_STANLEY_PERCENT STRAIGHT_STANLEY_GAIN
 export STRAIGHT_STANLEY_SOFTENING_MPS OPPOSED_STANLEY_PERCENT
 export CONTROL_LATENCY_PREVIEW_SEC CURVE_CONTROL_LATENCY_PREVIEW_SEC
 export CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC
-export YELLOW_CURVE_REVERSAL_PREVIEW_FAR_X_M
 export STRAIGHT_PATH_CURVATURE_THRESHOLD
 export STEERING_CURRENT_WEIGHT STEERING_CURVE_CURRENT_WEIGHT
 export STEERING_RATE_LIMIT_CMD_PER_SEC
 export STEERING_CURVE_RATE_LIMIT_CMD_PER_SEC
 export STEERING_LEAD_TIME_SEC STEERING_MAX_LEAD_COMMAND
-export VEHICLE_LEFT_OFFSET_M VEHICLE_RIGHT_OFFSET_M
 export CURVE_STEERING_MULTIPLIER_ENABLED
 export CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND
 export CURVE_STEERING_MULTIPLIER
 export CURVATURE_SPEED_CONTROL_ENABLED CURVE_SPEED_COMMAND
 export DEGRADED_PATH_SPEED_COMMAND CURVE_SPEED_EXIT_THRESHOLD_PER_M
-export OVERALL_SPEED_LIMIT_COMMAND
 export CURVE_SPEED_CONFIRMATION_FRAMES CURVE_SPEED_RELEASE_FRAMES
 export DEGRADED_PATH_MINIMUM_SPAN_M
 export STRAIGHT_RIGHT_OFFSET_CM

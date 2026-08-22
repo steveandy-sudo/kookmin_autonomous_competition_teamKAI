@@ -104,17 +104,15 @@ while (( $# > 0 )); do
 done
 set -- "${POSITIONAL_ARGS[@]}"
 
-SPEED_COMMAND="${1:-${SPEED_COMMAND:-20.0}}"
-OVERALL_SPEED_LIMIT_COMMAND="${OVERALL_SPEED_LIMIT_COMMAND:-15.0}"
+SPEED_COMMAND="${1:-${SPEED_COMMAND:-25.0}}"
 CURVATURE_SPEED_CONTROL_ENABLED="${CURVATURE_SPEED_CONTROL_ENABLED:-true}"
 S_CURVE_ENTRY_GUARD_ENABLED="${S_CURVE_ENTRY_GUARD_ENABLED:-true}"
 S_CURVE_ENTRY_SPEED_CAP_COMMAND="${S_CURVE_ENTRY_SPEED_CAP_COMMAND:-11.0}"
-S_CURVE_ENTRY_RED_CAR_SPEED_CAP_COMMAND="${S_CURVE_ENTRY_RED_CAR_SPEED_CAP_COMMAND:-13.0}"
 S_CURVE_ENTRY_STRAIGHT_MAX_ABS_ANGLE_COMMAND="${S_CURVE_ENTRY_STRAIGHT_MAX_ABS_ANGLE_COMMAND:-5.0}"
 S_CURVE_ENTRY_STRAIGHT_CONFIRMATION_FRAMES="${S_CURVE_ENTRY_STRAIGHT_CONFIRMATION_FRAMES:-3}"
 S_CURVE_ENTRY_MINIMUM_CURVE_DISTANCE_M="${S_CURVE_ENTRY_MINIMUM_CURVE_DISTANCE_M:-1.50}"
 S_CURVE_ENTRY_LEFT_ANGLE_COMMAND="${S_CURVE_ENTRY_LEFT_ANGLE_COMMAND:--8.0}"
-S_CURVE_ENTRY_CURVE_SPEED_MARGIN_COMMAND="${S_CURVE_ENTRY_CURVE_SPEED_MARGIN_COMMAND:-1.00}"
+S_CURVE_ENTRY_CURVE_SPEED_MARGIN_COMMAND="${S_CURVE_ENTRY_CURVE_SPEED_MARGIN_COMMAND:-0.50}"
 S_CURVE_ENTRY_CURVE_CONFIRMATION_FRAMES="${S_CURVE_ENTRY_CURVE_CONFIRMATION_FRAMES:-3}"
 S_CURVE_ENTRY_OVERDUE_DISTANCE_M="${S_CURVE_ENTRY_OVERDUE_DISTANCE_M:-4.50}"
 # Leave these empty unless the operator explicitly overrides them. Their safe
@@ -141,7 +139,6 @@ OPPOSED_STANLEY_PERCENT="${OPPOSED_STANLEY_PERCENT:-}"
 CONTROL_LATENCY_PREVIEW_SEC="${CONTROL_LATENCY_PREVIEW_SEC:-}"
 CURVE_CONTROL_LATENCY_PREVIEW_SEC="${CURVE_CONTROL_LATENCY_PREVIEW_SEC:-}"
 CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC="${CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC:-}"
-YELLOW_CURVE_REVERSAL_PREVIEW_FAR_X_M="${YELLOW_CURVE_REVERSAL_PREVIEW_FAR_X_M:-1.00}"
 STRAIGHT_PATH_CURVATURE_THRESHOLD="${STRAIGHT_PATH_CURVATURE_THRESHOLD:-0.24}"
 STEERING_CURRENT_WEIGHT="${STEERING_CURRENT_WEIGHT:-0.35}"
 STEERING_CURVE_CURRENT_WEIGHT="${STEERING_CURVE_CURRENT_WEIGHT:-0.80}"
@@ -154,7 +151,7 @@ CURVE_DETECTION_FAR_X_M="${CURVE_DETECTION_FAR_X_M:-1.20}"
 CURVE_DETECTION_SEGMENT_COUNT="${CURVE_DETECTION_SEGMENT_COUNT:-1}"
 CURVE_STEERING_MULTIPLIER_ENABLED="${CURVE_STEERING_MULTIPLIER_ENABLED:-true}"
 CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND="${CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND:-20.0}"
-CURVE_STEERING_MULTIPLIER="${CURVE_STEERING_MULTIPLIER:-1.0}"
+CURVE_STEERING_MULTIPLIER="${CURVE_STEERING_MULTIPLIER:-1.1}"
 ADAPTIVE_STEERING_SPEED_ENABLED="${ADAPTIVE_STEERING_SPEED_ENABLED:-}"
 STEERING_TURN_SPEED_COMMAND="${STEERING_TURN_SPEED_COMMAND:-}"
 STEERING_SLOWDOWN_START_ANGLE="${STEERING_SLOWDOWN_START_ANGLE:-}"
@@ -174,12 +171,10 @@ SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC="${SHORTCUT_MAXIMUM_ENTRY_STEERING_SEC:-1.3}
 SHORTCUT_W1_STEERING_HOLD_SEC="${SHORTCUT_W1_STEERING_HOLD_SEC:-1.3}"
 SHORTCUT_ENTRY_DIRECTION_HOLD_COMMAND="${SHORTCUT_ENTRY_DIRECTION_HOLD_COMMAND:--30.0}"
 SHORTCUT_ENTRY_SPEED_COMMAND="${SHORTCUT_ENTRY_SPEED_COMMAND:-9.0}"
-SHORTCUT_LEFT_LANE_OFFSET_M="${SHORTCUT_LEFT_LANE_OFFSET_M:-0.10}"
 SHORTCUT_ENTRY_STEERING_RATE_LIMIT_CMD_PER_SEC="${SHORTCUT_ENTRY_STEERING_RATE_LIMIT_CMD_PER_SEC:-90.0}"
 TEST_PROFILE="${XYCAR_TEST_PROFILE:-integrated}"
 ENABLE_RVIZ="${XYCAR_ENABLE_RVIZ:-false}"
 START_CONE="${XYCAR_START_CONE:-true}"
-START_SHORTCUT="${XYCAR_START_SHORTCUT:-true}"
 TRAFFIC_LIGHT_CONTROL_ENABLED="${XYCAR_TRAFFIC_LIGHT_CONTROL_ENABLED:-true}"
 STEERING_ONLY="${XYCAR_STEERING_ONLY:-false}"
 VEHICLE_YOLO_MIN_CONFIDENCE="${VEHICLE_YOLO_MIN_CONFIDENCE:-0.45}"
@@ -188,7 +183,7 @@ CONE_AS_VEHICLE_MIN_CONFIDENCE="${CONE_AS_VEHICLE_MIN_CONFIDENCE:-0.50}"
 VEHICLE_YOLO_REQUIRED_FRAMES="${VEHICLE_YOLO_REQUIRED_FRAMES:-1}"
 VEHICLE_PREFERRED_SIDE_REQUIRED_FRAMES="${VEHICLE_PREFERRED_SIDE_REQUIRED_FRAMES:-1}"
 VEHICLE_ACTIVE_SIDE_RESELECTION_REQUIRED_FRAMES="${VEHICLE_ACTIVE_SIDE_RESELECTION_REQUIRED_FRAMES:-2}"
-VEHICLE_YOLO_TIMEOUT_SEC="${VEHICLE_YOLO_TIMEOUT_SEC:-0.50}"
+VEHICLE_YOLO_TIMEOUT_SEC="${VEHICLE_YOLO_TIMEOUT_SEC:-1.00}"
 VEHICLE_RED_CAR_YOLO_TIMEOUT_SEC="${VEHICLE_RED_CAR_YOLO_TIMEOUT_SEC:-0.30}"
 VEHICLE_CAMERA_LIDAR_HFOV_DEG="${VEHICLE_CAMERA_LIDAR_HFOV_DEG:-60.0}"
 VEHICLE_CAMERA_LIDAR_PADDING_DEG="${VEHICLE_CAMERA_LIDAR_PADDING_DEG:-3.0}"
@@ -210,8 +205,8 @@ DIRECT_BEV_PATH_TIMEOUT_SEC="${DIRECT_BEV_PATH_TIMEOUT_SEC:-1.50}"
 VEHICLE_AVOIDANCE_IMMEDIATE_ON_YOLO="${VEHICLE_AVOIDANCE_IMMEDIATE_ON_YOLO:-true}"
 VEHICLE_AVOIDANCE_ENTRY_DISTANCE_M="${VEHICLE_AVOIDANCE_ENTRY_DISTANCE_M:-1.20}"
 VEHICLE_MINIMUM_SIDE_CLEARANCE_M="${VEHICLE_MINIMUM_SIDE_CLEARANCE_M:-0.70}"
-VEHICLE_LEFT_OFFSET_M="${VEHICLE_LEFT_OFFSET_M:-0.15}"
-VEHICLE_RIGHT_OFFSET_M="${VEHICLE_RIGHT_OFFSET_M:-0.15}"
+VEHICLE_LEFT_OFFSET_M="${VEHICLE_LEFT_OFFSET_M:-0.20}"
+VEHICLE_RIGHT_OFFSET_M="${VEHICLE_RIGHT_OFFSET_M:-0.20}"
 VEHICLE_OFFSET_RATE_MPS="${VEHICLE_OFFSET_RATE_MPS:-0.65}"
 VEHICLE_AVOIDANCE_SPEED_LIMIT_COMMAND="${VEHICLE_AVOIDANCE_SPEED_LIMIT_COMMAND:-20.0}"
 VEHICLE_RED_CAR_AVOIDANCE_SPEED_LIMIT_COMMAND="${VEHICLE_RED_CAR_AVOIDANCE_SPEED_LIMIT_COMMAND:-$VEHICLE_AVOIDANCE_SPEED_LIMIT_COMMAND}"
@@ -359,9 +354,9 @@ esac
 
 if [[ -z "$SPEED_COMMAND" ]]; then
   if [[ -t 0 ]]; then
-    read -r -p "Driving speed command [3.0-30.0, default 20.0]: " SPEED_COMMAND
+    read -r -p "Driving speed command [3.0-30.0, default 25.0]: " SPEED_COMMAND
   fi
-  SPEED_COMMAND="${SPEED_COMMAND:-20.0}"
+  SPEED_COMMAND="${SPEED_COMMAND:-25.0}"
 fi
 if [[ "$STEERING_ONLY" == "true" ]]; then
   SPEED_COMMAND=0.0
@@ -371,15 +366,6 @@ elif [[ ! "$SPEED_COMMAND" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
     exit 2
 fi
 SPEED_COMMAND="$(awk -v speed="$SPEED_COMMAND" 'BEGIN { printf "%.3f", speed }')"
-OVERALL_SPEED_LIMIT_COMMAND="${OVERALL_SPEED_LIMIT_COMMAND/,/.}"
-if [[ ! "$OVERALL_SPEED_LIMIT_COMMAND" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
-  ! awk -v speed="$OVERALL_SPEED_LIMIT_COMMAND" \
-    'BEGIN { exit !(speed >= 0.0 && speed <= 30.0) }'; then
-  echo "ERROR: overall speed limit command must be from 0.0 to 30.0." >&2
-  exit 2
-fi
-OVERALL_SPEED_LIMIT_COMMAND="$(awk -v speed="$OVERALL_SPEED_LIMIT_COMMAND" \
-  'BEGIN { printf "%.3f", speed }')"
 
 if [[ "$STEERING_ONLY" == "true" ]]; then
   CURVATURE_SPEED_CONTROL_ENABLED=false
@@ -390,11 +376,11 @@ else
     "Separate straight/curve speed" true
   if [[ "$CURVATURE_SPEED_CONTROL_ENABLED" == "true" ]]; then
     curve_default="$(awk -v speed="$SPEED_COMMAND" \
-      'BEGIN { printf "%.3f", (speed < 12.0 ? speed : 12.0) }')"
+      'BEGIN { printf "%.3f", (speed < 11.0 ? speed : 11.0) }')"
     prompt_float CURVE_SPEED_COMMAND \
       "Confirmed curve speed command" "$curve_default" 3.0 "$SPEED_COMMAND"
     degraded_default="$(awk -v curve="$CURVE_SPEED_COMMAND" \
-      'BEGIN { printf "%.3f", (curve < 11.0 ? curve : 11.0) }')"
+      'BEGIN { printf "%.3f", (curve < 15.0 ? curve : 15.0) }')"
     prompt_float DEGRADED_PATH_SPEED_COMMAND \
       "Short/remembered path speed command" "$degraded_default" 3.0 \
       "$CURVE_SPEED_COMMAND"
@@ -470,7 +456,7 @@ prompt_float PURE_PURSUIT_CONTROL_X_M \
 prompt_float STANLEY_CONTROL_X_M \
   "Stanley control X [m]" 0.16 -1.0 1.0
 prompt_float STANLEY_GAIN \
-  "Curve Stanley cross-track gain" 1.30 0.0 10.0
+  "Curve Stanley cross-track gain" 1.20 0.0 10.0
 prompt_float STANLEY_SOFTENING_MPS \
   "Curve Stanley softening [m/s]" 0.35 0.01 10.0
 prompt_float STRAIGHT_STANLEY_PERCENT \
@@ -484,11 +470,9 @@ prompt_float OPPOSED_STANLEY_PERCENT \
 prompt_float CONTROL_LATENCY_PREVIEW_SEC \
   "Straight control latency preview [s]" 0.20 0.0 2.0
 prompt_float CURVE_CONTROL_LATENCY_PREVIEW_SEC \
-  "Curve control latency preview [s]" 0.35 0.0 2.0
+  "Curve control latency preview [s]" 0.40 0.0 2.0
 prompt_float CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC \
   "Curve latency preview minimum hold [s]" 0.50 0.0 5.0
-prompt_float YELLOW_CURVE_REVERSAL_PREVIEW_FAR_X_M \
-  "S-curve reversal preview far distance [m]" 1.00 0.50 2.50
 prompt_float STRAIGHT_PATH_CURVATURE_THRESHOLD \
   "Straight/curve curvature threshold [rad/m]" 0.24 0.0 5.0
 prompt_float STEERING_CURRENT_WEIGHT \
@@ -547,7 +531,6 @@ direct_bev_confidence: $DIRECT_BEV_CONFIDENCE
 direct_bev_yellow_confidence: $DIRECT_BEV_YELLOW_CONFIDENCE
 direct_bev_path_timeout_sec: $DIRECT_BEV_PATH_TIMEOUT_SEC
 speed_command: $SPEED_COMMAND
-overall_speed_limit_command: $OVERALL_SPEED_LIMIT_COMMAND
 curvature_speed_control_enabled: $CURVATURE_SPEED_CONTROL_ENABLED
 curve_speed_command: $CURVE_SPEED_COMMAND
 degraded_path_speed_command: $DEGRADED_PATH_SPEED_COMMAND
@@ -557,7 +540,6 @@ curve_speed_release_frames: $CURVE_SPEED_RELEASE_FRAMES
 degraded_path_minimum_span_m: $DEGRADED_PATH_MINIMUM_SPAN_M
 s_curve_entry_guard_enabled: $S_CURVE_ENTRY_GUARD_ENABLED
 s_curve_entry_speed_cap_command: $S_CURVE_ENTRY_SPEED_CAP_COMMAND
-s_curve_entry_red_car_speed_cap_command: $S_CURVE_ENTRY_RED_CAR_SPEED_CAP_COMMAND
 s_curve_entry_straight_max_abs_angle_command: $S_CURVE_ENTRY_STRAIGHT_MAX_ABS_ANGLE_COMMAND
 s_curve_entry_straight_confirmation_frames: $S_CURVE_ENTRY_STRAIGHT_CONFIRMATION_FRAMES
 s_curve_entry_minimum_curve_distance_m: $S_CURVE_ENTRY_MINIMUM_CURVE_DISTANCE_M
@@ -581,7 +563,6 @@ opposed_stanley_weight: $OPPOSED_STANLEY_WEIGHT
 control_latency_preview_sec: $CONTROL_LATENCY_PREVIEW_SEC
 curve_control_latency_preview_sec: $CURVE_CONTROL_LATENCY_PREVIEW_SEC
 curve_control_latency_minimum_hold_sec: $CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC
-yellow_curve_reversal_preview_far_x_m: $YELLOW_CURVE_REVERSAL_PREVIEW_FAR_X_M
 straight_path_curvature_threshold: $STRAIGHT_PATH_CURVATURE_THRESHOLD
 steering_current_weight: $STEERING_CURRENT_WEIGHT
 steering_curve_current_weight: $STEERING_CURVE_CURRENT_WEIGHT
@@ -603,7 +584,6 @@ shortcut_strategy: "$SHORTCUT_STRATEGY"
 shortcut_yellow_count_pass_target: $SHORTCUT_YELLOW_COUNT_TARGET
 shortcut_yellow_count_force_angle: $SHORTCUT_YELLOW_COUNT_FORCE_ANGLE
 shortcut_yellow_count_return_sec: $SHORTCUT_YELLOW_COUNT_RETURN_SEC
-shortcut_left_lane_offset_m: $SHORTCUT_LEFT_LANE_OFFSET_M
 cone_speed_command: $CONE_SPEED_COMMAND
 cone_approach_yolo_min_confidence: $CONE_APPROACH_YOLO_MIN_CONFIDENCE
 cone_sensor_presence_timeout_sec: $CONE_SENSOR_PRESENCE_TIMEOUT_SEC
@@ -928,7 +908,7 @@ elif [[ "$TEST_PROFILE" == "avoidance_only" ]]; then
 else
   echo "Priority: TRAFFIC > SHORTCUT > CONE > YOLO+LiDAR AVOIDANCE > RULE."
 fi
-echo "Overall final speed limit: $OVERALL_SPEED_LIMIT_COMMAND"
+echo "Selected speed limit: $SPEED_COMMAND"
 if [[ "$CURVATURE_SPEED_CONTROL_ENABLED" == "true" ]]; then
   echo "Path speed: straight $SPEED_COMMAND, curve $CURVE_SPEED_COMMAND, degraded $DEGRADED_PATH_SPEED_COMMAND"
   echo "Curve speed latch: enter ${CURVE_SPEED_CONFIRMATION_FRAMES} frames, release ${CURVE_SPEED_RELEASE_FRAMES} frames, exit ${CURVE_SPEED_EXIT_THRESHOLD_PER_M}rad/m"
@@ -950,14 +930,12 @@ echo "Straight Stanley: ${STRAIGHT_STANLEY_PERCENT}%, gain=$STRAIGHT_STANLEY_GAI
 echo "Opposed Stanley: ${OPPOSED_STANLEY_PERCENT}%, latency preview=straight ${CONTROL_LATENCY_PREVIEW_SEC}s/curve ${CURVE_CONTROL_LATENCY_PREVIEW_SEC}s, curve minimum hold=${CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC}s"
 echo "Straight/curve threshold: ${STRAIGHT_PATH_CURVATURE_THRESHOLD}rad/m"
 echo "Steering smoothing: straight ${STEERING_CURRENT_WEIGHT}/${STEERING_RATE_LIMIT_CMD_PER_SEC}, curve ${STEERING_CURVE_CURRENT_WEIGHT}/${STEERING_CURVE_RATE_LIMIT_CMD_PER_SEC}"
-echo "S-curve reversal preview far distance: ${YELLOW_CURVE_REVERSAL_PREVIEW_FAR_X_M}m"
 echo "Steering lead: ${STEERING_LEAD_TIME_SEC}s, max ${STEERING_MAX_LEAD_COMMAND} command"
 echo "Curve detection: ${CURVE_DETECTION_NEAR_X_M}-${CURVE_DETECTION_FAR_X_M}m, ${CURVE_DETECTION_SEGMENT_COUNT} segments"
 echo "Curve steering multiplier: ${CURVE_STEERING_MULTIPLIER_ENABLED}, |angle|>=${CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND} x${CURVE_STEERING_MULTIPLIER}, clamp +/-42"
 echo "Left target correction: ${LEFT_OFFSET_CM}cm"
 echo "Straight-only right correction: ${STRAIGHT_RIGHT_OFFSET_CM}cm"
 echo "Shortcut entry speed cap: ${SHORTCUT_ENTRY_SPEED_COMMAND}"
-echo "Shortcut left-lane pre-position offset: ${SHORTCUT_LEFT_LANE_OFFSET_M}m"
 if [[ "$SHORTCUT_STRATEGY" == "yellow_count" ]]; then
   echo "Shortcut strategy: yellow_count | trigger=${SHORTCUT_YELLOW_COUNT_TARGET} | force=${SHORTCUT_YELLOW_COUNT_FORCE_ANGLE} for ${SHORTCUT_YELLOW_COUNT_RETURN_SEC}s -> RULE"
 else
@@ -971,7 +949,6 @@ echo "Cone early-detection confidence: $CONE_APPROACH_YOLO_MIN_CONFIDENCE"
 echo "RULE->CONE steering rate: ${RULE_TO_CONE_STEERING_RATE_COMMAND_PER_SEC} command/s"
 echo "Cone sensor-loss hold: ${CONE_SENSOR_PRESENCE_TIMEOUT_SEC}s"
 echo "Traffic-light control: $TRAFFIC_LIGHT_CONTROL_ENABLED"
-echo "Shortcut control: $START_SHORTCUT"
 if [[ "$VEHICLE_AVOIDANCE_IMMEDIATE_ON_YOLO" == "true" ]]; then
   echo "Avoidance: YOLO>=${VEHICLE_YOLO_MIN_CONFIDENCE}, one-frame immediate entry (LiDAR distance=telemetry), offsets=L${VEHICLE_LEFT_OFFSET_M}/R${VEHICLE_RIGHT_OFFSET_M}m"
 else
@@ -982,7 +959,7 @@ if [[ "$CONE_AS_VEHICLE_OBSTACLE" == "true" ]]; then
 fi
 echo "Avoidance speed cap: default=$VEHICLE_AVOIDANCE_SPEED_LIMIT_COMMAND red_car=$VEHICLE_RED_CAR_AVOIDANCE_SPEED_LIMIT_COMMAND green_car=$VEHICLE_GREEN_CAR_AVOIDANCE_SPEED_LIMIT_COMMAND | RViz: $ENABLE_RVIZ"
 echo "Avoidance YOLO timeout: default/green_car=${VEHICLE_YOLO_TIMEOUT_SEC}s red_car=${VEHICLE_RED_CAR_YOLO_TIMEOUT_SEC}s"
-echo "S-entry guard: $S_CURVE_ENTRY_GUARD_ENABLED | shortcut/green_car -> $S_CURVE_ENTRY_SPEED_CAP_COMMAND | red_car -> $S_CURVE_ENTRY_RED_CAR_SPEED_CAP_COMMAND until left curve | RULE steering passthrough"
+echo "S-entry guard: $S_CURVE_ENTRY_GUARD_ENABLED | shortcut/green_car exit -> speed $S_CURVE_ENTRY_SPEED_CAP_COMMAND | RULE steering passthrough"
 echo "Lane perception: $LANE_PERCEPTION_LAUNCH | forward=${CANONICAL_FORWARD_RANGE_M}m | max=${PERCEPTION_MAX_OUTPUT_RATE_HZ}Hz"
 echo "Run settings: $RUN_CONFIG_FILE"
 echo "Control detail log: $CONTROL_LOG"
@@ -1014,7 +991,6 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   degraded_path_minimum_span_m:="$DEGRADED_PATH_MINIMUM_SPAN_M" \
   s_curve_entry_guard_enabled:="$S_CURVE_ENTRY_GUARD_ENABLED" \
   s_curve_entry_speed_cap_command:="$S_CURVE_ENTRY_SPEED_CAP_COMMAND" \
-  s_curve_entry_red_car_speed_cap_command:="$S_CURVE_ENTRY_RED_CAR_SPEED_CAP_COMMAND" \
   s_curve_entry_straight_max_abs_angle_command:="$S_CURVE_ENTRY_STRAIGHT_MAX_ABS_ANGLE_COMMAND" \
   s_curve_entry_straight_confirmation_frames:="$S_CURVE_ENTRY_STRAIGHT_CONFIRMATION_FRAMES" \
   s_curve_entry_minimum_curve_distance_m:="$S_CURVE_ENTRY_MINIMUM_CURVE_DISTANCE_M" \
@@ -1039,7 +1015,6 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   control_latency_preview_sec:="$CONTROL_LATENCY_PREVIEW_SEC" \
   curve_control_latency_preview_sec:="$CURVE_CONTROL_LATENCY_PREVIEW_SEC" \
   curve_control_latency_minimum_hold_sec:="$CURVE_CONTROL_LATENCY_MINIMUM_HOLD_SEC" \
-  yellow_curve_reversal_preview_far_x_m:="$YELLOW_CURVE_REVERSAL_PREVIEW_FAR_X_M" \
   straight_path_curvature_threshold:="$STRAIGHT_PATH_CURVATURE_THRESHOLD" \
   steering_current_weight:="$STEERING_CURRENT_WEIGHT" \
   steering_curve_current_weight:="$STEERING_CURVE_CURRENT_WEIGHT" \
@@ -1060,7 +1035,7 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   maximum_speed_command:=30.0 \
   start_cone:="$START_CONE" \
   start_object_detection:=true \
-  start_shortcut:="$START_SHORTCUT" \
+  start_shortcut:=true \
   traffic_light_control_enabled:="$TRAFFIC_LIGHT_CONTROL_ENABLED" \
   shortcut_strategy:="$SHORTCUT_STRATEGY" \
   shortcut_handoff_to_rule:=true \
@@ -1077,7 +1052,6 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   shortcut_w1_steering_hold_sec:="$SHORTCUT_W1_STEERING_HOLD_SEC" \
   shortcut_entry_direction_hold_command:="$SHORTCUT_ENTRY_DIRECTION_HOLD_COMMAND" \
   shortcut_entry_speed_command:="$SHORTCUT_ENTRY_SPEED_COMMAND" \
-  shortcut_left_lane_offset_m:="$SHORTCUT_LEFT_LANE_OFFSET_M" \
   vehicle_avoidance_enabled:=true \
   vehicle_yolo_min_confidence:="$VEHICLE_YOLO_MIN_CONFIDENCE" \
   cone_as_vehicle_obstacle:="$CONE_AS_VEHICLE_OBSTACLE" \
@@ -1167,11 +1141,11 @@ wait_for_control_message \
   "주행 선택기" \
   "LiDAR /scan과 sequential_hybrid_driver를 확인하세요."
 echo
-echo "========== READY | MODE=RULE | RULE_SPEED=$SPEED_COMMAND | LIMIT=$OVERALL_SPEED_LIMIT_COMMAND | LD=$LOOKAHEAD_DISTANCE | STANLEY=$STANLEY_PERCENT% | LEFT=${LEFT_OFFSET_CM}cm =========="
+echo "========== READY | MODE=RULE | SPEED=$SPEED_COMMAND | LD=$LOOKAHEAD_DISTANCE | STANLEY=$STANLEY_PERCENT% | LEFT=${LEFT_OFFSET_CM}cm =========="
 echo "Press SPACE once to RUN. Press SPACE again to STOP."
 
 ros2 run xycar_map_nav space_drive_gate --ros-args \
-  -p speed_command:="$OVERALL_SPEED_LIMIT_COMMAND" \
+  -p speed_command:="$SPEED_COMMAND" \
   -p maximum_speed_command:=30.0 \
   -p steering_only:="$STEERING_ONLY" \
   -p adaptive_steering_speed_enabled:="$ADAPTIVE_STEERING_SPEED_ENABLED" \

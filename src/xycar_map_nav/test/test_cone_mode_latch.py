@@ -10,9 +10,6 @@ from xycar_map_nav.sequential_hybrid_driver import cone_approach_speed_limit
 from xycar_map_nav.sequential_hybrid_driver import cone_brake_hold_release_ready
 from xycar_map_nav.sequential_hybrid_driver import cone_disarm_hold_active
 from xycar_map_nav.sequential_hybrid_driver import cone_processing_requested
-from xycar_map_nav.sequential_hybrid_driver import (
-    shortcut_search_should_yield_to_cone,
-)
 
 
 def make_latch():
@@ -271,29 +268,6 @@ def test_cone_planning_is_requested_while_motor_gate_is_stopped():
         yolo_age_sec=0.20,
         yolo_timeout_sec=0.75,
         reentry_suppressed=True,
-    )
-
-
-def test_confirmed_cone_entry_preempts_only_w1_search():
-    assert shortcut_search_should_yield_to_cone(
-        shortcut_entry_search_active=True,
-        shortcut_active=False,
-        cone_event=ConeModeEvent.STARTED,
-    )
-    assert not shortcut_search_should_yield_to_cone(
-        shortcut_entry_search_active=False,
-        shortcut_active=False,
-        cone_event=ConeModeEvent.STARTED,
-    )
-    assert not shortcut_search_should_yield_to_cone(
-        shortcut_entry_search_active=True,
-        shortcut_active=True,
-        cone_event=ConeModeEvent.STARTED,
-    )
-    assert not shortcut_search_should_yield_to_cone(
-        shortcut_entry_search_active=True,
-        shortcut_active=False,
-        cone_event=ConeModeEvent.NONE,
     )
 
 
