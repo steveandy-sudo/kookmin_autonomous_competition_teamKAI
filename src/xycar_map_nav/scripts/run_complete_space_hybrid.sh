@@ -136,7 +136,7 @@ fi
 
 CAMERA_DEVICE="/dev/v4l/by-id/usb-HD_USB_Camera_HD_USB_Camera-video-index0"
 SPEED_COMMAND="${1:-${SPEED_COMMAND:-20.0}}"
-OVERALL_SPEED_LIMIT_COMMAND="${OVERALL_SPEED_LIMIT_COMMAND:-15.0}"
+OVERALL_SPEED_LIMIT_COMMAND="${OVERALL_SPEED_LIMIT_COMMAND:-20.0}"
 CURVATURE_SPEED_CONTROL_ENABLED="${CURVATURE_SPEED_CONTROL_ENABLED:-true}"
 # Leave these empty unless the operator explicitly overrides them. Their safe
 # defaults depend on SPEED_COMMAND and are calculated after that value is

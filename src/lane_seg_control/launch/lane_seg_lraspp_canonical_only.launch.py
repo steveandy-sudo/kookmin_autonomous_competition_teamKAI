@@ -1,7 +1,11 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.conditions import UnlessCondition
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.conditions import IfCondition
+from launch.substitutions import (
+    LaunchConfiguration,
+    PathJoinSubstitution,
+    PythonExpression,
+)
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
@@ -22,6 +26,9 @@ def _as_int(name):
 def generate_launch_description():
     image_topic = LaunchConfiguration("image_topic")
     direct_canonical = LaunchConfiguration("direct_canonical_enabled")
+    start_canonical_adapter = LaunchConfiguration(
+        "start_canonical_adapter"
+    )
     processed_image_topic = "/lane_seg/source_image"
     white_topic = "/lane_seg/white_boundary_mask"
     yellow_topic = "/lane_seg/yellow_centerline_mask"
@@ -136,6 +143,19 @@ def generate_launch_description():
         DeclareLaunchArgument("max_input_age_sec", default_value="0.35"),
         DeclareLaunchArgument(
             "direct_canonical_enabled", default_value="true"
+        ),
+        DeclareLaunchArgument(
+            "start_canonical_adapter", default_value="true"
+        ),
+        DeclareLaunchArgument(
+            "direct_centerline_enabled", default_value="false"
+        ),
+        DeclareLaunchArgument(
+            "direct_centerline_topic",
+            default_value="/perception/xbin_direct_centerline",
+        ),
+        DeclareLaunchArgument(
+            "direct_centerline_minimum_points", default_value="3"
         ),
         DeclareLaunchArgument(
             "publish_intermediate_topics", default_value="false"
@@ -276,6 +296,15 @@ def generate_launch_description():
                 "direct_canonical_enabled": _as_bool(
                     "direct_canonical_enabled"
                 ),
+                "direct_centerline_enabled": _as_bool(
+                    "direct_centerline_enabled"
+                ),
+                "direct_centerline_topic": LaunchConfiguration(
+                    "direct_centerline_topic"
+                ),
+                "direct_centerline_minimum_points": _as_int(
+                    "direct_centerline_minimum_points"
+                ),
                 "publish_intermediate_topics": _as_bool(
                     "publish_intermediate_topics"
                 ),
@@ -289,7 +318,17 @@ def generate_launch_description():
         executable="lane_seg_canonical_adapter",
         name="lane_seg_canonical_adapter",
         output="screen",
-        condition=UnlessCondition(direct_canonical),
+        condition=IfCondition(
+            PythonExpression(
+                [
+                    "'",
+                    direct_canonical,
+                    "' == 'false' and '",
+                    start_canonical_adapter,
+                    "' == 'true'",
+                ]
+            )
+        ),
         parameters=[
             {
                 "image_topic": processed_image_topic,

@@ -129,7 +129,33 @@ def generate_launch_description():
                     "2.5m yellow Xbin candidate"
                 ),
             ),
+            DeclareLaunchArgument(
+                "lane_direct_centerline_enabled", default_value="false"
+            ),
+            DeclareLaunchArgument(
+                "lane_direct_canonical_enabled", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "lane_start_canonical_adapter", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "lane_direct_centerline_topic",
+                default_value="/perception/xbin_direct_centerline",
+            ),
             DeclareLaunchArgument("start_rule", default_value="true"),
+            DeclareLaunchArgument(
+                "rule_external_path_enabled", default_value="false"
+            ),
+            DeclareLaunchArgument(
+                "rule_external_path_topic",
+                default_value="/perception/xbin_direct_centerline",
+            ),
+            DeclareLaunchArgument(
+                "rule_external_path_timeout_sec", default_value="0.50"
+            ),
+            DeclareLaunchArgument(
+                "rule_external_path_previous_weight", default_value="0.0"
+            ),
             DeclareLaunchArgument(
                 "start_direct_bev_rule", default_value="false"
             ),
@@ -610,6 +636,18 @@ def generate_launch_description():
                         "perception_debug_rate_hz"
                     ),
                     "publish_intermediate_topics": "true",
+                    "direct_centerline_enabled": LaunchConfiguration(
+                        "lane_direct_centerline_enabled"
+                    ),
+                    "direct_canonical_enabled": LaunchConfiguration(
+                        "lane_direct_canonical_enabled"
+                    ),
+                    "start_canonical_adapter": LaunchConfiguration(
+                        "lane_start_canonical_adapter"
+                    ),
+                    "direct_centerline_topic": LaunchConfiguration(
+                        "lane_direct_centerline_topic"
+                    ),
                     "canonical_forward_range_m": LaunchConfiguration(
                         "canonical_forward_range_m"
                     ),
@@ -818,6 +856,27 @@ def generate_launch_description():
                         ),
                         "base_frame_id": "laser_frame",
                         "shadow_motor_topic": "/hybrid/rule_candidate",
+                        "external_path_enabled": ParameterValue(
+                            LaunchConfiguration(
+                                "rule_external_path_enabled"
+                            ),
+                            value_type=bool,
+                        ),
+                        "external_path_topic": LaunchConfiguration(
+                            "rule_external_path_topic"
+                        ),
+                        "external_path_timeout_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "rule_external_path_timeout_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "external_path_previous_weight": ParameterValue(
+                            LaunchConfiguration(
+                                "rule_external_path_previous_weight"
+                            ),
+                            value_type=float,
+                        ),
                         "cruise_speed_command": ParameterValue(
                             speed_command, value_type=float
                         ),

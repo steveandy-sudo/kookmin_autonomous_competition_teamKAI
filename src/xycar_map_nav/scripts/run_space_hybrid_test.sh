@@ -105,7 +105,7 @@ done
 set -- "${POSITIONAL_ARGS[@]}"
 
 SPEED_COMMAND="${1:-${SPEED_COMMAND:-20.0}}"
-OVERALL_SPEED_LIMIT_COMMAND="${OVERALL_SPEED_LIMIT_COMMAND:-15.0}"
+OVERALL_SPEED_LIMIT_COMMAND="${OVERALL_SPEED_LIMIT_COMMAND:-20.0}"
 CURVATURE_SPEED_CONTROL_ENABLED="${CURVATURE_SPEED_CONTROL_ENABLED:-true}"
 S_CURVE_ENTRY_GUARD_ENABLED="${S_CURVE_ENTRY_GUARD_ENABLED:-true}"
 S_CURVE_ENTRY_SPEED_CAP_COMMAND="${S_CURVE_ENTRY_SPEED_CAP_COMMAND:-11.0}"
@@ -207,6 +207,7 @@ DIRECT_BEV_YELLOW_CONFIDENCE="${DIRECT_BEV_YELLOW_CONFIDENCE:-0.40}"
 DIRECT_BEV_CPU_THREADS="${DIRECT_BEV_CPU_THREADS:-4}"
 DIRECT_BEV_COMMAND_RATE_HZ="${DIRECT_BEV_COMMAND_RATE_HZ:-10.0}"
 DIRECT_BEV_PATH_TIMEOUT_SEC="${DIRECT_BEV_PATH_TIMEOUT_SEC:-1.50}"
+DIRECT_XBIN_PATH_TIMEOUT_SEC="${DIRECT_XBIN_PATH_TIMEOUT_SEC:-0.50}"
 VEHICLE_AVOIDANCE_IMMEDIATE_ON_YOLO="${VEHICLE_AVOIDANCE_IMMEDIATE_ON_YOLO:-true}"
 VEHICLE_AVOIDANCE_ENTRY_DISTANCE_M="${VEHICLE_AVOIDANCE_ENTRY_DISTANCE_M:-1.20}"
 VEHICLE_MINIMUM_SIDE_CLEARANCE_M="${VEHICLE_MINIMUM_SIDE_CLEARANCE_M:-0.70}"
@@ -337,13 +338,43 @@ case "$RULE_PERCEPTION_BACKEND" in
     START_CANONICAL_PERCEPTION=true
     START_CANONICAL_RULE=true
     START_DIRECT_BEV_RULE=false
+    LANE_DIRECT_CENTERLINE_ENABLED=false
+    LANE_DIRECT_CANONICAL_ENABLED=true
+    LANE_START_CANONICAL_ADAPTER=true
+    RULE_EXTERNAL_PATH_ENABLED=false
     RULE_READY_TOPIC=/perception/canonical_road_image
     RULE_READY_LABEL="canonical 차선 인지"
+    ;;
+  direct_xbin)
+    if [[ ! -f "$WORKSPACE/src/lane_seg_control/launch/$LANE_PERCEPTION_LAUNCH" ]]; then
+      echo "ERROR: lane perception launch not found: $LANE_PERCEPTION_LAUNCH" >&2
+      exit 2
+    fi
+    CANONICAL_FORWARD_RANGE_M="${CANONICAL_FORWARD_RANGE_M:-2.5}"
+    if [[ ! "$PERCEPTION_MAX_OUTPUT_RATE_HZ" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
+      ! awk -v value="$PERCEPTION_MAX_OUTPUT_RATE_HZ" \
+        'BEGIN { exit !(value >= 1.0 && value <= 30.0) }'; then
+      echo "ERROR: perception output rate must be from 1.0 to 30.0Hz." >&2
+      exit 2
+    fi
+    START_CANONICAL_PERCEPTION=true
+    START_CANONICAL_RULE=true
+    START_DIRECT_BEV_RULE=false
+    LANE_DIRECT_CENTERLINE_ENABLED=true
+    LANE_DIRECT_CANONICAL_ENABLED=false
+    LANE_START_CANONICAL_ADAPTER=false
+    RULE_EXTERNAL_PATH_ENABLED=true
+    RULE_READY_TOPIC=/perception/xbin_direct_centerline
+    RULE_READY_LABEL="direct Xbin 차선 인지"
     ;;
   direct_bev)
     START_CANONICAL_PERCEPTION=false
     START_CANONICAL_RULE=false
     START_DIRECT_BEV_RULE=true
+    LANE_DIRECT_CENTERLINE_ENABLED=false
+    LANE_DIRECT_CANONICAL_ENABLED=false
+    LANE_START_CANONICAL_ADAPTER=false
+    RULE_EXTERNAL_PATH_ENABLED=false
     RULE_READY_TOPIC=/lane_seg/source_image
     RULE_READY_LABEL="best_512 차선 인지"
     if [[ ! -f "$DIRECT_BEV_MODEL_PATH" ]]; then
@@ -352,7 +383,7 @@ case "$RULE_PERCEPTION_BACKEND" in
     fi
     ;;
   *)
-    echo "ERROR: XYCAR_RULE_PERCEPTION_BACKEND must be canonical or direct_bev." >&2
+    echo "ERROR: XYCAR_RULE_PERCEPTION_BACKEND must be canonical, direct_xbin, or direct_bev." >&2
     exit 2
     ;;
 esac
@@ -541,6 +572,9 @@ rule_perception_backend: "$RULE_PERCEPTION_BACKEND"
 lane_perception_launch: "$LANE_PERCEPTION_LAUNCH"
 canonical_forward_range_m: $CANONICAL_FORWARD_RANGE_M
 perception_max_output_rate_hz: $PERCEPTION_MAX_OUTPUT_RATE_HZ
+direct_xbin_centerline_enabled: $LANE_DIRECT_CENTERLINE_ENABLED
+direct_xbin_canonical_enabled: $LANE_DIRECT_CANONICAL_ENABLED
+direct_xbin_path_timeout_sec: $DIRECT_XBIN_PATH_TIMEOUT_SEC
 direct_bev_model_path: "$DIRECT_BEV_MODEL_PATH"
 direct_bev_image_size: $DIRECT_BEV_IMAGE_SIZE
 direct_bev_confidence: $DIRECT_BEV_CONFIDENCE
@@ -918,6 +952,10 @@ if [[ "$RULE_PERCEPTION_BACKEND" == "direct_bev" ]]; then
   echo "RULE perception: direct BEV / best_512 ONNX (canonical normalization bypassed)."
   echo "RULE model: $DIRECT_BEV_MODEL_PATH"
   echo "RULE path hold: ${DIRECT_BEV_PATH_TIMEOUT_SEC}s after the last valid BEV path."
+elif [[ "$RULE_PERCEPTION_BACKEND" == "direct_xbin" ]]; then
+  echo "RULE perception: direct LR-ASPP Xbin centerline (BEV/canonical raster bypassed)."
+  echo "RULE path: /perception/xbin_direct_centerline"
+  echo "RULE path hold: ${DIRECT_XBIN_PATH_TIMEOUT_SEC}s after the last valid direct path."
 else
   echo "RULE perception: canonical LR-ASPP."
 fi
@@ -995,7 +1033,15 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   enable_rviz:="$ENABLE_RVIZ" \
   start_perception:="$START_CANONICAL_PERCEPTION" \
   lane_perception_launch:="$LANE_PERCEPTION_LAUNCH" \
+  lane_direct_centerline_enabled:="$LANE_DIRECT_CENTERLINE_ENABLED" \
+  lane_direct_canonical_enabled:="$LANE_DIRECT_CANONICAL_ENABLED" \
+  lane_start_canonical_adapter:="$LANE_START_CANONICAL_ADAPTER" \
+  lane_direct_centerline_topic:=/perception/xbin_direct_centerline \
   start_rule:="$START_CANONICAL_RULE" \
+  rule_external_path_enabled:="$RULE_EXTERNAL_PATH_ENABLED" \
+  rule_external_path_topic:=/perception/xbin_direct_centerline \
+  rule_external_path_timeout_sec:="$DIRECT_XBIN_PATH_TIMEOUT_SEC" \
+  rule_external_path_previous_weight:=0.0 \
   start_direct_bev_rule:="$START_DIRECT_BEV_RULE" \
   direct_bev_model_path:="$DIRECT_BEV_MODEL_PATH" \
   direct_bev_image_size:="$DIRECT_BEV_IMAGE_SIZE" \

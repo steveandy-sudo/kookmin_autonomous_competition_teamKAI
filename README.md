@@ -1,10 +1,11 @@
-# kookmin_autonomous_competition_teamKAI — `main`
+# kookmin_autonomous_competition_teamKAI — `New-Perception`
 
 ROS 2 Humble 기반 Xycar 룰베이스 자율주행 프로젝트다. 현재 실차 검증 코드는 차선 주행, 신호등, 지름길, 라바콘 및 차량 회피를 하나의 주행 선택기와 최종 Space 안전 게이트로 통합한다.
 
 - 미니 PC 워크스페이스: `/home/xytron/xycar_ws`
 - ROS 배포판: ROS 2 Humble
-- 실차 기본 속도: 직선 `25`, 곡선·구불구불길 `11`, 라바콘 `8`
+- direct Xbin 시험 속도: 직선 `20`, 곡선 `12`, DEGRADED `12`, 라바콘 `8`
+- 통합 주행 전체 속도 상한 기본값: `20`
 - 제어 우선순위: `TRAFFIC > SHORTCUT > CONE > YOLO+LiDAR AVOIDANCE > RULE`
 
 ## 1. 프로젝트 개요 및 저장소 구조
@@ -39,8 +40,8 @@ kookmin_autonomous_competition_teamKAI/
 | 노드 | 역할 |
 | --- | --- |
 | `wide_camera_node` | `1280x1024` MJPEG 영상 발행 |
-| `lane_seg_lraspp_inference` | X-bin/LR-ASPP 추론과 Canonical 경로 생성 |
-| `canonical_stanley_pursuit_driver` | Canonical 경로 추종 후보 명령 생성 |
+| `lane_seg_lraspp_inference` | Xbin/LR-ASPP 추론과 direct 미터 경로 생성 |
+| `canonical_stanley_pursuit_driver` | direct 미터 경로 또는 Canonical 경로의 RULE 후보 명령 생성 |
 | `my_rule_object_detection_node` | YOLO 객체·신호등 판단 |
 | `my_rule_cone_node` | LiDAR 라바콘 중앙 경로 생성 |
 | `sequential_hybrid_driver` | 차선·라바콘·회피·신호등·지름길 후보 선택 |
@@ -54,7 +55,7 @@ kookmin_autonomous_competition_teamKAI/
 - 각 인지·제어 노드는 후보 명령만 만들고, 최종 선택기와 Space 게이트가 실제 모터 출력을 결정한다.
 
 ```text
-카메라 ─┬─ 차선 모델 → Canonical 경로 → RULE 후보 ─────────┐
+카메라 ─┬─ Xbin 차선 모델 → direct 미터 경로 → RULE 후보 ─┐
         ├─ 객체 YOLO → 신호등·차량·라바콘 판단             ├─ 통합 선택기
         └─ 지름길 차선 인지 → SHORTCUT 후보                 │
 LiDAR ──── 라바콘 경계·장애물 거리 → CONE/AVOIDANCE 후보 ──┘
@@ -66,12 +67,12 @@ LiDAR ──── 라바콘 경계·장애물 거리 → CONE/AVOIDANCE 후보 
 
 ## 3. 차선 인지·경로 생성·차선 추종
 
-1. 광각 카메라 영상을 `kookmin_far_centerline_xbin_512x288.pt`에 입력한다.
-2. 노란 중앙선과 흰 차선 정보를 이용해 전방 Canonical 경로를 만든다.
-3. Stanley의 횡오차 제어와 Pure Pursuit의 미리보기 조향을 혼합한다.
-4. 직선, 확정 곡선, 짧거나 기억된 경로를 분류해 속도 후보를 제한한다.
-5. 기본 속도는 직선 `25`, 곡선과 짧거나 기억된 경로 `11`이다.
-6. 조향 명령에는 직선·곡선별 평활화, 변화율 제한과 제어 지연 예측을 적용한다.
+1. 광각 카메라 영상을 왜곡 보정한 뒤 `kookmin_far_centerline_xbin_512x288.pt`에 `512x288`로 입력한다.
+2. 모델이 출력한 노란 중앙선 마스크를 4픽셀 간격 anchor row로 읽고, 각 행의 확률 가중 중심을 구한다.
+3. 전체 BEV/Canonical 영상을 렌더링하지 않고 중심 픽셀만 평면 homography로 투영한다. `x=전방 m`, `y=왼쪽 m`인 `/perception/xbin_direct_centerline`을 발행한다.
+4. 미터 환산은 좌우 `0.0021875 m/px`, 전방 `0.002272727273 m/px`을 사용하며 유효 범위는 전방 최대 `2.5 m`, 좌우 `+/-0.7 m`이다.
+5. RULE 제어기는 이 미터 점 목록을 직접 받아 Stanley와 Pure Pursuit을 혼합한다. 직선, 곡선, DEGRADED 경로 분류와 미션 우선순위는 기존 통합 제어기를 그대로 사용한다.
+6. direct Xbin 경로가 `0.50초` 이상 갱신되지 않으면 유효하지 않은 경로로 처리한다. 호모그래피는 고정된 카메라 각도와 평탄한 노면을 가정한다.
 
 ## 4. LiDAR 기반 라바콘·장애물 주행
 
@@ -94,10 +95,26 @@ LiDAR ──── 라바콘 경계·장애물 거리 → CONE/AVOIDANCE 후보 
 
 ## 5. 통합 주행 실행 매뉴얼
 
-아래 한 명령으로 신호등 출발부터 실제 대회용 통합 주행을 실행한다. 초기 질문은 모두 `Enter`를 눌러 기본값을 사용하며, `READY`가 표시되면 `Space`로 출발한다. 이때 직선 `25`, 곡선·구불구불길 `11`, 라바콘 `8`, 신호등 활성 설정이 적용된다.
+아래 명령은 새 direct Xbin 경로를 사용한다. 초기 질문은 모두 `Enter`를 눌러 지정된 값을 사용하고, `READY`가 표시되면 `Space`로 출발한다. 직선 `20`, 곡선 `12`, DEGRADED `12`, 라바콘 `8`, 전체 속도 상한 `20`이 적용된다.
 
 ```bash
-cd /home/xytron/xycar_ws && unset XYCAR_WS && XYCAR_TEST_PROFILE=integrated XYCAR_STEERING_ONLY=false XYCAR_ENABLE_RVIZ=false XYCAR_TRAFFIC_LIGHT_CONTROL_ENABLED=true bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh 25 --shortcut-mode yellow_count --shortcut-yellow-count 2 --shortcut-angle -37 --shortcut-return-sec 1.2
+cd /home/xytron/xycar_ws
+set +u
+source /opt/ros/humble/setup.bash
+source install_xycar_only/setup.bash
+export ROS_DOMAIN_ID=7
+unset ROS_NAMESPACE
+
+XYCAR_RULE_PERCEPTION_BACKEND=direct_xbin \
+XYCAR_PERCEPTION_MAX_OUTPUT_RATE_HZ=20.0 \
+DIRECT_XBIN_PATH_TIMEOUT_SEC=0.50 \
+OVERALL_SPEED_LIMIT_COMMAND=20 \
+CURVATURE_SPEED_CONTROL_ENABLED=true \
+CURVE_SPEED_COMMAND=12 \
+DEGRADED_PATH_SPEED_COMMAND=12 \
+XYCAR_ENABLE_RVIZ=false \
+bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh \
+  20 0.30 20 0
 ```
 
 ## 6. 주요 설정값·주기 및 안전 주의사항
@@ -108,8 +125,9 @@ cd /home/xytron/xycar_ws && unset XYCAR_WS && XYCAR_TEST_PROFILE=integrated XYCA
 | 차선 추종 후보 명령 | 10 Hz |
 | 객체 YOLO | 3 Hz |
 | 최종 선택·Space 게이트 | 20 Hz |
-| 직선 속도 | 25 |
-| 곡선·짧거나 기억된 경로 속도 | 11 |
+| 전체 최종 속도 상한 | 20 |
+| 직선 속도 | 20 |
+| 곡선 / DEGRADED 경로 속도 | 12 / 12 |
 | 라바콘 속도 | 8 |
 | `red_car` / `green_car` 회피 상한 | 20 / 20 |
 | 지름길 감지 기준 | `yellow_count`, 노란 점선 2개 |
@@ -157,6 +175,8 @@ RULE
 ## 9. 현재 검증 상태
 
 - `xycar_ws` 단독으로 필요한 17개 ROS 패키지 빌드가 완료되며 다른 워크스페이스 설치 결과를 사용하지 않는다.
+- direct Xbin 미터 좌표 변환, 통합 실행 배선 및 launch 인자 테스를 통과했다.
+- `drive_enabled=false` shadow 실행에서 `/perception/xbin_direct_centerline` publisher 1개와 RULE subscriber 1개를 확인했고 `/xycar_motor`는 발행하지 않았다.
 - `my_rule`, `lane_seg_control`, `shortcut_entry_review`, `track_drive_sve`, `xycar_map_nav` 핵심 테스트 355개를 통과했다.
 - 실제 경기장과 동일한 라바콘 배치에서 속도 `8` 주행 및 통합 라바콘 진입·탈출을 확인했다.
 - 신호등 초록불 출발, 직선 `25`, 곡선 `11`, 라바콘 `8`, 차량 회피 및 지름길을 포함한 통합 주행 완주를 확인했다.

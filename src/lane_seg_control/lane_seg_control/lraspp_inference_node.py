@@ -12,6 +12,8 @@ import cv2
 import numpy as np
 import rclpy
 from ament_index_python.packages import get_package_share_directory
+from geometry_msgs.msg import Point
+from kaiev26_msgs.msg import Centerline
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
@@ -31,6 +33,10 @@ from lane_seg_control.canonical_adapter_node import (
     build_bev_geometry,
     render_canonical_from_bev_masks,
     warp_semantic_masks_only,
+)
+from lane_seg_control.xbin_direct_centerline import (
+    extract_anchor_centers,
+    project_points_to_metric,
 )
 
 
@@ -139,6 +145,14 @@ class LrasppInferenceNode(Node):
         self.declare_parameter("publish_intermediate_topics", True)
         self.declare_parameter("diagnostics_component_counts_enabled", False)
         self.declare_parameter("direct_canonical_enabled", False)
+        self.declare_parameter("direct_centerline_enabled", False)
+        self.declare_parameter(
+            "direct_centerline_topic", "/perception/xbin_direct_centerline"
+        )
+        self.declare_parameter("direct_centerline_anchor_stride_px", 4)
+        self.declare_parameter("direct_centerline_anchor_offset_px", 2)
+        self.declare_parameter("direct_centerline_minimum_points", 3)
+        self.declare_parameter("direct_centerline_minimum_forward_m", 0.03)
         self.declare_parameter(
             "canonical_topic", "/perception/canonical_road_image"
         )
@@ -242,6 +256,9 @@ class LrasppInferenceNode(Node):
         self.direct_canonical_enabled = bool(
             self.get_parameter("direct_canonical_enabled").value
         )
+        self.direct_centerline_enabled = bool(
+            self.get_parameter("direct_centerline_enabled").value
+        )
         if not self.direct_canonical_enabled:
             self.publish_intermediate_topics = True
         self.base_frame_id = str(self.get_parameter("base_frame_id").value)
@@ -342,6 +359,14 @@ class LrasppInferenceNode(Node):
             str(self.get_parameter("diagnostics_topic").value),
             output_qos,
         )
+        self.direct_centerline_pub = None
+        self.direct_centerline_sequence = 0
+        if self.direct_centerline_enabled:
+            self.direct_centerline_pub = self.create_publisher(
+                Centerline,
+                str(self.get_parameter("direct_centerline_topic").value),
+                10,
+            )
         self.canonical_pub = None
         self.canonical_white_pub = None
         self.canonical_yellow_pub = None
@@ -405,7 +430,8 @@ class LrasppInferenceNode(Node):
             f"rectify={self.enable_rectify}, direct_model_rectify="
             f"{self.direct_model_rectify_enabled}x"
             f"{self.direct_model_rectify_oversample}, direct_canonical="
-            f"{self.direct_canonical_enabled}, "
+            f"{self.direct_canonical_enabled}, direct_centerline="
+            f"{self.direct_centerline_enabled}, "
             f"scheduler={'latest-frame timer' if self.max_output_rate_hz > 0.0 else 'input'}, "
             f"rate_limit={self.max_output_rate_hz:.1f}Hz"
         )
@@ -637,6 +663,93 @@ class LrasppInferenceNode(Node):
         output = cv_image_to_message(frame, encoding, header)
         publisher.publish(output)
 
+    def publish_direct_centerline(
+        self,
+        message: CameraMessage,
+        yellow_mask: np.ndarray,
+        yellow_probability: np.ndarray,
+    ) -> tuple[int, float, float]:
+        """Publish metric Xbin points without creating a BEV/canonical image."""
+        if self.direct_centerline_pub is None:
+            return 0, 0.0, 0.0
+        started = time.perf_counter()
+        anchor_stride = max(
+            1,
+            int(
+                self.get_parameter(
+                    "direct_centerline_anchor_stride_px"
+                ).value
+            ),
+        )
+        anchor_offset = int(
+            self.get_parameter(
+                "direct_centerline_anchor_offset_px"
+            ).value
+        ) % anchor_stride
+        camera_points, confidences = extract_anchor_centers(
+            yellow_mask,
+            yellow_probability,
+            anchor_stride_px=anchor_stride,
+            anchor_offset_px=anchor_offset,
+        )
+        geometry = self.ensure_geometry(
+            yellow_mask.shape[1], yellow_mask.shape[0]
+        )
+        metric_points, valid_indices = project_points_to_metric(
+            camera_points,
+            geometry.matrix,
+            bev_width=geometry.width,
+            bev_height=geometry.height,
+            lateral_m_per_px=self.parameter_float("lateral_m_per_px"),
+            forward_m_per_px=self.parameter_float("forward_m_per_px"),
+            minimum_forward_m=self.parameter_float(
+                "direct_centerline_minimum_forward_m"
+            ),
+            maximum_forward_m=self.parameter_float(
+                "canonical_forward_range_m"
+            ),
+            maximum_abs_lateral_m=0.5
+            * self.parameter_float("canonical_lateral_range_m"),
+        )
+
+        output = Centerline()
+        output.header = self.output_header(message, self.base_frame_id)
+        self.direct_centerline_sequence += 1
+        output.detection_id = self.direct_centerline_sequence
+        output.track_id = 0
+        minimum_points = max(
+            3,
+            int(
+                self.get_parameter(
+                    "direct_centerline_minimum_points"
+                ).value
+            ),
+        )
+        if metric_points.shape[0] >= minimum_points:
+            for forward_m, lateral_m in metric_points:
+                point = Point()
+                point.x = float(forward_m)
+                point.y = float(lateral_m)
+                point.z = 0.0
+                output.points.append(point)
+            valid_confidences = confidences[valid_indices]
+            anchor_count = len(
+                range(anchor_offset, yellow_mask.shape[0], anchor_stride)
+            )
+            coverage = metric_points.shape[0] / max(1, anchor_count)
+            output.confidence = float(
+                np.mean(valid_confidences) * coverage
+            )
+        else:
+            output.confidence = 0.0
+        output.source = "xbin_direct"
+        self.direct_centerline_pub.publish(output)
+        maximum_forward = (
+            float(metric_points[-1, 0]) if metric_points.shape[0] else 0.0
+        )
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        return len(output.points), maximum_forward, elapsed_ms
+
     def process_image(self, message: CameraMessage) -> None:
         callback_started = time.perf_counter()
         stamp_ns = self.message_stamp_ns(message)
@@ -706,6 +819,14 @@ class LrasppInferenceNode(Node):
             white = white_small
             yellow = yellow_small
         elapsed_ms = (time.perf_counter() - started) * 1000.0
+
+        direct_path_count, direct_path_forward_m, direct_path_ms = (
+            self.publish_direct_centerline(
+                message,
+                yellow_small,
+                probabilities[self.yellow_class_id],
+            )
+        )
 
         canonical_ms = 0.0
         if self.direct_canonical_enabled:
@@ -846,6 +967,9 @@ class LrasppInferenceNode(Node):
                 float(input_age_sec * 1000.0),
                 float(self.replaced_input_count),
                 float(self.stale_input_count),
+                float(direct_path_count),
+                float(direct_path_forward_m),
+                float(direct_path_ms),
             ]
             self.diagnostics_pub.publish(diagnostics)
 
@@ -858,6 +982,9 @@ class LrasppInferenceNode(Node):
                 f"source_age={input_age_sec * 1000.0:.1f}ms, "
                 f"white_px={np.count_nonzero(white_small)}, "
                 f"yellow_px={np.count_nonzero(yellow_small)}"
+                f", direct_points={direct_path_count}, "
+                f"direct_forward={direct_path_forward_m:.2f}m, "
+                f"direct={direct_path_ms:.2f}ms"
             )
             self.last_log_time = now
 

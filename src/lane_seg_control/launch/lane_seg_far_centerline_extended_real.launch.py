@@ -34,6 +34,19 @@ def generate_launch_description():
                 "publish_intermediate_topics", default_value="false"
             ),
             DeclareLaunchArgument(
+                "direct_centerline_enabled", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "direct_canonical_enabled", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "start_canonical_adapter", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "direct_centerline_topic",
+                default_value="/perception/xbin_direct_centerline",
+            ),
+            DeclareLaunchArgument(
                 "canonical_forward_range_m", default_value="2.5"
             ),
             IncludeLaunchDescription(
@@ -57,6 +70,18 @@ def generate_launch_description():
                     ),
                     "publish_intermediate_topics": LaunchConfiguration(
                         "publish_intermediate_topics"
+                    ),
+                    "direct_centerline_enabled": LaunchConfiguration(
+                        "direct_centerline_enabled"
+                    ),
+                    "direct_canonical_enabled": LaunchConfiguration(
+                        "direct_canonical_enabled"
+                    ),
+                    "start_canonical_adapter": LaunchConfiguration(
+                        "start_canonical_adapter"
+                    ),
+                    "direct_centerline_topic": LaunchConfiguration(
+                        "direct_centerline_topic"
                     ),
                     # Preserve the measured 1.5 m homography and translate it
                     # down by 440 BEV rows. This exposes its flat-ground

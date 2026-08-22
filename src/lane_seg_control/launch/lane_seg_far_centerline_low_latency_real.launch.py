@@ -47,6 +47,19 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "publish_intermediate_topics", default_value="false"
             ),
+            DeclareLaunchArgument(
+                "direct_centerline_enabled", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "direct_canonical_enabled", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "start_canonical_adapter", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "direct_centerline_topic",
+                default_value="/perception/xbin_direct_centerline",
+            ),
             DeclareLaunchArgument("bev_height", default_value="660"),
             DeclareLaunchArgument("dst_top_y_ratio", default_value="0.0"),
             DeclareLaunchArgument(
@@ -81,6 +94,18 @@ def generate_launch_description():
                     "direct_canonical_enabled": "true",
                     "publish_intermediate_topics": LaunchConfiguration(
                         "publish_intermediate_topics"
+                    ),
+                    "direct_centerline_enabled": LaunchConfiguration(
+                        "direct_centerline_enabled"
+                    ),
+                    "direct_canonical_enabled": LaunchConfiguration(
+                        "direct_canonical_enabled"
+                    ),
+                    "start_canonical_adapter": LaunchConfiguration(
+                        "start_canonical_adapter"
+                    ),
+                    "direct_centerline_topic": LaunchConfiguration(
+                        "direct_centerline_topic"
                     ),
                     "pipeline_qos_depth": "1",
                     "bev_height": LaunchConfiguration("bev_height"),

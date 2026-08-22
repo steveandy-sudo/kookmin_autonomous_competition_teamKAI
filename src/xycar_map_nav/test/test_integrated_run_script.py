@@ -55,7 +55,7 @@ def test_integrated_run_exposes_independent_overall_speed_limit() -> None:
 
     for source in (run_source, complete_source):
         assert (
-            'OVERALL_SPEED_LIMIT_COMMAND="${OVERALL_SPEED_LIMIT_COMMAND:-15.0}"'
+            'OVERALL_SPEED_LIMIT_COMMAND="${OVERALL_SPEED_LIMIT_COMMAND:-20.0}"'
             in source
         )
     assert (
@@ -142,6 +142,30 @@ def test_integrated_run_verifies_single_output_and_lidar_contract() -> None:
     assert "/hybrid_gate/xycar_motor_shadow" in source
     assert "wait_for_control_message" in source
     assert "  /scan \\" in source
+
+
+def test_integrated_run_supports_direct_xbin_rule_path() -> None:
+    run_source = RUN_SCRIPT.read_text(encoding="utf-8")
+    launch_source = LAUNCH_FILE.read_text(encoding="utf-8")
+
+    assert "direct_xbin)" in run_source
+    assert "RULE_READY_TOPIC=/perception/xbin_direct_centerline" in run_source
+    assert "LANE_DIRECT_CANONICAL_ENABLED=false" in run_source
+    assert "LANE_START_CANONICAL_ADAPTER=false" in run_source
+    assert "RULE_EXTERNAL_PATH_ENABLED=true" in run_source
+    assert (
+        'rule_external_path_topic:=/perception/xbin_direct_centerline'
+        in run_source
+    )
+    assert (
+        '"lane_direct_centerline_enabled", default_value="false"'
+        in launch_source
+    )
+    assert (
+        '"rule_external_path_enabled", default_value="false"'
+        in launch_source
+    )
+    assert '"external_path_enabled": ParameterValue(' in launch_source
 
 
 def test_integrated_run_uses_validated_eight_as_cone_speed() -> None:
