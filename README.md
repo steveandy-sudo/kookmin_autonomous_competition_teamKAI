@@ -249,3 +249,28 @@ RULE
 7. 모든 시험은 `/home/xytron/rosbags`에 규칙에 맞는 이름으로 기록하고 성공·실패 순서를 별도로 메모한다.
 
 1·2번 중 하나라도 실패하면 해당 문제부터 수정하고 같은 조건으로 다시 검증한다. 두 항목이 모두 반복 성공하면 실차 검증 결과와 rosbag 근거를 정리해 `main`과 `/home/xytron/xycar_ws`에 승격한다. 이후 시간이 남을 때 3번 라바콘 탈출 정지 문제를 먼저 분석하고, 마지막으로 4번 S자 곡선 속도 상향을 시험한다.
+
+### 11.6 2026-08-22 전체 속도 8 완주 기준
+
+2026-08-22 오전 `10:12:03 KST` 실차 완주 당시의 통합 주행 코드는 `hwj` 브랜치의 `32a7071`이며, 코드 트리는 당시 실행한 `6098fc7`과 동일하다. 코드의 모든 기본 속도를 8로 변경한 것이 아니라 아래 실행 인자로 RULE, 곡선, DEGRADED 및 최종 출력 상한을 8로 맞춘 재현 기준이다.
+
+```bash
+cd /home/xytron/xycar_ws
+set +u
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=7
+unset ROS_NAMESPACE
+
+CURVATURE_SPEED_CONTROL_ENABLED=true \
+CURVE_SPEED_COMMAND=8 \
+DEGRADED_PATH_SPEED_COMMAND=8 \
+XYCAR_ENABLE_RVIZ=false \
+bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh \
+  8 0.30 20 0
+```
+
+- 일반 RULE, 곡선, DEGRADED 및 최종 출력 속도 상한은 `8`이다.
+- 라바콘 주행 속도도 `8`이며, 안전 정지나 미션 상태에 따라 실제 출력은 더 낮거나 `0`일 수 있다.
+- 이 스냅샷에는 라바콘 우조향 최소 유지 `0.75초`, 마지막 좌조향 복구 속도 `8`, 라바콘 소실 후 탈출 `1.0초`, S자 진입 전 라바콘 재진입 차단, `red_car` 소실 복귀 `0.30초`, VESC 가속 제한 `0.6 m/s²`가 포함된다.
+- `main`에서 이 완주 조건을 재현하려면 먼저 위 `hwj` 커밋의 코드를 사용해야 하며, README의 명령만 실행한다고 `main` 코드가 자동으로 해당 스냅샷으로 바뀌지는 않는다.
