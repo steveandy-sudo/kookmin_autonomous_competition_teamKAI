@@ -407,9 +407,9 @@ prompt_float STEERING_LEAD_TIME_SEC \
 prompt_float STEERING_MAX_LEAD_COMMAND \
   "최대 조향 lead command" 6.0 0.0 42.0
 prompt_float VEHICLE_LEFT_OFFSET_M \
-  "오른쪽 장애물 감지 시 왼쪽 회피 이동량 [m]" 0.15 0.0 1.5
+  "오른쪽 장애물 감지 시 왼쪽 회피 이동량 [m]" 0.13 0.0 1.5
 prompt_float VEHICLE_RIGHT_OFFSET_M \
-  "왼쪽 장애물 감지 시 오른쪽 회피 이동량 [m]" 0.15 0.0 1.5
+  "왼쪽 장애물 감지 시 오른쪽 회피 이동량 [m]" 0.13 0.0 1.5
 
 LEFT_OFFSET_CM="${LEFT_OFFSET_CM/,/.}"
 if [[ ! "$LEFT_OFFSET_CM" =~ ^[0-9]+([.][0-9]+)?$ ]] || \

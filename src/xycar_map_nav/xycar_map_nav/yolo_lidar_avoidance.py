@@ -30,8 +30,8 @@ class YoloLidarAvoidanceConfig:
     red_car_yolo_timeout_sec: float = 0.30
     entry_distance_m: float = 1.20
     minimum_side_clearance_m: float = 0.70
-    left_offset_m: float = 0.15
-    right_offset_m: float = 0.15
+    left_offset_m: float = 0.13
+    right_offset_m: float = 0.13
     offset_rate_mps: float = 0.50
     speed_limit_command: float = 4.0
     minimum_avoid_sec: float = 0.50
@@ -109,6 +109,37 @@ class ShortcutAvoidanceSuppression:
         else:
             self.left_frames = 0
         return False
+
+
+def green_car_retrigger_suppressed(
+    class_name: str,
+    *,
+    blocked_until_s_curve: bool,
+) -> bool:
+    """Block only a completed dynamic-car mission until S-curve entry."""
+    normalized = (
+        str(class_name)
+        .strip()
+        .lower()
+        .replace("-", "_")
+        .replace(" ", "_")
+    )
+    return bool(blocked_until_s_curve and normalized == "green_car")
+
+
+def preferred_avoidance_mode_from_image_center(
+    *,
+    object_center_x: float,
+    image_width: float,
+) -> YoloLidarAvoidanceMode | None:
+    """Fallback side decision for the known straight dynamic-car section."""
+    width = float(image_width)
+    center_x = float(object_center_x)
+    if not math.isfinite(width) or not math.isfinite(center_x) or width <= 0.0:
+        return None
+    if center_x < 0.5 * width:
+        return YoloLidarAvoidanceMode.AVOID_RIGHT
+    return YoloLidarAvoidanceMode.AVOID_LEFT
 
 
 class YoloLidarAvoidanceController:
@@ -271,7 +302,12 @@ class YoloLidarAvoidanceController:
             minimum_elapsed = (
                 now - self.mode_started_sec >= self.config.minimum_avoid_sec
             )
-            clear = obstacle is None and not yolo_fresh
+            # The dynamic green car is camera-defined. Once its YOLO track is
+            # gone, do not let a stale LiDAR cluster hold the lane change.
+            green_car_target = self.target_class_name == "green_car"
+            clear = not yolo_fresh and (
+                green_car_target or obstacle is None
+            )
             if minimum_elapsed and clear:
                 if self.clear_started_sec is None:
                     self.clear_started_sec = now

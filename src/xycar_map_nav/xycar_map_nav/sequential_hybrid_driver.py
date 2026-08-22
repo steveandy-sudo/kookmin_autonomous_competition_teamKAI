@@ -62,6 +62,8 @@ from .traffic_light_control import left_signal_approach_speed_limit
 from .space_drive_gate_core import GateCandidateMode
 from .yolo_lidar_avoidance import ShortcutAvoidanceSuppression
 from .yolo_lidar_avoidance import ShortcutAvoidanceSuppressionConfig
+from .yolo_lidar_avoidance import green_car_retrigger_suppressed
+from .yolo_lidar_avoidance import preferred_avoidance_mode_from_image_center
 from .yolo_lidar_avoidance import YoloLidarAvoidanceConfig
 from .yolo_lidar_avoidance import YoloLidarAvoidanceController
 from .yolo_lidar_avoidance import YoloLidarAvoidanceMode
@@ -467,6 +469,7 @@ class SequentialHybridDriver(Node):
                 ),
             )
         )
+        self.green_car_retrigger_blocked = False
         self.s_curve_entry_guard = SCurveEntryGuard(
             SCurveEntryGuardConfig(
                 enabled=bool(
@@ -1159,8 +1162,8 @@ class SequentialHybridDriver(Node):
         )
         self.declare_parameter("vehicle_avoidance_entry_distance_m", 1.20)
         self.declare_parameter("vehicle_minimum_side_clearance_m", 0.70)
-        self.declare_parameter("vehicle_left_offset_m", 0.15)
-        self.declare_parameter("vehicle_right_offset_m", 0.15)
+        self.declare_parameter("vehicle_left_offset_m", 0.13)
+        self.declare_parameter("vehicle_right_offset_m", 0.13)
         self.declare_parameter("vehicle_offset_rate_mps", 0.65)
         self.declare_parameter("vehicle_avoidance_speed_limit_command", 20.0)
         self.declare_parameter(
@@ -1321,6 +1324,12 @@ class SequentialHybridDriver(Node):
         )
         if event == SCurveEntryEvent.CURVE_HANDOFF:
             state = self.s_curve_entry_guard.state()
+            if self.green_car_retrigger_blocked:
+                self.green_car_retrigger_blocked = False
+                self.get_logger().warning(
+                    f"{ANSI_BLUE}[AVOIDANCE] GREEN_CAR RETRIGGER "
+                    f"RE-ENABLED AT S-CURVE ENTRY{ANSI_RESET}"
+                )
             avoidance_restored = self.shortcut_avoidance_suppression.release()
             self.get_logger().warning(
                 f"{ANSI_GREEN}[S_ENTRY] NORMAL CURVE HANDOFF; "
@@ -1388,6 +1397,7 @@ class SequentialHybridDriver(Node):
             # intentionally retained for gate_disarm_cone_hold_sec.
             self._reset_shortcut_state()
             self._reset_s_curve_entry_guard("SPACE disarmed")
+            self.green_car_retrigger_blocked = False
             self.avoidance_controller.reset()
             self.avoidance_state = self.avoidance_controller.state()
             self.avoidance_offset_pub.publish(Float32(data=0.0))
@@ -1928,6 +1938,12 @@ class SequentialHybridDriver(Node):
                     self.shortcut_avoidance_suppression.active
                 ),
             )
+            and not green_car_retrigger_suppressed(
+                self._normalize_class_name(item.class_name),
+                blocked_until_s_curve=(
+                    self.green_car_retrigger_blocked
+                ),
+            )
         ]
         selected = None
         selected_sector = None
@@ -1967,6 +1983,11 @@ class SequentialHybridDriver(Node):
             if math.isfinite(selected_distance):
                 self.tracked_vehicle_distance_time = now
         preferred_mode = None
+        selected_class_name = (
+            self._normalize_class_name(selected.class_name)
+            if selected is not None
+            else ""
+        )
         if (
             self.avoidance_controller.mode == YoloLidarAvoidanceMode.IDLE
             and self.avoidance_controller.preferred_mode is None
@@ -2048,15 +2069,21 @@ class SequentialHybridDriver(Node):
                 )
                 if preferred_mode is not None:
                     self.avoidance_side_basis_code = 1.0
+            if (
+                preferred_mode is None
+                and side_decision_allowed
+                and selected_class_name == "green_car"
+            ):
+                preferred_mode = preferred_avoidance_mode_from_image_center(
+                    object_center_x=box_center_x,
+                    image_width=float(image_width),
+                )
+                if preferred_mode is not None:
+                    self.avoidance_side_basis_code = 2.0
             if not side_decision_allowed:
                 self.avoidance_side_basis_code = -1.0
         else:
             side_decision_allowed = False
-        selected_class_name = (
-            self._normalize_class_name(selected.class_name)
-            if selected is not None
-            else ""
-        )
         self.avoidance_controller.observe_yolo(
             now_sec=now,
             detected=selected is not None,
@@ -2207,6 +2234,7 @@ class SequentialHybridDriver(Node):
 
     def _handle_cone_event(self, event: ConeModeEvent) -> None:
         if event == ConeModeEvent.STARTED:
+            self.green_car_retrigger_blocked = False
             self._set_shortcut_left_lane_offset_active(
                 False,
                 reason="confirmed cone-course entry",
@@ -2659,6 +2687,11 @@ class SequentialHybridDriver(Node):
             ),
             controls_vehicle=self.avoidance_state.controls_vehicle,
         ):
+            self.green_car_retrigger_blocked = True
+            self.get_logger().warning(
+                f"{ANSI_BLUE}[AVOIDANCE] GREEN_CAR COMPLETE; "
+                f"RETRIGGER BLOCKED UNTIL S-CURVE ENTRY{ANSI_RESET}"
+            )
             avoidance_exit_trigger = SCurveEntryTrigger.GREEN_CAR_EXIT
         elif red_car_avoidance_completed(
             previous_controls_vehicle=(
@@ -2669,6 +2702,7 @@ class SequentialHybridDriver(Node):
             ),
             controls_vehicle=self.avoidance_state.controls_vehicle,
         ):
+            self.green_car_retrigger_blocked = False
             avoidance_exit_trigger = SCurveEntryTrigger.RED_CAR_EXIT
         if (
             self.drive_armed
@@ -3237,6 +3271,7 @@ class SequentialHybridDriver(Node):
     def stop(self) -> None:
         self.control_timer.cancel()
         self.s_curve_entry_guard.reset()
+        self.green_car_retrigger_blocked = False
         self.cone_reentry_suppression.reset()
         self.shortcut_entry_search_active = False
         self.shortcut_entry_search_started_time = float("-inf")

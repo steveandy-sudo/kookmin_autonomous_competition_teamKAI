@@ -10,6 +10,12 @@ from xycar_map_nav.sequential_hybrid_driver import is_avoidance_detection
 from xycar_map_nav.sequential_hybrid_driver import (
     avoidance_speed_limit_for_vehicle_class,
 )
+from xycar_map_nav.yolo_lidar_avoidance import (
+    green_car_retrigger_suppressed,
+)
+from xycar_map_nav.yolo_lidar_avoidance import (
+    preferred_avoidance_mode_from_image_center,
+)
 from xycar_map_nav.sequential_hybrid_driver import (
     preferred_avoidance_mode_from_yellow_reference,
 )
@@ -103,6 +109,29 @@ def test_shortcut_suppresses_every_vehicle_class():
         "green_car",
         suppression_active=False,
     )
+
+
+def test_completed_green_car_is_the_only_retrigger_suppressed_class():
+    assert green_car_retrigger_suppressed(
+        "green_car", blocked_until_s_curve=True
+    )
+    assert not green_car_retrigger_suppressed(
+        "red_car", blocked_until_s_curve=True
+    )
+    assert not green_car_retrigger_suppressed(
+        "green_car", blocked_until_s_curve=False
+    )
+
+
+def test_dynamic_car_camera_center_fallback_avoids_opposite_side():
+    assert preferred_avoidance_mode_from_image_center(
+        object_center_x=100.0,
+        image_width=640.0,
+    ) == YoloLidarAvoidanceMode.AVOID_RIGHT
+    assert preferred_avoidance_mode_from_image_center(
+        object_center_x=500.0,
+        image_width=640.0,
+    ) == YoloLidarAvoidanceMode.AVOID_LEFT
 
 
 def test_red_and_green_car_use_separate_avoidance_speed_limits():
@@ -209,6 +238,41 @@ def test_red_car_yolo_expires_sooner_without_changing_green_car_timeout():
         obstacle=None,
         cone_active=False,
     ).mode == YoloLidarAvoidanceMode.AVOID_LEFT
+
+
+def test_green_car_yolo_loss_returns_even_with_stale_lidar_cluster():
+    controller = YoloLidarAvoidanceController(
+        YoloLidarAvoidanceConfig(
+            yolo_timeout_sec=0.10,
+            yolo_required_frames=1,
+            immediate_on_yolo=True,
+            preferred_side_required_frames=1,
+            minimum_avoid_sec=0.0,
+            clear_hold_sec=0.0,
+            return_hold_sec=10.0,
+        )
+    )
+    controller.observe_yolo(
+        now_sec=0.0,
+        detected=True,
+        confidence=0.9,
+        lidar_distance_m=1.0,
+        preferred_mode=YoloLidarAvoidanceMode.AVOID_LEFT,
+        target_class_name="green_car",
+    )
+    stale_cluster = obstacle(distance=1.0)
+    assert controller.step(
+        now_sec=0.11,
+        dt_sec=0.1,
+        obstacle=stale_cluster,
+        cone_active=False,
+    ).mode == YoloLidarAvoidanceMode.AVOID_LEFT
+    assert controller.step(
+        now_sec=0.12,
+        dt_sec=0.01,
+        obstacle=stale_cluster,
+        cone_active=False,
+    ).mode == YoloLidarAvoidanceMode.RETURN_CENTER
 
 
 def test_cone_is_only_an_avoidance_candidate_in_temporary_test_mode():

@@ -71,17 +71,17 @@ def test_integrated_run_prompts_for_vehicle_avoidance_offsets() -> None:
     launch_source = LAUNCH_FILE.read_text(encoding="utf-8")
     config_source = HYBRID_CONFIG.read_text(encoding="utf-8")
 
-    assert 'VEHICLE_LEFT_OFFSET_M="${VEHICLE_LEFT_OFFSET_M:-0.15}"' in run_source
-    assert 'VEHICLE_RIGHT_OFFSET_M="${VEHICLE_RIGHT_OFFSET_M:-0.15}"' in run_source
+    assert 'VEHICLE_LEFT_OFFSET_M="${VEHICLE_LEFT_OFFSET_M:-0.13}"' in run_source
+    assert 'VEHICLE_RIGHT_OFFSET_M="${VEHICLE_RIGHT_OFFSET_M:-0.13}"' in run_source
     assert 'prompt_float VEHICLE_LEFT_OFFSET_M \\\n' in complete_source
     assert 'prompt_float VEHICLE_RIGHT_OFFSET_M \\\n' in complete_source
-    assert '"오른쪽 장애물 감지 시 왼쪽 회피 이동량 [m]" 0.15' in complete_source
-    assert '"왼쪽 장애물 감지 시 오른쪽 회피 이동량 [m]" 0.15' in complete_source
+    assert '"오른쪽 장애물 감지 시 왼쪽 회피 이동량 [m]" 0.13' in complete_source
+    assert '"왼쪽 장애물 감지 시 오른쪽 회피 이동량 [m]" 0.13' in complete_source
     assert 'export VEHICLE_LEFT_OFFSET_M VEHICLE_RIGHT_OFFSET_M' in complete_source
-    assert '"vehicle_left_offset_m", default_value="0.15"' in launch_source
-    assert '"vehicle_right_offset_m", default_value="0.15"' in launch_source
-    assert "vehicle_left_offset_m: 0.15" in config_source
-    assert "vehicle_right_offset_m: 0.15" in config_source
+    assert '"vehicle_left_offset_m", default_value="0.13"' in launch_source
+    assert '"vehicle_right_offset_m", default_value="0.13"' in launch_source
+    assert "vehicle_left_offset_m: 0.13" in config_source
+    assert "vehicle_right_offset_m: 0.13" in config_source
 
 
 def test_integrated_run_exposes_shortcut_left_lane_preposition_offset() -> None:

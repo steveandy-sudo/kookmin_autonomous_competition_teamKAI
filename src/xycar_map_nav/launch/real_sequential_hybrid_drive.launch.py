@@ -521,8 +521,8 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "vehicle_minimum_side_clearance_m", default_value="0.70"
             ),
-            DeclareLaunchArgument("vehicle_left_offset_m", default_value="0.15"),
-            DeclareLaunchArgument("vehicle_right_offset_m", default_value="0.15"),
+            DeclareLaunchArgument("vehicle_left_offset_m", default_value="0.13"),
+            DeclareLaunchArgument("vehicle_right_offset_m", default_value="0.13"),
             DeclareLaunchArgument(
                 "vehicle_offset_rate_mps", default_value="0.65"
             ),
