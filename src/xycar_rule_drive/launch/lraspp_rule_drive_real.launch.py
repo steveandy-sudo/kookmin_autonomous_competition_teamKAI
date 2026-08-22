@@ -97,7 +97,7 @@ def generate_launch_description():
             "pure_pursuit_control_x_m", default_value="-0.08"
         ),
         DeclareLaunchArgument("stanley_control_x_m", default_value="0.16"),
-        DeclareLaunchArgument("stanley_gain", default_value="1.20"),
+        DeclareLaunchArgument("stanley_gain", default_value="1.30"),
         DeclareLaunchArgument(
             "stanley_softening_mps", default_value="0.35"
         ),
@@ -117,7 +117,7 @@ def generate_launch_description():
             "control_latency_preview_sec", default_value="0.20"
         ),
         DeclareLaunchArgument(
-            "curve_control_latency_preview_sec", default_value="0.40"
+            "curve_control_latency_preview_sec", default_value="0.35"
         ),
         DeclareLaunchArgument(
             "curve_control_latency_minimum_hold_sec", default_value="0.50"
@@ -139,7 +139,7 @@ def generate_launch_description():
             default_value="20.0",
         ),
         DeclareLaunchArgument(
-            "curve_steering_multiplier", default_value="1.5"
+            "curve_steering_multiplier", default_value="1.0"
         ),
         DeclareLaunchArgument("angle_command_min", default_value="-42.0"),
         DeclareLaunchArgument("angle_command_max", default_value="42.0"),

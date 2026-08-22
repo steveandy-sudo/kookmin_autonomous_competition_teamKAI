@@ -248,6 +248,9 @@ def generate_launch_description():
                 "shortcut_entry_speed_command", default_value="9.0"
             ),
             DeclareLaunchArgument(
+                "shortcut_left_lane_offset_m", default_value="0.10"
+            ),
+            DeclareLaunchArgument(
                 "vehicle_avoidance_enabled", default_value="true"
             ),
             DeclareLaunchArgument(
@@ -255,6 +258,10 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "s_curve_entry_speed_cap_command", default_value="11.0"
+            ),
+            DeclareLaunchArgument(
+                "s_curve_entry_red_car_speed_cap_command",
+                default_value="13.0",
             ),
             DeclareLaunchArgument(
                 "s_curve_entry_straight_max_abs_angle_command",
@@ -273,7 +280,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "s_curve_entry_curve_speed_margin_command",
-                default_value="0.50",
+                default_value="1.00",
             ),
             DeclareLaunchArgument(
                 "s_curve_entry_curve_confirmation_frames",
@@ -283,12 +290,12 @@ def generate_launch_description():
                 "s_curve_entry_overdue_distance_m", default_value="4.50"
             ),
             DeclareLaunchArgument("scan_topic", default_value="/scan"),
-            DeclareLaunchArgument("speed_command", default_value="25.0"),
+            DeclareLaunchArgument("speed_command", default_value="20.0"),
             DeclareLaunchArgument(
                 "curvature_speed_control_enabled", default_value="true"
             ),
             DeclareLaunchArgument(
-                "curve_speed_command", default_value="11.0"
+                "curve_speed_command", default_value="12.0"
             ),
             DeclareLaunchArgument(
                 "degraded_path_speed_command", default_value="11.0"
@@ -334,7 +341,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "stanley_control_x_m", default_value="0.16"
             ),
-            DeclareLaunchArgument("stanley_gain", default_value="1.20"),
+            DeclareLaunchArgument("stanley_gain", default_value="1.30"),
             DeclareLaunchArgument(
                 "stanley_softening_mps", default_value="0.35"
             ),
@@ -354,11 +361,15 @@ def generate_launch_description():
                 "control_latency_preview_sec", default_value="0.20"
             ),
             DeclareLaunchArgument(
-                "curve_control_latency_preview_sec", default_value="0.40"
+                "curve_control_latency_preview_sec", default_value="0.35"
             ),
             DeclareLaunchArgument(
                 "curve_control_latency_minimum_hold_sec",
                 default_value="0.50",
+            ),
+            DeclareLaunchArgument(
+                "yellow_curve_reversal_preview_far_x_m",
+                default_value="1.00",
             ),
             DeclareLaunchArgument(
                 "curve_detection_near_x_m", default_value="0.20"
@@ -413,7 +424,7 @@ def generate_launch_description():
                 default_value="20.0",
             ),
             DeclareLaunchArgument(
-                "curve_steering_multiplier", default_value="1.1"
+                "curve_steering_multiplier", default_value="1.0"
             ),
             DeclareLaunchArgument(
                 "target_left_offset_m", default_value="0.0"
@@ -469,7 +480,7 @@ def generate_launch_description():
                 "vehicle_yolo_required_frames", default_value="1"
             ),
             DeclareLaunchArgument(
-                "vehicle_yolo_timeout_sec", default_value="1.00"
+                "vehicle_yolo_timeout_sec", default_value="0.50"
             ),
             DeclareLaunchArgument(
                 "vehicle_red_car_yolo_timeout_sec", default_value="0.30"
@@ -510,8 +521,8 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "vehicle_minimum_side_clearance_m", default_value="0.70"
             ),
-            DeclareLaunchArgument("vehicle_left_offset_m", default_value="0.20"),
-            DeclareLaunchArgument("vehicle_right_offset_m", default_value="0.20"),
+            DeclareLaunchArgument("vehicle_left_offset_m", default_value="0.15"),
+            DeclareLaunchArgument("vehicle_right_offset_m", default_value="0.15"),
             DeclareLaunchArgument(
                 "vehicle_offset_rate_mps", default_value="0.65"
             ),
@@ -722,6 +733,9 @@ def generate_launch_description():
                     "curve_control_latency_minimum_hold_sec": LaunchConfiguration(
                         "curve_control_latency_minimum_hold_sec"
                     ),
+                    "yellow_curve_reversal_preview_far_x_m": LaunchConfiguration(
+                        "yellow_curve_reversal_preview_far_x_m"
+                    ),
                     "steering_current_weight": LaunchConfiguration(
                         "steering_current_weight"
                     ),
@@ -916,6 +930,12 @@ def generate_launch_description():
                         "curve_control_latency_minimum_hold_sec": ParameterValue(
                             LaunchConfiguration(
                                 "curve_control_latency_minimum_hold_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "yellow_curve_reversal_preview_far_x_m": ParameterValue(
+                            LaunchConfiguration(
+                                "yellow_curve_reversal_preview_far_x_m"
                             ),
                             value_type=float,
                         ),
@@ -1304,7 +1324,19 @@ def generate_launch_description():
                         ),
                         "shortcut_yolo_min_confidence": 0.40,
                         "shortcut_yolo_required_frames": 2,
-                        "shortcut_yolo_absence_frames": 2,
+                        "shortcut_yolo_absence_frames": 1,
+                        "shortcut_entry_speed_command": ParameterValue(
+                            LaunchConfiguration(
+                                "shortcut_entry_speed_command"
+                            ),
+                            value_type=float,
+                        ),
+                        "shortcut_left_lane_offset_m": ParameterValue(
+                            LaunchConfiguration(
+                                "shortcut_left_lane_offset_m"
+                            ),
+                            value_type=float,
+                        ),
                         "scan_topic": scan_topic,
                         "minimum_speed_command": ParameterValue(
                             LaunchConfiguration(
@@ -1353,6 +1385,12 @@ def generate_launch_description():
                         "s_curve_entry_speed_cap_command": ParameterValue(
                             LaunchConfiguration(
                                 "s_curve_entry_speed_cap_command"
+                            ),
+                            value_type=float,
+                        ),
+                        "s_curve_entry_red_car_speed_cap_command": ParameterValue(
+                            LaunchConfiguration(
+                                "s_curve_entry_red_car_speed_cap_command"
                             ),
                             value_type=float,
                         ),

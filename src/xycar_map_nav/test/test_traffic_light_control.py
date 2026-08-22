@@ -3,6 +3,9 @@ from xycar_map_nav.traffic_light_control import TrafficLightAction
 from xycar_map_nav.traffic_light_control import TrafficLightConfig
 from xycar_map_nav.traffic_light_control import TrafficLightController
 from xycar_map_nav.traffic_light_control import TrafficLightFrame
+from xycar_map_nav.traffic_light_control import (
+    left_signal_approach_speed_limit,
+)
 
 
 def observation(confidence=0.9, area=0.01):
@@ -26,6 +29,33 @@ def make_controller(**overrides):
     )
     values.update(overrides)
     return TrafficLightController(TrafficLightConfig(**values))
+
+
+def test_left_signal_caps_speed_from_first_frame_until_shortcut_takes_over():
+    assert left_signal_approach_speed_limit(
+        left_detection_frames=1,
+        decision_action=TrafficLightAction.CLEAR,
+        maximum_speed_command=9.0,
+        blocked_by_active_mission=False,
+    ) == 9.0
+    assert left_signal_approach_speed_limit(
+        left_detection_frames=2,
+        decision_action=TrafficLightAction.LEFT_APPROACH,
+        maximum_speed_command=9.0,
+        blocked_by_active_mission=False,
+    ) == 9.0
+    assert left_signal_approach_speed_limit(
+        left_detection_frames=2,
+        decision_action=TrafficLightAction.LEFT_APPROACH,
+        maximum_speed_command=9.0,
+        blocked_by_active_mission=True,
+    ) is None
+    assert left_signal_approach_speed_limit(
+        left_detection_frames=0,
+        decision_action=TrafficLightAction.CLEAR,
+        maximum_speed_command=9.0,
+        blocked_by_active_mission=False,
+    ) is None
 
 
 def test_default_stop_trigger_does_not_require_minimum_box_area():

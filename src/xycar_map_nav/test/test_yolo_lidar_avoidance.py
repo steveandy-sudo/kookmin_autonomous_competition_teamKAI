@@ -17,6 +17,9 @@ from xycar_map_nav.sequential_hybrid_driver import (
     shortcut_suppresses_vehicle_class,
 )
 from xycar_map_nav.sequential_hybrid_driver import (
+    selected_external_lateral_offset,
+)
+from xycar_map_nav.sequential_hybrid_driver import (
     straight_road_side_decision_allowed,
 )
 
@@ -68,6 +71,19 @@ def test_shortcut_suppression_can_be_disabled():
     suppression.start_rule_handoff()
     assert not suppression.active
     assert not suppression.observe_rule_angle(-42.0)
+
+
+def test_shortcut_left_lane_offset_overrides_avoidance_until_release():
+    assert selected_external_lateral_offset(
+        shortcut_left_lane_active=True,
+        shortcut_left_lane_offset_m=0.10,
+        avoidance_offset_m=-0.31,
+    ) == 0.10
+    assert selected_external_lateral_offset(
+        shortcut_left_lane_active=False,
+        shortcut_left_lane_offset_m=0.10,
+        avoidance_offset_m=-0.31,
+    ) == -0.31
 
 
 def test_shortcut_suppresses_every_vehicle_class():

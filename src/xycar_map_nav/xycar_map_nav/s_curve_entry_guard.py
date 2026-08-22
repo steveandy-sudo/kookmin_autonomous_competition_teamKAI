@@ -11,6 +11,7 @@ class SCurveEntryTrigger(str, Enum):
     NONE = "none"
     SHORTCUT_EXIT = "shortcut_exit"
     GREEN_CAR_EXIT = "green_car_exit"
+    RED_CAR_EXIT = "red_car_exit"
 
 
 class SCurveEntryEvent(str, Enum):
@@ -24,11 +25,12 @@ class SCurveEntryEvent(str, Enum):
 class SCurveEntryGuardConfig:
     enabled: bool = True
     speed_cap_command: float = 11.0
+    red_car_speed_cap_command: float = 13.0
     straight_max_abs_angle_command: float = 5.0
     straight_confirmation_frames: int = 3
     minimum_curve_distance_m: float = 1.50
     curve_left_angle_command: float = -8.0
-    curve_speed_margin_command: float = 0.50
+    curve_speed_margin_command: float = 1.00
     curve_confirmation_frames: int = 3
     overdue_distance_m: float = 4.50
 
@@ -44,13 +46,14 @@ class SCurveEntryGuardState:
     overdue: bool
 
 
-def green_car_avoidance_completed(
+def _vehicle_avoidance_completed(
     *,
     previous_controls_vehicle: bool,
     previous_target_class_name: str,
     controls_vehicle: bool,
+    target_class_name: str,
 ) -> bool:
-    """Detect only a real green-car avoidance handoff back to RULE."""
+    """Detect a class-specific avoidance handoff back to RULE."""
     normalized = (
         str(previous_target_class_name)
         .strip()
@@ -61,7 +64,37 @@ def green_car_avoidance_completed(
     return bool(
         previous_controls_vehicle
         and not controls_vehicle
-        and normalized == "green_car"
+        and normalized == str(target_class_name)
+    )
+
+
+def green_car_avoidance_completed(
+    *,
+    previous_controls_vehicle: bool,
+    previous_target_class_name: str,
+    controls_vehicle: bool,
+) -> bool:
+    """Detect only a real green-car avoidance handoff back to RULE."""
+    return _vehicle_avoidance_completed(
+        previous_controls_vehicle=previous_controls_vehicle,
+        previous_target_class_name=previous_target_class_name,
+        controls_vehicle=controls_vehicle,
+        target_class_name="green_car",
+    )
+
+
+def red_car_avoidance_completed(
+    *,
+    previous_controls_vehicle: bool,
+    previous_target_class_name: str,
+    controls_vehicle: bool,
+) -> bool:
+    """Detect only a real red-car avoidance handoff back to RULE."""
+    return _vehicle_avoidance_completed(
+        previous_controls_vehicle=previous_controls_vehicle,
+        previous_target_class_name=previous_target_class_name,
+        controls_vehicle=controls_vehicle,
+        target_class_name="red_car",
     )
 
 
@@ -123,6 +156,7 @@ class SCurveEntryGuard:
             0.0, float(self.config.overdue_distance_m)
         )
 
+        speed_cap_command = self.active_speed_cap_command()
         straight_evidence = bool(
             rule_command_fresh
             and math.isfinite(float(rule_angle_command))
@@ -130,7 +164,7 @@ class SCurveEntryGuard:
             and abs(float(rule_angle_command))
             <= max(0.0, float(self.config.straight_max_abs_angle_command))
             and float(rule_speed_command)
-            > max(0.0, float(self.config.speed_cap_command))
+            > speed_cap_command
             + max(0.0, float(self.config.curve_speed_margin_command))
         )
         if not self.straight_ready:
@@ -145,18 +179,25 @@ class SCurveEntryGuard:
         left_threshold = min(
             0.0, float(self.config.curve_left_angle_command)
         )
-        curve_speed_limit = max(
-            0.0, float(self.config.speed_cap_command)
-        ) + max(0.0, float(self.config.curve_speed_margin_command))
+        curve_speed_limit = speed_cap_command + max(
+            0.0, float(self.config.curve_speed_margin_command)
+        )
+        red_car_exit = self.trigger == SCurveEntryTrigger.RED_CAR_EXIT
         curve_evidence = bool(
             self.straight_ready
-            and self.distance_m
-            >= max(0.0, float(self.config.minimum_curve_distance_m))
+            and (
+                red_car_exit
+                or self.distance_m
+                >= max(0.0, float(self.config.minimum_curve_distance_m))
+            )
             and rule_command_fresh
             and math.isfinite(float(rule_angle_command))
             and math.isfinite(float(rule_speed_command))
             and float(rule_angle_command) <= left_threshold
-            and 0.0 < float(rule_speed_command) <= curve_speed_limit
+            and (
+                red_car_exit
+                or 0.0 < float(rule_speed_command) <= curve_speed_limit
+            )
         )
         self.curve_frames = self.curve_frames + 1 if curve_evidence else 0
         if self.curve_frames < max(
@@ -182,9 +223,14 @@ class SCurveEntryGuard:
         if speed > 0.0:
             speed = min(
                 speed,
-                max(0.0, float(self.config.speed_cap_command)),
+                self.active_speed_cap_command(),
             )
         return angle, speed
+
+    def active_speed_cap_command(self) -> float:
+        if self.trigger == SCurveEntryTrigger.RED_CAR_EXIT:
+            return max(0.0, float(self.config.red_car_speed_cap_command))
+        return max(0.0, float(self.config.speed_cap_command))
 
     def state(self) -> SCurveEntryGuardState:
         return SCurveEntryGuardState(

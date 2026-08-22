@@ -55,5 +55,21 @@
     startup_green_min_pixel_ratio: 0.015
     startup_green_required_frames: 2
 
+    # Split each YOLO traffic-light box into two halves, then inspect the
+    # largest green component in the right half. Its local x is zero at the
+    # center divider and one at the right edge: near-divider means left arrow,
+    # farther right means straight. Small reflected components are ignored.
+    traffic_signal_cv_enabled: true
+    traffic_signal_cv_hsv_lower: [35, 60, 100]
+    traffic_signal_cv_hsv_upper: [100, 255, 255]
+    traffic_signal_cv_split_ratio: 0.50
+    traffic_signal_cv_horizontal_inset_ratio: 0.0
+    traffic_signal_cv_vertical_inset_ratio: 0.10
+    traffic_signal_cv_min_green_pixels: 4
+    traffic_signal_cv_min_green_pixel_ratio: 0.01
+    traffic_signal_cv_right_half_minimum_component_pixels: 4
+    traffic_signal_cv_right_half_left_max_center_ratio: 0.15
+    traffic_signal_cv_fallback_to_yolo: true
+
     # null_4 is deliberately ignored by all mission triggers.
     required_classes: [red_car, green_car, cone, red_4, yellow_4, green_4, left_4]

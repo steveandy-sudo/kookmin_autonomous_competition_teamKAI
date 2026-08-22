@@ -53,6 +53,23 @@ class HsvRoiEvidence:
     pixel_ratio: float
 
 
+@dataclass(frozen=True)
+class TwoHalfSignalEvidence:
+    """HSV evidence from the left/right halves of one traffic-light box."""
+
+    valid: bool
+    classification: str
+    half_green_pixels: tuple[int, int]
+    half_green_ratios: tuple[float, float]
+    green_q10_x_ratio: float
+    green_q90_x_ratio: float
+    green_span_x_ratio: float
+    left_active: bool
+    right_active: bool
+    right_dominant_green_pixels: int
+    right_dominant_center_x_ratio: float
+
+
 def normalize_class_name(name: str) -> str:
     """Normalize model labels without changing their semantic meaning."""
     return "_".join(
@@ -166,6 +183,165 @@ def green_hsv_evidence_in_box(
         True,
         green_pixels,
         green_pixels / float(max(1, roi.shape[0] * roi.shape[1])),
+    )
+
+
+def classify_two_half_signal_in_box(
+    bgr_image: np.ndarray,
+    box: Sequence[int],
+    *,
+    lower_hsv: Sequence[int] = (35, 60, 100),
+    upper_hsv: Sequence[int] = (100, 255, 255),
+    split_ratio: float = 0.50,
+    horizontal_inset_ratio: float = 0.0,
+    vertical_inset_ratio: float = 0.10,
+    minimum_green_pixels: int = 4,
+    minimum_green_pixel_ratio: float = 0.01,
+    right_half_minimum_component_pixels: int = 4,
+    right_half_left_max_center_ratio: float = 0.15,
+) -> TwoHalfSignalEvidence:
+    """Classify the dominant green light within the box's right half.
+
+    The right-half coordinate starts at the center divider (zero) and ends at
+    the YOLO box's right edge (one). A dominant component beside the divider
+    is a left arrow; one farther right is a straight green. Smaller reflection
+    components do not move the classification.
+    """
+
+    empty = TwoHalfSignalEvidence(
+        False,
+        "unknown",
+        (0, 0),
+        (0.0, 0.0),
+        1.0,
+        1.0,
+        0.0,
+        False,
+        False,
+        0,
+        1.0,
+    )
+    if bgr_image.ndim != 3 or bgr_image.shape[2] != 3 or len(box) != 4:
+        return empty
+    if not 0.25 <= float(split_ratio) <= 0.75:
+        return empty
+    if not 0.0 <= float(horizontal_inset_ratio) < 0.5:
+        return empty
+    if not 0.0 <= float(vertical_inset_ratio) < 0.5:
+        return empty
+    if int(minimum_green_pixels) < 1:
+        return empty
+    if not 0.0 <= float(minimum_green_pixel_ratio) <= 1.0:
+        return empty
+    if int(right_half_minimum_component_pixels) < 1:
+        return empty
+    if not 0.0 <= float(right_half_left_max_center_ratio) <= 1.0:
+        return empty
+
+    height, width = bgr_image.shape[:2]
+    xmin, ymin, xmax, ymax = (int(value) for value in box)
+    xmin = max(0, min(width, xmin))
+    xmax = max(0, min(width, xmax))
+    ymin = max(0, min(height, ymin))
+    ymax = max(0, min(height, ymax))
+    if xmax - xmin < 2 or ymax <= ymin:
+        return empty
+
+    lower = np.asarray(lower_hsv, dtype=np.uint8)
+    upper = np.asarray(upper_hsv, dtype=np.uint8)
+    if lower.shape != (3,) or upper.shape != (3,):
+        return empty
+
+    roi = bgr_image[ymin:ymax, xmin:xmax]
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    roi_height, roi_width = hsv.shape[:2]
+    vertical_inset = int(round(roi_height * float(vertical_inset_ratio)))
+    horizontal_inset = int(
+        round(roi_width * float(horizontal_inset_ratio))
+    )
+    sample = hsv[
+        vertical_inset : max(vertical_inset + 1, roi_height - vertical_inset),
+        horizontal_inset : max(horizontal_inset + 2, roi_width - horizontal_inset),
+    ]
+    if sample.size == 0 or sample.shape[1] < 2:
+        return empty
+
+    mask = cv2.inRange(sample, lower, upper)
+    sample_height, sample_width = mask.shape[:2]
+    split_x = max(
+        1,
+        min(sample_width - 1, int(round(sample_width * float(split_ratio)))),
+    )
+    left_mask = mask[:, :split_x]
+    right_mask = mask[:, split_x:]
+    left_pixels = int(cv2.countNonZero(left_mask))
+    right_pixels = int(cv2.countNonZero(right_mask))
+    left_ratio = left_pixels / float(max(1, left_mask.size))
+    right_ratio = right_pixels / float(max(1, right_mask.size))
+    left_active = bool(
+        left_pixels >= int(minimum_green_pixels)
+        and left_ratio >= float(minimum_green_pixel_ratio)
+    )
+    right_active = bool(
+        right_pixels >= int(minimum_green_pixels)
+        and right_ratio >= float(minimum_green_pixel_ratio)
+    )
+
+    _, green_x = np.nonzero(mask)
+    if green_x.size:
+        normalized_x = green_x.astype(np.float64) / float(
+            max(1, sample_width - 1)
+        )
+        q10 = float(np.quantile(normalized_x, 0.10))
+        q90 = float(np.quantile(normalized_x, 0.90))
+        span = max(0.0, q90 - q10)
+    else:
+        q10 = q90 = 1.0
+        span = 0.0
+
+    component_count, _, component_stats, component_centroids = (
+        cv2.connectedComponentsWithStats(right_mask, connectivity=8)
+    )
+    dominant_pixels = 0
+    dominant_center = 1.0
+    for component_index in range(1, component_count):
+        component_pixels = int(
+            component_stats[component_index, cv2.CC_STAT_AREA]
+        )
+        if (
+            component_pixels < int(right_half_minimum_component_pixels)
+            or component_pixels <= dominant_pixels
+        ):
+            continue
+        dominant_pixels = component_pixels
+        dominant_center = float(
+            component_centroids[component_index, 0]
+        ) / float(max(1, right_mask.shape[1] - 1))
+
+    if (
+        right_active
+        and dominant_pixels >= int(right_half_minimum_component_pixels)
+        and dominant_center <= float(right_half_left_max_center_ratio)
+    ):
+        classification = "left_4"
+    elif right_active and dominant_pixels >= int(
+        right_half_minimum_component_pixels
+    ):
+        classification = "green_4"
+    else:
+        classification = "unknown"
+    return TwoHalfSignalEvidence(
+        True,
+        classification,
+        (left_pixels, right_pixels),
+        (left_ratio, right_ratio),
+        q10,
+        q90,
+        span,
+        left_active,
+        right_active,
+        dominant_pixels,
+        dominant_center,
     )
 
 
