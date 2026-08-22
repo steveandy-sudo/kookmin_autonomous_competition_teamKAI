@@ -1,0 +1,222 @@
+mission:
+  frame_id: map
+
+  # The competition drawing marks the vehicle rectangle center. The calibrated
+  # real TF uses the front-wheel center as base_footprint.
+  base_from_reference_x_m: 0.16
+
+  initial_pose:
+    name: START
+    x: 1.8
+    y: 0.9
+    yaw: 3.141592653589793
+
+  # Hierarchical entry-point guidance makes each final action encode the
+  # intended manoeuvre. A_CLEAR forces the body fully around the top of the
+  # A/B divider instead of allowing a controller to cut its blind corner.
+  steps:
+    # Curvature-run endpoints for the narrow start-to-A corridor. They make
+    # the steering servo settle between maximum-turn, straight, and alignment
+    # arcs instead of assuming zero-lag steering.
+    - name: A_ROUTE_ARC_1
+      x: 1.2293447345
+      y: 1.0631214411
+      yaw: 1.987746
+      hold_sec: 0.5
+      maximum_retries: 2
+    - name: A_ROUTE_STRAIGHT
+      x: 1.1077957345
+      y: 1.3377074411
+      yaw: 1.987746
+      hold_sec: 0.5
+      maximum_retries: 2
+    - name: A_ROUTE_ALIGN
+      x: 0.9514726928
+      y: 1.7610199615
+      yaw: 1.555
+      hold_sec: 0.5
+      maximum_retries: 2
+    # Vehicle-center reference. This converts to base=(1.00, 3.35, +pi/2)
+    # and establishes a localization-error-tolerant northbound approach.
+    - name: A_APPROACH
+      x: 1.00
+      y: 3.19
+      yaw: 1.5707963267948966
+      hold_sec: 0.5
+      maximum_retries: 2
+    # Explicit Hybrid-A* direction-inversion poses. Keeping each action on
+    # one motion direction prevents a predictive controller from rounding a
+    # forward/reverse cusp into the divider wall.
+    - name: A_TURN_IN
+      x: 1.00
+      y: 4.09
+      yaw: 1.5707963267948966
+      hold_sec: 0.5
+      maximum_retries: 2
+    - name: A_FORWARD_CUSP
+      x: 0.9968933480
+      y: 4.3995298354
+      yaw: 0.993873
+      hold_sec: 0.5
+      maximum_retries: 2
+    - name: A_REVERSE_ARC_1
+      x: 0.8741484018
+      y: 4.3066982807
+      yaw: 0.769992
+      hold_sec: 0.3
+      maximum_retries: 2
+    - name: A_REVERSE_ARC_2
+      x: 0.7338569550
+      y: 4.2434350126
+      yaw: 0.546112
+      hold_sec: 0.3
+      maximum_retries: 2
+    - name: A_REVERSE_ARC_3
+      x: 0.5830209987
+      y: 4.2128976368
+      yaw: 0.322231
+      hold_sec: 0.3
+      maximum_retries: 2
+    - name: A_REVERSE_CUSP
+      x: 0.4291702100
+      y: 4.2166101968
+      yaw: 0.098351
+      hold_sec: 0.5
+      maximum_retries: 2
+    - name: A_ENTRY
+      # Reachable pre-parking pose after the final forward correction. The
+      # official A pose itself remains unchanged below.
+      x: 0.8404
+      y: 4.2292
+      yaw: -0.072
+      hold_sec: 0.5
+      maximum_retries: 2
+    - name: A_PARK
+      x: 0.0
+      y: 4.20
+      yaw: 0.0
+      hold_sec: 3.0
+      parking_goal: true
+      maximum_retries: 3
+    # Leave A directly from the official parked pose. This produces a single
+    # gentle forward arc; driving out and reversing back in only reduced the
+    # available cornering room.
+    - name: A_CLEAR_ARC_1
+      x: 0.4508345614
+      y: 4.2287554040
+      yaw: 0.432692
+      hold_sec: 0.5
+      maximum_retries: 2
+    - name: A_CLEAR_ARC_2
+      x: 1.4040665614
+      y: 4.6690384040
+      yaw: 0.432692
+      hold_sec: 0.5
+      maximum_retries: 2
+    - name: A_CLEAR
+      x: 1.84
+      y: 4.80
+      yaw: 0.0
+      hold_sec: 0.5
+      maximum_retries: 2
+    - name: B_ENTRY
+      x: 2.75
+      y: 2.55
+      yaw: -1.5707963267948966
+      hold_sec: 0.5
+      maximum_retries: 2
+    - name: B_REVERSE_ARC_1
+      x: 2.3739382880
+      y: 3.0129767931
+      yaw: -0.675274
+      hold_sec: 0.3
+      maximum_retries: 2
+    - name: B_REVERSE_ARC_2
+      x: 2.1159897005
+      y: 3.3830121959
+      yaw: -1.011095
+      hold_sec: 0.3
+      maximum_retries: 2
+    - name: B_REVERSE_CUSP
+      x: 2.0834048435
+      y: 3.5334193943
+      yaw: -1.234975
+      hold_sec: 0.5
+      maximum_retries: 2
+    - name: B_FORWARD_CORRECTION
+      x: 2.1514916772
+      y: 3.3954043726
+      yaw: -1.458855597
+      hold_sec: 0.3
+      maximum_retries: 2
+    - name: B_PARK
+      x: 2.10
+      y: 3.30
+      yaw: -1.5707963267948966
+      hold_sec: 3.0
+      parking_goal: true
+      maximum_retries: 3
+    - name: B_EXIT_FORWARD_ARC_1
+      x: 2.2262902880
+      y: 2.7170587931
+      yaw: -0.675274
+      hold_sec: 0.3
+      maximum_retries: 2
+    - name: B_EXIT_FORWARD_ARC_2
+      x: 2.4709657005
+      y: 2.5353351959
+      yaw: -1.011095
+      hold_sec: 0.3
+      maximum_retries: 2
+    - name: B_EXIT_FORWARD_CUSP
+      x: 2.5679948435
+      y: 2.4158803943
+      yaw: -1.234975
+      hold_sec: 0.5
+      maximum_retries: 2
+    - name: B_EXIT
+      x: 2.75
+      y: 2.55
+      yaw: -1.5707963267948966
+      hold_sec: 0.5
+      maximum_retries: 2
+    # The return corridor needs a straight-to-maximum-turn transition followed
+    # by a diagonal and final alignment.  Encoding those curvature-run ends as
+    # separate goals lets the real steering servo settle; a single long Nav2
+    # action otherwise stalls at the first sharp transition.
+    - name: START_RETURN_STRAIGHT
+      x: 2.7500000000
+      y: 2.1000000000
+      yaw: -1.5707963268
+      hold_sec: 0.5
+      maximum_retries: 2
+    - name: START_RETURN_ARC
+      x: 2.6237101948
+      y: 1.5170588408
+      yaw: -2.4663187149
+      hold_sec: 0.5
+      maximum_retries: 2
+    - name: START_RETURN_DIAGONAL
+      x: 2.2724691125
+      y: 1.2357588192
+      yaw: -2.4663187149
+      hold_sec: 0.5
+      maximum_retries: 2
+    - name: START_RETURN_ALIGN_1
+      x: 2.1607814785
+      y: 1.1341574581
+      yaw: -2.5782590134
+      hold_sec: 0.3
+      maximum_retries: 2
+    - name: START_RETURN_ALIGN_2
+      x: 1.9039134938
+      y: 0.9681076427
+      yaw: -3.0260202074
+      hold_sec: 0.5
+      maximum_retries: 2
+    - name: START_RETURN
+      x: 1.8
+      y: 0.9
+      yaw: 3.141592653589793
+      hold_sec: 1.0
+      maximum_retries: 3

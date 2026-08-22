@@ -1,0 +1,41 @@
+parking_cmd_vel_adapter:
+  ros__parameters:
+    use_sim_time: false
+    input_topic: /cmd_vel
+    motor_topic: /xycar_motor
+    shadow_topic: /parking/xycar_motor_shadow
+    authorization_topic: /parking/drive_authorized
+    scan_topic: /slam/scan_filtered
+    drive_enabled: false
+    command_timeout_sec: 0.35
+    scan_timeout_sec: 0.35
+    timer_period_sec: 0.05
+    maximum_steering_command_rate: 160.0
+    maximum_speed_command_rate: 12.0
+    steering_settle_tolerance_command: 3.0
+    direction_change_dwell_sec: 0.40
+    # Same real-vehicle calibration used by the Kookmin Gazebo bridge.
+    speed_gain_mps_per_command: 0.080612
+    minimum_moving_command: 3.0
+    maximum_forward_command: 4.0
+    maximum_reverse_command: 4.0
+    steering_map_commands: [-42.0, -40.0, -35.0, -30.0, -20.0, -10.0, 0.0, 10.0, 20.0, 30.0, 35.0, 40.0, 42.0]
+    steering_map_curvatures: [1.502435, 1.383494, 1.174860, 0.922781, 0.552809, 0.194230, 0.0, -0.556883, -0.959829, -1.369323, -1.601706, -1.853397, -1.939236]
+    footprint_minimum_x: -0.46
+    footprint_maximum_x: 0.11
+    # The measured straight tyre envelope is 0.28 m wide. 0.18 m half-width
+    # also encloses the inner front tyre at the maximum Ackermann angle.
+    footprint_half_width: 0.18
+    collision_margin_m: 0.045
+    reaction_time_sec: 0.30
+    braking_deceleration_mps2: 0.80
+    # 0.28 m/s worst case: 0.30 s reaction + 0.8 m/s^2 braking = 0.133 m.
+    # Projecting 0.18 m rejected valid cusp approaches after the vehicle could
+    # already stop; 0.14 m retains a measured stopping-distance margin.
+    minimum_projection_m: 0.14
+    maximum_projection_m: 0.80
+    projection_sample_step_m: 0.025
+    minimum_scan_points: 60
+    laser_x: 0.065
+    laser_y: 0.0
+    laser_yaw: 0.0

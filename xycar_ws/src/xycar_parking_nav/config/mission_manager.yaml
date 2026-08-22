@@ -1,0 +1,24 @@
+parking_mission_manager:
+  ros__parameters:
+    navigate_to_pose_action: /navigate_to_pose
+    amcl_pose_topic: /amcl_pose
+    initial_pose_topic: /initialpose
+    authorization_topic: /parking/drive_authorized
+    state_topic: /parking/mission_state
+    goal_pose_array_topic: /parking/mission_goals
+    initial_pose_publish_count: 5
+    initial_pose_publish_period_sec: 0.25
+    maximum_xy_variance: 0.04
+    maximum_yaw_variance: 0.08
+    maximum_pose_age_sec: 0.80
+    maximum_position_jump_m: 0.60
+    maximum_yaw_jump_rad: 0.80
+    required_stable_samples: 8
+    localization_loss_cancel_sec: 0.80
+    # Nav2's 8 cm goal checker operates on the controller-cycle pose.  Allow
+    # the following AMCL sample plus the measured ~2 cm map/scan bias so the
+    # independent final check does not reject a goal Nav2 just accepted.
+    goal_position_tolerance_m: 0.12
+    goal_yaw_tolerance_rad: 0.12
+    action_server_timeout_sec: 1.0
+    retry_delay_sec: 1.0
