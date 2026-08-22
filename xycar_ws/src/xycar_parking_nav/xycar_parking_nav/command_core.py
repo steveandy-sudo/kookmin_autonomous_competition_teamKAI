@@ -82,7 +82,6 @@ class MotorCommand:
     speed_command: float
     curvature: float
     reason: str = "ok"
-    requested_speed_command: float = 0.0
 
 
 def curvature_to_steering_command(
@@ -126,12 +125,12 @@ def twist_to_motor_command(
 ) -> MotorCommand:
     values = (linear_x_mps, angular_z_rad_s)
     if not all(math.isfinite(float(value)) for value in values):
-        return MotorCommand(0.0, 0.0, 0.0, "non_finite_twist", 0.0)
+        return MotorCommand(0.0, 0.0, 0.0, "non_finite_twist")
     speed = float(linear_x_mps)
     if abs(speed) <= abs(float(stationary_speed_epsilon)):
         # An Ackermann vehicle cannot execute a Nav2 rotate-in-place command.
         reason = "stopped" if abs(angular_z_rad_s) <= 1.0e-6 else "rotate_in_place_rejected"
-        return MotorCommand(0.0, 0.0, 0.0, reason, 0.0)
+        return MotorCommand(0.0, 0.0, 0.0, reason)
 
     requested_curvature = float(angular_z_rad_s) / speed
     steering = curvature_to_steering_command(requested_curvature, calibration)
@@ -153,13 +152,7 @@ def twist_to_motor_command(
     speed_command = requested_speed_command
     if 0.0 < abs(speed_command) < calibration.minimum_moving_command:
         speed_command = math.copysign(calibration.minimum_moving_command, speed_command)
-    return MotorCommand(
-        steering,
-        speed_command,
-        curvature,
-        "ok",
-        requested_speed_command,
-    )
+    return MotorCommand(steering, speed_command, curvature, "ok")
 
 
 @dataclass(frozen=True)
@@ -340,92 +333,3 @@ class DirectionChangeGuard:
         self.active_direction = 0
         self.pending_direction = 0
         self.release_time_sec = None
-
-
-class MinimumCommandPulseController:
-    """Realize sub-threshold average commands with minimum-command bursts.
-
-    The controller integrates the difference between the requested average
-    command and the previously applied 4/0 output.  Once the balance becomes
-    positive it emits at least ``minimum_on_sec`` of traction.  This keeps the
-    command above drivetrain stiction while preserving low average speeds.
-    """
-
-    def __init__(
-        self,
-        minimum_moving_command: float,
-        minimum_on_sec: float,
-        *,
-        maximum_dt_sec: float = 0.25,
-    ) -> None:
-        if minimum_moving_command <= 0.0:
-            raise ValueError("minimum moving command must be positive")
-        if minimum_on_sec <= 0.0:
-            raise ValueError("minimum pulse on time must be positive")
-        self.minimum_moving_command = float(minimum_moving_command)
-        self.minimum_on_sec = float(minimum_on_sec)
-        self.maximum_dt_sec = max(0.01, float(maximum_dt_sec))
-        self.last_time_sec: float | None = None
-        self.direction = 0
-        self.balance_command_sec = 0.0
-        self.on_until_sec: float | None = None
-        self.previous_output = 0.0
-
-    def filter(
-        self,
-        requested_speed_command: float,
-        now_sec: float,
-    ) -> tuple[float, str]:
-        requested = float(requested_speed_command)
-        now = float(now_sec)
-        if not math.isfinite(requested) or not math.isfinite(now):
-            self.reset()
-            return 0.0, "invalid_pulse_input"
-
-        direction = 1 if requested > 0.0 else -1 if requested < 0.0 else 0
-        if direction == 0:
-            self.reset()
-            return 0.0, "stopped"
-
-        magnitude = abs(requested)
-        if magnitude >= self.minimum_moving_command:
-            self.last_time_sec = now
-            self.direction = direction
-            self.balance_command_sec = 0.0
-            self.on_until_sec = None
-            self.previous_output = requested
-            return requested, "continuous"
-
-        if self.direction != direction or self.last_time_sec is None:
-            self.last_time_sec = now
-            self.direction = direction
-            self.balance_command_sec = 0.0
-            self.on_until_sec = now + self.minimum_on_sec
-            self.previous_output = direction * self.minimum_moving_command
-            return self.previous_output, "pulse_on"
-
-        dt_sec = max(0.0, min(self.maximum_dt_sec, now - self.last_time_sec))
-        self.last_time_sec = now
-        self.balance_command_sec += (
-            magnitude - abs(self.previous_output)
-        ) * dt_sec
-
-        if self.on_until_sec is not None and now < self.on_until_sec:
-            self.previous_output = direction * self.minimum_moving_command
-            return self.previous_output, "pulse_on"
-
-        if self.balance_command_sec > 0.0:
-            self.on_until_sec = now + self.minimum_on_sec
-            self.previous_output = direction * self.minimum_moving_command
-            return self.previous_output, "pulse_on"
-
-        self.on_until_sec = None
-        self.previous_output = 0.0
-        return 0.0, "pulse_off"
-
-    def reset(self) -> None:
-        self.last_time_sec = None
-        self.direction = 0
-        self.balance_command_sec = 0.0
-        self.on_until_sec = None
-        self.previous_output = 0.0

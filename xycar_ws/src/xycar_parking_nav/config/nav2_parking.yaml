@@ -142,13 +142,12 @@ controller_server:
       model_dt: 0.05
       batch_size: 2000
       iteration_count: 1
-      vx_std: 0.10
+      vx_std: 0.16
       vy_std: 0.0
       wz_std: 0.32
-      # Command 4 is 0.322 m/s. Capping the requested mean speed at half of
-      # that guarantees an OFF interval between minimum-command pulse bursts.
-      vx_max: 0.16
-      vx_min: -0.16
+      # Command 4 is 0.322 m/s and is the only non-zero traction command.
+      vx_max: 0.32
+      vx_min: -0.32
       vy_max: 0.0
       wz_max: 0.55
       temperature: 0.25
@@ -249,6 +248,7 @@ local_costmap:
           data_type: LaserScan
           clearing: true
           marking: true
+          observation_persistence: 1.0
           obstacle_min_range: 0.20
           obstacle_max_range: 5.0
           raytrace_min_range: 0.20
@@ -287,6 +287,9 @@ global_costmap:
           data_type: LaserScan
           clearing: true
           marking: true
+          # Keep a newly seen obstacle long enough for the 2 Hz global
+          # replanner to route around it; ray tracing clears it after removal.
+          observation_persistence: 1.0
           obstacle_min_range: 0.20
           obstacle_max_range: 5.0
           raytrace_min_range: 0.20
@@ -389,8 +392,8 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: false
     feedback: OPEN_LOOP
-    max_velocity: [0.18, 0.0, 0.65]
-    min_velocity: [-0.18, 0.0, -0.65]
+    max_velocity: [0.32, 0.0, 0.65]
+    min_velocity: [-0.32, 0.0, -0.65]
     max_accel: [0.60, 0.0, 1.5]
     max_decel: [-0.80, 0.0, -1.5]
     odom_topic: /slam/odom

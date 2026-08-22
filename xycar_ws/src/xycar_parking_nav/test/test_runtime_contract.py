@@ -129,7 +129,7 @@ def test_stop_shield_projects_beyond_nav2_braking_distance():
     assert math.isfinite(physical_stop)
 
 
-def test_real_vehicle_minimum_command_uses_four_zero_pulses():
+def test_real_vehicle_uses_continuous_command_four():
     adapter = _yaml("config/cmd_vel_adapter.yaml")["parking_cmd_vel_adapter"][
         "ros__parameters"
     ]
@@ -141,32 +141,56 @@ def test_real_vehicle_minimum_command_uses_four_zero_pulses():
     )
 
     assert adapter["minimum_moving_command"] == 4.0
-    assert adapter["maximum_forward_command"] >= 4.0
-    assert adapter["maximum_reverse_command"] >= 4.0
-    assert adapter["minimum_command_pulse_enabled"] is True
-    assert adapter["pulse_minimum_on_sec"] >= adapter["timer_period_sec"]
-    assert 0.0 < adapter["maximum_pulse_duty_cycle"] <= 0.5
+    assert adapter["maximum_forward_command"] == 4.0
+    assert adapter["maximum_reverse_command"] == 4.0
+    assert "minimum_command_pulse_enabled" not in adapter
+    assert "pulse_minimum_on_sec" not in adapter
+    assert "maximum_pulse_duty_cycle" not in adapter
     minimum_physical_speed = (
         adapter["minimum_moving_command"]
         * adapter["speed_gain_mps_per_command"]
     )
-    assert max(abs(controller["vx_min"]), controller["vx_max"]) <= (
-        adapter["maximum_pulse_duty_cycle"] * minimum_physical_speed
-    )
-    assert adapter["reaction_time_sec"] + 1.0e-9 >= (
-        2.0 * adapter["timer_period_sec"]
-    )
-    assert '"acceleration_slew_enabled": False' in launch_source
+    assert max(abs(controller["vx_min"]), controller["vx_max"]) <= minimum_physical_speed
+    assert adapter["reaction_time_sec"] >= 4.0 * adapter["timer_period_sec"]
+    assert '"acceleration_slew_enabled": True' in launch_source
+    assert '"deceleration_limit_mps2": 1.5' in launch_source
 
 
 def test_behavior_tree_has_no_non_ackermann_recovery():
     tree = ET.parse(PACKAGE / "behavior_trees/ackermann_navigate_to_pose.xml")
     tags = {element.tag for element in tree.iter()}
+    rate_controller = tree.find(".//RateController")
+    navigation_recovery = tree.find(".//RecoveryNode[@name='NavigateRecovery']")
 
     assert "Spin" not in tags
     assert "BackUp" not in tags
     assert "DriveOnHeading" not in tags
     assert {"ComputePathToPose", "FollowPath", "Wait"} <= tags
+    assert rate_controller is not None
+    assert float(rate_controller.attrib["hz"]) >= 2.0
+    assert navigation_recovery is not None
+    assert int(navigation_recovery.attrib["number_of_retries"]) >= 6
+
+
+def test_lidar_obstacles_are_marked_cleared_and_sent_to_global_replanner():
+    nav2 = _yaml("config/nav2_parking.yaml")
+
+    for costmap_name in ("local_costmap", "global_costmap"):
+        params = nav2[costmap_name][costmap_name]["ros__parameters"]
+        obstacle = params["obstacle_layer"]
+        scan = obstacle["scan"]
+        assert obstacle["enabled"] is True
+        assert scan["topic"] == "/slam/scan_filtered"
+        assert scan["marking"] is True
+        assert scan["clearing"] is True
+        assert scan["observation_persistence"] >= 1.0
+
+    assert nav2["global_costmap"]["global_costmap"]["ros__parameters"][
+        "update_frequency"
+    ] >= 5.0
+    assert nav2["planner_server"]["ros__parameters"][
+        "expected_planner_frequency"
+    ] >= 2.0
 
 
 def test_mission_retains_official_reference_centers():

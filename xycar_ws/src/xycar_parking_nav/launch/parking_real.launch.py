@@ -128,10 +128,11 @@ def generate_launch_description() -> LaunchDescription:
                         "drive_enabled": ParameterValue(
                             drive_enabled, value_type=bool
                         ),
-                        # The parking adapter deliberately generates direct
-                        # command-4/0 pulses. A second VESC-side slew filter
-                        # would erase short pulses and break their mean speed.
-                        "acceleration_slew_enabled": False,
+                        # The adapter holds command +4/-4 continuously. Keep
+                        # the VESC-side acceleration limiter for smooth starts.
+                        "acceleration_slew_enabled": True,
+                        # Keep the stop-shield model and hardware limiter equal.
+                        "deceleration_limit_mps2": 1.5,
                         "publish_tf": False,
                         "odom_topic": "/vehicle/raw_odom",
                         "use_sim_time": ParameterValue(

@@ -11,14 +11,10 @@ parking_cmd_vel_adapter:
     scan_timeout_sec: 0.35
     timer_period_sec: 0.05
     maximum_steering_command_rate: 160.0
-    maximum_speed_command_rate: 12.0
     steering_settle_tolerance_command: 3.0
     direction_change_dwell_sec: 0.40
-    # The real chassis does not move below command 4. Sub-threshold Nav2
-    # requests are therefore realized as accumulated 4/0 traction pulses.
-    minimum_command_pulse_enabled: true
-    pulse_minimum_on_sec: 0.05
-    maximum_pulse_duty_cycle: 0.50
+    # The real chassis does not move below command 4. Every non-zero Nav2
+    # request is therefore sent continuously as exactly +4 or -4.
     # Same real-vehicle calibration used by the Kookmin Gazebo bridge.
     speed_gain_mps_per_command: 0.080612
     minimum_moving_command: 4.0
@@ -32,13 +28,10 @@ parking_cmd_vel_adapter:
     # also encloses the inner front tyre at the maximum Ackermann angle.
     footprint_half_width: 0.18
     collision_margin_m: 0.045
-    # With Nav2 capped to <=50% duty, a command-4 burst is continuously ON for
-    # at most 0.10 s at the 20 Hz adapter rate before a forced zero interval.
-    reaction_time_sec: 0.10
-    braking_deceleration_mps2: 0.80
-    # A pulse ON command of 4 is about 0.322 m/s. With 0.10 s maximum ON time
-    # and 0.8 m/s^2 braking its calculated stop distance is about 0.113 m;
-    # retain the independently validated 0.14 m swept-path projection.
+    # Four 20 Hz control periods plus the VESC driver's fixed 1.5 m/s^2
+    # deceleration limit. The 0.14 m projection exceeds the ~0.10 m result.
+    reaction_time_sec: 0.20
+    braking_deceleration_mps2: 1.50
     minimum_projection_m: 0.14
     maximum_projection_m: 0.80
     projection_sample_step_m: 0.025

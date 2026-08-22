@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import math
 import time
 
 from geometry_msgs.msg import Twist
@@ -17,7 +16,6 @@ from std_msgs.msg import Bool, Float32MultiArray, String
 from .command_core import (
     DirectionChangeGuard,
     Footprint,
-    MinimumCommandPulseController,
     MotorCalibration,
     scan_points_in_base,
     slew,
@@ -65,20 +63,9 @@ class CmdVelAdapter(Node):
         self.maximum_steering_rate = float(
             self.get_parameter("maximum_steering_command_rate").value
         )
-        self.maximum_speed_rate = float(
-            self.get_parameter("maximum_speed_command_rate").value
-        )
         self.steering_settle_tolerance = float(
             self.get_parameter("steering_settle_tolerance_command").value
         )
-        self.pulse_enabled = bool(
-            self.get_parameter("minimum_command_pulse_enabled").value
-        )
-        self.maximum_pulse_duty_cycle = float(
-            self.get_parameter("maximum_pulse_duty_cycle").value
-        )
-        if not 0.0 < self.maximum_pulse_duty_cycle <= 1.0:
-            raise ValueError("maximum pulse duty cycle must be in (0, 1]")
 
         self.calibration = MotorCalibration(
             speed_gain_mps_per_command=float(
@@ -135,10 +122,6 @@ class CmdVelAdapter(Node):
         self.direction_guard = DirectionChangeGuard(
             float(self.get_parameter("direction_change_dwell_sec").value)
         )
-        self.pulse_controller = MinimumCommandPulseController(
-            self.calibration.minimum_moving_command,
-            float(self.get_parameter("pulse_minimum_on_sec").value),
-        )
         self.latest_twist: Twist | None = None
         self.latest_twist_time: float | None = None
         self.latest_scan_points: list[tuple[float, float]] = []
@@ -146,8 +129,6 @@ class CmdVelAdapter(Node):
         self.authorized = False
         self.applied_steering = 0.0
         self.applied_speed = 0.0
-        self.requested_average_speed = 0.0
-        self.pulse_output_active = False
         self.last_timer_time = time.monotonic()
         self.last_reason = "startup"
 
@@ -173,14 +154,12 @@ class CmdVelAdapter(Node):
         self.create_timer(self.timer_period, self._on_timer)
         self.get_logger().info(
             "주차 모터 명령기가 준비되었습니다: 실차출력=%s, 입력=%s, 모터=%s, "
-            "최소명령=%.1f, 4/0펄스=%s, 최대듀티=%.0f%%"
+            "주행명령=연속 ±%.1f"
             % (
                 "켜짐" if self.drive_enabled else "꺼짐",
                 self.input_topic,
                 self.motor_topic,
                 self.calibration.minimum_moving_command,
-                "사용" if self.pulse_enabled else "미사용",
-                100.0 * self.maximum_pulse_duty_cycle,
             )
         )
 
@@ -195,12 +174,8 @@ class CmdVelAdapter(Node):
         self.declare_parameter("scan_timeout_sec", 0.35)
         self.declare_parameter("timer_period_sec", 0.05)
         self.declare_parameter("maximum_steering_command_rate", 160.0)
-        self.declare_parameter("maximum_speed_command_rate", 12.0)
         self.declare_parameter("steering_settle_tolerance_command", 3.0)
         self.declare_parameter("direction_change_dwell_sec", 0.40)
-        self.declare_parameter("minimum_command_pulse_enabled", True)
-        self.declare_parameter("pulse_minimum_on_sec", 0.05)
-        self.declare_parameter("maximum_pulse_duty_cycle", 0.50)
 
         self.declare_parameter("speed_gain_mps_per_command", 0.080612)
         self.declare_parameter("minimum_moving_command", 4.0)
@@ -220,8 +195,8 @@ class CmdVelAdapter(Node):
         self.declare_parameter("footprint_maximum_x", 0.11)
         self.declare_parameter("footprint_half_width", 0.18)
         self.declare_parameter("collision_margin_m", 0.045)
-        self.declare_parameter("reaction_time_sec", 0.10)
-        self.declare_parameter("braking_deceleration_mps2", 0.80)
+        self.declare_parameter("reaction_time_sec", 0.20)
+        self.declare_parameter("braking_deceleration_mps2", 1.50)
         self.declare_parameter("minimum_projection_m", 0.14)
         self.declare_parameter("maximum_projection_m", 0.80)
         self.declare_parameter("projection_sample_step_m", 0.025)
@@ -241,7 +216,6 @@ class CmdVelAdapter(Node):
         self.authorized = bool(message.data)
         if not self.authorized:
             self.direction_guard.reset()
-            self.pulse_controller.reset()
 
     def _on_scan(self, message: LaserScan) -> None:
         points = scan_points_in_base(
@@ -267,11 +241,8 @@ class CmdVelAdapter(Node):
         self.latest_scan_time = self._now_sec()
 
     def _stop(self, reason: str) -> None:
-        self.pulse_controller.reset()
         self.applied_steering = 0.0
         self.applied_speed = 0.0
-        self.requested_average_speed = 0.0
-        self.pulse_output_active = False
         self._publish(0.0, 0.0, 0.0, reason, live=self.drive_enabled)
 
     def _publish(
@@ -295,8 +266,6 @@ class CmdVelAdapter(Node):
                     float(curvature),
                     1.0 if self.authorized else 0.0,
                     float(len(self.latest_scan_points)),
-                    float(self.requested_average_speed),
-                    1.0 if self.pulse_output_active else 0.0,
                 ]
             )
         )
@@ -346,8 +315,8 @@ class CmdVelAdapter(Node):
 
         collision = swept_footprint_collision(
             self.latest_scan_points,
-            # Pulse ON 구간의 실제 최저 구동속도를 기준으로 정지거리를
-            # 계산한다. Nav2 평균속도를 쓰면 4 명령의 순간속도를 과소평가한다.
+            # The real chassis runs every non-zero request at command 4, so
+            # stopping distance must use that executable speed.
             speed_mps=(
                 desired.speed_command
                 * self.calibration.speed_gain_mps_per_command
@@ -362,7 +331,6 @@ class CmdVelAdapter(Node):
             sample_step_m=self.projection_step,
         )
         if collision.collision:
-            self.pulse_controller.reset()
             # Stay stopped but allow the servo to follow a newly safe steering
             # request. Centering it here creates repeatable stop/retry drift.
             self.applied_steering = slew(
@@ -372,8 +340,6 @@ class CmdVelAdapter(Node):
                 dt_sec,
             )
             self.applied_speed = 0.0
-            self.requested_average_speed = 0.0
-            self.pulse_output_active = False
             self._publish(
                 self.applied_steering,
                 0.0,
@@ -383,26 +349,11 @@ class CmdVelAdapter(Node):
             )
             return
 
-        direction_guard_input = (
-            desired.requested_speed_command
-            if self.pulse_enabled
-            else desired.speed_command
-        )
-        if self.pulse_enabled:
-            maximum_average_command = (
-                self.calibration.minimum_moving_command
-                * self.maximum_pulse_duty_cycle
-            )
-            direction_guard_input = math.copysign(
-                min(abs(direction_guard_input), maximum_average_command),
-                direction_guard_input,
-            )
         guarded_speed, guard_reason = self.direction_guard.filter(
-            direction_guard_input,
+            desired.speed_command,
             now_sec,
         )
         if guard_reason == "direction_change_dwell":
-            self.pulse_controller.reset()
             # Pre-position steering while the car is physically stopped.
             self.applied_steering = slew(
                 self.applied_steering,
@@ -411,8 +362,6 @@ class CmdVelAdapter(Node):
                 dt_sec,
             )
             self.applied_speed = 0.0
-            self.requested_average_speed = 0.0
-            self.pulse_output_active = False
             self._publish(
                 self.applied_steering,
                 0.0,
@@ -432,14 +381,11 @@ class CmdVelAdapter(Node):
             abs(desired.steering_command - next_steering)
             > self.steering_settle_tolerance
         ):
-            self.pulse_controller.reset()
             # MPPI assumes its requested Ackermann curvature is available now.
             # Stop traction until the measured-rate servo is close enough so
             # a tight arc is not geometrically shortened or extended.
             self.applied_steering = next_steering
             self.applied_speed = 0.0
-            self.requested_average_speed = 0.0
-            self.pulse_output_active = False
             self._publish(
                 self.applied_steering,
                 0.0,
@@ -449,21 +395,10 @@ class CmdVelAdapter(Node):
             )
             return
         self.applied_steering = next_steering
-        self.requested_average_speed = guarded_speed
-        if self.pulse_enabled:
-            self.applied_speed, pulse_state = self.pulse_controller.filter(
-                guarded_speed,
-                now_sec,
-            )
-            self.pulse_output_active = pulse_state == "pulse_on"
-        else:
-            self.applied_speed = slew(
-                self.applied_speed,
-                guarded_speed,
-                self.maximum_speed_rate,
-                dt_sec,
-            )
-            self.pulse_output_active = False
+        # Do not ramp through commands below 4: the real drivetrain cannot
+        # move there. The VESC driver smooths the physical acceleration while
+        # this adapter continuously publishes exactly +4 or -4.
+        self.applied_speed = guarded_speed
         self._publish(
             self.applied_steering,
             self.applied_speed,
