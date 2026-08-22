@@ -212,7 +212,7 @@ class XycarVescDriver(Node):
             "expected_firmware_minor": 18,
             "allow_firmware_mismatch": False,
             "acceleration_slew_enabled": True,
-            "acceleration_limit_mps2": 0.4,
+            "acceleration_limit_mps2": 0.6,
             "deceleration_limit_mps2": 1.5,
             "low_voltage_limit": 7.5,
             "low_voltage_stop": 6.0,

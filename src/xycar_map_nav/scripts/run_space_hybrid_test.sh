@@ -106,6 +106,15 @@ set -- "${POSITIONAL_ARGS[@]}"
 
 SPEED_COMMAND="${1:-${SPEED_COMMAND:-25.0}}"
 CURVATURE_SPEED_CONTROL_ENABLED="${CURVATURE_SPEED_CONTROL_ENABLED:-true}"
+S_CURVE_ENTRY_GUARD_ENABLED="${S_CURVE_ENTRY_GUARD_ENABLED:-true}"
+S_CURVE_ENTRY_SPEED_CAP_COMMAND="${S_CURVE_ENTRY_SPEED_CAP_COMMAND:-11.0}"
+S_CURVE_ENTRY_STRAIGHT_MAX_ABS_ANGLE_COMMAND="${S_CURVE_ENTRY_STRAIGHT_MAX_ABS_ANGLE_COMMAND:-5.0}"
+S_CURVE_ENTRY_STRAIGHT_CONFIRMATION_FRAMES="${S_CURVE_ENTRY_STRAIGHT_CONFIRMATION_FRAMES:-3}"
+S_CURVE_ENTRY_MINIMUM_CURVE_DISTANCE_M="${S_CURVE_ENTRY_MINIMUM_CURVE_DISTANCE_M:-1.50}"
+S_CURVE_ENTRY_LEFT_ANGLE_COMMAND="${S_CURVE_ENTRY_LEFT_ANGLE_COMMAND:--8.0}"
+S_CURVE_ENTRY_CURVE_SPEED_MARGIN_COMMAND="${S_CURVE_ENTRY_CURVE_SPEED_MARGIN_COMMAND:-0.50}"
+S_CURVE_ENTRY_CURVE_CONFIRMATION_FRAMES="${S_CURVE_ENTRY_CURVE_CONFIRMATION_FRAMES:-3}"
+S_CURVE_ENTRY_OVERDUE_DISTANCE_M="${S_CURVE_ENTRY_OVERDUE_DISTANCE_M:-4.50}"
 # Leave these empty unless the operator explicitly overrides them. Their safe
 # defaults depend on SPEED_COMMAND and are calculated after that value is
 # validated (for example, speed 3 must produce curve/degraded defaults of 3).
@@ -140,9 +149,9 @@ STEERING_MAX_LEAD_COMMAND="${STEERING_MAX_LEAD_COMMAND:-6.0}"
 CURVE_DETECTION_NEAR_X_M="${CURVE_DETECTION_NEAR_X_M:-0.20}"
 CURVE_DETECTION_FAR_X_M="${CURVE_DETECTION_FAR_X_M:-1.20}"
 CURVE_DETECTION_SEGMENT_COUNT="${CURVE_DETECTION_SEGMENT_COUNT:-1}"
-CURVE_STEERING_MULTIPLIER_ENABLED="${CURVE_STEERING_MULTIPLIER_ENABLED:-false}"
+CURVE_STEERING_MULTIPLIER_ENABLED="${CURVE_STEERING_MULTIPLIER_ENABLED:-true}"
 CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND="${CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND:-20.0}"
-CURVE_STEERING_MULTIPLIER="${CURVE_STEERING_MULTIPLIER:-1.5}"
+CURVE_STEERING_MULTIPLIER="${CURVE_STEERING_MULTIPLIER:-1.1}"
 ADAPTIVE_STEERING_SPEED_ENABLED="${ADAPTIVE_STEERING_SPEED_ENABLED:-}"
 STEERING_TURN_SPEED_COMMAND="${STEERING_TURN_SPEED_COMMAND:-}"
 STEERING_SLOWDOWN_START_ANGLE="${STEERING_SLOWDOWN_START_ANGLE:-}"
@@ -175,6 +184,7 @@ VEHICLE_YOLO_REQUIRED_FRAMES="${VEHICLE_YOLO_REQUIRED_FRAMES:-1}"
 VEHICLE_PREFERRED_SIDE_REQUIRED_FRAMES="${VEHICLE_PREFERRED_SIDE_REQUIRED_FRAMES:-1}"
 VEHICLE_ACTIVE_SIDE_RESELECTION_REQUIRED_FRAMES="${VEHICLE_ACTIVE_SIDE_RESELECTION_REQUIRED_FRAMES:-2}"
 VEHICLE_YOLO_TIMEOUT_SEC="${VEHICLE_YOLO_TIMEOUT_SEC:-1.00}"
+VEHICLE_RED_CAR_YOLO_TIMEOUT_SEC="${VEHICLE_RED_CAR_YOLO_TIMEOUT_SEC:-0.30}"
 VEHICLE_CAMERA_LIDAR_HFOV_DEG="${VEHICLE_CAMERA_LIDAR_HFOV_DEG:-60.0}"
 VEHICLE_CAMERA_LIDAR_PADDING_DEG="${VEHICLE_CAMERA_LIDAR_PADDING_DEG:-3.0}"
 VEHICLE_LIDAR_MIN_POINTS="${VEHICLE_LIDAR_MIN_POINTS:-2}"
@@ -528,6 +538,15 @@ curve_speed_exit_threshold_per_m: $CURVE_SPEED_EXIT_THRESHOLD_PER_M
 curve_speed_confirmation_frames: $CURVE_SPEED_CONFIRMATION_FRAMES
 curve_speed_release_frames: $CURVE_SPEED_RELEASE_FRAMES
 degraded_path_minimum_span_m: $DEGRADED_PATH_MINIMUM_SPAN_M
+s_curve_entry_guard_enabled: $S_CURVE_ENTRY_GUARD_ENABLED
+s_curve_entry_speed_cap_command: $S_CURVE_ENTRY_SPEED_CAP_COMMAND
+s_curve_entry_straight_max_abs_angle_command: $S_CURVE_ENTRY_STRAIGHT_MAX_ABS_ANGLE_COMMAND
+s_curve_entry_straight_confirmation_frames: $S_CURVE_ENTRY_STRAIGHT_CONFIRMATION_FRAMES
+s_curve_entry_minimum_curve_distance_m: $S_CURVE_ENTRY_MINIMUM_CURVE_DISTANCE_M
+s_curve_entry_left_angle_command: $S_CURVE_ENTRY_LEFT_ANGLE_COMMAND
+s_curve_entry_curve_speed_margin_command: $S_CURVE_ENTRY_CURVE_SPEED_MARGIN_COMMAND
+s_curve_entry_curve_confirmation_frames: $S_CURVE_ENTRY_CURVE_CONFIRMATION_FRAMES
+s_curve_entry_overdue_distance_m: $S_CURVE_ENTRY_OVERDUE_DISTANCE_M
 lookahead_distance_m: $LOOKAHEAD_DISTANCE
 stanley_percent: $STANLEY_PERCENT
 pure_pursuit_weight: $PURE_PURSUIT_WEIGHT
@@ -585,6 +604,7 @@ vehicle_yolo_required_frames: $VEHICLE_YOLO_REQUIRED_FRAMES
 vehicle_preferred_side_required_frames: $VEHICLE_PREFERRED_SIDE_REQUIRED_FRAMES
 vehicle_active_side_reselection_required_frames: $VEHICLE_ACTIVE_SIDE_RESELECTION_REQUIRED_FRAMES
 vehicle_yolo_timeout_sec: $VEHICLE_YOLO_TIMEOUT_SEC
+vehicle_red_car_yolo_timeout_sec: $VEHICLE_RED_CAR_YOLO_TIMEOUT_SEC
 vehicle_camera_lidar_hfov_deg: $VEHICLE_CAMERA_LIDAR_HFOV_DEG
 vehicle_camera_lidar_padding_deg: $VEHICLE_CAMERA_LIDAR_PADDING_DEG
 vehicle_lidar_min_points: $VEHICLE_LIDAR_MIN_POINTS
@@ -938,6 +958,8 @@ if [[ "$CONE_AS_VEHICLE_OBSTACLE" == "true" ]]; then
   echo "Cone substitute: enabled, YOLO>=${CONE_AS_VEHICLE_MIN_CONFIDENCE} (slalom disabled)"
 fi
 echo "Avoidance speed cap: default=$VEHICLE_AVOIDANCE_SPEED_LIMIT_COMMAND red_car=$VEHICLE_RED_CAR_AVOIDANCE_SPEED_LIMIT_COMMAND green_car=$VEHICLE_GREEN_CAR_AVOIDANCE_SPEED_LIMIT_COMMAND | RViz: $ENABLE_RVIZ"
+echo "Avoidance YOLO timeout: default/green_car=${VEHICLE_YOLO_TIMEOUT_SEC}s red_car=${VEHICLE_RED_CAR_YOLO_TIMEOUT_SEC}s"
+echo "S-entry guard: $S_CURVE_ENTRY_GUARD_ENABLED | shortcut/green_car exit -> speed $S_CURVE_ENTRY_SPEED_CAP_COMMAND | RULE steering passthrough"
 echo "Lane perception: $LANE_PERCEPTION_LAUNCH | forward=${CANONICAL_FORWARD_RANGE_M}m | max=${PERCEPTION_MAX_OUTPUT_RATE_HZ}Hz"
 echo "Run settings: $RUN_CONFIG_FILE"
 echo "Control detail log: $CONTROL_LOG"
@@ -967,6 +989,15 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   curve_speed_confirmation_frames:="$CURVE_SPEED_CONFIRMATION_FRAMES" \
   curve_speed_release_frames:="$CURVE_SPEED_RELEASE_FRAMES" \
   degraded_path_minimum_span_m:="$DEGRADED_PATH_MINIMUM_SPAN_M" \
+  s_curve_entry_guard_enabled:="$S_CURVE_ENTRY_GUARD_ENABLED" \
+  s_curve_entry_speed_cap_command:="$S_CURVE_ENTRY_SPEED_CAP_COMMAND" \
+  s_curve_entry_straight_max_abs_angle_command:="$S_CURVE_ENTRY_STRAIGHT_MAX_ABS_ANGLE_COMMAND" \
+  s_curve_entry_straight_confirmation_frames:="$S_CURVE_ENTRY_STRAIGHT_CONFIRMATION_FRAMES" \
+  s_curve_entry_minimum_curve_distance_m:="$S_CURVE_ENTRY_MINIMUM_CURVE_DISTANCE_M" \
+  s_curve_entry_left_angle_command:="$S_CURVE_ENTRY_LEFT_ANGLE_COMMAND" \
+  s_curve_entry_curve_speed_margin_command:="$S_CURVE_ENTRY_CURVE_SPEED_MARGIN_COMMAND" \
+  s_curve_entry_curve_confirmation_frames:="$S_CURVE_ENTRY_CURVE_CONFIRMATION_FRAMES" \
+  s_curve_entry_overdue_distance_m:="$S_CURVE_ENTRY_OVERDUE_DISTANCE_M" \
   selector_minimum_speed_command:=3.0 \
   cone_speed_command:="$CONE_SPEED_COMMAND" \
   cone_approach_yolo_min_confidence:="$CONE_APPROACH_YOLO_MIN_CONFIDENCE" \
@@ -1029,6 +1060,7 @@ setsid ros2 launch xycar_map_nav real_sequential_hybrid_drive.launch.py \
   vehicle_preferred_side_required_frames:="$VEHICLE_PREFERRED_SIDE_REQUIRED_FRAMES" \
   vehicle_active_side_reselection_required_frames:="$VEHICLE_ACTIVE_SIDE_RESELECTION_REQUIRED_FRAMES" \
   vehicle_yolo_timeout_sec:="$VEHICLE_YOLO_TIMEOUT_SEC" \
+  vehicle_red_car_yolo_timeout_sec:="$VEHICLE_RED_CAR_YOLO_TIMEOUT_SEC" \
   vehicle_camera_lidar_hfov_deg:="$VEHICLE_CAMERA_LIDAR_HFOV_DEG" \
   vehicle_camera_lidar_padding_deg:="$VEHICLE_CAMERA_LIDAR_PADDING_DEG" \
   vehicle_lidar_min_points:="$VEHICLE_LIDAR_MIN_POINTS" \
@@ -1080,7 +1112,7 @@ setsid bash -c '
   owner_pid="$2"
   stdbuf -oL tail --pid="$owner_pid" -n 0 -F "$log_file" 2>/dev/null |
     stdbuf -oL grep --line-buffered -E \
-      "left_4 DETECTED|left_4 ABSENT|RED W1/W2 INTERSECTION|CONTROL SWITCHED|YELLOW_COUNT|YELLOW LINE DISAPPEARED|FORCED LEFT|FORCED TURN|W1 spatial gate arrived after search timeout|W1 search timeout|candidate stale|safe stop|process has died|Traceback|ERROR"
+      "left_4 DETECTED|left_4 ABSENT|RED W1/W2 INTERSECTION|CONTROL SWITCHED|S_ENTRY|YELLOW_COUNT|YELLOW LINE DISAPPEARED|FORCED LEFT|FORCED TURN|W1 spatial gate arrived after search timeout|W1 search timeout|candidate stale|safe stop|process has died|Traceback|ERROR"
 ' _ "$CONTROL_LOG" "$launch_pid" &
 mission_log_pid=$!
 

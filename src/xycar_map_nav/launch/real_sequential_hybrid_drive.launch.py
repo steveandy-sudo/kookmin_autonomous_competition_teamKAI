@@ -250,6 +250,38 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "vehicle_avoidance_enabled", default_value="true"
             ),
+            DeclareLaunchArgument(
+                "s_curve_entry_guard_enabled", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "s_curve_entry_speed_cap_command", default_value="11.0"
+            ),
+            DeclareLaunchArgument(
+                "s_curve_entry_straight_max_abs_angle_command",
+                default_value="5.0",
+            ),
+            DeclareLaunchArgument(
+                "s_curve_entry_straight_confirmation_frames",
+                default_value="3",
+            ),
+            DeclareLaunchArgument(
+                "s_curve_entry_minimum_curve_distance_m",
+                default_value="1.50",
+            ),
+            DeclareLaunchArgument(
+                "s_curve_entry_left_angle_command", default_value="-8.0"
+            ),
+            DeclareLaunchArgument(
+                "s_curve_entry_curve_speed_margin_command",
+                default_value="0.50",
+            ),
+            DeclareLaunchArgument(
+                "s_curve_entry_curve_confirmation_frames",
+                default_value="3",
+            ),
+            DeclareLaunchArgument(
+                "s_curve_entry_overdue_distance_m", default_value="4.50"
+            ),
             DeclareLaunchArgument("scan_topic", default_value="/scan"),
             DeclareLaunchArgument("speed_command", default_value="25.0"),
             DeclareLaunchArgument(
@@ -284,7 +316,11 @@ def generate_launch_description():
                 "cone_sensor_presence_timeout_sec", default_value="0.5"
             ),
             DeclareLaunchArgument(
-                "cone_exit_absence_sec", default_value="0.0"
+                "cone_exit_absence_sec", default_value="1.0"
+            ),
+            DeclareLaunchArgument(
+                "cone_reentry_suppression_until_s_curve",
+                default_value="true",
             ),
             DeclareLaunchArgument(
                 "lookahead_distance_m", default_value="0.3"
@@ -370,14 +406,14 @@ def generate_launch_description():
                 "steering_max_lead_command", default_value="6.0"
             ),
             DeclareLaunchArgument(
-                "curve_steering_multiplier_enabled", default_value="false"
+                "curve_steering_multiplier_enabled", default_value="true"
             ),
             DeclareLaunchArgument(
                 "curve_steering_multiplier_activation_command",
                 default_value="20.0",
             ),
             DeclareLaunchArgument(
-                "curve_steering_multiplier", default_value="1.5"
+                "curve_steering_multiplier", default_value="1.1"
             ),
             DeclareLaunchArgument(
                 "target_left_offset_m", default_value="0.0"
@@ -434,6 +470,9 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "vehicle_yolo_timeout_sec", default_value="1.00"
+            ),
+            DeclareLaunchArgument(
+                "vehicle_red_car_yolo_timeout_sec", default_value="0.30"
             ),
             DeclareLaunchArgument(
                 "vehicle_camera_lidar_hfov_deg", default_value="60.0"
@@ -1293,11 +1332,71 @@ def generate_launch_description():
                             LaunchConfiguration("cone_exit_absence_sec"),
                             value_type=float,
                         ),
+                        "cone_reentry_suppression_until_s_curve": ParameterValue(
+                            LaunchConfiguration(
+                                "cone_reentry_suppression_until_s_curve"
+                            ),
+                            value_type=bool,
+                        ),
                         "vehicle_avoidance_enabled": ParameterValue(
                             LaunchConfiguration(
                                 "vehicle_avoidance_enabled"
                             ),
                             value_type=bool,
+                        ),
+                        "s_curve_entry_guard_enabled": ParameterValue(
+                            LaunchConfiguration(
+                                "s_curve_entry_guard_enabled"
+                            ),
+                            value_type=bool,
+                        ),
+                        "s_curve_entry_speed_cap_command": ParameterValue(
+                            LaunchConfiguration(
+                                "s_curve_entry_speed_cap_command"
+                            ),
+                            value_type=float,
+                        ),
+                        "s_curve_entry_straight_max_abs_angle_command": ParameterValue(
+                            LaunchConfiguration(
+                                "s_curve_entry_straight_max_abs_angle_command"
+                            ),
+                            value_type=float,
+                        ),
+                        "s_curve_entry_straight_confirmation_frames": ParameterValue(
+                            LaunchConfiguration(
+                                "s_curve_entry_straight_confirmation_frames"
+                            ),
+                            value_type=int,
+                        ),
+                        "s_curve_entry_minimum_curve_distance_m": ParameterValue(
+                            LaunchConfiguration(
+                                "s_curve_entry_minimum_curve_distance_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "s_curve_entry_left_angle_command": ParameterValue(
+                            LaunchConfiguration(
+                                "s_curve_entry_left_angle_command"
+                            ),
+                            value_type=float,
+                        ),
+                        "s_curve_entry_curve_speed_margin_command": ParameterValue(
+                            LaunchConfiguration(
+                                "s_curve_entry_curve_speed_margin_command"
+                            ),
+                            value_type=float,
+                        ),
+                        "s_curve_entry_curve_confirmation_frames": ParameterValue(
+                            LaunchConfiguration(
+                                "s_curve_entry_curve_confirmation_frames"
+                            ),
+                            value_type=int,
+                        ),
+                        "s_curve_entry_overdue_distance_m": ParameterValue(
+                            LaunchConfiguration(
+                                "s_curve_entry_overdue_distance_m"
+                            ),
+                            value_type=float,
                         ),
                         "vehicle_yolo_min_confidence": ParameterValue(
                             LaunchConfiguration("vehicle_yolo_min_confidence"),
@@ -1319,6 +1418,12 @@ def generate_launch_description():
                         ),
                         "vehicle_yolo_timeout_sec": ParameterValue(
                             LaunchConfiguration("vehicle_yolo_timeout_sec"),
+                            value_type=float,
+                        ),
+                        "vehicle_red_car_yolo_timeout_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_red_car_yolo_timeout_sec"
+                            ),
                             value_type=float,
                         ),
                         "vehicle_camera_lidar_hfov_deg": ParameterValue(

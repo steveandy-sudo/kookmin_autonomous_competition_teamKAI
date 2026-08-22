@@ -275,6 +275,7 @@ class ConeNode(Node):
         self.declare_parameter("cone_turn_sequence_guard_enabled", True)
         self.declare_parameter("cone_first_left_enter_steer_deg", 5.0)
         self.declare_parameter("cone_right_enter_steer_deg", 8.0)
+        self.declare_parameter("cone_right_minimum_hold_sec", 0.75)
         self.declare_parameter("cone_final_left_pending_steer_deg", 3.0)
         self.declare_parameter("cone_final_left_enter_steer_deg", 5.0)
         self.declare_parameter("cone_final_left_pending_frames", 2)
@@ -287,7 +288,7 @@ class ConeNode(Node):
         self.declare_parameter("cone_final_left_fallback_target_deg", 16.5)
         self.declare_parameter("cone_final_left_fallback_max_steer_deg", 22.0)
         self.declare_parameter("cone_final_left_fallback_ramp_deg_per_sec", 10.0)
-        self.declare_parameter("cone_final_left_recovery_speed", 4.0)
+        self.declare_parameter("cone_final_left_recovery_speed", 8.0)
         self.declare_parameter("cone_final_left_recovery_frames", 20)
         self.declare_parameter("cone_final_left_recovery_max_sec", 2.00)
         # Straightening is geometry-triggered, not time-triggered. The three
@@ -449,6 +450,7 @@ class ConeNode(Node):
         self.stabilized_steering: Optional[float] = None
         self.last_valid_steering = 0.0
         self.cone_turn_phase = "approach"
+        self.right_turn_started_at: Optional[float] = None
         self.final_left_pending_frames = 0
         self.final_left_pending_started_at: Optional[float] = None
         self.final_left_committed_at: Optional[float] = None
@@ -1028,6 +1030,7 @@ class ConeNode(Node):
         self.stabilized_steering = None
         self.last_valid_steering = 0.0
         self.cone_turn_phase = "approach"
+        self.right_turn_started_at = None
         self.final_left_pending_frames = 0
         self.final_left_pending_started_at = None
         self.final_left_committed_at = None
@@ -3186,12 +3189,29 @@ class ConeNode(Node):
             return
         if phase == "first_left" and fresh_trusted and value >= right_turn:
             self.cone_turn_phase = "right"
+            now_value = getattr(self, "current_scan_time", None)
+            self.right_turn_started_at = (
+                time.monotonic() if now_value is None else float(now_value)
+            )
             return
         if (
             phase == "right"
             and fresh_trusted
             and value <= -pending_left
         ):
+            now_value = getattr(self, "current_scan_time", None)
+            now = time.monotonic() if now_value is None else float(now_value)
+            started_at = getattr(self, "right_turn_started_at", None)
+            minimum_hold = max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "cone_right_minimum_hold_sec"
+                    ).value
+                ),
+            )
+            if started_at is not None and now - float(started_at) < minimum_hold:
+                return
             self.cone_turn_phase = "final_left_pending"
             self.final_left_pending_frames = (
                 1 if value <= -commit_left else 0
@@ -3482,6 +3502,28 @@ class ConeNode(Node):
             return value
 
         phase = str(getattr(self, "cone_turn_phase", "approach"))
+        if phase == "right":
+            started_at = getattr(self, "right_turn_started_at", None)
+            now_value = getattr(self, "current_scan_time", None)
+            now = time.monotonic() if now_value is None else float(now_value)
+            minimum_hold = max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "cone_right_minimum_hold_sec"
+                    ).value
+                ),
+            )
+            if started_at is not None and now - float(started_at) < minimum_hold:
+                minimum_right = max(
+                    0.0,
+                    float(
+                        self.get_parameter(
+                            "cone_right_enter_steer_deg"
+                        ).value
+                    ),
+                )
+                return max(value, minimum_right)
         if phase == "final_left_pending":
             pending_hold = max(
                 0.0,

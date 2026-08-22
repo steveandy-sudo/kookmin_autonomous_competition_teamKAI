@@ -47,9 +47,11 @@ sequential_hybrid_driver:
     cone_exit_confidence: 0.20
     cone_entry_frames: 3
     cone_exit_frames: 1
-    # The 0.5 s sensor-presence timeout is the complete exit hold. Do not add
-    # another delay after both YOLO and LiDAR cone observations go stale.
-    cone_exit_absence_sec: 0.0
+    # Match the validated jsb handoff: after sensor presence expires, require
+    # another continuous absence interval while retaining the last cone command.
+    cone_exit_absence_sec: 1.0
+    # Ignore isolated cones after slalom exit until normal RULE enters the S curve.
+    cone_reentry_suppression_until_s_curve: true
     # cone_node publishes a physical wheel target. Convert it to the calibrated
     # Xycar servo command used by the main real-vehicle drive manager.
     cone_max_target_angle_deg: 42.0
@@ -110,6 +112,18 @@ sequential_hybrid_driver:
     shortcut_command_topic: /hybrid/shortcut_candidate
     shortcut_processing_enabled_topic: /hybrid/shortcut_processing_enabled
 
+    # Mission-scoped S-entry slowdown validated on the 2026-08-20 bags.
+    # Only shortcut and green-car exits arm this guard; RULE steering is kept.
+    s_curve_entry_guard_enabled: true
+    s_curve_entry_speed_cap_command: 11.0
+    s_curve_entry_straight_max_abs_angle_command: 5.0
+    s_curve_entry_straight_confirmation_frames: 3
+    s_curve_entry_minimum_curve_distance_m: 1.50
+    s_curve_entry_left_angle_command: -8.0
+    s_curve_entry_curve_speed_margin_command: 0.50
+    s_curve_entry_curve_confirmation_frames: 3
+    s_curve_entry_overdue_distance_m: 4.50
+
     traffic_light_control_enabled: true
     traffic_light_red_class_name: red_4
     traffic_light_yellow_class_name: yellow_4
@@ -126,6 +140,8 @@ sequential_hybrid_driver:
     vehicle_yolo_min_confidence: 0.45
     vehicle_yolo_required_frames: 1
     vehicle_yolo_timeout_sec: 1.00
+    # Release a stale red-car detection sooner; green-car behavior is unchanged.
+    vehicle_red_car_yolo_timeout_sec: 0.30
     vehicle_camera_lidar_hfov_deg: 60.0
     vehicle_camera_lidar_padding_deg: 3.0
     vehicle_lidar_min_points: 2
@@ -142,8 +158,8 @@ sequential_hybrid_driver:
     yellow_straight_max_rmse_px: 3.0
     yellow_straight_min_span_ratio: 0.20
     vehicle_avoidance_enabled: true
-    # Ignore only the course-side green_car from shortcut entry through the
-    # two sustained RULE left-steering frames after shortcut handoff.
+    # Suppress every vehicle-avoidance class from shortcut perception start
+    # until the S-entry guard confirms the first S-curve handoff.
     vehicle_avoidance_shortcut_suppression_enabled: true
     vehicle_avoidance_shortcut_release_left_angle_command: -8.0
     vehicle_avoidance_shortcut_release_required_frames: 2

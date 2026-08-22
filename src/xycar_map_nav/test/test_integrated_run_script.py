@@ -7,6 +7,9 @@ RUN_SCRIPT = PACKAGE_ROOT / "scripts" / "run_space_hybrid_test.sh"
 COMPLETE_SCRIPT = PACKAGE_ROOT / "scripts" / "run_complete_space_hybrid.sh"
 LAUNCH_FILE = PACKAGE_ROOT / "launch" / "real_sequential_hybrid_drive.launch.py"
 HYBRID_CONFIG = PACKAGE_ROOT / "config" / "sequential_hybrid_real.yaml"
+SELECTOR_DRIVER = (
+    PACKAGE_ROOT / "xycar_map_nav" / "sequential_hybrid_driver.py"
+)
 OBJECT_CONFIG = (
     REPOSITORY_ROOT / "src" / "study" / "my_rule" / "config"
     / "object_detection.yaml"
@@ -29,6 +32,17 @@ def test_integrated_run_verifies_requested_straight_speed() -> None:
     assert "cruise_speed_command" in source
     assert "requested=\"$SPEED_COMMAND\"" in source
     assert "runtime_cruise_speed_command" in source
+
+
+def test_complete_run_prompts_for_curve_multiplier_first() -> None:
+    source = COMPLETE_SCRIPT.read_text(encoding="utf-8")
+
+    multiplier_prompt = source.index(
+        '"S자/곡선 조향 배수 (1.0=증폭 없음)"'
+    )
+    speed_prompt = source.index('"주행 속도 command')
+    assert multiplier_prompt < speed_prompt
+    assert source.count('prompt_float CURVE_STEERING_MULTIPLIER \\\n') == 1
 
 
 def test_integrated_launch_scopes_runtime_overrides_to_exact_nodes() -> None:
@@ -66,6 +80,25 @@ def test_integrated_cone_precompute_uses_weak_detection_without_weakening_entry(
     assert "CONE_APPROACH_YOLO_MIN_CONFIDENCE:-0.40" in source
     assert '"cone_approach_yolo_min_confidence", default_value="0.40"' in launch_source
     assert '"cone_yolo_min_confidence": ParameterValue(' in launch_source
+
+
+def test_integrated_cone_exit_matches_remote_jsb_hold_policy() -> None:
+    launch_source = LAUNCH_FILE.read_text(encoding="utf-8")
+    config_source = HYBRID_CONFIG.read_text(encoding="utf-8")
+    selector_source = SELECTOR_DRIVER.read_text(encoding="utf-8")
+    branch_start = selector_source.rindex("elif self.cone_bypass.active:")
+    branch_end = selector_source.index(
+        "elif (\n            self.avoidance_state.controls_vehicle",
+        branch_start,
+    )
+    cone_branch = selector_source[branch_start:branch_end]
+
+    assert '"cone_exit_absence_sec", default_value="1.0"' in launch_source
+    assert "cone_exit_absence_sec: 1.0" in config_source
+    assert "output.state == HybridState.RUNNING and scan_fresh" in cone_branch
+    assert "last_valid_cone_command" in cone_branch
+    assert "command_timestamp_is_fresh" not in cone_branch
+    assert 'reason="cone LiDAR scan stale"' in cone_branch
 
 
 def test_integrated_run_accelerates_only_rule_to_cone_steering_handoff() -> None:
@@ -112,6 +145,31 @@ def test_integrated_run_defaults_to_first_finish_25_11_11_profile() -> None:
     assert '"straight_path_curvature_threshold", default_value="0.24"' in launch_source
     assert '"steering_current_weight", default_value="0.35"' in launch_source
     assert '"steering_curve_current_weight", default_value="0.80"' in launch_source
+
+
+def test_integrated_run_enables_only_post_mission_s_entry_guard() -> None:
+    run_source = RUN_SCRIPT.read_text(encoding="utf-8")
+    launch_source = LAUNCH_FILE.read_text(encoding="utf-8")
+
+    assert 'S_CURVE_ENTRY_GUARD_ENABLED="${S_CURVE_ENTRY_GUARD_ENABLED:-true}"' in run_source
+    assert 'S_CURVE_ENTRY_SPEED_CAP_COMMAND="${S_CURVE_ENTRY_SPEED_CAP_COMMAND:-11.0}"' in run_source
+    assert 's_curve_entry_guard_enabled:="$S_CURVE_ENTRY_GUARD_ENABLED"' in run_source
+    assert 's_curve_entry_speed_cap_command:="$S_CURVE_ENTRY_SPEED_CAP_COMMAND"' in run_source
+    assert "S_CURVE_ENTRY_MAXIMUM_RIGHT_ANGLE_COMMAND" not in run_source
+    assert "s_curve_entry_maximum_right_angle_command" not in launch_source
+    assert (
+        '"s_curve_entry_guard_enabled", default_value="true"'
+        in launch_source
+    )
+    assert (
+        '"s_curve_entry_speed_cap_command", default_value="11.0"'
+        in launch_source
+    )
+    assert (
+        '"s_curve_entry_minimum_curve_distance_m",\n'
+        '                default_value="1.50",'
+        in launch_source
+    )
 
 
 def test_low_speed_profile_derives_curve_defaults_from_requested_cap() -> None:

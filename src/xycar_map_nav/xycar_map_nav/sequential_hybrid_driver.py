@@ -30,6 +30,9 @@ from .corner_survey_core import measure_sector, SectorMeasurement
 from .cone_mode_latch import ConeModeConfig
 from .cone_mode_latch import ConeModeEvent
 from .cone_mode_latch import ConeModeLatch
+from .cone_mode_latch import ConeReentryEvent
+from .cone_mode_latch import ConeReentrySuppression
+from .cone_mode_latch import ConeReentrySuppressionConfig
 from .lidar_obstacle import detect_path_obstacle
 from .lidar_obstacle import LidarPathObstacle
 from .lidar_obstacle import LidarPathObstacleConfig
@@ -44,6 +47,11 @@ from .sequential_hybrid_core import SequentialHybridInput
 from .shortcut_mode_latch import ShortcutModeConfig
 from .shortcut_mode_latch import ShortcutModeEvent
 from .shortcut_mode_latch import ShortcutModeLatch
+from .s_curve_entry_guard import green_car_avoidance_completed
+from .s_curve_entry_guard import SCurveEntryEvent
+from .s_curve_entry_guard import SCurveEntryGuard
+from .s_curve_entry_guard import SCurveEntryGuardConfig
+from .s_curve_entry_guard import SCurveEntryTrigger
 from .traffic_light_control import SignalObservation
 from .traffic_light_control import TrafficLightAction
 from .traffic_light_control import TrafficLightConfig
@@ -100,10 +108,12 @@ def cone_processing_requested(
     cone_active: bool,
     yolo_age_sec: float,
     yolo_timeout_sec: float,
+    reentry_suppressed: bool = False,
 ) -> bool:
     """Allow camera-confirmed cone planning before the motor gate is armed."""
     return bool(
         not shortcut_active
+        and not reentry_suppressed
         and (
             cone_active
             or 0.0 <= float(yolo_age_sec) <= max(
@@ -306,15 +316,9 @@ def shortcut_suppresses_vehicle_class(
     *,
     suppression_active: bool,
 ) -> bool:
-    """The shortcut exception applies to green_car, never red_car."""
-    normalized = (
-        str(class_name)
-        .strip()
-        .lower()
-        .replace("-", "_")
-        .replace(" ", "_")
-    )
-    return bool(suppression_active and normalized == "green_car")
+    """Suppress every class that has already qualified as an obstacle."""
+    del class_name
+    return bool(suppression_active)
 
 
 def preferred_avoidance_mode_from_yellow_reference(
@@ -434,6 +438,53 @@ class SequentialHybridDriver(Node):
                 ),
             )
         )
+        self.s_curve_entry_guard = SCurveEntryGuard(
+            SCurveEntryGuardConfig(
+                enabled=bool(
+                    self.get_parameter("s_curve_entry_guard_enabled").value
+                ),
+                speed_cap_command=float(
+                    self.get_parameter(
+                        "s_curve_entry_speed_cap_command"
+                    ).value
+                ),
+                straight_max_abs_angle_command=float(
+                    self.get_parameter(
+                        "s_curve_entry_straight_max_abs_angle_command"
+                    ).value
+                ),
+                straight_confirmation_frames=int(
+                    self.get_parameter(
+                        "s_curve_entry_straight_confirmation_frames"
+                    ).value
+                ),
+                minimum_curve_distance_m=float(
+                    self.get_parameter(
+                        "s_curve_entry_minimum_curve_distance_m"
+                    ).value
+                ),
+                curve_left_angle_command=float(
+                    self.get_parameter(
+                        "s_curve_entry_left_angle_command"
+                    ).value
+                ),
+                curve_speed_margin_command=float(
+                    self.get_parameter(
+                        "s_curve_entry_curve_speed_margin_command"
+                    ).value
+                ),
+                curve_confirmation_frames=int(
+                    self.get_parameter(
+                        "s_curve_entry_curve_confirmation_frames"
+                    ).value
+                ),
+                overdue_distance_m=float(
+                    self.get_parameter(
+                        "s_curve_entry_overdue_distance_m"
+                    ).value
+                ),
+            )
+        )
         self.traffic_light_controller = TrafficLightController(
             TrafficLightConfig(
                 minimum_confidence=float(
@@ -504,6 +555,35 @@ class SequentialHybridDriver(Node):
                 ),
             )
         )
+        self.cone_reentry_suppression = ConeReentrySuppression(
+            ConeReentrySuppressionConfig(
+                enabled=bool(
+                    self.get_parameter(
+                        "cone_reentry_suppression_until_s_curve"
+                    ).value
+                ),
+                straight_max_abs_angle_command=float(
+                    self.get_parameter(
+                        "s_curve_entry_straight_max_abs_angle_command"
+                    ).value
+                ),
+                straight_confirmation_frames=int(
+                    self.get_parameter(
+                        "s_curve_entry_straight_confirmation_frames"
+                    ).value
+                ),
+                s_curve_left_angle_command=float(
+                    self.get_parameter(
+                        "s_curve_entry_left_angle_command"
+                    ).value
+                ),
+                s_curve_confirmation_frames=int(
+                    self.get_parameter(
+                        "s_curve_entry_curve_confirmation_frames"
+                    ).value
+                ),
+            )
+        )
         self.cone_yolo_frames = 0
         self.cone_yolo_time = float("-inf")
         self.cone_yolo_confidence = 0.0
@@ -554,6 +634,11 @@ class SequentialHybridDriver(Node):
                 ),
                 yolo_timeout_sec=float(
                     self.get_parameter("vehicle_yolo_timeout_sec").value
+                ),
+                red_car_yolo_timeout_sec=float(
+                    self.get_parameter(
+                        "vehicle_red_car_yolo_timeout_sec"
+                    ).value
                 ),
                 entry_distance_m=float(
                     self.get_parameter(
@@ -869,7 +954,10 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("cone_exit_confidence", 0.20)
         self.declare_parameter("cone_entry_frames", 3)
         self.declare_parameter("cone_exit_frames", 1)
-        self.declare_parameter("cone_exit_absence_sec", 0.0)
+        self.declare_parameter("cone_exit_absence_sec", 1.0)
+        self.declare_parameter(
+            "cone_reentry_suppression_until_s_curve", True
+        )
         self.declare_parameter("cone_max_target_angle_deg", 42.0)
         self.declare_parameter(
             "cone_steering_actual_deg", [0.0, 4.0, 10.0, 16.0, 26.0]
@@ -898,6 +986,25 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("cone_approach_release_frames", 2)
         self.declare_parameter("vehicle_speed_timeout_sec", 0.25)
         self.declare_parameter("vesc_state_topic", "/vehicle/vesc_state")
+        self.declare_parameter("s_curve_entry_guard_enabled", True)
+        self.declare_parameter("s_curve_entry_speed_cap_command", 11.0)
+        self.declare_parameter(
+            "s_curve_entry_straight_max_abs_angle_command", 5.0
+        )
+        self.declare_parameter(
+            "s_curve_entry_straight_confirmation_frames", 3
+        )
+        self.declare_parameter(
+            "s_curve_entry_minimum_curve_distance_m", 1.50
+        )
+        self.declare_parameter("s_curve_entry_left_angle_command", -8.0)
+        self.declare_parameter(
+            "s_curve_entry_curve_speed_margin_command", 0.50
+        )
+        self.declare_parameter(
+            "s_curve_entry_curve_confirmation_frames", 3
+        )
+        self.declare_parameter("s_curve_entry_overdue_distance_m", 4.50)
         # 2026-08-20 competition-course bags: the successful entry first
         # produced three valid cone paths at forward x=0.883/0.797/0.701 m.
         # A 0.95 m gate preserves that sequence while rejecting the premature
@@ -966,6 +1073,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("cone_as_vehicle_min_confidence", 0.50)
         self.declare_parameter("vehicle_yolo_required_frames", 1)
         self.declare_parameter("vehicle_yolo_timeout_sec", 1.00)
+        self.declare_parameter("vehicle_red_car_yolo_timeout_sec", 0.30)
         self.declare_parameter("vehicle_camera_lidar_hfov_deg", 60.0)
         self.declare_parameter("vehicle_camera_lidar_padding_deg", 3.0)
         self.declare_parameter(
@@ -1088,22 +1196,6 @@ class SequentialHybridDriver(Node):
             return
         self.rule_command = (float(message.data[0]), float(message.data[1]))
         self.rule_command_time = time.monotonic()
-        if self.shortcut_avoidance_suppression.observe_rule_angle(
-            self.rule_command[0]
-        ):
-            required = max(
-                1,
-                int(
-                    self.get_parameter(
-                        "vehicle_avoidance_shortcut_release_required_frames"
-                    ).value
-                ),
-            )
-            self.get_logger().warning(
-                f"{ANSI_BLUE}[MISSION] GREEN_CAR AVOIDANCE RESTORED; "
-                f"RULE LEFT STEERING {required}/{required} "
-                f"angle={self.rule_command[0]:.1f}{ANSI_RESET}"
-            )
 
     def _on_vesc_state(self, message: XycarVescState) -> None:
         speed = abs(float(message.speed_mps))
@@ -1117,6 +1209,128 @@ class SequentialHybridDriver(Node):
         self.cone_approach_brake_release_frames = 0
         self.cone_approach_brake_required_distance_m = 0.0
         self.cone_approach_brake_reason = "none"
+
+    def _reset_cone_detection_state(self) -> None:
+        self.cone_yolo_frames = 0
+        self.cone_yolo_time = float("-inf")
+        self.cone_yolo_confidence = 0.0
+        self.cone_approach_yolo_frames = 0
+        self.cone_approach_yolo_time = float("-inf")
+        self.cone_approach_yolo_confidence = 0.0
+
+    def _update_cone_reentry_suppression(self, output, *, now: float) -> None:
+        event = self.cone_reentry_suppression.update(
+            rule_controls_vehicle=bool(
+                output.state == HybridState.RUNNING
+                and output.source == CandidateSource.RULE
+                and not self.shortcut_latch.active
+                and not self.shortcut_entry_search_active
+                and not self.cone_bypass.active
+                and not self.avoidance_state.controls_vehicle
+                and self.traffic_light_decision.action
+                != TrafficLightAction.STOP
+            ),
+            rule_command_fresh=bool(
+                now - self.rule_command_time
+                <= self.controller.config.candidate_hold_sec
+            ),
+            rule_angle_command=self.rule_command[0],
+        )
+        if event == ConeReentryEvent.S_CURVE_REACHED:
+            self._reset_cone_detection_state()
+            self.get_logger().warning(
+                f"{ANSI_GREEN}[CONE] REENTRY ENABLED AT S-CURVE ENTRY"
+                f"{ANSI_RESET}"
+            )
+
+    def _start_s_curve_entry_guard(
+        self, trigger: SCurveEntryTrigger
+    ) -> None:
+        event = self.s_curve_entry_guard.start(trigger)
+        if event != SCurveEntryEvent.STARTED:
+            return
+        config = self.s_curve_entry_guard.config
+        self.get_logger().warning(
+            f"{ANSI_BLUE}[S_ENTRY] START trigger={trigger.value}; "
+            f"speed_cap={config.speed_cap_command:.1f}; "
+            "RULE steering retained"
+            f"{ANSI_RESET}"
+        )
+
+    def _reset_s_curve_entry_guard(self, reason: str) -> None:
+        event = self.s_curve_entry_guard.reset()
+        if event == SCurveEntryEvent.RESET:
+            self.get_logger().info(f"[S_ENTRY] RESET reason={reason}")
+
+    def _apply_s_curve_entry_guard(self, output, *, now: float, dt: float):
+        event = self.s_curve_entry_guard.update(
+            dt_sec=dt,
+            vehicle_speed_mps=self.vehicle_speed_mps,
+            vehicle_speed_fresh=(
+                now - self.vehicle_speed_time
+                <= float(
+                    self.get_parameter("vehicle_speed_timeout_sec").value
+                )
+            ),
+            rule_angle_command=self.rule_command[0],
+            rule_speed_command=self.rule_command[1],
+            rule_command_fresh=(
+                now - self.rule_command_time
+                <= self.controller.config.candidate_hold_sec
+            ),
+        )
+        if event == SCurveEntryEvent.CURVE_HANDOFF:
+            state = self.s_curve_entry_guard.state()
+            avoidance_restored = self.shortcut_avoidance_suppression.release()
+            self.get_logger().warning(
+                f"{ANSI_GREEN}[S_ENTRY] NORMAL CURVE HANDOFF; "
+                f"trigger={state.trigger.value}; "
+                f"distance={state.distance_m:.2f}m; "
+                f"RULE=[{self.rule_command[0]:.1f},"
+                f"{self.rule_command[1]:.1f}]{ANSI_RESET}"
+            )
+            if avoidance_restored:
+                self.get_logger().warning(
+                    f"{ANSI_BLUE}[MISSION] ALL VEHICLE AVOIDANCE RESTORED "
+                    f"AT S-CURVE ENTRY{ANSI_RESET}"
+                )
+            return output
+
+        state = self.s_curve_entry_guard.state()
+        s_entry_controls = bool(
+            state.active
+            and output.state == HybridState.RUNNING
+            and output.source == CandidateSource.RULE
+            and not self.shortcut_latch.active
+            and not self.shortcut_entry_search_active
+            and not self.cone_bypass.active
+            and not self.avoidance_state.controls_vehicle
+            and self.traffic_light_decision.action
+            != TrafficLightAction.STOP
+        )
+        if not s_entry_controls:
+            return output
+
+        angle, speed = self.s_curve_entry_guard.limit_command(
+            angle_command=output.angle_command,
+            speed_command=output.speed_command,
+        )
+        state = self.s_curve_entry_guard.state()
+        detail = "rule"
+        if state.overdue:
+            detail += "+overdue"
+        return replace(
+            output,
+            angle_command=angle,
+            speed_command=speed,
+            reason=(
+                f"S-entry guard {state.trigger.value}; "
+                f"d={state.distance_m:.2f}m; "
+                f"straight={int(state.straight_ready)}; "
+                f"steering={detail}; cap="
+                f"{self.s_curve_entry_guard.config.speed_cap_command:.1f}"
+            ),
+        )
 
     def _on_drive_armed(self, message: Bool) -> None:
         armed = bool(message.data)
@@ -1133,6 +1347,7 @@ class SequentialHybridDriver(Node):
             # branch and is reset immediately on operator disarm. Cone state is
             # intentionally retained for gate_disarm_cone_hold_sec.
             self._reset_shortcut_state()
+            self._reset_s_curve_entry_guard("SPACE disarmed")
             self.avoidance_controller.reset()
             self.avoidance_state = self.avoidance_controller.state()
             self.avoidance_offset_pub.publish(Float32(data=0.0))
@@ -1221,10 +1436,15 @@ class SequentialHybridDriver(Node):
             self.traffic_light_controller.latest_decision
         )
         self.shortcut_processing_pub.publish(Bool(data=False))
+        self.shortcut_avoidance_suppression.reset()
+        self.avoidance_controller.reset()
+        self.avoidance_state = self.avoidance_controller.state()
+        self.avoidance_offset_pub.publish(Float32(data=0.0))
         self.get_logger().error(reason)
 
     def _handle_shortcut_event(self, event: ShortcutModeEvent) -> None:
         if event == ShortcutModeEvent.STARTED:
+            self._reset_s_curve_entry_guard("new shortcut started")
             self.shortcut_avoidance_suppression.start_shortcut()
             self.cone_bypass.reset()
             self.avoidance_controller.reset()
@@ -1244,6 +1464,9 @@ class SequentialHybridDriver(Node):
                 self.traffic_light_controller.latest_decision
             )
             self.shortcut_processing_pub.publish(Bool(data=False))
+            self._start_s_curve_entry_guard(
+                SCurveEntryTrigger.SHORTCUT_EXIT
+            )
             self.get_logger().warning(
                 f"{ANSI_GREEN}[MISSION] CONTROL SWITCHED -> "
                 f"YELLOW XBIN RULE{ANSI_RESET}"
@@ -1265,9 +1488,14 @@ class SequentialHybridDriver(Node):
         self.shortcut_command = (0.0, 0.0, 0.0)
         self.shortcut_command_time = float("-inf")
         self.shortcut_phase_code = 0.0
+        self.shortcut_avoidance_suppression.start_shortcut()
+        self.avoidance_controller.reset()
+        self.avoidance_state = self.avoidance_controller.state()
+        self.avoidance_offset_pub.publish(Float32(data=0.0))
         self.shortcut_processing_pub.publish(Bool(data=True))
         self.get_logger().warning(
-            "[MISSION] SHORTCUT ENTRY PERCEPTION START"
+            "[MISSION] SHORTCUT ENTRY PERCEPTION START; "
+            "ALL VEHICLE AVOIDANCE SUPPRESSED UNTIL S-CURVE ENTRY"
         )
 
     def _on_shortcut_command(self, message: Float32MultiArray) -> None:
@@ -1740,6 +1968,8 @@ class SequentialHybridDriver(Node):
                 else None
             ),
         )
+        if self.cone_reentry_suppression.active:
+            self._reset_cone_detection_state()
         self._publish_cone_processing_gate(now)
 
     def _on_yellow_mask(self, message: Image) -> None:
@@ -1837,6 +2067,7 @@ class SequentialHybridDriver(Node):
             yolo_timeout_sec=float(
                 self.get_parameter("cone_yolo_timeout_sec").value
             ),
+            reentry_suppressed=self.cone_reentry_suppression.active,
         )
         self.cone_processing_pub.publish(Bool(data=requested))
 
@@ -1856,6 +2087,7 @@ class SequentialHybridDriver(Node):
 
     def _handle_cone_event(self, event: ConeModeEvent) -> None:
         if event == ConeModeEvent.STARTED:
+            self._reset_s_curve_entry_guard("cone mission started")
             self.get_logger().warning(
                 "CONE_RULE START; YOLO+LiDAR cone confirmed; "
                 f"forward={self.cone_lidar_forward_distance_m:.3f}m, "
@@ -1864,12 +2096,22 @@ class SequentialHybridDriver(Node):
             )
         elif event == ConeModeEvent.FINISHED:
             self._reset_cone_approach_brake()
+            self._reset_cone_detection_state()
+            reentry_event = self.cone_reentry_suppression.start()
             self.get_logger().warning(
                 "CONE_RULE FINISHED; YOLO and LiDAR cones both disappeared"
             )
+            if reentry_event == ConeReentryEvent.STARTED:
+                self.get_logger().warning(
+                    f"{ANSI_BLUE}[CONE] REENTRY SUPPRESSED UNTIL "
+                    f"S-CURVE ENTRY{ANSI_RESET}"
+                )
 
     def _on_cone_command(self, message: Float32MultiArray) -> None:
         if len(message.data) < 3:
+            return
+        if self.cone_reentry_suppression.active:
+            self.cone_bypass.reset()
             return
         angle = float(message.data[0])
         speed = float(message.data[1])
@@ -2004,6 +2246,7 @@ class SequentialHybridDriver(Node):
             self.controller.source = CandidateSource.RULE
         self._reset_shortcut_state()
         self.cone_bypass.reset()
+        self.cone_reentry_suppression.reset()
         self.cone_yolo_frames = 0
         self.cone_yolo_time = float("-inf")
         self.cone_yolo_confidence = 0.0
@@ -2015,6 +2258,7 @@ class SequentialHybridDriver(Node):
         self.cone_cluster_count = 0
         self.cone_cluster_time = float("-inf")
         self._reset_cone_approach_brake()
+        self._reset_s_curve_entry_guard("integrated reset service")
         self.avoidance_controller.reset()
         self.avoidance_state = self.avoidance_controller.state()
         self.avoidance_offset_pub.publish(Float32(data=0.0))
@@ -2252,7 +2496,8 @@ class SequentialHybridDriver(Node):
                 )
             )
         self._publish_cone_processing_gate(now)
-        if self.shortcut_latch.active:
+        previous_avoidance_state = self.avoidance_state
+        if self.shortcut_avoidance_suppression.active:
             self.avoidance_controller.reset()
             self.avoidance_state = self.avoidance_controller.state()
         elif (
@@ -2268,6 +2513,28 @@ class SequentialHybridDriver(Node):
         else:
             self.avoidance_controller.reset()
             self.avoidance_state = self.avoidance_controller.state()
+        if (
+            self.drive_armed
+            and not self.shortcut_latch.active
+            and not self.cone_bypass.active
+            and green_car_avoidance_completed(
+                previous_controls_vehicle=(
+                    previous_avoidance_state.controls_vehicle
+                ),
+                previous_target_class_name=(
+                    previous_avoidance_state.target_class_name
+                ),
+                controls_vehicle=self.avoidance_state.controls_vehicle,
+            )
+        ):
+            self._start_s_curve_entry_guard(
+                SCurveEntryTrigger.GREEN_CAR_EXIT
+            )
+        elif (
+            self.avoidance_state.controls_vehicle
+            and self.s_curve_entry_guard.state().active
+        ):
+            self._reset_s_curve_entry_guard("new vehicle avoidance started")
         # Camera/yellow-side avoidance must move the rule target even when a
         # strict LiDAR obstacle cluster is unavailable. The controller ramps
         # this offset, so the path moves without a one-frame steering jump.
@@ -2428,14 +2695,7 @@ class SequentialHybridDriver(Node):
             # While the camera gate is starting, retain the existing RULE
             # output instead of inserting a motor stop.
         elif self.cone_bypass.active:
-            cone_command_fresh = command_timestamp_is_fresh(
-                now_sec=now,
-                command_time_sec=self.last_valid_cone_command_time,
-                timeout_sec=float(
-                    self.get_parameter("cone_command_timeout_sec").value
-                ),
-            )
-            if output.state == HybridState.RUNNING and cone_command_fresh:
+            if output.state == HybridState.RUNNING and scan_fresh:
                 output = replace(
                     output,
                     state=HybridState.RUNNING,
@@ -2451,7 +2711,7 @@ class SequentialHybridDriver(Node):
                     state=HybridState.SENSOR_STOP,
                     angle_command=0.0,
                     speed_command=0.0,
-                    reason="cone LiDAR-derived command stale",
+                    reason="cone LiDAR scan stale",
                 )
         elif (
             self.avoidance_state.controls_vehicle
@@ -2501,6 +2761,12 @@ class SequentialHybridDriver(Node):
                     speed_command=0.0,
                     reason="avoidance lane-rule command stale",
                 )
+        self._update_cone_reentry_suppression(output, now=now)
+        output = self._apply_s_curve_entry_guard(
+            output,
+            now=now,
+            dt=dt,
+        )
         approach_limit, approach_stage = cone_approach_speed_limit(
             enabled=bool(
                 self.get_parameter("cone_approach_slowdown_enabled").value
@@ -2509,6 +2775,7 @@ class SequentialHybridDriver(Node):
             shortcut_active=bool(
                 self.shortcut_latch.active
                 or self.shortcut_entry_search_active
+                or self.cone_reentry_suppression.active
             ),
             yolo_frames=self.cone_approach_yolo_frames,
             yolo_age_sec=now - self.cone_approach_yolo_time,
@@ -2727,6 +2994,7 @@ class SequentialHybridDriver(Node):
                     data=[output.angle_command, output.speed_command]
                 )
             )
+        s_entry_state = self.s_curve_entry_guard.state()
         diagnostics = Float32MultiArray(
             data=[
                 STATE_CODES[output.state],
@@ -2765,6 +3033,12 @@ class SequentialHybridDriver(Node):
                 float(self.cone_bypass.entry_streak),
                 float(self.cone_approach_yolo_confidence),
                 float(self.cone_approach_brake_required_distance_m),
+                1.0 if s_entry_state.active else 0.0,
+                float(list(SCurveEntryTrigger).index(s_entry_state.trigger)),
+                float(s_entry_state.distance_m),
+                1.0 if s_entry_state.straight_ready else 0.0,
+                float(s_entry_state.curve_frames),
+                1.0 if s_entry_state.overdue else 0.0,
             ]
         )
         self.diagnostics_pub.publish(diagnostics)
@@ -2773,6 +3047,8 @@ class SequentialHybridDriver(Node):
 
     def stop(self) -> None:
         self.control_timer.cancel()
+        self.s_curve_entry_guard.reset()
+        self.cone_reentry_suppression.reset()
         self.shortcut_entry_search_active = False
         self.shortcut_entry_search_started_time = float("-inf")
         self.shortcut_entry_ready = False

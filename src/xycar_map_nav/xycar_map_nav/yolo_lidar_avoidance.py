@@ -27,6 +27,7 @@ class YoloLidarAvoidanceConfig:
     yolo_min_confidence: float = 0.45
     yolo_required_frames: int = 2
     yolo_timeout_sec: float = 1.00
+    red_car_yolo_timeout_sec: float = 0.30
     entry_distance_m: float = 1.20
     minimum_side_clearance_m: float = 0.70
     left_offset_m: float = 0.20
@@ -69,7 +70,7 @@ class ShortcutAvoidanceSuppressionConfig:
 
 
 class ShortcutAvoidanceSuppression:
-    """Keep vehicle avoidance disabled through the post-shortcut left turn."""
+    """Keep vehicle avoidance disabled until explicit S-curve handoff."""
 
     def __init__(self, config: ShortcutAvoidanceSuppressionConfig) -> None:
         self.config = config
@@ -91,8 +92,15 @@ class ShortcutAvoidanceSuppression:
         self.rule_handoff = True
         self.left_frames = 0
 
+    def release(self) -> bool:
+        """Release suppression only when the mission sequencer confirms it."""
+        if not self.active:
+            return False
+        self.reset()
+        return True
+
     def observe_rule_angle(self, angle_command: float) -> bool:
-        """Release after consecutive post-handoff left-steering frames."""
+        """Retain legacy diagnostics without releasing mission suppression."""
         if not self.active or not self.rule_handoff:
             return False
         threshold = min(0.0, float(self.config.release_left_angle_command))
@@ -100,11 +108,7 @@ class ShortcutAvoidanceSuppression:
             self.left_frames += 1
         else:
             self.left_frames = 0
-        if self.left_frames < max(1, int(self.config.release_required_frames)):
-            return False
-        self.active = False
-        self.rule_handoff = False
-        return True
+        return False
 
 
 class YoloLidarAvoidanceController:
@@ -239,7 +243,7 @@ class YoloLidarAvoidanceController:
             self.reset()
             return self.state()
 
-        yolo_fresh = now - self.yolo_time <= self.config.yolo_timeout_sec
+        yolo_fresh = now - self.yolo_time <= self._yolo_timeout_sec()
         if self.mode == YoloLidarAvoidanceMode.YOLO_TRACKING:
             if not yolo_fresh:
                 self.reset()
@@ -312,6 +316,11 @@ class YoloLidarAvoidanceController:
         ):
             self.reset()
         return self.state()
+
+    def _yolo_timeout_sec(self) -> float:
+        if self.target_class_name == "red_car":
+            return max(0.0, float(self.config.red_car_yolo_timeout_sec))
+        return max(0.0, float(self.config.yolo_timeout_sec))
 
     def state(self) -> YoloLidarAvoidanceState:
         if self.mode == YoloLidarAvoidanceMode.WAIT_SIDE_CLEAR:

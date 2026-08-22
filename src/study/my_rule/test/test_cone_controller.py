@@ -308,6 +308,7 @@ class _SteeringHarness:
         "cone_turn_sequence_guard_enabled": True,
         "cone_first_left_enter_steer_deg": 5.0,
         "cone_right_enter_steer_deg": 8.0,
+        "cone_right_minimum_hold_sec": 0.75,
         "cone_final_left_pending_steer_deg": 3.0,
         "cone_final_left_enter_steer_deg": 5.0,
         "cone_final_left_pending_frames": 2,
@@ -335,6 +336,7 @@ class _SteeringHarness:
         self.current_scan_time = 1.0
         self.path_is_held = False
         self.cone_turn_phase = "approach"
+        self.right_turn_started_at = None
         self.final_left_pending_frames = 0
         self.final_left_pending_started_at = None
         self.final_left_committed_at = None
@@ -1082,6 +1084,7 @@ def test_final_left_sequence_holds_left_against_inferred_release():
     assert harness.cone_turn_phase == "right"
 
     harness.midpoint_source = "right_offset"
+    harness.current_scan_time = 1.80
     harness.update_cone_turn_phase(-6.0)
     assert harness.cone_turn_phase == "final_left_pending"
 
@@ -1093,6 +1096,25 @@ def test_final_left_sequence_holds_left_against_inferred_release():
     harness.path_is_held = False
     guarded = harness.apply_cone_turn_phase_guard(5.0)
     assert guarded == pytest.approx(-12.0)
+
+
+def test_right_turn_is_held_before_final_left_can_commit():
+    harness = _SteeringHarness()
+    harness.midpoint_source = "paired"
+    harness.update_cone_turn_phase(-6.0)
+
+    harness.current_scan_time = 2.0
+    harness.update_cone_turn_phase(10.0)
+    assert harness.cone_turn_phase == "right"
+
+    harness.current_scan_time = 2.50
+    harness.update_cone_turn_phase(-12.0)
+    assert harness.cone_turn_phase == "right"
+    assert harness.apply_cone_turn_phase_guard(-12.0) == pytest.approx(8.0)
+
+    harness.current_scan_time = 2.76
+    harness.update_cone_turn_phase(-12.0)
+    assert harness.cone_turn_phase == "final_left_pending"
 
 
 def test_final_left_fallback_ramps_only_through_measured_envelope():

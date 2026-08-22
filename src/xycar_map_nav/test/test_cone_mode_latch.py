@@ -1,6 +1,9 @@
 from xycar_map_nav.cone_mode_latch import ConeModeConfig
 from xycar_map_nav.cone_mode_latch import ConeModeEvent
 from xycar_map_nav.cone_mode_latch import ConeModeLatch
+from xycar_map_nav.cone_mode_latch import ConeReentryEvent
+from xycar_map_nav.cone_mode_latch import ConeReentrySuppression
+from xycar_map_nav.cone_mode_latch import ConeReentrySuppressionConfig
 from xycar_map_nav.sequential_hybrid_driver import command_timestamp_is_fresh
 from xycar_map_nav.sequential_hybrid_driver import cone_approach_brake_decision
 from xycar_map_nav.sequential_hybrid_driver import cone_approach_speed_limit
@@ -118,7 +121,6 @@ def test_cone_timed_exit_requires_continuous_sensor_absence():
         ConeModeConfig(
             entry_frames=3,
             exit_frames=1,
-            exit_absence_sec=1.0,
         )
     )
     for _ in range(3):
@@ -158,6 +160,45 @@ def test_cone_can_reenter_without_waypoint_or_lap_state():
     )
     events = [observe(latch) for _ in range(3)]
     assert events[-1] == ConeModeEvent.STARTED
+
+
+def test_cone_reentry_stays_blocked_until_rule_confirms_s_curve():
+    suppression = ConeReentrySuppression(
+        ConeReentrySuppressionConfig(
+            straight_confirmation_frames=3,
+            s_curve_confirmation_frames=3,
+        )
+    )
+    assert suppression.start() == ConeReentryEvent.STARTED
+
+    for _ in range(5):
+        assert suppression.update(
+            rule_controls_vehicle=False,
+            rule_command_fresh=True,
+            rule_angle_command=-20.0,
+        ) == ConeReentryEvent.NONE
+    assert suppression.active
+
+    for _ in range(3):
+        assert suppression.update(
+            rule_controls_vehicle=True,
+            rule_command_fresh=True,
+            rule_angle_command=1.0,
+        ) == ConeReentryEvent.NONE
+    assert suppression.straight_ready
+
+    for _ in range(2):
+        assert suppression.update(
+            rule_controls_vehicle=True,
+            rule_command_fresh=True,
+            rule_angle_command=-12.0,
+        ) == ConeReentryEvent.NONE
+    assert suppression.update(
+        rule_controls_vehicle=True,
+        rule_command_fresh=True,
+        rule_angle_command=-12.0,
+    ) == ConeReentryEvent.S_CURVE_REACHED
+    assert not suppression.active
 
 
 def test_space_disarm_hold_covers_observed_operator_pause():
@@ -220,6 +261,13 @@ def test_cone_planning_is_requested_while_motor_gate_is_stopped():
         cone_active=False,
         yolo_age_sec=0.80,
         yolo_timeout_sec=0.75,
+    )
+    assert not cone_processing_requested(
+        shortcut_active=False,
+        cone_active=False,
+        yolo_age_sec=0.20,
+        yolo_timeout_sec=0.75,
+        reentry_suppressed=True,
     )
 
 

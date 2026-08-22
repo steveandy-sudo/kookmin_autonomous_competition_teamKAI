@@ -162,5 +162,5 @@ def test_cone_only_launch_disables_adaptive_profile():
     assert 'if profile != "fixed"' in source
     assert "adaptive cone speed is disabled" in source
     assert 'default_value="10.0"' in source
-    assert 'default_value="4.0"' in source
+    assert 'default_value="8.0"' in source
     assert 'DeclareLaunchArgument(\n                "cone_speed",' not in source

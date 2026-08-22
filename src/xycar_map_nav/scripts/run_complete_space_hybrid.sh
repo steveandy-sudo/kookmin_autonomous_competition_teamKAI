@@ -238,6 +238,19 @@ prompt_bool() {
   esac
 }
 
+# Ask for the curve/S-bend gain before every other interactive driving value.
+# An environment override still skips the prompt for scripted repeatability.
+prompt_float CURVE_STEERING_MULTIPLIER \
+  "S자/곡선 조향 배수 (1.0=증폭 없음)" 1.1 0.0 3.0
+prompt_bool CURVE_STEERING_MULTIPLIER_ENABLED \
+  "곡선에서 큰 조향 명령 배수 적용" true
+if [[ "$CURVE_STEERING_MULTIPLIER_ENABLED" == "true" ]]; then
+  prompt_float CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND \
+    "배수를 시작할 절대 조향 명령" 20.0 0.0 42.0
+else
+  CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND="${CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND:-20.0}"
+fi
+
 if [[ "$STEERING_ONLY" == "true" ]]; then
   SPEED_COMMAND=0.0
 elif [[ -z "$SPEED_COMMAND" ]]; then
@@ -375,18 +388,6 @@ prompt_float STEERING_LEAD_TIME_SEC \
   "조향 lead time [s]" 0.08 0.0 1.0
 prompt_float STEERING_MAX_LEAD_COMMAND \
   "최대 조향 lead command" 6.0 0.0 42.0
-
-prompt_bool CURVE_STEERING_MULTIPLIER_ENABLED \
-  "곡선에서 큰 조향 명령 배수 적용" false
-if [[ "$CURVE_STEERING_MULTIPLIER_ENABLED" == "true" ]]; then
-  prompt_float CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND \
-    "배수를 시작할 절대 조향 명령" 20.0 0.0 42.0
-  prompt_float CURVE_STEERING_MULTIPLIER \
-    "곡선 조향 배수" 1.5 0.0 3.0
-else
-  CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND="${CURVE_STEERING_MULTIPLIER_ACTIVATION_COMMAND:-20.0}"
-  CURVE_STEERING_MULTIPLIER="${CURVE_STEERING_MULTIPLIER:-1.5}"
-fi
 
 LEFT_OFFSET_CM="${LEFT_OFFSET_CM/,/.}"
 if [[ ! "$LEFT_OFFSET_CM" =~ ^[0-9]+([.][0-9]+)?$ ]] || \

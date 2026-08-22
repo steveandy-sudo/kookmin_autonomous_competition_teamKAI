@@ -34,7 +34,7 @@ def obstacle(left=1.2, right=0.5, distance=1.0, lateral=0.0):
     )
 
 
-def test_shortcut_suppression_releases_after_two_post_handoff_left_frames():
+def test_shortcut_suppression_requires_explicit_s_curve_release():
     suppression = ShortcutAvoidanceSuppression(
         ShortcutAvoidanceSuppressionConfig(
             release_left_angle_command=-8.0,
@@ -53,8 +53,11 @@ def test_shortcut_suppression_releases_after_two_post_handoff_left_frames():
     assert not suppression.observe_rule_angle(-7.9)
     assert suppression.left_frames == 0
     assert not suppression.observe_rule_angle(-12.0)
-    assert suppression.observe_rule_angle(-10.0)
+    assert not suppression.observe_rule_angle(-10.0)
+    assert suppression.active
+    assert suppression.release()
     assert not suppression.active
+    assert not suppression.release()
 
 
 def test_shortcut_suppression_can_be_disabled():
@@ -67,13 +70,17 @@ def test_shortcut_suppression_can_be_disabled():
     assert not suppression.observe_rule_angle(-42.0)
 
 
-def test_shortcut_suppresses_only_green_car():
+def test_shortcut_suppresses_every_vehicle_class():
     assert shortcut_suppresses_vehicle_class(
         "green_car",
         suppression_active=True,
     )
-    assert not shortcut_suppresses_vehicle_class(
+    assert shortcut_suppresses_vehicle_class(
         "red_car",
+        suppression_active=True,
+    )
+    assert shortcut_suppresses_vehicle_class(
+        "obstacle_vehicle",
         suppression_active=True,
     )
     assert not shortcut_suppresses_vehicle_class(
@@ -129,6 +136,63 @@ def test_selected_vehicle_class_speed_persists_during_avoidance():
     assert state.mode == YoloLidarAvoidanceMode.AVOID_LEFT
     assert state.target_class_name == "green_car"
     assert state.speed_limit_command == 15.0
+
+
+def test_red_car_yolo_expires_sooner_without_changing_green_car_timeout():
+    config = YoloLidarAvoidanceConfig(
+        yolo_timeout_sec=1.0,
+        red_car_yolo_timeout_sec=0.3,
+        yolo_required_frames=1,
+        immediate_on_yolo=True,
+        preferred_side_required_frames=1,
+        minimum_avoid_sec=0.0,
+        clear_hold_sec=0.0,
+        return_hold_sec=10.0,
+    )
+
+    red = YoloLidarAvoidanceController(config)
+    red.observe_yolo(
+        now_sec=0.0,
+        detected=True,
+        confidence=0.9,
+        lidar_distance_m=float("inf"),
+        preferred_mode=YoloLidarAvoidanceMode.AVOID_LEFT,
+        target_class_name="red_car",
+    )
+    assert red.step(
+        now_sec=0.30,
+        dt_sec=0.1,
+        obstacle=None,
+        cone_active=False,
+    ).mode == YoloLidarAvoidanceMode.AVOID_LEFT
+    red.step(
+        now_sec=0.31,
+        dt_sec=0.01,
+        obstacle=None,
+        cone_active=False,
+    )
+    assert red.step(
+        now_sec=0.32,
+        dt_sec=0.01,
+        obstacle=None,
+        cone_active=False,
+    ).mode == YoloLidarAvoidanceMode.RETURN_CENTER
+
+    green = YoloLidarAvoidanceController(config)
+    green.observe_yolo(
+        now_sec=0.0,
+        detected=True,
+        confidence=0.9,
+        lidar_distance_m=float("inf"),
+        preferred_mode=YoloLidarAvoidanceMode.AVOID_LEFT,
+        target_class_name="green_car",
+    )
+    assert green.step(
+        now_sec=0.32,
+        dt_sec=0.1,
+        obstacle=None,
+        cone_active=False,
+    ).mode == YoloLidarAvoidanceMode.AVOID_LEFT
 
 
 def test_cone_is_only_an_avoidance_candidate_in_temporary_test_mode():

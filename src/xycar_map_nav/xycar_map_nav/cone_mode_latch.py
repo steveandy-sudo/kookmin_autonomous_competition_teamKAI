@@ -13,12 +13,18 @@ class ConeModeEvent(str, Enum):
     FINISHED = "FINISHED"
 
 
+class ConeReentryEvent(str, Enum):
+    NONE = "NONE"
+    STARTED = "STARTED"
+    S_CURVE_REACHED = "S_CURVE_REACHED"
+
+
 @dataclass(frozen=True)
 class ConeModeConfig:
     entry_confidence: float = 0.35
     entry_frames: int = 3
     exit_frames: int = 1
-    exit_absence_sec: float = 0.0
+    exit_absence_sec: float = 1.0
     # Forward x distance to the nearest camera-confirmed cone cluster.
     entry_distance_m: float = 0.95
 
@@ -95,3 +101,78 @@ class ConeModeLatch:
         self.exit_streak = 0
         self.absence_started_sec = None
         return ConeModeEvent.FINISHED
+
+
+@dataclass(frozen=True)
+class ConeReentrySuppressionConfig:
+    enabled: bool = True
+    straight_max_abs_angle_command: float = 5.0
+    straight_confirmation_frames: int = 3
+    s_curve_left_angle_command: float = -8.0
+    s_curve_confirmation_frames: int = 3
+
+
+class ConeReentrySuppression:
+    """Block a second cone mission until normal RULE reaches the S curve."""
+
+    def __init__(self, config: ConeReentrySuppressionConfig) -> None:
+        self.config = config
+        self.reset()
+
+    def reset(self) -> None:
+        self.active = False
+        self.straight_ready = False
+        self.straight_frames = 0
+        self.curve_frames = 0
+
+    def start(self) -> ConeReentryEvent:
+        self.reset()
+        if not self.config.enabled:
+            return ConeReentryEvent.NONE
+        self.active = True
+        return ConeReentryEvent.STARTED
+
+    def update(
+        self,
+        *,
+        rule_controls_vehicle: bool,
+        rule_command_fresh: bool,
+        rule_angle_command: float,
+    ) -> ConeReentryEvent:
+        if not self.active:
+            return ConeReentryEvent.NONE
+        if not rule_controls_vehicle or not rule_command_fresh:
+            self.curve_frames = 0
+            return ConeReentryEvent.NONE
+
+        angle = float(rule_angle_command)
+        if not math.isfinite(angle):
+            self.curve_frames = 0
+            return ConeReentryEvent.NONE
+
+        if not self.straight_ready:
+            straight = abs(angle) <= max(
+                0.0,
+                float(self.config.straight_max_abs_angle_command),
+            )
+            self.straight_frames = self.straight_frames + 1 if straight else 0
+            if self.straight_frames >= max(
+                1,
+                int(self.config.straight_confirmation_frames),
+            ):
+                self.straight_ready = True
+            return ConeReentryEvent.NONE
+
+        left_threshold = min(
+            0.0,
+            float(self.config.s_curve_left_angle_command),
+        )
+        self.curve_frames = self.curve_frames + 1 if angle <= left_threshold else 0
+        if self.curve_frames < max(
+            1,
+            int(self.config.s_curve_confirmation_frames),
+        ):
+            return ConeReentryEvent.NONE
+
+        self.reset()
+        return ConeReentryEvent.S_CURVE_REACHED

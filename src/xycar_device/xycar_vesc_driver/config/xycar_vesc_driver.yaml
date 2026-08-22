@@ -48,7 +48,7 @@ xycar_vesc_driver:
     # Keep a moderate launch-current ramp. Command 0 -> 10 takes about 2.0 s;
     # the previous conservative 0.3 m/s^2 setting took about 2.7 s.
     acceleration_slew_enabled: true
-    acceleration_limit_mps2: 0.4
+    acceleration_limit_mps2: 0.6
     deceleration_limit_mps2: 1.5
 
     # Match the Xytron old VESC Tool guide: linearly reduce propulsion from

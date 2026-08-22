@@ -14,7 +14,7 @@ def _cone_node_for_speed_profile(context, *, my_rule_share, perception_share):
     profile = LaunchConfiguration("cone_speed_profile").perform(context).strip().lower()
     # Adaptive cone-speed execution is intentionally disabled.  The validated
     # fixed profile keeps every normal-path speed input at 10 while preserving
-    # the final-left path-loss recovery speed of 4.
+    # the final-left path-loss recovery speed of 8.
     if profile != "fixed":
         raise RuntimeError(
             "adaptive cone speed is disabled; cone_speed_profile must be 'fixed', "
@@ -211,7 +211,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "cone_final_left_recovery_speed",
-                default_value="4.0",
+                default_value="8.0",
                 description=(
                     "Reduced motor command used only when the final-left "
                     "path is temporarily lost or rejected."
