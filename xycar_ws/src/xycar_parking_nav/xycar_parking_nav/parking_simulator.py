@@ -116,7 +116,8 @@ class ParkingSimulator(Node):
         self.create_timer(1.0 / self.motion_rate, self._on_motion_timer)
         self.create_timer(1.0 / self.scan_rate, self._on_scan_timer)
         self.get_logger().info(
-            "parking simulation ready: map=%s beams=%d" % (map_path, self.beam_count)
+            "주차 시뮬레이터가 준비되었습니다: 지도=%s, LiDAR 광선=%d개"
+            % (map_path, self.beam_count)
         )
 
     def _declare_parameters(self) -> None:

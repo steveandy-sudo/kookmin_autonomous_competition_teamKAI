@@ -29,6 +29,9 @@ LiDAR를 이용하는 `map_server + AMCL` localization 구조입니다. 전역/�
 - 곡선 주행 중 차량 전체 polygon의 예상 정지 궤적과 LiDAR 점을 독립적으로
   충돌 검사합니다.
 - 전진/후진이 바뀔 때 0.4초 정지하고 조향을 미리 정렬합니다.
+- 실차가 명령 4 미만에서 움직이지 않는 특성을 반영해 저속은 `4/0` 펄스로
+  출력합니다. 0.05초 이상의 구동 펄스와 정지 구간의 비율로 Nav2 요청 평균속도를
+  맞추며, 센서·권한·충돌 조건이 깨지면 펄스를 즉시 중단합니다.
 - 실측 조향 lookup의 약한 쪽을 기준으로 최소 회전반경을 0.67 m로 제한합니다.
 - Ackermann 차량이 수행할 수 없는 rotate-in-place 명령은 거부합니다.
 - Nav2 복구 Behavior Tree에서도 spin 동작을 제거했습니다.
@@ -129,7 +132,7 @@ map <- slam_odom <- base_footprint <- laser_frame TF
 ```
 
 정상이면 `========== 모든 주차 센서·TF 정상 ==========`과 미션 시작 명령을
-출력합니다. 20초 안에 준비되지 않으면 `[FAIL]` 항목별 원인과 조치 방법을
+출력합니다. 20초 안에 준비되지 않으면 `[실패]` 항목별 원인과 조치 방법을
 출력하며, 이때는 미션을 시작하지 않습니다. 점검 시간은
 `preflight_timeout_sec:=30.0`처럼 바꿀 수 있고, 외부 점검기를 사용하는 경우에만
 `enable_preflight:=false`로 끌 수 있습니다.
@@ -191,5 +194,10 @@ ros2 launch xycar_parking_nav parking_navigation.launch.py \
 - `config/cmd_vel_adapter.yaml`: 실측 조향/속도 map과 LiDAR 독립 안전영역
 - `config/vesc_imu_odom.yaml`: 타코미터 거리 및 IMU gyro yaw 보정
 - `behavior_trees/ackermann_navigate_to_pose.xml`: spin 없는 재계획/복구
+
+실차 주차 launch에서는 최종 모터 명령이 `-4`, `0`, `+4`로 정확히 전달되도록
+VESC 드라이버의 추가 acceleration slew를 끕니다. 가감속과 저속 평균속도는
+주차 어댑터의 4/0 펄스가 담당하며, 일반 주행용 VESC 설정 파일 자체는 변경하지
+않습니다.
 
 설계 근거와 실차 튜닝 항목은 `docs/DESIGN_KO.md`에 정리되어 있습니다.

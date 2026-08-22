@@ -194,8 +194,8 @@ class VescImuOdomNode(Node):
         )
         self.create_service(Empty, "~/reset", self._on_reset)
         self.get_logger().info(
-            "measured odometry ready: VESC travel + "
-            f"IMU {self.imu_yaw_source} yaw -> "
+            "실측 오도메트리가 준비되었습니다: VESC 이동거리 + "
+            f"IMU {self.imu_yaw_source} 방향각 -> "
             f"{self.get_parameter('odom_topic').value}"
         )
 
@@ -291,7 +291,7 @@ class VescImuOdomNode(Node):
             return
         if abs(yaw_delta) > self.max_imu_yaw_step:
             self.get_logger().warning(
-                "rejected discontinuous IMU yaw sample"
+                "갑자기 크게 변한 IMU 방향각 데이터를 거부했습니다"
             )
             return
 
@@ -331,7 +331,7 @@ class VescImuOdomNode(Node):
         yaw_delta = yaw_rate * dt_sec
         if abs(yaw_delta) > self.max_imu_yaw_step:
             self.get_logger().warning(
-                "rejected discontinuous IMU gyro yaw sample"
+                "갑자기 크게 변한 IMU 자이로 방향각 데이터를 거부했습니다"
             )
             return
 
@@ -385,8 +385,8 @@ class VescImuOdomNode(Node):
             or stamp_sec - self.last_gyro_bias_log_sec >= 10.0
         ):
             self.get_logger().info(
-                "stationary gyro bias adapted to "
-                f"{self.gyro_bias:.6f} rad/s"
+                "정지 상태 자이로 편향을 "
+                f"{self.gyro_bias:.6f} rad/s로 보정했습니다"
             )
             self.last_gyro_bias_log_sec = stamp_sec
 
@@ -430,7 +430,7 @@ class VescImuOdomNode(Node):
             self.last_speed_mps = speed_mps
             if not self.warned_no_imu:
                 self.get_logger().warning(
-                    "waiting for the first valid IMU heading sample"
+                    "유효한 첫 IMU 방향각 데이터를 기다리는 중입니다"
                 )
                 self.warned_no_imu = True
             if self.require_initial_imu:
@@ -445,7 +445,7 @@ class VescImuOdomNode(Node):
         soft_stale = imu_age > self.imu_timeout
         if soft_stale and not self.warned_stale_imu:
             self.get_logger().warning(
-                f"IMU heading is stale by {imu_age:.3f}s"
+                f"IMU 방향각 데이터가 {imu_age:.3f}초 동안 갱신되지 않았습니다"
             )
             self.warned_stale_imu = True
 
@@ -468,7 +468,7 @@ class VescImuOdomNode(Node):
                 self.warned_tachometer_jump = False
             elif not self.warned_tachometer_jump:
                 self.get_logger().warning(
-                    "rejected VESC tachometer jump; using speed fallback"
+                    "갑자기 변한 VESC 타코미터 값을 거부하고 속도 적분값을 사용합니다"
                 )
                 self.warned_tachometer_jump = True
                 if not self.fallback_to_speed:
@@ -551,7 +551,7 @@ class VescImuOdomNode(Node):
         self.yaw_rate = 0.0
         self.gyro_stationary_since_sec = None
         self.last_gyro_bias_log_sec = None
-        self.get_logger().info("VESC+IMU odometry reset")
+        self.get_logger().info("VESC+IMU 오도메트리를 초기화했습니다")
         return response
 
 

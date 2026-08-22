@@ -56,7 +56,7 @@ class SlamScanFilterNode(Node):
         self.accepted = 0
         self.last_report_sec = time.monotonic()
         self.get_logger().info(
-            "SLAM scan filter ready: %.2f <= range <= %.2f m"
+            "주차용 LiDAR 필터가 준비되었습니다: 사용 거리 %.2f~%.2f m"
             % (self.minimum_range, self.maximum_range)
         )
 
@@ -85,7 +85,7 @@ class SlamScanFilterNode(Node):
         if now - self.last_report_sec >= 5.0:
             ratio = self.accepted / max(1, self.received)
             self.get_logger().info(
-                "filtered scan acceptance: %.1f%%" % (ratio * 100.0)
+                "주차용 LiDAR 유효 데이터 비율: %.1f%%" % (ratio * 100.0)
             )
             self.received = 0
             self.accepted = 0

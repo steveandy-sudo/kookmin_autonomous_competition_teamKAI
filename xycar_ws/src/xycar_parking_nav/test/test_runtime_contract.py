@@ -48,10 +48,14 @@ def test_mission_manager_runtime_limits_are_in_a_ros_parameter_file():
     manager = _yaml("config/mission_manager.yaml")["parking_mission_manager"][
         "ros__parameters"
     ]
+    goal_checker = _yaml("config/nav2_parking.yaml")["controller_server"][
+        "ros__parameters"
+    ]["parking_goal_checker"]
 
     assert manager["required_stable_samples"] >= 5
     assert manager["maximum_pose_age_sec"] <= 1.0
     assert manager["localization_loss_cancel_sec"] <= 1.0
+    assert goal_checker["xy_goal_tolerance"] <= manager["goal_position_tolerance_m"]
 
 
 def test_costmaps_and_stop_shield_use_same_physical_body():
@@ -112,8 +116,10 @@ def test_stop_shield_projects_beyond_nav2_braking_distance():
     adapter = _yaml("config/cmd_vel_adapter.yaml")["parking_cmd_vel_adapter"][
         "ros__parameters"
     ]
-    controller = nav2["controller_server"]["ros__parameters"]["FollowPath"]
-    speed = max(abs(controller["vx_min"]), controller["vx_max"])
+    speed = max(
+        adapter["maximum_forward_command"],
+        adapter["maximum_reverse_command"],
+    ) * adapter["speed_gain_mps_per_command"]
     physical_stop = (
         speed * adapter["reaction_time_sec"]
         + speed * speed / (2.0 * adapter["braking_deceleration_mps2"])
@@ -121,6 +127,36 @@ def test_stop_shield_projects_beyond_nav2_braking_distance():
 
     assert adapter["minimum_projection_m"] >= physical_stop
     assert math.isfinite(physical_stop)
+
+
+def test_real_vehicle_minimum_command_uses_four_zero_pulses():
+    adapter = _yaml("config/cmd_vel_adapter.yaml")["parking_cmd_vel_adapter"][
+        "ros__parameters"
+    ]
+    controller = _yaml("config/nav2_parking.yaml")["controller_server"][
+        "ros__parameters"
+    ]["FollowPath"]
+    launch_source = (PACKAGE / "launch/parking_real.launch.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert adapter["minimum_moving_command"] == 4.0
+    assert adapter["maximum_forward_command"] >= 4.0
+    assert adapter["maximum_reverse_command"] >= 4.0
+    assert adapter["minimum_command_pulse_enabled"] is True
+    assert adapter["pulse_minimum_on_sec"] >= adapter["timer_period_sec"]
+    assert 0.0 < adapter["maximum_pulse_duty_cycle"] <= 0.5
+    minimum_physical_speed = (
+        adapter["minimum_moving_command"]
+        * adapter["speed_gain_mps_per_command"]
+    )
+    assert max(abs(controller["vx_min"]), controller["vx_max"]) <= (
+        adapter["maximum_pulse_duty_cycle"] * minimum_physical_speed
+    )
+    assert adapter["reaction_time_sec"] + 1.0e-9 >= (
+        2.0 * adapter["timer_period_sec"]
+    )
+    assert '"acceleration_slew_enabled": False' in launch_source
 
 
 def test_behavior_tree_has_no_non_ackermann_recovery():
@@ -192,6 +228,15 @@ def test_real_launch_runs_terminal_sensor_preflight_by_default():
     assert 'executable="parking_preflight"' in source
     assert '"drive_enabled": ParameterValue(' in source
     assert "parking_preflight = xycar_parking_nav.parking_preflight:main" in setup_source
+
+
+def test_parking_preflight_status_labels_are_korean():
+    source = (PACKAGE / "xycar_parking_nav/parking_preflight.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert all(label in source for label in ("[정상]", "[대기]", "[실패]", "[준비완료]"))
+    assert not any(label in source for label in ("[OK]", "[WAIT]", "[FAIL]", "[READY]"))
 
 
 def test_rviz_has_no_visual_slam_or_legacy_path_topics():

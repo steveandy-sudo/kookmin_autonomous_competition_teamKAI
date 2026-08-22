@@ -17,12 +17,31 @@ from std_msgs.msg import Bool, Float32MultiArray, String
 from .command_core import (
     DirectionChangeGuard,
     Footprint,
+    MinimumCommandPulseController,
     MotorCalibration,
     scan_points_in_base,
     slew,
     swept_footprint_collision,
     twist_to_motor_command,
 )
+
+
+GATE_REASON_KO = {
+    "ok": "정상(주행 허용)",
+    "not_authorized": "미션 주행 권한이 아직 없음",
+    "no_cmd_vel": "Nav2 주행 명령(/cmd_vel)이 아직 없음",
+    "stale_cmd_vel": "Nav2 주행 명령(/cmd_vel)이 끊김",
+    "no_scan": "주차용 LiDAR 데이터가 아직 없음",
+    "stale_scan": "주차용 LiDAR 데이터가 끊김",
+    "insufficient_scan": "유효한 LiDAR 점 개수가 부족함",
+    "non_finite_twist": "유효하지 않은 주행 명령을 받음",
+    "stopped": "정지 명령",
+    "rotate_in_place_rejected": "차량이 수행할 수 없는 제자리 회전 명령을 거부함",
+    "lidar_swept_collision": "예상 주행 궤적에서 장애물을 감지함",
+    "direction_change_dwell": "전진·후진 전환 전 안전 정지 중",
+    "steering_settle": "목표 조향각 정렬 중",
+    "shutdown": "노드 종료로 정지",
+}
 
 
 class CmdVelAdapter(Node):
@@ -52,6 +71,14 @@ class CmdVelAdapter(Node):
         self.steering_settle_tolerance = float(
             self.get_parameter("steering_settle_tolerance_command").value
         )
+        self.pulse_enabled = bool(
+            self.get_parameter("minimum_command_pulse_enabled").value
+        )
+        self.maximum_pulse_duty_cycle = float(
+            self.get_parameter("maximum_pulse_duty_cycle").value
+        )
+        if not 0.0 < self.maximum_pulse_duty_cycle <= 1.0:
+            raise ValueError("maximum pulse duty cycle must be in (0, 1]")
 
         self.calibration = MotorCalibration(
             speed_gain_mps_per_command=float(
@@ -108,6 +135,10 @@ class CmdVelAdapter(Node):
         self.direction_guard = DirectionChangeGuard(
             float(self.get_parameter("direction_change_dwell_sec").value)
         )
+        self.pulse_controller = MinimumCommandPulseController(
+            self.calibration.minimum_moving_command,
+            float(self.get_parameter("pulse_minimum_on_sec").value),
+        )
         self.latest_twist: Twist | None = None
         self.latest_twist_time: float | None = None
         self.latest_scan_points: list[tuple[float, float]] = []
@@ -115,6 +146,8 @@ class CmdVelAdapter(Node):
         self.authorized = False
         self.applied_steering = 0.0
         self.applied_speed = 0.0
+        self.requested_average_speed = 0.0
+        self.pulse_output_active = False
         self.last_timer_time = time.monotonic()
         self.last_reason = "startup"
 
@@ -139,8 +172,16 @@ class CmdVelAdapter(Node):
         )
         self.create_timer(self.timer_period, self._on_timer)
         self.get_logger().info(
-            "parking command adapter ready: live=%s input=%s motor=%s"
-            % (self.drive_enabled, self.input_topic, self.motor_topic)
+            "주차 모터 명령기가 준비되었습니다: 실차출력=%s, 입력=%s, 모터=%s, "
+            "최소명령=%.1f, 4/0펄스=%s, 최대듀티=%.0f%%"
+            % (
+                "켜짐" if self.drive_enabled else "꺼짐",
+                self.input_topic,
+                self.motor_topic,
+                self.calibration.minimum_moving_command,
+                "사용" if self.pulse_enabled else "미사용",
+                100.0 * self.maximum_pulse_duty_cycle,
+            )
         )
 
     def _declare_parameters(self) -> None:
@@ -157,9 +198,12 @@ class CmdVelAdapter(Node):
         self.declare_parameter("maximum_speed_command_rate", 12.0)
         self.declare_parameter("steering_settle_tolerance_command", 3.0)
         self.declare_parameter("direction_change_dwell_sec", 0.40)
+        self.declare_parameter("minimum_command_pulse_enabled", True)
+        self.declare_parameter("pulse_minimum_on_sec", 0.05)
+        self.declare_parameter("maximum_pulse_duty_cycle", 0.50)
 
         self.declare_parameter("speed_gain_mps_per_command", 0.080612)
-        self.declare_parameter("minimum_moving_command", 3.0)
+        self.declare_parameter("minimum_moving_command", 4.0)
         self.declare_parameter("maximum_forward_command", 4.0)
         self.declare_parameter("maximum_reverse_command", 4.0)
         self.declare_parameter(
@@ -176,7 +220,7 @@ class CmdVelAdapter(Node):
         self.declare_parameter("footprint_maximum_x", 0.11)
         self.declare_parameter("footprint_half_width", 0.18)
         self.declare_parameter("collision_margin_m", 0.045)
-        self.declare_parameter("reaction_time_sec", 0.30)
+        self.declare_parameter("reaction_time_sec", 0.10)
         self.declare_parameter("braking_deceleration_mps2", 0.80)
         self.declare_parameter("minimum_projection_m", 0.14)
         self.declare_parameter("maximum_projection_m", 0.80)
@@ -197,6 +241,7 @@ class CmdVelAdapter(Node):
         self.authorized = bool(message.data)
         if not self.authorized:
             self.direction_guard.reset()
+            self.pulse_controller.reset()
 
     def _on_scan(self, message: LaserScan) -> None:
         points = scan_points_in_base(
@@ -222,8 +267,11 @@ class CmdVelAdapter(Node):
         self.latest_scan_time = self._now_sec()
 
     def _stop(self, reason: str) -> None:
+        self.pulse_controller.reset()
         self.applied_steering = 0.0
         self.applied_speed = 0.0
+        self.requested_average_speed = 0.0
+        self.pulse_output_active = False
         self._publish(0.0, 0.0, 0.0, reason, live=self.drive_enabled)
 
     def _publish(
@@ -247,15 +295,19 @@ class CmdVelAdapter(Node):
                     float(curvature),
                     1.0 if self.authorized else 0.0,
                     float(len(self.latest_scan_points)),
+                    float(self.requested_average_speed),
+                    1.0 if self.pulse_output_active else 0.0,
                 ]
             )
         )
         if reason != self.last_reason:
             self.status_publisher.publish(String(data=reason))
             if reason == "ok":
-                self.get_logger().info("motor gate: ok")
+                self.get_logger().info("모터 안전조건: 정상, 주행 출력을 허용합니다")
             else:
-                self.get_logger().warning("motor gate: %s" % reason)
+                self.get_logger().warning(
+                    "모터 안전조건: %s" % GATE_REASON_KO.get(reason, reason)
+                )
             self.last_reason = reason
 
     def _on_timer(self) -> None:
@@ -294,7 +346,12 @@ class CmdVelAdapter(Node):
 
         collision = swept_footprint_collision(
             self.latest_scan_points,
-            speed_mps=float(self.latest_twist.linear.x),
+            # Pulse ON 구간의 실제 최저 구동속도를 기준으로 정지거리를
+            # 계산한다. Nav2 평균속도를 쓰면 4 명령의 순간속도를 과소평가한다.
+            speed_mps=(
+                desired.speed_command
+                * self.calibration.speed_gain_mps_per_command
+            ),
             curvature=desired.curvature,
             footprint=self.footprint,
             margin_m=self.collision_margin,
@@ -305,6 +362,7 @@ class CmdVelAdapter(Node):
             sample_step_m=self.projection_step,
         )
         if collision.collision:
+            self.pulse_controller.reset()
             # Stay stopped but allow the servo to follow a newly safe steering
             # request. Centering it here creates repeatable stop/retry drift.
             self.applied_steering = slew(
@@ -314,6 +372,8 @@ class CmdVelAdapter(Node):
                 dt_sec,
             )
             self.applied_speed = 0.0
+            self.requested_average_speed = 0.0
+            self.pulse_output_active = False
             self._publish(
                 self.applied_steering,
                 0.0,
@@ -323,11 +383,26 @@ class CmdVelAdapter(Node):
             )
             return
 
+        direction_guard_input = (
+            desired.requested_speed_command
+            if self.pulse_enabled
+            else desired.speed_command
+        )
+        if self.pulse_enabled:
+            maximum_average_command = (
+                self.calibration.minimum_moving_command
+                * self.maximum_pulse_duty_cycle
+            )
+            direction_guard_input = math.copysign(
+                min(abs(direction_guard_input), maximum_average_command),
+                direction_guard_input,
+            )
         guarded_speed, guard_reason = self.direction_guard.filter(
-            desired.speed_command,
+            direction_guard_input,
             now_sec,
         )
         if guard_reason == "direction_change_dwell":
+            self.pulse_controller.reset()
             # Pre-position steering while the car is physically stopped.
             self.applied_steering = slew(
                 self.applied_steering,
@@ -336,6 +411,8 @@ class CmdVelAdapter(Node):
                 dt_sec,
             )
             self.applied_speed = 0.0
+            self.requested_average_speed = 0.0
+            self.pulse_output_active = False
             self._publish(
                 self.applied_steering,
                 0.0,
@@ -355,11 +432,14 @@ class CmdVelAdapter(Node):
             abs(desired.steering_command - next_steering)
             > self.steering_settle_tolerance
         ):
+            self.pulse_controller.reset()
             # MPPI assumes its requested Ackermann curvature is available now.
             # Stop traction until the measured-rate servo is close enough so
             # a tight arc is not geometrically shortened or extended.
             self.applied_steering = next_steering
             self.applied_speed = 0.0
+            self.requested_average_speed = 0.0
+            self.pulse_output_active = False
             self._publish(
                 self.applied_steering,
                 0.0,
@@ -369,12 +449,21 @@ class CmdVelAdapter(Node):
             )
             return
         self.applied_steering = next_steering
-        self.applied_speed = slew(
-            self.applied_speed,
-            guarded_speed,
-            self.maximum_speed_rate,
-            dt_sec,
-        )
+        self.requested_average_speed = guarded_speed
+        if self.pulse_enabled:
+            self.applied_speed, pulse_state = self.pulse_controller.filter(
+                guarded_speed,
+                now_sec,
+            )
+            self.pulse_output_active = pulse_state == "pulse_on"
+        else:
+            self.applied_speed = slew(
+                self.applied_speed,
+                guarded_speed,
+                self.maximum_speed_rate,
+                dt_sec,
+            )
+            self.pulse_output_active = False
         self._publish(
             self.applied_steering,
             self.applied_speed,

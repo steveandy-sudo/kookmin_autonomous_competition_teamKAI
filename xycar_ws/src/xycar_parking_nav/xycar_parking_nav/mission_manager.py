@@ -30,6 +30,60 @@ from .mission_core import (
 )
 
 
+STATE_KO = {
+    "LOCALIZING": "위치추정 안정화 중",
+    "READY": "시작 준비 완료",
+    "RUNNING": "주차 미션 주행 중",
+    "HOLDING": "목표 지점 정지 확인 중",
+    "PAUSED_LOCALIZATION": "위치추정 이상으로 일시정지",
+    "COMPLETED": "주차 미션 완료",
+    "ABORTED": "주차 미션 중단",
+}
+
+REASON_KO = {
+    "": "",
+    "ok": "AMCL 연속 정상 표본 수가 아직 부족함",
+    "no_pose": "AMCL 위치정보가 아직 없음",
+    "bad_covariance": "AMCL 오차정보 형식이 올바르지 않음",
+    "non_finite": "AMCL 위치정보에 유효하지 않은 값이 있음",
+    "bad_stamp": "AMCL 시간정보가 올바르지 않음",
+    "stale_pose": "AMCL 위치정보가 오래되어 갱신 필요",
+    "xy_uncertain": "AMCL 위치 오차가 허용범위보다 큼",
+    "yaw_uncertain": "AMCL 방향 오차가 허용범위보다 큼",
+    "non_monotonic_stamp": "AMCL 시간정보 순서가 뒤바뀜",
+    "position_jump": "AMCL 위치가 갑자기 크게 변함",
+    "yaw_jump": "AMCL 방향이 갑자기 크게 변함",
+    "operator_abort": "운전자 중단 요청",
+    "operator_reset": "운전자 초기화 요청",
+    "waiting_for_nav2_action_server": "Nav2 경로주행 서버 시작 대기 중",
+    "goal_rejected": "Nav2가 목표를 거부함",
+    "no_final_pose": "목표 도착 후 AMCL 위치정보가 없음",
+    "goal_cancelled_for_localization": "위치추정 이상으로 현재 목표 취소",
+    "returned_to_start": "출발지 복귀 완료",
+    "amcl_stable": "AMCL 위치추정이 안정됨",
+    "localization_recovered": "AMCL 위치추정이 다시 정상화됨",
+}
+
+
+def reason_to_korean(reason: str) -> str:
+    if reason in REASON_KO:
+        return REASON_KO[reason]
+    if reason.startswith("sending_"):
+        return f"{reason.removeprefix('sending_')} 목표 전송"
+    if reason.startswith("reached_"):
+        return f"{reason.removeprefix('reached_')} 도착"
+    if reason.startswith("nav2_status_"):
+        return f"Nav2 주행 실패(상태코드 {reason.removeprefix('nav2_status_')})"
+    if reason.startswith("goal_error_xy_"):
+        return "목표 도착 오차가 허용범위를 벗어남"
+    if reason.endswith("_retries_exhausted"):
+        return "단계별 재시도 횟수를 모두 사용하여 미션 중단"
+    if "_retry_" in reason:
+        retry = reason.rsplit("_retry_", 1)[-1]
+        return f"목표 주행 실패로 {retry}번째 재시도 대기"
+    return reason
+
+
 def quaternion_from_yaw(yaw: float) -> tuple[float, float]:
     return math.sin(0.5 * yaw), math.cos(0.5 * yaw)
 
@@ -176,7 +230,7 @@ class ParkingMissionManager(Node):
         self.create_timer(0.10, self._on_timer)
         self._publish_goal_array()
         self.get_logger().info(
-            "loaded %d-step parking mission from %s (base offset %.3f m)"
+            "%d단계 주차 미션을 불러왔습니다: 설정=%s, 차량 기준점 보정=%.3f m"
             % (len(self.steps), mission_path, self.base_offset)
         )
 
@@ -224,8 +278,11 @@ class ParkingMissionManager(Node):
         if new_state not in self.STATES:
             raise ValueError("unknown mission state: %s" % new_state)
         if new_state != self.state:
-            detail = ": %s" % reason if reason else ""
-            self.get_logger().info("mission %s -> %s%s" % (self.state, new_state, detail))
+            detail = " | 사유: %s" % reason_to_korean(reason) if reason else ""
+            self.get_logger().info(
+                "미션 상태: %s -> %s%s"
+                % (STATE_KO[self.state], STATE_KO[new_state], detail)
+            )
             self.state = new_state
         self._publish_state(reason)
 
@@ -301,23 +358,26 @@ class ParkingMissionManager(Node):
     def _on_start(self, _request, response):
         if self.state in {"RUNNING", "HOLDING", "PAUSED_LOCALIZATION"}:
             response.success = False
-            response.message = "mission already active"
+            response.message = "주차 미션이 이미 진행 중입니다"
             return response
         if self.state == "COMPLETED":
             response.success = False
-            response.message = "reset the completed mission first"
+            response.message = "완료된 미션을 먼저 초기화하세요"
             return response
         if self.state == "ABORTED":
             response.success = False
-            response.message = "reset the aborted mission first"
+            response.message = "중단된 미션을 먼저 초기화하세요"
             return response
         self.start_requested = True
         if not self.localization_ready:
             response.success = False
-            response.message = "start queued; waiting for stable AMCL localization"
+            response.message = (
+                "시작 요청을 저장했습니다. AMCL 위치추정이 안정되면 자동으로 시작합니다. "
+                "현재 부족 항목: %s" % reason_to_korean(self.localization_reason)
+            )
             return response
         response.success = True
-        response.message = "parking mission start accepted"
+        response.message = "주차 미션 시작 요청을 승인했습니다"
         return response
 
     def _on_abort(self, _request, response):
@@ -325,7 +385,7 @@ class ParkingMissionManager(Node):
         self._cancel_active_goal(localization_pause=False)
         self._set_state("ABORTED", "operator_abort")
         response.success = True
-        response.message = "mission aborted; motor authorization removed"
+        response.message = "주차 미션을 중단했고 모터 주행 권한을 해제했습니다"
         return response
 
     def _on_reset(self, _request, response):
@@ -343,7 +403,7 @@ class ParkingMissionManager(Node):
         self.localization_ready = False
         self._set_state("LOCALIZING", "operator_reset")
         response.success = True
-        response.message = "mission and initial localization reset"
+        response.message = "주차 미션과 초기 위치추정을 초기화했습니다"
         return response
 
     def _cancel_active_goal(self, *, localization_pause: bool) -> None:

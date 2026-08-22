@@ -54,6 +54,11 @@ class MotorCalibration:
             raise ValueError("minimum moving command must be non-negative")
         if self.maximum_forward_command <= 0.0 or self.maximum_reverse_command <= 0.0:
             raise ValueError("command limits must be positive magnitudes")
+        if self.minimum_moving_command > min(
+            self.maximum_forward_command,
+            self.maximum_reverse_command,
+        ):
+            raise ValueError("minimum moving command must not exceed command limits")
         if len(self.steering_commands) != len(self.steering_curvatures):
             raise ValueError("steering calibration vectors must have equal lengths")
         if len(self.steering_commands) < 2:
@@ -77,6 +82,7 @@ class MotorCommand:
     speed_command: float
     curvature: float
     reason: str = "ok"
+    requested_speed_command: float = 0.0
 
 
 def curvature_to_steering_command(
@@ -120,12 +126,12 @@ def twist_to_motor_command(
 ) -> MotorCommand:
     values = (linear_x_mps, angular_z_rad_s)
     if not all(math.isfinite(float(value)) for value in values):
-        return MotorCommand(0.0, 0.0, 0.0, "non_finite_twist")
+        return MotorCommand(0.0, 0.0, 0.0, "non_finite_twist", 0.0)
     speed = float(linear_x_mps)
     if abs(speed) <= abs(float(stationary_speed_epsilon)):
         # An Ackermann vehicle cannot execute a Nav2 rotate-in-place command.
         reason = "stopped" if abs(angular_z_rad_s) <= 1.0e-6 else "rotate_in_place_rejected"
-        return MotorCommand(0.0, 0.0, 0.0, reason)
+        return MotorCommand(0.0, 0.0, 0.0, reason, 0.0)
 
     requested_curvature = float(angular_z_rad_s) / speed
     steering = curvature_to_steering_command(requested_curvature, calibration)
@@ -137,16 +143,23 @@ def twist_to_motor_command(
         calibration.steering_commands,
         calibration.steering_curvatures,
     )
-    speed_command = speed / calibration.speed_gain_mps_per_command
+    requested_speed_command = speed / calibration.speed_gain_mps_per_command
     limit = (
         calibration.maximum_forward_command
-        if speed_command > 0.0
+        if requested_speed_command > 0.0
         else calibration.maximum_reverse_command
     )
-    speed_command = clamp(speed_command, -limit, limit)
+    requested_speed_command = clamp(requested_speed_command, -limit, limit)
+    speed_command = requested_speed_command
     if 0.0 < abs(speed_command) < calibration.minimum_moving_command:
         speed_command = math.copysign(calibration.minimum_moving_command, speed_command)
-    return MotorCommand(steering, speed_command, curvature, "ok")
+    return MotorCommand(
+        steering,
+        speed_command,
+        curvature,
+        "ok",
+        requested_speed_command,
+    )
 
 
 @dataclass(frozen=True)
@@ -327,3 +340,92 @@ class DirectionChangeGuard:
         self.active_direction = 0
         self.pending_direction = 0
         self.release_time_sec = None
+
+
+class MinimumCommandPulseController:
+    """Realize sub-threshold average commands with minimum-command bursts.
+
+    The controller integrates the difference between the requested average
+    command and the previously applied 4/0 output.  Once the balance becomes
+    positive it emits at least ``minimum_on_sec`` of traction.  This keeps the
+    command above drivetrain stiction while preserving low average speeds.
+    """
+
+    def __init__(
+        self,
+        minimum_moving_command: float,
+        minimum_on_sec: float,
+        *,
+        maximum_dt_sec: float = 0.25,
+    ) -> None:
+        if minimum_moving_command <= 0.0:
+            raise ValueError("minimum moving command must be positive")
+        if minimum_on_sec <= 0.0:
+            raise ValueError("minimum pulse on time must be positive")
+        self.minimum_moving_command = float(minimum_moving_command)
+        self.minimum_on_sec = float(minimum_on_sec)
+        self.maximum_dt_sec = max(0.01, float(maximum_dt_sec))
+        self.last_time_sec: float | None = None
+        self.direction = 0
+        self.balance_command_sec = 0.0
+        self.on_until_sec: float | None = None
+        self.previous_output = 0.0
+
+    def filter(
+        self,
+        requested_speed_command: float,
+        now_sec: float,
+    ) -> tuple[float, str]:
+        requested = float(requested_speed_command)
+        now = float(now_sec)
+        if not math.isfinite(requested) or not math.isfinite(now):
+            self.reset()
+            return 0.0, "invalid_pulse_input"
+
+        direction = 1 if requested > 0.0 else -1 if requested < 0.0 else 0
+        if direction == 0:
+            self.reset()
+            return 0.0, "stopped"
+
+        magnitude = abs(requested)
+        if magnitude >= self.minimum_moving_command:
+            self.last_time_sec = now
+            self.direction = direction
+            self.balance_command_sec = 0.0
+            self.on_until_sec = None
+            self.previous_output = requested
+            return requested, "continuous"
+
+        if self.direction != direction or self.last_time_sec is None:
+            self.last_time_sec = now
+            self.direction = direction
+            self.balance_command_sec = 0.0
+            self.on_until_sec = now + self.minimum_on_sec
+            self.previous_output = direction * self.minimum_moving_command
+            return self.previous_output, "pulse_on"
+
+        dt_sec = max(0.0, min(self.maximum_dt_sec, now - self.last_time_sec))
+        self.last_time_sec = now
+        self.balance_command_sec += (
+            magnitude - abs(self.previous_output)
+        ) * dt_sec
+
+        if self.on_until_sec is not None and now < self.on_until_sec:
+            self.previous_output = direction * self.minimum_moving_command
+            return self.previous_output, "pulse_on"
+
+        if self.balance_command_sec > 0.0:
+            self.on_until_sec = now + self.minimum_on_sec
+            self.previous_output = direction * self.minimum_moving_command
+            return self.previous_output, "pulse_on"
+
+        self.on_until_sec = None
+        self.previous_output = 0.0
+        return 0.0, "pulse_off"
+
+    def reset(self) -> None:
+        self.last_time_sec = None
+        self.direction = 0
+        self.balance_command_sec = 0.0
+        self.on_until_sec = None
+        self.previous_output = 0.0

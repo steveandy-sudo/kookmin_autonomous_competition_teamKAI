@@ -122,7 +122,7 @@ class ParkingPreflight(Node):
         self.timer = self.create_timer(0.25, self._on_timer)
 
         self._line("")
-        self._line("========== 주차 USB 연결 확인 ==========")
+        self._line("========== 1단계: 주차 USB 연결 확인 ==========")
         self._check_device(
             "LiDAR USB",
             str(self.get_parameter("lidar_device").value),
@@ -139,11 +139,11 @@ class ParkingPreflight(Node):
             "VESC USB, 모터 배터리와 udev 별칭 /dev/ttyMOTOR를 확인하세요.",
         )
         self._line("")
-        self._line("========== 주차 센서·위치추정 준비 확인 ==========")
+        self._line("========== 2단계: 주차 센서·위치추정 준비 확인 ==========")
         for probe in self.probes.values():
-            self._line(f"  [WAIT] {probe.label:<16} {probe.topic}")
+            self._line(f"  [대기] {probe.label:<16} {probe.topic}")
         for target, source, label in self.transform_specs:
-            self._line(f"  [WAIT] {label:<16} {target} <- {source}")
+            self._line(f"  [대기] {label:<16} {target} <- {source}")
 
     @staticmethod
     def _line(message: str) -> None:
@@ -152,16 +152,18 @@ class ParkingPreflight(Node):
     def _check_device(self, label: str, path: str, hint: str) -> None:
         ready, detail = inspect_device(path)
         if ready:
-            self._line(f"  [OK]   {label:<16} {detail}")
+            self._line(f"  [정상] {label:<16} {detail}")
             return
         self.device_failures.append((label, detail, hint))
-        self._line(f"  [FAIL] {label:<16} {detail}")
+        self._line(f"  [실패] {label:<16} {detail}")
 
     def _callback_for(self, key: str):
         def callback(_message) -> None:
             probe = self.probes[key]
             if probe.observe(time.monotonic()):
-                self._line(f"  [OK]   {probe.label:<16} {probe.topic} 첫 메시지 수신")
+                self._line(
+                    f"  [수신] {probe.label:<16} {probe.topic} 첫 메시지 확인"
+                )
 
         return callback
 
@@ -177,7 +179,7 @@ class ParkingPreflight(Node):
             if key not in labels or key in self.ready_transforms:
                 continue
             self.ready_transforms.add(key)
-            self._line(f"  [OK]   {labels[key]:<16} {target} <- {source}")
+            self._line(f"  [정상] {labels[key]:<16} {target} <- {source}")
 
     def _all_ready(self) -> bool:
         return (
@@ -196,8 +198,8 @@ class ParkingPreflight(Node):
         if self.device_failures:
             waiting.extend(label for label, _detail, _hint in self.device_failures)
         self._line(
-            f"  [WAIT] {elapsed_sec:.1f}/{self.timeout_sec:.1f}초 "
-            + ", ".join(waiting)
+            f"  [대기] {elapsed_sec:.1f}/{self.timeout_sec:.1f}초 | "
+            "아직 준비되지 않은 항목: " + ", ".join(waiting)
         )
 
     def _finish_success(self) -> None:
@@ -207,13 +209,18 @@ class ParkingPreflight(Node):
             rate = probe.rate_hz
             rate_text = f"약 {rate:.1f} Hz" if rate is not None else "메시지 정상"
             self._line(
-                f"  [OK]   {probe.label:<16} {probe.topic} | {rate_text}"
+                f"  [정상] {probe.label:<16} {probe.topic} | {rate_text}"
             )
         if self.drive_enabled:
             self._line("  [주의] drive_enabled=true: 모터 출력이 활성화된 상태입니다.")
         else:
-            self._line("  [안전] drive_enabled=false: shadow 명령만 출력합니다.")
-        self._line("  [READY] RViz의 LiDAR-지도 정합을 확인한 뒤 미션을 시작하세요.")
+            self._line(
+                "  [안전] drive_enabled=false: 모터에는 보내지 않고 검증용 명령만 출력합니다."
+            )
+        self._line(
+            "  [준비완료] RViz에서 LiDAR와 지도가 겹치는지 확인한 뒤 미션을 시작하세요."
+        )
+        self._line("  [시작명령] 아래 명령을 새 터미널에서 실행하세요.")
         self._line(
             "  ros2 service call /parking_mission_manager/start "
             "std_srvs/srv/Trigger '{}'"
@@ -225,21 +232,22 @@ class ParkingPreflight(Node):
         self._line("")
         self._line("========== 주차 준비 확인 실패 | 차량을 출발시키지 마세요 ==========")
         for label, detail, hint in self.device_failures:
-            self._line(f"  [FAIL] {label}: {detail}")
+            self._line(f"  [실패] {label}: {detail}")
             self._line(f"         조치: {hint}")
         for probe in self.probes.values():
             if probe.ready:
                 continue
             self._line(
-                f"  [FAIL] {probe.label}: {probe.topic} "
+                f"  [실패] {probe.label}: {probe.topic} "
                 f"({probe.count}/{probe.minimum_samples}개 수신)"
             )
             self._line(f"         조치: {probe.hint}")
         for target, source, label in self.transform_specs:
             if (target, source) in self.ready_transforms:
                 continue
-            self._line(f"  [FAIL] {label}: {target} <- {source} 없음")
+            self._line(f"  [실패] {label}: {target} <- {source} 연결 없음")
             self._line("         조치: 연결 센서와 상위 실패 항목부터 해결하세요.")
+        self._line("  [출발금지] 위 실패 항목을 해결한 뒤 통합 명령을 다시 실행하세요.")
         self.finished = True
 
     def _on_timer(self) -> None:
