@@ -114,6 +114,26 @@ ros2 launch xycar_parking_nav parking_real.launch.py \
   autostart_mission:=false
 ```
 
+이 통합 launch는 기본적으로 `parking_preflight`를 함께 실행합니다. 실행 직후
+터미널에서 `/dev/ttyLIDAR`, `/dev/ttyIMU`, `/dev/ttyMOTOR` 장치와 다음 입력을
+자동 확인합니다.
+
+```text
+/scan                    LiDAR 원본
+/imu                     IMU
+/vehicle/vesc_state      VESC 텔레메트리
+/slam/scan_filtered      주차용 LiDAR 필터
+/slam/odom               VESC+IMU 오도메트리
+/amcl_pose               지도 위치추정
+map <- slam_odom <- base_footprint <- laser_frame TF
+```
+
+정상이면 `========== 모든 주차 센서·TF 정상 ==========`과 미션 시작 명령을
+출력합니다. 20초 안에 준비되지 않으면 `[FAIL]` 항목별 원인과 조치 방법을
+출력하며, 이때는 미션을 시작하지 않습니다. 점검 시간은
+`preflight_timeout_sec:=30.0`처럼 바꿀 수 있고, 외부 점검기를 사용하는 경우에만
+`enable_preflight:=false`로 끌 수 있습니다.
+
 다음 항목을 확인합니다.
 
 ```bash

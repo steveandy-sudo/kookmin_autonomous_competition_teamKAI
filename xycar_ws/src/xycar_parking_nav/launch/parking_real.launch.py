@@ -54,6 +54,8 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("start_imu", default_value="true"),
             DeclareLaunchArgument("start_vesc", default_value="true"),
             DeclareLaunchArgument("start_odometry", default_value="true"),
+            DeclareLaunchArgument("enable_preflight", default_value="true"),
+            DeclareLaunchArgument("preflight_timeout_sec", default_value="20.0"),
             DeclareLaunchArgument("enable_rviz", default_value="true"),
             DeclareLaunchArgument("vesc_port", default_value="/dev/ttyMOTOR"),
             DeclareLaunchArgument("laser_x", default_value="0.065"),
@@ -239,6 +241,31 @@ def generate_launch_description() -> LaunchDescription:
                         "use_sim_time": ParameterValue(use_sim_time, value_type=bool),
                     },
                 ],
+            ),
+            Node(
+                package="xycar_parking_nav",
+                executable="parking_preflight",
+                name="parking_preflight",
+                output="screen",
+                emulate_tty=True,
+                parameters=[
+                    {
+                        "timeout_sec": ParameterValue(
+                            LaunchConfiguration("preflight_timeout_sec"),
+                            value_type=float,
+                        ),
+                        "drive_enabled": ParameterValue(
+                            drive_enabled, value_type=bool
+                        ),
+                        "lidar_device": "/dev/ttyLIDAR",
+                        "imu_device": "/dev/ttyIMU",
+                        "vesc_device": LaunchConfiguration("vesc_port"),
+                        "use_sim_time": ParameterValue(
+                            use_sim_time, value_type=bool
+                        ),
+                    }
+                ],
+                condition=IfCondition(LaunchConfiguration("enable_preflight")),
             ),
             Node(
                 package="rviz2",

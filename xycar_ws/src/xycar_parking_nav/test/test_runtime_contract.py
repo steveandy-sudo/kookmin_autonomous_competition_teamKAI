@@ -181,6 +181,19 @@ def test_launches_use_humble_safe_python_boolean_spelling():
         assert '"use_composition": "false"' not in source
 
 
+def test_real_launch_runs_terminal_sensor_preflight_by_default():
+    source = (PACKAGE / "launch/parking_real.launch.py").read_text(
+        encoding="utf-8"
+    )
+    setup_source = (PACKAGE / "setup.py").read_text(encoding="utf-8")
+
+    assert 'DeclareLaunchArgument("enable_preflight", default_value="true")' in source
+    assert 'DeclareLaunchArgument("preflight_timeout_sec", default_value="20.0")' in source
+    assert 'executable="parking_preflight"' in source
+    assert '"drive_enabled": ParameterValue(' in source
+    assert "parking_preflight = xycar_parking_nav.parking_preflight:main" in setup_source
+
+
 def test_rviz_has_no_visual_slam_or_legacy_path_topics():
     source = (PACKAGE / "rviz/parking_nav.rviz").read_text(encoding="utf-8")
     assert "slam_toolbox" not in source.lower()
