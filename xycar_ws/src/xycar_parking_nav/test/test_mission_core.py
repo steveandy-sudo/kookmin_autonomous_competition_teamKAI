@@ -6,6 +6,7 @@ from xycar_parking_nav.mission_core import (
     LocalizationGate,
     LocalizationGateConfig,
     Pose2D,
+    assess_mission_time,
     mission_steps_from_dicts,
     pose_error,
     reference_pose_to_base,
@@ -100,3 +101,38 @@ def test_mission_parser_rejects_duplicate_names():
             ]
         )
 
+
+def test_three_minute_clock_warns_expires_and_freezes_at_finish():
+    normal = assess_mission_time(
+        started_at_sec=100.0,
+        now_sec=249.9,
+        limit_sec=180.0,
+        warning_remaining_sec=30.0,
+    )
+    warning = assess_mission_time(
+        started_at_sec=100.0,
+        now_sec=250.0,
+        limit_sec=180.0,
+        warning_remaining_sec=30.0,
+    )
+    expired = assess_mission_time(
+        started_at_sec=100.0,
+        now_sec=280.0,
+        limit_sec=180.0,
+        warning_remaining_sec=30.0,
+    )
+    frozen = assess_mission_time(
+        started_at_sec=100.0,
+        now_sec=400.0,
+        limit_sec=180.0,
+        warning_remaining_sec=30.0,
+        finished_at_sec=212.9,
+    )
+
+    assert normal.elapsed_sec == pytest.approx(149.9)
+    assert not normal.warning and not normal.expired
+    assert warning.warning and not warning.expired
+    assert expired.expired and expired.remaining_sec == 0.0
+    assert frozen.elapsed_sec == pytest.approx(112.9)
+    assert frozen.remaining_sec == pytest.approx(67.1)
+    assert not frozen.expired

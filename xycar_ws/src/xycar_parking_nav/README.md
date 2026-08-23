@@ -31,6 +31,10 @@ LiDAR를 이용하는 `map_server + AMCL` localization 구조입니다. 전역/�
 - LiDAR에서 새 장애물이 보이면 local/global costmap에 반영하고 0.5초마다 전역
   경로를 다시 계산합니다. 지나갈 공간이 있으면 우회하고, 통로가 완전히 막히면
   정지한 채 재시도한 뒤 안전하게 미션을 중단합니다.
+- 경기 제한시간은 시작 명령부터 출발지 복귀까지 180초입니다. 중간 연결 Pose의
+  정지 확인은 0.15초로 줄였지만 A/B 주차 완료 확인은 각각 3초로 유지합니다.
+  터미널과 `/parking/mission_state`에 경과·남은 시간을 표시하고, 30초 전 경고와
+  180초 초과 시 모터 권한 해제 기능을 제공합니다.
 - 전진/후진이 바뀔 때 0.4초 정지하고 조향을 미리 정렬합니다.
 - 실차가 명령 4 미만에서 움직이지 않는 특성을 반영해 모든 0이 아닌 주행 요청을
   전진 `+4` 또는 후진 `-4`로 계속 출력합니다. 센서·권한·충돌 조건이 깨지거나
@@ -107,8 +111,12 @@ ros2 launch xycar_parking_nav parking_sim.launch.py \
   autostart_mission:=true enable_rviz:=true
 ```
 
-진행 상태는 `/parking/mission_state`, 정확한 모의 궤적은
+진행 상태와 `elapsed`/`remaining` 시간은 `/parking/mission_state`, 정확한 모의 궤적은
 `/parking/sim_ground_truth_path`에서 확인합니다.
+
+2026-08-23 동일 설정으로 전체 미션을 두 번 연속 실행한 결과 각각 105.1초와
+113.6초에 31/31단계를 완료했습니다. 180초 제한 대비 여유는 74.9초와
+66.4초였습니다.
 
 ## 실차 실행 순서
 

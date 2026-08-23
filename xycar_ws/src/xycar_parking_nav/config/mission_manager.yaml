@@ -22,3 +22,7 @@ parking_mission_manager:
     goal_yaw_tolerance_rad: 0.12
     action_server_timeout_sec: 1.0
     retry_delay_sec: 1.0
+    # Competition clock: start command to final Start-zone return.
+    mission_time_limit_sec: 180.0
+    time_warning_remaining_sec: 30.0
+    time_log_period_sec: 10.0

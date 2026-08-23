@@ -58,6 +58,26 @@ def test_mission_manager_runtime_limits_are_in_a_ros_parameter_file():
     assert goal_checker["xy_goal_tolerance"] <= manager["goal_position_tolerance_m"]
 
 
+def test_mission_has_three_minute_budget_with_fast_transitions():
+    manager = _yaml("config/mission_manager.yaml")["parking_mission_manager"][
+        "ros__parameters"
+    ]
+    steps = _yaml("config/parking_mission.yaml")["mission"]["steps"]
+    parking_steps = [step for step in steps if step.get("parking_goal", False)]
+    transit_steps = [
+        step for step in steps
+        if not step.get("parking_goal", False) and step["name"] != "START_RETURN"
+    ]
+
+    assert manager["mission_time_limit_sec"] == 180.0
+    assert 0.0 < manager["time_warning_remaining_sec"] <= 30.0
+    assert manager["time_log_period_sec"] <= 10.0
+    assert len(parking_steps) == 2
+    assert all(step["hold_sec"] >= 3.0 for step in parking_steps)
+    assert all(step["hold_sec"] <= 0.15 for step in transit_steps)
+    assert sum(step["hold_sec"] for step in steps) <= 11.2 + 1.0e-9
+
+
 def test_costmaps_and_stop_shield_use_same_physical_body():
     nav2 = _yaml("config/nav2_parking.yaml")
     adapter = _yaml("config/cmd_vel_adapter.yaml")["parking_cmd_vel_adapter"][
@@ -221,6 +241,9 @@ def test_mission_retains_official_reference_centers():
     assert {"A_REVERSE_ARC_1", "A_REVERSE_ARC_2", "A_REVERSE_ARC_3"} <= set(steps)
     assert {"A_CLEAR_ARC_1", "A_CLEAR_ARC_2"} <= set(steps)
     assert {"B_REVERSE_CUSP", "B_EXIT_FORWARD_CUSP"} <= set(steps)
+    assert steps["B_REVERSE_ARC_2"]["x"] >= 2.15
+    assert steps["B_REVERSE_CUSP"]["x"] >= 2.12
+    assert steps["B_FORWARD_CORRECTION"]["x"] >= 2.17
     assert {"B_REVERSE_ARC_1", "B_REVERSE_ARC_2"} <= set(steps)
     assert "B_FORWARD_CORRECTION" in steps
     assert {"B_EXIT_FORWARD_ARC_1", "B_EXIT_FORWARD_ARC_2"} <= set(steps)

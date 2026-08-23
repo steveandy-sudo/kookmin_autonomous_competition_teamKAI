@@ -24,6 +24,7 @@ from .mission_core import (
     LocalizationGateConfig,
     MissionStep,
     Pose2D,
+    assess_mission_time,
     mission_steps_from_dicts,
     pose_error,
     reference_pose_to_base,
@@ -60,6 +61,7 @@ REASON_KO = {
     "no_final_pose": "목표 도착 후 AMCL 위치정보가 없음",
     "goal_cancelled_for_localization": "위치추정 이상으로 현재 목표 취소",
     "returned_to_start": "출발지 복귀 완료",
+    "mission_time_limit": "경기 제한시간을 초과하여 안전 중단",
     "amcl_stable": "AMCL 위치추정이 안정됨",
     "localization_recovered": "AMCL 위치추정이 다시 정상화됨",
 }
@@ -162,6 +164,21 @@ class ParkingMissionManager(Node):
             self.get_parameter("action_server_timeout_sec").value
         )
         self.retry_delay = float(self.get_parameter("retry_delay_sec").value)
+        self.mission_time_limit = float(
+            self.get_parameter("mission_time_limit_sec").value
+        )
+        self.time_warning_remaining = float(
+            self.get_parameter("time_warning_remaining_sec").value
+        )
+        self.time_log_period = float(
+            self.get_parameter("time_log_period_sec").value
+        )
+        if self.mission_time_limit <= 0.0:
+            raise ValueError("mission time limit must be positive")
+        if not 0.0 <= self.time_warning_remaining < self.mission_time_limit:
+            raise ValueError("time warning must be within the mission time limit")
+        if self.time_log_period <= 0.0:
+            raise ValueError("time log period must be positive")
         self.autostart_mission = bool(
             self.get_parameter("autostart_mission").value
         )
@@ -175,6 +192,10 @@ class ParkingMissionManager(Node):
         self.localization_lost_since: float | None = None
         self.hold_until: float | None = None
         self.retry_at: float | None = None
+        self.mission_started_at: float | None = None
+        self.mission_finished_at: float | None = None
+        self.next_time_log_at: float | None = None
+        self.time_warning_emitted = False
         self.start_requested = self.autostart_mission
         self.goal_handle = None
         self.goal_active = False
@@ -257,6 +278,9 @@ class ParkingMissionManager(Node):
         self.declare_parameter("goal_yaw_tolerance_rad", 0.10)
         self.declare_parameter("action_server_timeout_sec", 1.0)
         self.declare_parameter("retry_delay_sec", 1.0)
+        self.declare_parameter("mission_time_limit_sec", 180.0)
+        self.declare_parameter("time_warning_remaining_sec", 30.0)
+        self.declare_parameter("time_log_period_sec", 10.0)
 
     @staticmethod
     def _load_mission(path: str) -> tuple[str, float, Pose2D, list[MissionStep]]:
@@ -286,12 +310,35 @@ class ParkingMissionManager(Node):
             self.state = new_state
         self._publish_state(reason)
 
+    def _mission_timing(self, now_sec: float | None = None):
+        return assess_mission_time(
+            started_at_sec=self.mission_started_at,
+            now_sec=self._now_sec() if now_sec is None else float(now_sec),
+            limit_sec=self.mission_time_limit,
+            warning_remaining_sec=self.time_warning_remaining,
+            finished_at_sec=self.mission_finished_at,
+        )
+
+    def _start_mission_clock(self, now_sec: float) -> None:
+        if self.mission_started_at is not None:
+            return
+        self.mission_started_at = now_sec
+        self.mission_finished_at = None
+        self.next_time_log_at = now_sec + self.time_log_period
+        self.time_warning_emitted = False
+        self.get_logger().info(
+            "경기 시간 측정을 시작합니다: 제한 %.0f초(3분), %.0f초 전 경고"
+            % (self.mission_time_limit, self.time_warning_remaining)
+        )
+
     def _publish_state(self, reason: str = "") -> None:
         step = self.steps[self.current_index].name if self.current_index < len(self.steps) else "done"
+        timing = self._mission_timing()
         self.state_publisher.publish(
             String(
                 data=(
-                    "state=%s step=%s index=%d/%d retry=%d localization=%s%s"
+                    "state=%s step=%s index=%d/%d retry=%d localization=%s "
+                    "elapsed=%.1f remaining=%.1f limit=%.1f%s"
                     % (
                         self.state,
                         step,
@@ -299,6 +346,9 @@ class ParkingMissionManager(Node):
                         len(self.steps),
                         self.current_retry,
                         self.localization_reason,
+                        timing.elapsed_sec,
+                        timing.remaining_sec,
+                        self.mission_time_limit,
                         " reason=" + reason if reason else "",
                     )
                 )
@@ -383,6 +433,8 @@ class ParkingMissionManager(Node):
     def _on_abort(self, _request, response):
         self.start_requested = False
         self._cancel_active_goal(localization_pause=False)
+        if self.mission_started_at is not None:
+            self.mission_finished_at = self._now_sec()
         self._set_state("ABORTED", "operator_abort")
         response.success = True
         response.message = "주차 미션을 중단했고 모터 주행 권한을 해제했습니다"
@@ -394,6 +446,10 @@ class ParkingMissionManager(Node):
         self.current_retry = 0
         self.hold_until = None
         self.retry_at = None
+        self.mission_started_at = None
+        self.mission_finished_at = None
+        self.next_time_log_at = None
+        self.time_warning_emitted = False
         self.start_requested = False
         self.initial_pose_remaining = int(
             self.get_parameter("initial_pose_publish_count").value
@@ -512,6 +568,8 @@ class ParkingMissionManager(Node):
             self._set_state("RUNNING", "%s_retry_%d" % (reason, self.current_retry))
             return
         self.start_requested = False
+        if self.mission_started_at is not None:
+            self.mission_finished_at = self._now_sec()
         self._set_state("ABORTED", "%s_retries_exhausted" % reason)
 
     def _advance_after_hold(self) -> None:
@@ -519,7 +577,17 @@ class ParkingMissionManager(Node):
         self.current_index += 1
         if self.current_index >= len(self.steps):
             self.start_requested = False
+            self.mission_finished_at = self._now_sec()
             self._set_state("COMPLETED", "returned_to_start")
+            timing = self._mission_timing()
+            self.get_logger().info(
+                "3분 제한 내 주차 미션 완주: %.1f/%.1f초, 남은 시간 %.1f초"
+                % (
+                    timing.elapsed_sec,
+                    self.mission_time_limit,
+                    timing.remaining_sec,
+                )
+            )
             return
         self._send_current_goal()
 
@@ -555,7 +623,49 @@ class ParkingMissionManager(Node):
             self._set_state("RUNNING", "localization_recovered")
 
         if self.start_requested and self.state == "READY":
+            self._start_mission_clock(now_sec)
             self._send_current_goal()
+
+        active_states = {"RUNNING", "HOLDING", "PAUSED_LOCALIZATION"}
+        if self.mission_started_at is not None and self.state in active_states:
+            timing = self._mission_timing(now_sec)
+            if timing.expired:
+                self.start_requested = False
+                self._cancel_active_goal(localization_pause=False)
+                self.mission_finished_at = now_sec
+                self._set_state("ABORTED", "mission_time_limit")
+                self.get_logger().error(
+                    "경기 제한시간 초과: %.1f/%.1f초, 모터 권한을 해제했습니다"
+                    % (timing.elapsed_sec, self.mission_time_limit)
+                )
+            else:
+                if (
+                    not self.time_warning_emitted
+                    and timing.warning
+                ):
+                    self.time_warning_emitted = True
+                    self.get_logger().warning(
+                        "경기 종료까지 %.1f초 남았습니다: 현재 %d/%d단계"
+                        % (
+                            timing.remaining_sec,
+                            self.current_index,
+                            len(self.steps),
+                        )
+                    )
+                if (
+                    self.next_time_log_at is not None
+                    and now_sec >= self.next_time_log_at
+                ):
+                    self.get_logger().info(
+                        "경기 진행시간 %.1f초, 남은 시간 %.1f초, 진행 %d/%d단계"
+                        % (
+                            timing.elapsed_sec,
+                            timing.remaining_sec,
+                            self.current_index,
+                            len(self.steps),
+                        )
+                    )
+                    self.next_time_log_at = now_sec + self.time_log_period
         if (
             self.state == "RUNNING"
             and not self.goal_active

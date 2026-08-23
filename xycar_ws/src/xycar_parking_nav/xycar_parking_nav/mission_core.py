@@ -39,6 +39,51 @@ class MissionStep:
             raise ValueError("maximum_retries must be non-negative")
 
 
+@dataclass(frozen=True)
+class MissionTimeAssessment:
+    elapsed_sec: float
+    remaining_sec: float
+    expired: bool
+    warning: bool
+
+
+def assess_mission_time(
+    *,
+    started_at_sec: float | None,
+    now_sec: float,
+    limit_sec: float,
+    warning_remaining_sec: float,
+    finished_at_sec: float | None = None,
+) -> MissionTimeAssessment:
+    """Assess the competition clock, including pauses and a frozen finish time."""
+
+    values = (now_sec, limit_sec, warning_remaining_sec)
+    if not all(math.isfinite(float(value)) for value in values):
+        raise ValueError("mission timing values must be finite")
+    if limit_sec <= 0.0:
+        raise ValueError("mission time limit must be positive")
+    if not 0.0 <= warning_remaining_sec < limit_sec:
+        raise ValueError("mission warning must be within the time limit")
+    if started_at_sec is None:
+        return MissionTimeAssessment(0.0, float(limit_sec), False, False)
+    if not math.isfinite(float(started_at_sec)):
+        raise ValueError("mission start time must be finite")
+
+    effective_now = float(now_sec)
+    if finished_at_sec is not None:
+        if not math.isfinite(float(finished_at_sec)):
+            raise ValueError("mission finish time must be finite")
+        effective_now = min(effective_now, float(finished_at_sec))
+    elapsed = max(0.0, effective_now - float(started_at_sec))
+    remaining = max(0.0, float(limit_sec) - elapsed)
+    return MissionTimeAssessment(
+        elapsed_sec=elapsed,
+        remaining_sec=remaining,
+        expired=elapsed >= float(limit_sec),
+        warning=remaining <= float(warning_remaining_sec),
+    )
+
+
 def reference_pose_to_base(pose: Pose2D, base_from_reference_x_m: float) -> Pose2D:
     """Move a geometric-center target to the calibrated base-frame origin.
 
@@ -202,4 +247,3 @@ def mission_steps_from_dicts(items: Iterable[dict]) -> list[MissionStep]:
     if len(names) != len(set(names)):
         raise ValueError("mission step names must be unique")
     return steps
-
