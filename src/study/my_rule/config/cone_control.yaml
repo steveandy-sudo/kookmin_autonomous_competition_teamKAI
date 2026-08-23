@@ -39,9 +39,28 @@
     # so a 3 Hz camera inference cannot erase a 2-D LiDAR steering path.
     lidar_geometry_planning_enabled: true
     lidar_geometry_path_band_margin_m: 0.16
-    # After control-path hold expires, retain only a short-lived geometry
-    # reference so LiDAR can reacquire while a YOLO frame is late.
-    lidar_geometry_reference_timeout_sec: 0.60
+    # Geometry is retained only inside the same bounded odom-tracker horizon.
+    lidar_geometry_reference_timeout_sec: 0.35
+    # Persist confirmed cones in odom and project them into the current LiDAR
+    # frame. Raw LiDAR may refresh a known landmark but cannot create one while
+    # semantic association is enabled.
+    ego_cone_tracking_enabled: true
+    odom_topic: /odom
+    ego_pose_timeout_sec: 0.12
+    ego_cone_track_ttl_sec: 0.30
+    ego_cone_lidar_association_distance_m: 0.22
+    ego_cone_semantic_association_distance_m: 0.25
+    ego_cone_lidar_smoothing_alpha: 0.30
+    ego_cone_semantic_smoothing_alpha: 0.40
+    ego_cone_merge_distance_m: 0.08
+    ego_cone_min_forward_m: -0.20
+    ego_cone_max_abs_lateral_m: 1.40
+    ego_cone_max_pose_jump_m: 0.30
+    ego_cone_max_pose_jump_yaw_deg: 45.0
+    # If a cone is absent from both camera and LiDAR, prediction lasts at most
+    # 0.30 s and runs at recovery speed. It never falls back to lane/Xbin.
+    ego_cone_predicted_speed: 4.0
+    ego_cone_predicted_confidence_cap: 0.55
     max_range_m: 2.2
     min_range_m: 0.18
     scan_angle_offset_deg: 0.0
@@ -192,11 +211,9 @@
     sharp_curve_preview_enabled: true
     sharp_curve_heading_threshold_deg: 22.0
     sharp_curve_steering_gain: 1.18
-    # 단독 라바콘 코스의 검증된 순서: 좌 -> 우 -> 큰 좌. 7/21 현장 bag은
-    # 마지막 좌조향 중앙값 -10.7~-13.3도, peak -16.2~-17.1도였고 8/20의
-    # 성공 fixed-8 주행은 -21.9도까지 사용했다. raw turn-back을 pending으로
-    # 먼저 잡고, sparse/held/반대 경로에서는 이 범위 안에서만 좌조향한다.
-    cone_turn_sequence_guard_enabled: true
+    # Keep phase recognition for diagnostics only. Steering follows the tracked
+    # cone corridor, independent of a fixed left-right-left course sequence.
+    cone_turn_sequence_guard_enabled: false
     cone_first_left_enter_steer_deg: 5.0
     cone_right_enter_steer_deg: 8.0
     # 성공 주행은 우회전을 약 1.6초 유지했지만 실패 주행은 약 0.5초 만에

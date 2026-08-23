@@ -207,7 +207,7 @@ def test_integrated_cone_precompute_uses_weak_detection_without_weakening_entry(
     assert '"cone_yolo_min_confidence": ParameterValue(' in launch_source
 
 
-def test_integrated_cone_exit_matches_remote_jsb_hold_policy() -> None:
+def test_integrated_cone_exit_rejects_stale_cached_commands() -> None:
     launch_source = LAUNCH_FILE.read_text(encoding="utf-8")
     config_source = HYBRID_CONFIG.read_text(encoding="utf-8")
     selector_source = SELECTOR_DRIVER.read_text(encoding="utf-8")
@@ -222,10 +222,15 @@ def test_integrated_cone_exit_matches_remote_jsb_hold_policy() -> None:
     assert '"cone_sensor_presence_timeout_sec", default_value="0.25"' in launch_source
     assert "cone_exit_absence_sec: 0.25" in config_source
     assert "cone_sensor_presence_timeout_sec: 0.25" in config_source
-    assert "output.state == HybridState.RUNNING and scan_fresh" in cone_branch
+    assert "and cone_command_fresh" in cone_branch
     assert "last_valid_cone_command" in cone_branch
-    assert "command_timestamp_is_fresh" not in cone_branch
-    assert 'reason="cone LiDAR scan stale"' in cone_branch
+    assert "command_timestamp_is_fresh" in cone_branch
+    assert 'reason="cone LiDAR command invalid or stale"' in cone_branch
+    assert "self.last_valid_cone_command = (0.0, 0.0)" in selector_source
+    assert (
+        'self.last_valid_cone_command_time = float("-inf")'
+        in selector_source
+    )
 
 
 def test_integrated_run_accelerates_only_rule_to_cone_steering_handoff() -> None:

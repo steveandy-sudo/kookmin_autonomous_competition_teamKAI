@@ -2486,6 +2486,12 @@ class SequentialHybridDriver(Node):
         ):
             self.last_valid_cone_command = (angle, speed)
             self.last_valid_cone_command_time = now
+        else:
+            # An explicit invalid/stop command is authoritative. Retaining the
+            # previous turn here would extend a 0.30 s ego prediction forever
+            # as long as LiDAR scans continue to arrive.
+            self.last_valid_cone_command = (0.0, 0.0)
+            self.last_valid_cone_command_time = float("-inf")
         event = self.cone_bypass.observe_command(
             confidence=confidence,
             speed_command=speed,
@@ -3155,7 +3161,18 @@ class SequentialHybridDriver(Node):
             # While the camera gate is starting, retain the existing RULE
             # output instead of inserting a motor stop.
         elif self.cone_bypass.active:
-            if output.state == HybridState.RUNNING and scan_fresh:
+            cone_command_fresh = command_timestamp_is_fresh(
+                now_sec=now,
+                command_time_sec=self.last_valid_cone_command_time,
+                timeout_sec=float(
+                    self.get_parameter("cone_command_timeout_sec").value
+                ),
+            )
+            if (
+                output.state == HybridState.RUNNING
+                and scan_fresh
+                and cone_command_fresh
+            ):
                 output = replace(
                     output,
                     state=HybridState.RUNNING,
@@ -3171,7 +3188,7 @@ class SequentialHybridDriver(Node):
                     state=HybridState.SENSOR_STOP,
                     angle_command=0.0,
                     speed_command=0.0,
-                    reason="cone LiDAR scan stale",
+                    reason="cone LiDAR command invalid or stale",
                 )
         elif (
             self.avoidance_state.controls_vehicle
