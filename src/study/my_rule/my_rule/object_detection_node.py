@@ -96,7 +96,7 @@ class ObjectDetectionNode(Node):
             "startup_green_min_pixels": 20,
             "startup_green_min_pixel_ratio": 0.015,
             "startup_green_required_frames": 2,
-            "traffic_signal_cv_enabled": True,
+            "traffic_signal_cv_enabled": False,
             "traffic_signal_cv_hsv_lower": [35, 60, 100],
             "traffic_signal_cv_hsv_upper": [100, 255, 255],
             "traffic_signal_cv_split_ratio": 0.50,
@@ -585,7 +585,14 @@ class ObjectDetectionNode(Node):
                     2,
                     cv2.LINE_AA,
                 )
-                if record.class_name in {"green_4", "left_4"}:
+                if (
+                    bool(
+                        self.get_parameter(
+                            "traffic_signal_cv_enabled"
+                        ).value
+                    )
+                    and record.class_name in {"green_4", "left_4"}
+                ):
                     split_x = record.xmin + int(
                         round(
                             record.width

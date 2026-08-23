@@ -60,6 +60,10 @@ canonical_stanley_pursuit_driver:
     target_left_offset_m: 0.0
     straight_target_right_offset_m: 0.05
 
+    # Return to the measured yellow-center path before releasing avoidance.
+    avoidance_return_state_timeout_sec: 0.30
+    return_center_straight_pure_pursuit_weight: 0.45
+
     # Safe first real-car defaults. The launch arguments can raise these only
     # after shadow output and curve completion have been checked.
     cruise_speed_command: 18.0
@@ -70,7 +74,12 @@ canonical_stanley_pursuit_driver:
     curve_speed_exit_threshold_per_m: 0.12
     curve_speed_confirmation_frames: 2
     curve_speed_release_frames: 3
-    degraded_path_minimum_span_m: 0.60
+    # Direct-Xbin paths fluctuate near 0.60 m. Enter and release with separate
+    # limits on new perception frames so the speed mode does not chatter.
+    degraded_path_minimum_span_m: 0.40
+    degraded_path_release_span_m: 0.60
+    degraded_path_confirmation_frames: 2
+    degraded_path_release_frames: 2
     curve_slowdown_angle_command: 18.0
     lane_loss_speed_command: 4.0
     command_rate_hz: 10.0

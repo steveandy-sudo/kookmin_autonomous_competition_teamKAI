@@ -267,6 +267,7 @@ class YoloLidarAvoidanceController:
         dt_sec: float,
         obstacle: LidarPathObstacle | None,
         cone_active: bool,
+        return_center_confirmed: bool = True,
     ) -> YoloLidarAvoidanceState:
         now = float(now_sec)
         dt = clamp(dt_sec, 0.0, 0.25)
@@ -349,6 +350,7 @@ class YoloLidarAvoidanceController:
             self.mode == YoloLidarAvoidanceMode.RETURN_CENTER
             and abs(self.current_offset_m) <= self.config.return_deadband_m
             and now - self.mode_started_sec >= self.config.return_hold_sec
+            and bool(return_center_confirmed)
         ):
             self.reset()
         return self.state()

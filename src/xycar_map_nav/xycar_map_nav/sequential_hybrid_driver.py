@@ -48,11 +48,14 @@ from .shortcut_mode_latch import ShortcutModeConfig
 from .shortcut_mode_latch import ShortcutModeEvent
 from .shortcut_mode_latch import ShortcutModeLatch
 from .s_curve_entry_guard import green_car_avoidance_completed
+from .s_curve_entry_guard import PostRedTurnWindowEvent
+from .s_curve_entry_guard import PostRedTurnWindowState
 from .s_curve_entry_guard import red_car_avoidance_completed
 from .s_curve_entry_guard import SCurveEntryEvent
 from .s_curve_entry_guard import SCurveEntryGuard
 from .s_curve_entry_guard import SCurveEntryGuardConfig
 from .s_curve_entry_guard import SCurveEntryTrigger
+from .s_curve_entry_guard import update_post_red_turn_window
 from .traffic_light_control import SignalObservation
 from .traffic_light_control import TrafficLightAction
 from .traffic_light_control import TrafficLightConfig
@@ -105,6 +108,25 @@ def command_timestamp_is_fresh(
         return False
     age_sec = float(now_sec) - float(command_time_sec)
     return 0.0 <= age_sec <= max(0.0, float(timeout_sec))
+
+
+def update_return_center_confirmation_frames(
+    current_frames: int,
+    *,
+    return_center_active: bool,
+    path_valid: bool,
+    cross_track_error_m: float,
+    maximum_abs_error_m: float,
+) -> int:
+    """Count consecutive valid RULE frames near the physical lane center."""
+    valid = (
+        bool(return_center_active)
+        and bool(path_valid)
+        and math.isfinite(float(cross_track_error_m))
+        and abs(float(cross_track_error_m))
+        <= max(0.0, float(maximum_abs_error_m))
+    )
+    return int(current_frames) + 1 if valid else 0
 
 
 def cone_processing_requested(
@@ -431,6 +453,11 @@ class SequentialHybridDriver(Node):
         self.rule_command = (0.0, 0.0)
         self.rl_command_time = float("-inf")
         self.rule_command_time = float("-inf")
+        self.rule_path_valid = False
+        self.rule_cross_track_error_m = float("inf")
+        self.rule_diagnostics_time = float("-inf")
+        self.return_center_confirmation_frames = 0
+        self.post_red_turn_window = PostRedTurnWindowState()
         self.shortcut_command = (0.0, 0.0, 0.0)
         self.shortcut_command_time = float("-inf")
         self.shortcut_phase_code = 0.0
@@ -808,6 +835,12 @@ class SequentialHybridDriver(Node):
         )
         self.create_subscription(
             Float32MultiArray,
+            str(self.get_parameter("rule_diagnostics_topic").value),
+            self._on_rule_diagnostics,
+            10,
+        )
+        self.create_subscription(
+            Float32MultiArray,
             str(self.get_parameter("cone_command_topic").value),
             self._on_cone_command,
             10,
@@ -904,6 +937,21 @@ class SequentialHybridDriver(Node):
             str(self.get_parameter("avoidance_debug_topic").value),
             10,
         )
+        self.avoidance_return_active_pub = self.create_publisher(
+            Bool,
+            str(self.get_parameter("avoidance_return_active_topic").value),
+            10,
+        )
+        self.post_red_turn_exit_window_pub = self.create_publisher(
+            Bool,
+            str(
+                self.get_parameter(
+                    "post_red_turn_exit_window_topic"
+                ).value
+            ),
+            10,
+        )
+        self.post_red_turn_exit_window_pub.publish(Bool(data=False))
         self.avoidance_path_request_pub = self.create_publisher(
             Float32MultiArray,
             str(self.get_parameter("avoidance_path_request_topic").value),
@@ -952,6 +1000,9 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("control_rate_hz", 20.0)
         self.declare_parameter("rl_command_topic", "/rl/policy_motor_shadow")
         self.declare_parameter("rule_command_topic", "/hybrid/rule_candidate")
+        self.declare_parameter(
+            "rule_diagnostics_topic", "/rule_drive/diagnostics"
+        )
         self.declare_parameter("cone_command_topic", "/my_rule/cone_cmd")
         self.declare_parameter(
             "shortcut_command_topic", "/hybrid/shortcut_candidate"
@@ -992,7 +1043,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("cone_exit_confidence", 0.20)
         self.declare_parameter("cone_entry_frames", 3)
         self.declare_parameter("cone_exit_frames", 1)
-        self.declare_parameter("cone_exit_absence_sec", 1.0)
+        self.declare_parameter("cone_exit_absence_sec", 0.25)
         self.declare_parameter(
             "cone_reentry_suppression_until_s_curve", True
         )
@@ -1053,7 +1104,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("cone_entry_distance_m", 0.95)
         self.declare_parameter("cone_cluster_timeout_sec", 0.50)
         self.declare_parameter("cone_command_timeout_sec", 0.35)
-        self.declare_parameter("cone_sensor_presence_timeout_sec", 0.5)
+        self.declare_parameter("cone_sensor_presence_timeout_sec", 0.25)
         self.declare_parameter("cone_cluster_topic", "/my_rule/cone_clusters")
         self.declare_parameter(
             "cone_processing_enabled_topic",
@@ -1068,7 +1119,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("shortcut_yolo_required_frames", 2)
         self.declare_parameter("shortcut_yolo_absence_frames", 1)
         self.declare_parameter("shortcut_entry_speed_command", 9.0)
-        self.declare_parameter("shortcut_left_lane_offset_m", 0.10)
+        self.declare_parameter("shortcut_left_lane_offset_m", 0.05)
         self.declare_parameter("shortcut_wait_for_entry_ready", True)
         self.declare_parameter(
             "shortcut_entry_ready_topic", "/shortcut/entry/ready"
@@ -1176,11 +1227,27 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("vehicle_clear_hold_sec", 0.50)
         self.declare_parameter("vehicle_return_hold_sec", 0.30)
         self.declare_parameter("vehicle_return_deadband_m", 0.02)
+        self.declare_parameter("vehicle_return_cross_track_error_m", 0.08)
+        self.declare_parameter("vehicle_return_required_frames", 3)
+        self.declare_parameter(
+            "vehicle_return_diagnostics_timeout_sec", 0.30
+        )
         self.declare_parameter(
             "avoidance_offset_topic", "/hybrid/avoidance_lateral_offset"
         )
         self.declare_parameter(
             "avoidance_debug_topic", "/hybrid/avoidance_debug"
+        )
+        self.declare_parameter(
+            "avoidance_return_active_topic",
+            "/hybrid/avoidance_return_active",
+        )
+        self.declare_parameter(
+            "post_red_turn_exit_window_topic",
+            "/hybrid/post_red_turn_exit_window",
+        )
+        self.declare_parameter(
+            "post_red_turn_exit_window_maximum_sec", 6.0
         )
         self.declare_parameter(
             "avoidance_path_request_topic",
@@ -1239,6 +1306,48 @@ class SequentialHybridDriver(Node):
             return
         self.rule_command = (float(message.data[0]), float(message.data[1]))
         self.rule_command_time = time.monotonic()
+
+    def _on_rule_diagnostics(self, message: Float32MultiArray) -> None:
+        if len(message.data) <= 12:
+            return
+        self.rule_path_valid = float(message.data[1]) > 0.5
+        self.rule_cross_track_error_m = float(message.data[12])
+        self.rule_diagnostics_time = time.monotonic()
+        previous_frames = self.return_center_confirmation_frames
+        self.return_center_confirmation_frames = (
+            update_return_center_confirmation_frames(
+                self.return_center_confirmation_frames,
+                return_center_active=(
+                    self.avoidance_state.mode
+                    == YoloLidarAvoidanceMode.RETURN_CENTER
+                ),
+                path_valid=self.rule_path_valid,
+                cross_track_error_m=self.rule_cross_track_error_m,
+                maximum_abs_error_m=float(
+                    self.get_parameter(
+                        "vehicle_return_cross_track_error_m"
+                    ).value
+                ),
+            )
+        )
+        required_frames = max(
+            1,
+            int(
+                self.get_parameter(
+                    "vehicle_return_required_frames"
+                ).value
+            ),
+        )
+        if (
+            previous_frames < required_frames
+            and self.return_center_confirmation_frames >= required_frames
+        ):
+            self.get_logger().info(
+                "[AVOIDANCE RETURN] lane center confirmed: "
+                f"CTE={self.rule_cross_track_error_m:+.3f}m, "
+                f"frames={self.return_center_confirmation_frames}/"
+                f"{required_frames}"
+            )
 
     def _on_vesc_state(self, message: XycarVescState) -> None:
         speed = abs(float(message.speed_mps))
@@ -1304,6 +1413,56 @@ class SequentialHybridDriver(Node):
         event = self.s_curve_entry_guard.reset()
         if event == SCurveEntryEvent.RESET:
             self.get_logger().info(f"[S_ENTRY] RESET reason={reason}")
+
+    def _update_post_red_turn_exit_window(
+        self,
+        *,
+        now: float,
+        red_avoidance_completed_now: bool,
+    ) -> None:
+        target = self._normalize_class_name(
+            self.avoidance_state.target_class_name
+        )
+        red_return_active = bool(
+            self.avoidance_state.mode
+            == YoloLidarAvoidanceMode.RETURN_CENTER
+            and target == "red_car"
+        )
+        green_avoidance_active = bool(
+            self.avoidance_state.controls_vehicle
+            and target == "green_car"
+        )
+        self.post_red_turn_window, event = update_post_red_turn_window(
+            self.post_red_turn_window,
+            now=now,
+            drive_armed=self.drive_armed,
+            red_return_active=red_return_active,
+            red_avoidance_completed=red_avoidance_completed_now,
+            green_avoidance_active=green_avoidance_active,
+            maximum_duration_sec=float(
+                self.get_parameter(
+                    "post_red_turn_exit_window_maximum_sec"
+                ).value
+            ),
+        )
+        self.post_red_turn_exit_window_pub.publish(
+            Bool(data=self.post_red_turn_window.active)
+        )
+        if event == PostRedTurnWindowEvent.STARTED:
+            self.get_logger().warning(
+                f"{ANSI_BLUE}[POST_RED_TURN] WINDOW START; "
+                "watching 90-degree left-turn exit"
+                f"{ANSI_RESET}"
+            )
+        elif event != PostRedTurnWindowEvent.NONE:
+            self.get_logger().info(
+                "[POST_RED_TURN] WINDOW END reason="
+                f"{event.value}"
+            )
+
+    def _reset_post_red_turn_exit_window(self) -> None:
+        self.post_red_turn_window = PostRedTurnWindowState()
+        self.post_red_turn_exit_window_pub.publish(Bool(data=False))
 
     def _apply_s_curve_entry_guard(self, output, *, now: float, dt: float):
         event = self.s_curve_entry_guard.update(
@@ -1397,6 +1556,7 @@ class SequentialHybridDriver(Node):
             # intentionally retained for gate_disarm_cone_hold_sec.
             self._reset_shortcut_state()
             self._reset_s_curve_entry_guard("SPACE disarmed")
+            self._reset_post_red_turn_exit_window()
             self.green_car_retrigger_blocked = False
             self.avoidance_controller.reset()
             self.avoidance_state = self.avoidance_controller.state()
@@ -1528,6 +1688,27 @@ class SequentialHybridDriver(Node):
             self.get_logger().error(reason)
         else:
             self.get_logger().warning(reason)
+
+    def _cancel_shortcut_for_final_straight(self) -> None:
+        reason = (
+            "[TRAFFIC] FINAL=green_4; provisional left/shortcut control "
+            "cancelled, returning to yellow Xbin RULE"
+        )
+        if self.shortcut_latch.active:
+            self._reset_shortcut_state()
+        elif self.shortcut_entry_search_active:
+            self._cancel_shortcut_entry_search(
+                reason,
+                report_as_error=False,
+            )
+        else:
+            self.shortcut_processing_pub.publish(Bool(data=False))
+            self._set_shortcut_left_lane_offset_active(
+                False,
+                reason="final YOLO direction green_4",
+            )
+            self.shortcut_avoidance_suppression.reset()
+        self.get_logger().warning(f"{ANSI_GREEN}{reason}{ANSI_RESET}")
 
     def _handle_shortcut_event(self, event: ShortcutModeEvent) -> None:
         if event == ShortcutModeEvent.STARTED:
@@ -1770,6 +1951,17 @@ class SequentialHybridDriver(Node):
                 self.traffic_light_controller.latest_decision
             )
 
+        if self.traffic_light_decision.direction_finalized:
+            self.get_logger().warning(
+                f"{ANSI_GREEN}[TRAFFIC] FINAL YOLO DIRECTION="
+                f"{self.traffic_light_decision.signal_name or 'none'}; "
+                f"cancel_shortcut="
+                f"{int(self.traffic_light_decision.cancel_shortcut)}"
+                f"{ANSI_RESET}"
+            )
+        if self.traffic_light_decision.cancel_shortcut:
+            self._cancel_shortcut_for_final_straight()
+
         left_seen = traffic_frame.left.qualifies(
             minimum_confidence=float(
                 self.get_parameter("shortcut_yolo_min_confidence").value
@@ -1789,16 +1981,6 @@ class SequentialHybridDriver(Node):
                     f"{ANSI_RESET}"
                 )
                 self.last_left_detect_count = count
-            if (
-                self.traffic_light_controller.left_confirmed
-                and bool(self.get_parameter("shortcut_enabled").value)
-                and self.shortcut_latch.armed
-                and not self.cone_bypass.active
-            ):
-                self._set_shortcut_left_lane_offset_active(
-                    True,
-                    reason="left_4 confirmed",
-                )
             self.last_left_absence_count = 0
         elif self.traffic_light_controller.left_confirmed:
             count = min(
@@ -1813,6 +1995,20 @@ class SequentialHybridDriver(Node):
                     f"{ANSI_RESET}"
                 )
                 self.last_left_absence_count = count
+        if (
+            self.traffic_light_decision.action
+            == TrafficLightAction.LEFT_APPROACH
+            and bool(self.get_parameter("shortcut_enabled").value)
+            and self.shortcut_latch.armed
+            and not self.cone_bypass.active
+        ):
+            self._set_shortcut_left_lane_offset_active(
+                True,
+                reason=(
+                    "provisional traffic direction; latest YOLO="
+                    f"{self.traffic_light_decision.signal_name or 'unknown'}"
+                ),
+            )
         self._handle_traffic_shortcut_request(now)
         cone_confidences = [
             float(item.confidence)
@@ -2423,6 +2619,7 @@ class SequentialHybridDriver(Node):
         self.cone_cluster_time = float("-inf")
         self._reset_cone_approach_brake()
         self._reset_s_curve_entry_guard("integrated reset service")
+        self._reset_post_red_turn_exit_window()
         self.avoidance_controller.reset()
         self.avoidance_state = self.avoidance_controller.state()
         self.avoidance_offset_pub.publish(Float32(data=0.0))
@@ -2668,15 +2865,46 @@ class SequentialHybridDriver(Node):
             self.drive_armed
             and bool(self.get_parameter("vehicle_avoidance_enabled").value)
         ):
+            return_diagnostics_fresh = command_timestamp_is_fresh(
+                now_sec=now,
+                command_time_sec=self.rule_diagnostics_time,
+                timeout_sec=float(
+                    self.get_parameter(
+                        "vehicle_return_diagnostics_timeout_sec"
+                    ).value
+                ),
+            )
+            return_center_confirmed = (
+                return_diagnostics_fresh
+                and self.return_center_confirmation_frames
+                >= max(
+                    1,
+                    int(
+                        self.get_parameter(
+                            "vehicle_return_required_frames"
+                        ).value
+                    ),
+                )
+            )
             self.avoidance_state = self.avoidance_controller.step(
                 now_sec=now,
                 dt_sec=dt,
                 obstacle=self.latest_vehicle_lidar_obstacle,
                 cone_active=self.cone_bypass.active,
+                return_center_confirmed=return_center_confirmed,
             )
         else:
             self.avoidance_controller.reset()
             self.avoidance_state = self.avoidance_controller.state()
+        if self.avoidance_state.mode != YoloLidarAvoidanceMode.RETURN_CENTER:
+            self.return_center_confirmation_frames = 0
+        return_center_active = (
+            self.avoidance_state.mode
+            == YoloLidarAvoidanceMode.RETURN_CENTER
+        )
+        self.avoidance_return_active_pub.publish(
+            Bool(data=return_center_active)
+        )
         avoidance_exit_trigger = SCurveEntryTrigger.NONE
         if green_car_avoidance_completed(
             previous_controls_vehicle=(
@@ -2716,6 +2944,12 @@ class SequentialHybridDriver(Node):
             and self.s_curve_entry_guard.state().active
         ):
             self._reset_s_curve_entry_guard("new vehicle avoidance started")
+        self._update_post_red_turn_exit_window(
+            now=now,
+            red_avoidance_completed_now=(
+                avoidance_exit_trigger == SCurveEntryTrigger.RED_CAR_EXIT
+            ),
+        )
         # Camera/yellow-side avoidance must move the rule target even when a
         # strict LiDAR obstacle cluster is unavailable. The controller ramps
         # this offset, so the path moves without a one-frame steering jump.
@@ -2776,6 +3010,9 @@ class SequentialHybridDriver(Node):
                     preferred_side_code,
                     0.0,
                     self.avoidance_side_basis_code,
+                    float(self.rule_cross_track_error_m),
+                    float(self.return_center_confirmation_frames),
+                    1.0 if return_center_active else 0.0,
                 ]
             )
         )
@@ -3262,6 +3499,7 @@ class SequentialHybridDriver(Node):
                 1.0 if s_entry_state.straight_ready else 0.0,
                 float(s_entry_state.curve_frames),
                 1.0 if s_entry_state.overdue else 0.0,
+                1.0 if self.post_red_turn_window.active else 0.0,
             ]
         )
         self.diagnostics_pub.publish(diagnostics)
@@ -3271,12 +3509,14 @@ class SequentialHybridDriver(Node):
     def stop(self) -> None:
         self.control_timer.cancel()
         self.s_curve_entry_guard.reset()
+        self._reset_post_red_turn_exit_window()
         self.green_car_retrigger_blocked = False
         self.cone_reentry_suppression.reset()
         self.shortcut_entry_search_active = False
         self.shortcut_entry_search_started_time = float("-inf")
         self.shortcut_entry_ready = False
         self.avoidance_offset_pub.publish(Float32(data=0.0))
+        self.avoidance_return_active_pub.publish(Bool(data=False))
         self._publish_avoidance_path_request(
             now=time.monotonic(),
             scan_fresh=False,

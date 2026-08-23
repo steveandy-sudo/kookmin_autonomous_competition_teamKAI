@@ -16,7 +16,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
-from std_msgs.msg import Float32, Float32MultiArray
+from std_msgs.msg import Bool, Float32, Float32MultiArray
 from visualization_msgs.msg import Marker, MarkerArray
 
 from xycar_rule_drive.lane_rule_driver import (
@@ -25,6 +25,9 @@ from xycar_rule_drive.lane_rule_driver import (
     inverse_lookup_table,
     make_point,
 )
+from xycar_rule_drive.post_red_turn_exit import PostRedTurnExitBypass
+from xycar_rule_drive.post_red_turn_exit import PostRedTurnExitConfig
+from xycar_rule_drive.post_red_turn_exit import PostRedTurnExitEvent
 from xycar_rule_drive.sitl_bypass_path import SitlBypassConfig
 from xycar_rule_drive.sitl_bypass_path import SitlBypassPathPlanner
 
@@ -54,6 +57,32 @@ class SteeringSmoothingProfile:
     curve_fraction: float
     rate_limit_cmd_per_sec: float
     current_weight: float
+
+
+def return_center_straight_pursuit_weight(
+    base_weight: float,
+    *,
+    return_center_active: bool,
+    return_weight: float,
+) -> float:
+    """Increase position recovery authority only during lane-center return."""
+    selected = return_weight if bool(return_center_active) else base_weight
+    return clamp(float(selected), 0.0, 1.0)
+
+
+def avoidance_return_state_is_active(
+    active: bool,
+    *,
+    last_update_time: float,
+    now: float,
+    timeout_sec: float,
+) -> bool:
+    """Accept the return-center state only while its publisher is fresh."""
+    return bool(
+        active
+        and float(now) - float(last_update_time)
+        <= max(0.0, float(timeout_sec))
+    )
 
 
 def command_during_lane_loss(
@@ -1067,6 +1096,44 @@ def update_curve_speed_latch(
     )
 
 
+def update_degraded_path_latch(
+    active: bool,
+    short_path_frames: int,
+    recovered_path_frames: int,
+    *,
+    path_valid: bool,
+    path_span_m: float,
+    enter_span_m: float,
+    release_span_m: float,
+    confirmation_frames: int,
+    release_frames: int,
+) -> tuple[bool, int, int]:
+    """Debounce path-length degradation using only new perception frames."""
+    if not bool(path_valid) or not math.isfinite(float(path_span_m)):
+        return True, 0, 0
+
+    enter_span = max(0.0, float(enter_span_m))
+    release_span = max(enter_span, float(release_span_m))
+    if bool(active):
+        recovered = (
+            int(recovered_path_frames) + 1
+            if float(path_span_m) >= release_span
+            else 0
+        )
+        if recovered >= max(1, int(release_frames)):
+            return False, 0, recovered
+        return True, 0, recovered
+
+    short = (
+        int(short_path_frames) + 1
+        if float(path_span_m) < enter_span
+        else 0
+    )
+    if short >= max(1, int(confirmation_frames)):
+        return True, short, 0
+    return False, short, 0
+
+
 def curvature_speed_limit(
     *,
     straight_speed_command: float,
@@ -1459,6 +1526,38 @@ class CanonicalStanleyPursuitDriver(Node):
             "/rule_drive/external_lateral_offset",
         )
         self.declare_parameter("external_lateral_offset_timeout_sec", 0.40)
+        self.declare_parameter(
+            "avoidance_return_active_topic",
+            "/hybrid/avoidance_return_active",
+        )
+        self.declare_parameter("avoidance_return_state_timeout_sec", 0.30)
+        self.declare_parameter(
+            "return_center_straight_pure_pursuit_weight", 0.45
+        )
+        self.declare_parameter(
+            "post_red_turn_exit_window_topic",
+            "/hybrid/post_red_turn_exit_window",
+        )
+        self.declare_parameter("post_red_turn_exit_window_timeout_sec", 0.30)
+        self.declare_parameter("post_red_turn_exit_bypass_enabled", True)
+        self.declare_parameter("post_red_turn_exit_left_command", -20.0)
+        self.declare_parameter("post_red_turn_exit_left_frames", 2)
+        self.declare_parameter("post_red_turn_exit_raw_min_command", -4.0)
+        self.declare_parameter(
+            "post_red_turn_exit_max_abs_curvature_per_m", 0.20
+        )
+        self.declare_parameter("post_red_turn_exit_minimum_path_points", 10)
+        self.declare_parameter(
+            "post_red_turn_exit_minimum_path_confidence", 0.12
+        )
+        self.declare_parameter("post_red_turn_exit_confirmation_frames", 2)
+        self.declare_parameter("post_red_turn_exit_bypass_sec", 0.50)
+        self.declare_parameter(
+            "post_red_turn_exit_straight_max_abs_command", 5.0
+        )
+        self.declare_parameter(
+            "post_red_turn_exit_straight_confirmation_frames", 3
+        )
         self.declare_parameter("sitl_bypass_path_enabled", False)
         self.declare_parameter(
             "sitl_bypass_path_request_topic",
@@ -1507,7 +1606,10 @@ class CanonicalStanleyPursuitDriver(Node):
         self.declare_parameter("curve_speed_exit_threshold_per_m", 0.12)
         self.declare_parameter("curve_speed_confirmation_frames", 2)
         self.declare_parameter("curve_speed_release_frames", 3)
-        self.declare_parameter("degraded_path_minimum_span_m", 0.60)
+        self.declare_parameter("degraded_path_minimum_span_m", 0.40)
+        self.declare_parameter("degraded_path_release_span_m", 0.60)
+        self.declare_parameter("degraded_path_confirmation_frames", 2)
+        self.declare_parameter("degraded_path_release_frames", 2)
         self.declare_parameter("curve_detection_near_x_m", 0.16)
         self.declare_parameter("curve_detection_far_x_m", 0.30)
         self.declare_parameter("curve_detection_segment_count", 1)
@@ -1726,6 +1828,96 @@ class CanonicalStanleyPursuitDriver(Node):
         )
         self.external_lateral_offset_m = 0.0
         self.external_lateral_offset_time = float("-inf")
+        self.avoidance_return_active = False
+        self.avoidance_return_active_time = float("-inf")
+        self.latest_avoidance_return_active = False
+        self.post_red_turn_exit_window_active = False
+        self.post_red_turn_exit_window_time = float("-inf")
+        self.latest_external_path_point_count = 0
+        self.latest_external_path_confidence = 0.0
+        self.post_red_turn_last_path_update_time: float | None = None
+        self.post_red_turn_exit_bypass = PostRedTurnExitBypass(
+            PostRedTurnExitConfig(
+                enabled=bool(
+                    self.get_parameter(
+                        "post_red_turn_exit_bypass_enabled"
+                    ).value
+                ),
+                left_entry_command=float(
+                    self.get_parameter(
+                        "post_red_turn_exit_left_command"
+                    ).value
+                ),
+                left_entry_frames=int(
+                    self.get_parameter(
+                        "post_red_turn_exit_left_frames"
+                    ).value
+                ),
+                exit_raw_minimum_command=float(
+                    self.get_parameter(
+                        "post_red_turn_exit_raw_min_command"
+                    ).value
+                ),
+                exit_max_abs_curvature_per_m=float(
+                    self.get_parameter(
+                        "post_red_turn_exit_max_abs_curvature_per_m"
+                    ).value
+                ),
+                minimum_path_points=int(
+                    self.get_parameter(
+                        "post_red_turn_exit_minimum_path_points"
+                    ).value
+                ),
+                minimum_path_confidence=float(
+                    self.get_parameter(
+                        "post_red_turn_exit_minimum_path_confidence"
+                    ).value
+                ),
+                exit_confirmation_frames=int(
+                    self.get_parameter(
+                        "post_red_turn_exit_confirmation_frames"
+                    ).value
+                ),
+                bypass_duration_sec=float(
+                    self.get_parameter(
+                        "post_red_turn_exit_bypass_sec"
+                    ).value
+                ),
+                straight_max_abs_command=float(
+                    self.get_parameter(
+                        "post_red_turn_exit_straight_max_abs_command"
+                    ).value
+                ),
+                straight_confirmation_frames=int(
+                    self.get_parameter(
+                        "post_red_turn_exit_straight_confirmation_frames"
+                    ).value
+                ),
+            )
+        )
+        self.latest_straight_pure_pursuit_weight = float(
+            self.get_parameter("straight_pure_pursuit_weight").value
+        )
+        self.create_subscription(
+            Bool,
+            str(
+                self.get_parameter(
+                    "avoidance_return_active_topic"
+                ).value
+            ),
+            self.on_avoidance_return_active,
+            10,
+        )
+        self.create_subscription(
+            Bool,
+            str(
+                self.get_parameter(
+                    "post_red_turn_exit_window_topic"
+                ).value
+            ),
+            self.on_post_red_turn_exit_window,
+            10,
+        )
         if bool(
             self.get_parameter("external_lateral_offset_enabled").value
         ):
@@ -1835,6 +2027,9 @@ class CanonicalStanleyPursuitDriver(Node):
         self.curve_speed_evidence_frames = 0
         self.curve_speed_miss_frames = 0
         self.latest_degraded_path_speed_active = False
+        self.degraded_path_short_frames = 0
+        self.degraded_path_recovered_frames = 0
+        self.latest_degraded_path_observed_span_m = float("nan")
         self.latest_straight_right_offset_active = False
         self.latest_classified_speed_command = float(
             self.get_parameter("cruise_speed_command").value
@@ -1881,6 +2076,49 @@ class CanonicalStanleyPursuitDriver(Node):
     def on_external_lateral_offset(self, message: Float32) -> None:
         self.external_lateral_offset_m = float(message.data)
         self.external_lateral_offset_time = time.monotonic()
+
+    def on_avoidance_return_active(self, message: Bool) -> None:
+        self.avoidance_return_active = bool(message.data)
+        self.avoidance_return_active_time = time.monotonic()
+
+    def on_post_red_turn_exit_window(self, message: Bool) -> None:
+        self.post_red_turn_exit_window_active = bool(message.data)
+        self.post_red_turn_exit_window_time = time.monotonic()
+
+    def post_red_turn_exit_window_is_active(self, now: float) -> bool:
+        return bool(
+            self.post_red_turn_exit_window_active
+            and float(now) - self.post_red_turn_exit_window_time
+            <= max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "post_red_turn_exit_window_timeout_sec"
+                    ).value
+                ),
+            )
+        )
+
+    def log_post_red_turn_exit_event(
+        self,
+        event: PostRedTurnExitEvent,
+        *,
+        raw_command: float,
+    ) -> None:
+        if event == PostRedTurnExitEvent.NONE:
+            return
+        state = self.post_red_turn_exit_bypass.state()
+        message = (
+            "[POST_RED_TURN] "
+            f"{event.value}; raw={float(raw_command):+.1f}; "
+            f"left={int(state.left_turn_confirmed)}; "
+            f"exit_frames={state.exit_frames}; "
+            f"bypass={int(state.bypass_active)}"
+        )
+        if event == PostRedTurnExitEvent.BYPASS_STARTED:
+            self.get_logger().warning(message)
+        else:
+            self.get_logger().info(message)
 
     def advance_sitl_bypass_memory(self, now: float) -> None:
         previous = self.sitl_bypass_progress_time
@@ -1962,6 +2200,7 @@ class CanonicalStanleyPursuitDriver(Node):
             dtype=np.float64,
         )
         if points.ndim != 2 or points.shape[0] < 3 or points.shape[1] != 2:
+            self.update_external_degraded_path_state(False, float("nan"))
             # Empty direct-BEV frames are common between slower ONNX
             # inferences. Keep the latest valid path until its timeout rather
             # than replacing it immediately with an invalid observation.
@@ -1974,6 +2213,7 @@ class CanonicalStanleyPursuitDriver(Node):
         points = points[np.all(np.isfinite(points), axis=1)]
         points = points[points[:, 0] >= 0.0]
         if points.shape[0] < 3:
+            self.update_external_degraded_path_state(False, float("nan"))
             if self.last_external_path_time is None:
                 self.path_valid = False
                 self.lane_visible = False
@@ -2006,6 +2246,10 @@ class CanonicalStanleyPursuitDriver(Node):
                 self.latest_path,
                 previous_weight,
             )
+        self.update_external_degraded_path_state(
+            True,
+            float(np.ptp(target_path[:, 0])),
+        )
         self.latest_path = target_path
         self.latest_header = message.header
         self.latest_path_info = None
@@ -2014,6 +2258,8 @@ class CanonicalStanleyPursuitDriver(Node):
             if bypass_active
             else "external_bev"
         )
+        self.latest_external_path_point_count = int(points.shape[0])
+        self.latest_external_path_confidence = float(message.confidence)
         self.path_valid = True
         self.lane_visible = True
         self.loss_announced = False
@@ -2022,6 +2268,38 @@ class CanonicalStanleyPursuitDriver(Node):
             message.header,
             target_path,
             self.latest_path_source,
+        )
+
+    def update_external_degraded_path_state(
+        self,
+        path_valid: bool,
+        path_span_m: float,
+    ) -> None:
+        self.latest_degraded_path_observed_span_m = float(path_span_m)
+        (
+            self.latest_degraded_path_speed_active,
+            self.degraded_path_short_frames,
+            self.degraded_path_recovered_frames,
+        ) = update_degraded_path_latch(
+            self.latest_degraded_path_speed_active,
+            self.degraded_path_short_frames,
+            self.degraded_path_recovered_frames,
+            path_valid=path_valid,
+            path_span_m=path_span_m,
+            enter_span_m=float(
+                self.get_parameter("degraded_path_minimum_span_m").value
+            ),
+            release_span_m=float(
+                self.get_parameter("degraded_path_release_span_m").value
+            ),
+            confirmation_frames=int(
+                self.get_parameter(
+                    "degraded_path_confirmation_frames"
+                ).value
+            ),
+            release_frames=int(
+                self.get_parameter("degraded_path_release_frames").value
+            ),
         )
 
     def on_canonical(self, message: Image) -> None:
@@ -2298,8 +2576,12 @@ class CanonicalStanleyPursuitDriver(Node):
         self.latest_path = advance(self.latest_path)
 
     def steering_command_for_path(
-        self, path: np.ndarray
+        self,
+        path: np.ndarray,
+        *,
+        now: float | None = None,
     ) -> tuple[float, SteeringTerms]:
+        now = time.monotonic() if now is None else float(now)
         speed_mps = max(
             0.0,
             self.last_speed_command
@@ -2318,7 +2600,7 @@ class CanonicalStanleyPursuitDriver(Node):
             curve_latched=self.curve_speed_mode_active,
             preview_active=self.curve_latency_preview_active,
             hold_until=self.curve_latency_preview_hold_until,
-            now=time.monotonic(),
+            now=now,
             minimum_hold_sec=float(
                 self.get_parameter(
                     "curve_control_latency_minimum_hold_sec"
@@ -2406,18 +2688,20 @@ class CanonicalStanleyPursuitDriver(Node):
             ),
         )
         path_span_m = float(np.ptp(delayed_path[:, 0]))
-        self.latest_degraded_path_speed_active = (
-            self.latest_path_source == "yellow_memory"
-            or path_span_m
-            < max(
-                0.0,
-                float(
-                    self.get_parameter(
-                        "degraded_path_minimum_span_m"
-                    ).value
-                ),
+        if not self.external_path_enabled:
+            self.latest_degraded_path_observed_span_m = path_span_m
+            self.latest_degraded_path_speed_active = (
+                self.latest_path_source == "yellow_memory"
+                or path_span_m
+                < max(
+                    0.0,
+                    float(
+                        self.get_parameter(
+                            "degraded_path_minimum_span_m"
+                        ).value
+                    ),
+                )
             )
-        )
         self.latest_straight_right_offset_active = (
             self.latest_straight_mode_active
             and not self.curve_speed_mode_active
@@ -2507,6 +2791,35 @@ class CanonicalStanleyPursuitDriver(Node):
                 ),
             )
         self.latest_active_lookahead_m = active_lookahead_m
+        self.latest_avoidance_return_active = (
+            avoidance_return_state_is_active(
+                self.avoidance_return_active,
+                last_update_time=self.avoidance_return_active_time,
+                now=now,
+                timeout_sec=float(
+                    self.get_parameter(
+                        "avoidance_return_state_timeout_sec"
+                    ).value
+                ),
+            )
+        )
+        self.latest_straight_pure_pursuit_weight = (
+            return_center_straight_pursuit_weight(
+                float(
+                    self.get_parameter(
+                        "straight_pure_pursuit_weight"
+                    ).value
+                ),
+                return_center_active=(
+                    self.latest_avoidance_return_active
+                ),
+                return_weight=float(
+                    self.get_parameter(
+                        "return_center_straight_pure_pursuit_weight"
+                    ).value
+                ),
+            )
+        )
         terms = fused_stanley_pursuit(
             delayed_path,
             lookahead_m=active_lookahead_m,
@@ -2543,9 +2856,7 @@ class CanonicalStanleyPursuitDriver(Node):
                 self.get_parameter("curve_detection_segment_count").value
             ),
             straight_pure_pursuit_weight=float(
-                self.get_parameter(
-                    "straight_pure_pursuit_weight"
-                ).value
+                self.latest_straight_pure_pursuit_weight
             ),
             straight_stanley_gain=float(
                 self.get_parameter("straight_stanley_gain").value
@@ -3067,7 +3378,10 @@ class CanonicalStanleyPursuitDriver(Node):
         self.latest_smoothing_rate_limit = float("nan")
         self.latest_smoothing_current_weight = float("nan")
         if self.path_valid and self.latest_path is not None:
-            raw_angle, terms = self.steering_command_for_path(self.latest_path)
+            raw_angle, terms = self.steering_command_for_path(
+                self.latest_path,
+                now=now,
+            )
             self.latest_mapped_raw_angle = raw_angle
             raw_angle = self.amplify_curve_steering(raw_angle)
             self.latest_amplified_angle = raw_angle
@@ -3077,41 +3391,88 @@ class CanonicalStanleyPursuitDriver(Node):
             )
             self.latest_reversal_angle = raw_angle
             controller_raw_angle = raw_angle
-            (
-                raw_angle,
-                self.turn_transition_recovery_sign,
-                self.turn_transition_recovery_until,
-                self.turn_transition_armed_sign,
-            ) = apply_turn_transition_recovery(
-                raw_angle,
-                now=now,
-                armed_turn_sign=self.turn_transition_armed_sign,
-                recovery_sign=self.turn_transition_recovery_sign,
-                recovery_until=self.turn_transition_recovery_until,
-                trigger_previous_command=float(
-                    self.get_parameter(
-                        "turn_transition_trigger_previous_command"
-                    ).value
-                ),
-                trigger_new_command=float(
-                    self.get_parameter(
-                        "turn_transition_trigger_new_command"
-                    ).value
-                ),
-                minimum_recovery_command=float(
-                    self.get_parameter(
-                        "turn_transition_minimum_recovery_command"
-                    ).value
-                ),
-                hold_sec=float(
-                    self.get_parameter("turn_transition_hold_sec").value
-                ),
-                cancel_opposed_command=float(
-                    self.get_parameter(
-                        "turn_transition_cancel_opposed_command"
-                    ).value
-                ),
+            path_update_time = (
+                self.last_external_path_time
+                if self.external_path_enabled
+                else self.last_canonical_command_time
             )
+            new_path_frame = bool(
+                path_update_time is not None
+                and path_update_time
+                != self.post_red_turn_last_path_update_time
+            )
+            if new_path_frame:
+                self.post_red_turn_last_path_update_time = path_update_time
+            path_point_count = (
+                self.latest_external_path_point_count
+                if self.external_path_enabled
+                else int(self.latest_path.shape[0])
+            )
+            path_confidence = (
+                self.latest_external_path_confidence
+                if self.external_path_enabled
+                else 1.0
+            )
+            bypass_transition, post_red_event = (
+                self.post_red_turn_exit_bypass.begin_cycle(
+                    now=now,
+                    window_active=(
+                        self.post_red_turn_exit_window_is_active(now)
+                    ),
+                    new_path_frame=new_path_frame,
+                    path_valid=self.path_valid,
+                    path_point_count=path_point_count,
+                    path_confidence=path_confidence,
+                    raw_command=raw_angle,
+                    curve_detection_per_m=(
+                        self.latest_curve_detection_per_m
+                    ),
+                )
+            )
+            self.log_post_red_turn_exit_event(
+                post_red_event,
+                raw_command=raw_angle,
+            )
+            if bypass_transition:
+                self.turn_transition_recovery_sign = 0.0
+                self.turn_transition_recovery_until = 0.0
+                self.turn_transition_armed_sign = 0.0
+            else:
+                (
+                    raw_angle,
+                    self.turn_transition_recovery_sign,
+                    self.turn_transition_recovery_until,
+                    self.turn_transition_armed_sign,
+                ) = apply_turn_transition_recovery(
+                    raw_angle,
+                    now=now,
+                    armed_turn_sign=self.turn_transition_armed_sign,
+                    recovery_sign=self.turn_transition_recovery_sign,
+                    recovery_until=self.turn_transition_recovery_until,
+                    trigger_previous_command=float(
+                        self.get_parameter(
+                            "turn_transition_trigger_previous_command"
+                        ).value
+                    ),
+                    trigger_new_command=float(
+                        self.get_parameter(
+                            "turn_transition_trigger_new_command"
+                        ).value
+                    ),
+                    minimum_recovery_command=float(
+                        self.get_parameter(
+                            "turn_transition_minimum_recovery_command"
+                        ).value
+                    ),
+                    hold_sec=float(
+                        self.get_parameter("turn_transition_hold_sec").value
+                    ),
+                    cancel_opposed_command=float(
+                        self.get_parameter(
+                            "turn_transition_cancel_opposed_command"
+                        ).value
+                    ),
+                )
             self.latest_transition_angle = raw_angle
             raw_dt = (
                 0.0
@@ -3141,6 +3502,17 @@ class CanonicalStanleyPursuitDriver(Node):
             self.last_raw_command_time = now
             angle = self.smooth_steering(compensated_angle, now)
             self.latest_smoothed_angle = angle
+            post_red_output_event = (
+                self.post_red_turn_exit_bypass.observe_output(
+                    new_path_frame=new_path_frame,
+                    path_valid=self.path_valid,
+                    output_command=angle,
+                )
+            )
+            self.log_post_red_turn_exit_event(
+                post_red_output_event,
+                raw_command=controller_raw_angle,
+            )
             speed = self.speed_for_steering(angle)
             self.latest_terms = terms
             self.has_valid_command = True
@@ -3321,6 +3693,7 @@ class CanonicalStanleyPursuitDriver(Node):
             self.turn_transition_recovery_sign != 0.0
             and time.monotonic() < self.turn_transition_recovery_until
         )
+        post_red_state = self.post_red_turn_exit_bypass.state()
         message = Float32MultiArray()
         message.data = [
             1.0 if self.lane_visible else 0.0,
@@ -3377,6 +3750,17 @@ class CanonicalStanleyPursuitDriver(Node):
             ),
             float(self.latest_active_latency_preview_sec),
             1.0 if self.curve_latency_preview_active else 0.0,
+            1.0 if self.latest_avoidance_return_active else 0.0,
+            float(self.latest_straight_pure_pursuit_weight),
+            float(self.latest_degraded_path_observed_span_m),
+            float(self.degraded_path_short_frames),
+            float(self.degraded_path_recovered_frames),
+            1.0
+            if self.post_red_turn_exit_window_is_active(time.monotonic())
+            else 0.0,
+            1.0 if post_red_state.left_turn_confirmed else 0.0,
+            1.0 if post_red_state.bypass_active else 0.0,
+            float(post_red_state.exit_frames),
         ]
         self.diagnostics_pub.publish(message)
 

@@ -24,7 +24,7 @@ class ConeModeConfig:
     entry_confidence: float = 0.35
     entry_frames: int = 3
     exit_frames: int = 1
-    exit_absence_sec: float = 1.0
+    exit_absence_sec: float = 0.25
     # Forward x distance to the nearest camera-confirmed cone cluster.
     entry_distance_m: float = 0.95
 

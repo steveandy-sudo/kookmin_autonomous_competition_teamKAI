@@ -1,11 +1,14 @@
 import pytest
 
 from xycar_map_nav.s_curve_entry_guard import green_car_avoidance_completed
+from xycar_map_nav.s_curve_entry_guard import PostRedTurnWindowEvent
+from xycar_map_nav.s_curve_entry_guard import PostRedTurnWindowState
 from xycar_map_nav.s_curve_entry_guard import red_car_avoidance_completed
 from xycar_map_nav.s_curve_entry_guard import SCurveEntryEvent
 from xycar_map_nav.s_curve_entry_guard import SCurveEntryGuard
 from xycar_map_nav.s_curve_entry_guard import SCurveEntryGuardConfig
 from xycar_map_nav.s_curve_entry_guard import SCurveEntryTrigger
+from xycar_map_nav.s_curve_entry_guard import update_post_red_turn_window
 
 
 def update(
@@ -57,6 +60,88 @@ def test_completed_vehicle_avoidance_is_class_specific() -> None:
         previous_target_class_name="green_car",
         controls_vehicle=True,
     )
+
+
+def test_post_red_turn_window_starts_and_ends_at_green_car() -> None:
+    state, event = update_post_red_turn_window(
+        PostRedTurnWindowState(),
+        now=10.0,
+        drive_armed=True,
+        red_return_active=False,
+        red_avoidance_completed=True,
+        green_avoidance_active=False,
+        maximum_duration_sec=6.0,
+    )
+    assert event == PostRedTurnWindowEvent.STARTED
+    assert state.active
+
+    state, event = update_post_red_turn_window(
+        state,
+        now=12.0,
+        drive_armed=True,
+        red_return_active=False,
+        red_avoidance_completed=False,
+        green_avoidance_active=False,
+        maximum_duration_sec=6.0,
+    )
+    assert event == PostRedTurnWindowEvent.NONE
+    assert state.active
+
+    state, event = update_post_red_turn_window(
+        state,
+        now=12.1,
+        drive_armed=True,
+        red_return_active=False,
+        red_avoidance_completed=False,
+        green_avoidance_active=True,
+        maximum_duration_sec=6.0,
+    )
+    assert event == PostRedTurnWindowEvent.GREEN_CAR_STARTED
+    assert not state.active
+
+
+def test_post_red_turn_window_times_out_and_resets_on_disarm() -> None:
+    state, _ = update_post_red_turn_window(
+        PostRedTurnWindowState(),
+        now=20.0,
+        drive_armed=True,
+        red_return_active=True,
+        red_avoidance_completed=False,
+        green_avoidance_active=False,
+        maximum_duration_sec=6.0,
+    )
+    state, event = update_post_red_turn_window(
+        state,
+        now=26.0,
+        drive_armed=True,
+        red_return_active=False,
+        red_avoidance_completed=False,
+        green_avoidance_active=False,
+        maximum_duration_sec=6.0,
+    )
+    assert event == PostRedTurnWindowEvent.TIMED_OUT
+    assert not state.active
+
+    state, _ = update_post_red_turn_window(
+        state,
+        now=30.0,
+        drive_armed=True,
+        red_return_active=False,
+        red_avoidance_completed=True,
+        green_avoidance_active=False,
+        maximum_duration_sec=6.0,
+    )
+    state, event = update_post_red_turn_window(
+        state,
+        now=30.1,
+        drive_armed=False,
+        red_return_active=False,
+        red_avoidance_completed=False,
+        green_avoidance_active=False,
+        maximum_duration_sec=6.0,
+    )
+    assert event == PostRedTurnWindowEvent.RESET
+    assert not state.active
 
 
 @pytest.mark.parametrize(

@@ -84,13 +84,31 @@ def test_integrated_run_prompts_for_vehicle_avoidance_offsets() -> None:
     assert "vehicle_right_offset_m: 0.13" in config_source
 
 
+def test_integrated_run_waits_for_measured_lane_center_on_avoidance_return() -> None:
+    run_source = RUN_SCRIPT.read_text(encoding="utf-8")
+    launch_source = LAUNCH_FILE.read_text(encoding="utf-8")
+    config_source = HYBRID_CONFIG.read_text(encoding="utf-8")
+
+    assert 'VEHICLE_RETURN_CROSS_TRACK_ERROR_M:-0.08' in run_source
+    assert 'VEHICLE_RETURN_REQUIRED_FRAMES:-3' in run_source
+    assert 'VEHICLE_RETURN_STRAIGHT_PP_WEIGHT:-0.45' in run_source
+    assert 'vehicle_return_cross_track_error_m:="$VEHICLE_RETURN_CROSS_TRACK_ERROR_M"' in run_source
+    assert 'vehicle_return_required_frames:="$VEHICLE_RETURN_REQUIRED_FRAMES"' in run_source
+    assert 'vehicle_return_straight_pure_pursuit_weight:="$VEHICLE_RETURN_STRAIGHT_PP_WEIGHT"' in run_source
+    assert '"vehicle_return_cross_track_error_m", default_value="0.08"' in launch_source
+    assert '"vehicle_return_required_frames", default_value="3"' in launch_source
+    assert '"vehicle_return_straight_pure_pursuit_weight"' in launch_source
+    assert "vehicle_return_cross_track_error_m: 0.08" in config_source
+    assert "vehicle_return_required_frames: 3" in config_source
+
+
 def test_integrated_run_exposes_shortcut_left_lane_preposition_offset() -> None:
     run_source = RUN_SCRIPT.read_text(encoding="utf-8")
     launch_source = LAUNCH_FILE.read_text(encoding="utf-8")
     config_source = HYBRID_CONFIG.read_text(encoding="utf-8")
 
     assert (
-        'SHORTCUT_LEFT_LANE_OFFSET_M="${SHORTCUT_LEFT_LANE_OFFSET_M:-0.10}"'
+        'SHORTCUT_LEFT_LANE_OFFSET_M="${SHORTCUT_LEFT_LANE_OFFSET_M:-0.05}"'
         in run_source
     )
     assert (
@@ -98,10 +116,10 @@ def test_integrated_run_exposes_shortcut_left_lane_preposition_offset() -> None:
         in run_source
     )
     assert (
-        '"shortcut_left_lane_offset_m", default_value="0.10"'
+        '"shortcut_left_lane_offset_m", default_value="0.05"'
         in launch_source
     )
-    assert "shortcut_left_lane_offset_m: 0.10" in config_source
+    assert "shortcut_left_lane_offset_m: 0.05" in config_source
 
 
 def test_integrated_curve_response_defaults_match_real_profile() -> None:
@@ -148,6 +166,10 @@ def test_integrated_run_supports_direct_xbin_rule_path() -> None:
     run_source = RUN_SCRIPT.read_text(encoding="utf-8")
     launch_source = LAUNCH_FILE.read_text(encoding="utf-8")
 
+    assert (
+        'RULE_PERCEPTION_BACKEND="${XYCAR_RULE_PERCEPTION_BACKEND:-direct_xbin}"'
+        in run_source
+    )
     assert "direct_xbin)" in run_source
     assert "RULE_READY_TOPIC=/perception/xbin_direct_centerline" in run_source
     assert "LANE_DIRECT_CANONICAL_ENABLED=false" in run_source
@@ -196,8 +218,10 @@ def test_integrated_cone_exit_matches_remote_jsb_hold_policy() -> None:
     )
     cone_branch = selector_source[branch_start:branch_end]
 
-    assert '"cone_exit_absence_sec", default_value="1.0"' in launch_source
-    assert "cone_exit_absence_sec: 1.0" in config_source
+    assert '"cone_exit_absence_sec", default_value="0.25"' in launch_source
+    assert '"cone_sensor_presence_timeout_sec", default_value="0.25"' in launch_source
+    assert "cone_exit_absence_sec: 0.25" in config_source
+    assert "cone_sensor_presence_timeout_sec: 0.25" in config_source
     assert "output.state == HybridState.RUNNING and scan_fresh" in cone_branch
     assert "last_valid_cone_command" in cone_branch
     assert "command_timestamp_is_fresh" not in cone_branch
@@ -240,6 +264,15 @@ def test_integrated_run_exposes_temporary_shortcut_disable() -> None:
     assert 'echo "Shortcut control: $START_SHORTCUT"' in source
 
 
+def test_integrated_drive_uses_yolo_only_for_traffic_signal_classes() -> None:
+    launch_source = LAUNCH_FILE.read_text(encoding="utf-8")
+    object_config = OBJECT_CONFIG.read_text(encoding="utf-8")
+
+    assert '"startup_signal_hsv_enabled": False' in launch_source
+    assert '"traffic_signal_cv_enabled": False' in launch_source
+    assert "traffic_signal_cv_enabled: false" in object_config
+
+
 def test_integrated_run_defaults_to_20_12_11_profile() -> None:
     run_source = RUN_SCRIPT.read_text(encoding="utf-8")
     complete_source = COMPLETE_SCRIPT.read_text(encoding="utf-8")
@@ -260,6 +293,14 @@ def test_integrated_run_defaults_to_20_12_11_profile() -> None:
     assert '"speed_command", default_value="20.0"' in launch_source
     assert '"curve_speed_command", default_value="12.0"' in launch_source
     assert '"degraded_path_speed_command", default_value="11.0"' in launch_source
+    assert 'DEGRADED_PATH_MINIMUM_SPAN_M="${DEGRADED_PATH_MINIMUM_SPAN_M:-0.40}"' in run_source
+    assert 'DEGRADED_PATH_RELEASE_SPAN_M="${DEGRADED_PATH_RELEASE_SPAN_M:-0.60}"' in run_source
+    assert 'DEGRADED_PATH_CONFIRMATION_FRAMES="${DEGRADED_PATH_CONFIRMATION_FRAMES:-2}"' in run_source
+    assert 'DEGRADED_PATH_RELEASE_FRAMES="${DEGRADED_PATH_RELEASE_FRAMES:-2}"' in run_source
+    assert '"degraded_path_minimum_span_m", default_value="0.40"' in launch_source
+    assert '"degraded_path_release_span_m", default_value="0.60"' in launch_source
+    assert '"degraded_path_confirmation_frames", default_value="2"' in launch_source
+    assert '"degraded_path_release_frames", default_value="2"' in launch_source
     assert '"adaptive_curve_lookahead_m", default_value="0.30"' in launch_source
     assert '"straight_path_curvature_threshold", default_value="0.24"' in launch_source
     assert '"steering_current_weight", default_value="0.35"' in launch_source

@@ -9,6 +9,7 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
     amplify_curve_steering_command,
     anticipatory_center_corridor_error,
     apply_turn_transition_recovery,
+    avoidance_return_state_is_active,
     blend_pursuit_stanley,
     canonical_class_masks,
     command_during_lane_loss,
@@ -30,6 +31,7 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
     path_heading_change_per_m,
     predict_path_in_delayed_vehicle_frame,
     pursuit_requests_command_reversal,
+    return_center_straight_pursuit_weight,
     select_control_latency_preview_sec,
     select_path_when_yellow_missing,
     smooth_target_path,
@@ -40,6 +42,7 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
     update_curve_preview_latch,
     update_curve_latency_preview_hold,
     update_curve_speed_latch,
+    update_degraded_path_latch,
     usable_forward_path,
     white_boundary_to_target_offset,
     yellow_curve_reversal_request_sign,
@@ -47,6 +50,42 @@ from xycar_rule_drive.canonical_stanley_pursuit_driver import (
 
 
 class CanonicalStanleyPursuitTest(unittest.TestCase):
+    def test_avoidance_return_state_expires_without_updates(self):
+        self.assertTrue(
+            avoidance_return_state_is_active(
+                True,
+                last_update_time=10.0,
+                now=10.2,
+                timeout_sec=0.30,
+            )
+        )
+        self.assertFalse(
+            avoidance_return_state_is_active(
+                True,
+                last_update_time=10.0,
+                now=10.4,
+                timeout_sec=0.30,
+            )
+        )
+
+    def test_return_center_raises_straight_pursuit_weight_only_while_active(self):
+        self.assertEqual(
+            return_center_straight_pursuit_weight(
+                0.10,
+                return_center_active=False,
+                return_weight=0.45,
+            ),
+            0.10,
+        )
+        self.assertEqual(
+            return_center_straight_pursuit_weight(
+                0.10,
+                return_center_active=True,
+                return_weight=0.45,
+            ),
+            0.45,
+        )
+
     def test_control_latency_preview_uses_confirmed_curve_state(self):
         self.assertEqual(
             select_control_latency_preview_sec(
@@ -178,6 +217,80 @@ class CanonicalStanleyPursuitTest(unittest.TestCase):
             release_frames=3,
         )
         self.assertEqual(state, (False, 0, 3))
+
+    def test_degraded_path_requires_two_new_short_frames(self):
+        state = update_degraded_path_latch(
+            False,
+            0,
+            0,
+            path_valid=True,
+            path_span_m=0.39,
+            enter_span_m=0.40,
+            release_span_m=0.60,
+            confirmation_frames=2,
+            release_frames=2,
+        )
+        self.assertEqual(state, (False, 1, 0))
+        state = update_degraded_path_latch(
+            *state,
+            path_valid=True,
+            path_span_m=0.38,
+            enter_span_m=0.40,
+            release_span_m=0.60,
+            confirmation_frames=2,
+            release_frames=2,
+        )
+        self.assertEqual(state, (True, 2, 0))
+
+    def test_degraded_path_holds_in_hysteresis_band_and_releases_twice(self):
+        state = update_degraded_path_latch(
+            True,
+            0,
+            0,
+            path_valid=True,
+            path_span_m=0.50,
+            enter_span_m=0.40,
+            release_span_m=0.60,
+            confirmation_frames=2,
+            release_frames=2,
+        )
+        self.assertEqual(state, (True, 0, 0))
+        state = update_degraded_path_latch(
+            *state,
+            path_valid=True,
+            path_span_m=0.62,
+            enter_span_m=0.40,
+            release_span_m=0.60,
+            confirmation_frames=2,
+            release_frames=2,
+        )
+        self.assertEqual(state, (True, 0, 1))
+        state = update_degraded_path_latch(
+            *state,
+            path_valid=True,
+            path_span_m=0.65,
+            enter_span_m=0.40,
+            release_span_m=0.60,
+            confirmation_frames=2,
+            release_frames=2,
+        )
+        self.assertEqual(state, (False, 0, 2))
+
+    def test_invalid_path_enters_degraded_immediately(self):
+        self.assertEqual(
+            update_degraded_path_latch(
+                False,
+                0,
+                0,
+                path_valid=False,
+                path_span_m=float("nan"),
+                enter_span_m=0.40,
+                release_span_m=0.60,
+                confirmation_frames=2,
+                release_frames=2,
+            ),
+            (True, 0, 0),
+        )
 
     def test_curve_preview_requires_two_consecutive_frames(self):
         state = update_curve_preview_latch(

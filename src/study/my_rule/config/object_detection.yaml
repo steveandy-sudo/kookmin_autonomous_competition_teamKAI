@@ -55,11 +55,9 @@
     startup_green_min_pixel_ratio: 0.015
     startup_green_required_frames: 2
 
-    # Split each YOLO traffic-light box into two halves, then inspect the
-    # largest green component in the right half. Its local x is zero at the
-    # center divider and one at the right edge: near-divider means left arrow,
-    # farther right means straight. Small reflected components are ignored.
-    traffic_signal_cv_enabled: true
+    # Integrated driving trusts the detector's green_4/left_4 classes directly.
+    # Keep the CV parameters below only for an explicit offline comparison.
+    traffic_signal_cv_enabled: false
     traffic_signal_cv_hsv_lower: [35, 60, 100]
     traffic_signal_cv_hsv_upper: [100, 255, 255]
     traffic_signal_cv_split_ratio: 0.50

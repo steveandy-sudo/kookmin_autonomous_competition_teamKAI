@@ -78,8 +78,16 @@ def test_default_green_release_does_not_require_minimum_box_area():
     controller.observe(now_sec=0.2, frame=green)
     decision = controller.observe(now_sec=0.3, frame=green)
 
-    assert decision.action == TrafficLightAction.CLEAR
+    assert decision.action == TrafficLightAction.LEFT_APPROACH
     assert decision.signal_name == "green_4"
+
+    finalized = controller.observe(
+        now_sec=0.4,
+        frame=TrafficLightFrame(),
+    )
+    assert finalized.action == TrafficLightAction.CLEAR
+    assert finalized.direction_finalized
+    assert finalized.cancel_shortcut
 
 
 def test_far_red_box_does_not_stop_vehicle():
@@ -187,7 +195,7 @@ def test_two_close_green_frames_release_a_stop():
     )
 
     assert first_green.action == TrafficLightAction.STOP
-    assert second_green.action == TrafficLightAction.CLEAR
+    assert second_green.action == TrafficLightAction.LEFT_APPROACH
     assert second_green.signal_name == "green_4"
 
 
@@ -237,7 +245,7 @@ def test_left_stays_in_approach_while_visible_then_starts_after_absence():
     just_before_delay = controller.update(now_sec=3.14)
     after_delay = controller.update(now_sec=3.16)
 
-    assert first.action == TrafficLightAction.CLEAR
+    assert first.action == TrafficLightAction.LEFT_APPROACH
     assert confirmed.action == TrafficLightAction.LEFT_APPROACH
     assert not confirmed.shortcut_start
     assert still_visible.action == TrafficLightAction.LEFT_APPROACH
@@ -246,6 +254,80 @@ def test_left_stays_in_approach_while_visible_then_starts_after_absence():
     assert not second_absence.shortcut_start
     assert not just_before_delay.shortcut_start
     assert after_delay.shortcut_start
+
+
+def test_last_yolo_direction_green_cancels_fluctuating_left_sequence():
+    controller = make_controller(left_absence_frames=1, left_start_delay_sec=0.0)
+
+    observations = [
+        TrafficLightFrame(left=observation(confidence=0.82)),
+        TrafficLightFrame(green=observation(confidence=0.76)),
+        TrafficLightFrame(left=observation(confidence=0.79)),
+        TrafficLightFrame(green=observation(confidence=0.91)),
+    ]
+    for index, frame in enumerate(observations):
+        decision = controller.observe(now_sec=0.1 * index, frame=frame)
+        assert decision.action == TrafficLightAction.LEFT_APPROACH
+        assert not decision.shortcut_start
+
+    final = controller.observe(now_sec=0.5, frame=TrafficLightFrame())
+
+    assert final.action == TrafficLightAction.CLEAR
+    assert final.signal_name == "green_4"
+    assert final.direction_finalized
+    assert final.cancel_shortcut
+    assert not final.shortcut_start
+    assert not controller.left_confirmed
+
+
+def test_last_yolo_direction_left_starts_after_fluctuation():
+    controller = make_controller(left_absence_frames=1, left_start_delay_sec=0.0)
+
+    for index, frame in enumerate(
+        [
+            TrafficLightFrame(green=observation(confidence=0.85)),
+            TrafficLightFrame(left=observation(confidence=0.80)),
+            TrafficLightFrame(green=observation(confidence=0.77)),
+            TrafficLightFrame(left=observation(confidence=0.88)),
+        ]
+    ):
+        decision = controller.observe(now_sec=0.1 * index, frame=frame)
+        assert decision.action == TrafficLightAction.LEFT_APPROACH
+        assert not decision.shortcut_start
+
+    final = controller.observe(now_sec=0.5, frame=TrafficLightFrame())
+
+    assert final.action == TrafficLightAction.LEFT_APPROACH
+    assert final.signal_name == "left_4"
+    assert final.shortcut_start
+    assert final.direction_finalized
+    assert not final.cancel_shortcut
+
+
+def test_final_green_can_cancel_a_previous_left_start_request():
+    controller = make_controller(left_absence_frames=1, left_start_delay_sec=0.0)
+    controller.observe(
+        now_sec=0.0,
+        frame=TrafficLightFrame(left=observation()),
+    )
+    controller.observe(
+        now_sec=0.1,
+        frame=TrafficLightFrame(left=observation()),
+    )
+    assert controller.observe(
+        now_sec=0.2,
+        frame=TrafficLightFrame(),
+    ).shortcut_start
+
+    controller.observe(
+        now_sec=0.3,
+        frame=TrafficLightFrame(green=observation()),
+    )
+    final = controller.observe(now_sec=0.4, frame=TrafficLightFrame())
+
+    assert final.action == TrafficLightAction.CLEAR
+    assert final.signal_name == "green_4"
+    assert final.cancel_shortcut
 
 
 def test_half_second_delay_is_measured_from_first_missing_frame():

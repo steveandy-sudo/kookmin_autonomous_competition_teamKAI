@@ -124,6 +124,7 @@ def test_cone_timed_exit_requires_continuous_sensor_absence():
         ConeModeConfig(
             entry_frames=3,
             exit_frames=1,
+            exit_absence_sec=0.25,
         )
     )
     for _ in range(3):
@@ -134,7 +135,7 @@ def test_cone_timed_exit_requires_continuous_sensor_absence():
         == ConeModeEvent.NONE
     )
     assert (
-        latch.update_presence(sensor_present=False, now_sec=10.9)
+        latch.update_presence(sensor_present=False, now_sec=10.2)
         == ConeModeEvent.NONE
     )
     assert (
@@ -146,7 +147,7 @@ def test_cone_timed_exit_requires_continuous_sensor_absence():
         == ConeModeEvent.NONE
     )
     assert (
-        latch.update_presence(sensor_present=False, now_sec=21.0)
+        latch.update_presence(sensor_present=False, now_sec=20.25)
         == ConeModeEvent.FINISHED
     )
 

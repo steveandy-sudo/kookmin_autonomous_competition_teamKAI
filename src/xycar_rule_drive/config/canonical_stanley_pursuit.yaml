@@ -89,6 +89,11 @@ canonical_stanley_pursuit_driver:
     yellow_curve_reversal_preview_confirmation_frames: 2
     yellow_curve_reversal_preview_pursuit_weight: 0.75
     straight_pure_pursuit_weight: 0.10
+    # During RETURN_CENTER only, give PP enough authority to remove the
+    # measured lateral error instead of cancelling against straight Stanley.
+    avoidance_return_active_topic: /hybrid/avoidance_return_active
+    avoidance_return_state_timeout_sec: 0.30
+    return_center_straight_pure_pursuit_weight: 0.45
     straight_stanley_gain: 0.65
     straight_stanley_softening_mps: 0.65
     # Inside the +/-10 cm straight corridor, an approach heading flips the
@@ -121,6 +126,21 @@ canonical_stanley_pursuit_driver:
     turn_transition_trigger_previous_command: 12.0
     turn_transition_trigger_new_command: 8.0
     turn_transition_cancel_opposed_command: 24.0
+    # Keep the global transition latch for S-curves, but release it briefly
+    # while the post-red-car 90-degree left turn returns to a straight path.
+    post_red_turn_exit_window_topic: /hybrid/post_red_turn_exit_window
+    post_red_turn_exit_window_timeout_sec: 0.30
+    post_red_turn_exit_bypass_enabled: true
+    post_red_turn_exit_left_command: -20.0
+    post_red_turn_exit_left_frames: 2
+    post_red_turn_exit_raw_min_command: -4.0
+    post_red_turn_exit_max_abs_curvature_per_m: 0.20
+    post_red_turn_exit_minimum_path_points: 10
+    post_red_turn_exit_minimum_path_confidence: 0.12
+    post_red_turn_exit_confirmation_frames: 2
+    post_red_turn_exit_bypass_sec: 0.50
+    post_red_turn_exit_straight_max_abs_command: 5.0
+    post_red_turn_exit_straight_confirmation_frames: 3
     # When heading correction and pursuit oppose each other at a curve exit,
     # use Stanley to release the old turn before lateral error grows.
     opposed_stanley_weight: 0.70

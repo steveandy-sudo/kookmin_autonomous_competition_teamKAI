@@ -21,6 +21,54 @@ class SCurveEntryEvent(str, Enum):
     RESET = "reset"
 
 
+class PostRedTurnWindowEvent(str, Enum):
+    NONE = "none"
+    STARTED = "started"
+    GREEN_CAR_STARTED = "green_car_started"
+    TIMED_OUT = "timed_out"
+    RESET = "reset"
+
+
+@dataclass(frozen=True)
+class PostRedTurnWindowState:
+    active: bool = False
+    started_at: float = float("-inf")
+
+
+def update_post_red_turn_window(
+    state: PostRedTurnWindowState,
+    *,
+    now: float,
+    drive_armed: bool,
+    red_return_active: bool,
+    red_avoidance_completed: bool,
+    green_avoidance_active: bool,
+    maximum_duration_sec: float,
+) -> tuple[PostRedTurnWindowState, PostRedTurnWindowEvent]:
+    """Bound the mission window used by the post-red steering release."""
+    if not bool(drive_armed):
+        return PostRedTurnWindowState(), (
+            PostRedTurnWindowEvent.RESET
+            if state.active
+            else PostRedTurnWindowEvent.NONE
+        )
+    if state.active and bool(green_avoidance_active):
+        return PostRedTurnWindowState(), PostRedTurnWindowEvent.GREEN_CAR_STARTED
+    if state.active and float(now) - float(state.started_at) >= max(
+        0.0,
+        float(maximum_duration_sec),
+    ):
+        return PostRedTurnWindowState(), PostRedTurnWindowEvent.TIMED_OUT
+    if state.active:
+        return state, PostRedTurnWindowEvent.NONE
+    if bool(red_return_active) or bool(red_avoidance_completed):
+        return (
+            PostRedTurnWindowState(active=True, started_at=float(now)),
+            PostRedTurnWindowEvent.STARTED,
+        )
+    return state, PostRedTurnWindowEvent.NONE
+
+
 @dataclass(frozen=True)
 class SCurveEntryGuardConfig:
     enabled: bool = True

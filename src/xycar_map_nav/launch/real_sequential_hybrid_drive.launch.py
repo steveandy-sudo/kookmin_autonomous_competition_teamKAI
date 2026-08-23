@@ -274,7 +274,7 @@ def generate_launch_description():
                 "shortcut_entry_speed_command", default_value="9.0"
             ),
             DeclareLaunchArgument(
-                "shortcut_left_lane_offset_m", default_value="0.10"
+                "shortcut_left_lane_offset_m", default_value="0.05"
             ),
             DeclareLaunchArgument(
                 "vehicle_avoidance_enabled", default_value="true"
@@ -336,7 +336,16 @@ def generate_launch_description():
                 "curve_speed_release_frames", default_value="3"
             ),
             DeclareLaunchArgument(
-                "degraded_path_minimum_span_m", default_value="0.60"
+                "degraded_path_minimum_span_m", default_value="0.40"
+            ),
+            DeclareLaunchArgument(
+                "degraded_path_release_span_m", default_value="0.60"
+            ),
+            DeclareLaunchArgument(
+                "degraded_path_confirmation_frames", default_value="2"
+            ),
+            DeclareLaunchArgument(
+                "degraded_path_release_frames", default_value="2"
             ),
             DeclareLaunchArgument(
                 "selector_minimum_speed_command", default_value="3.0"
@@ -346,10 +355,10 @@ def generate_launch_description():
                 "cone_approach_yolo_min_confidence", default_value="0.40"
             ),
             DeclareLaunchArgument(
-                "cone_sensor_presence_timeout_sec", default_value="0.5"
+                "cone_sensor_presence_timeout_sec", default_value="0.25"
             ),
             DeclareLaunchArgument(
-                "cone_exit_absence_sec", default_value="1.0"
+                "cone_exit_absence_sec", default_value="0.25"
             ),
             DeclareLaunchArgument(
                 "cone_reentry_suppression_until_s_curve",
@@ -571,6 +580,20 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "vehicle_return_deadband_m", default_value="0.02"
             ),
+            DeclareLaunchArgument(
+                "vehicle_return_cross_track_error_m", default_value="0.08"
+            ),
+            DeclareLaunchArgument(
+                "vehicle_return_required_frames", default_value="3"
+            ),
+            DeclareLaunchArgument(
+                "vehicle_return_diagnostics_timeout_sec",
+                default_value="0.30",
+            ),
+            DeclareLaunchArgument(
+                "vehicle_return_straight_pure_pursuit_weight",
+                default_value="0.45",
+            ),
             DeclareLaunchArgument("vehicle_body_length_m", default_value="0.55"),
             DeclareLaunchArgument("vehicle_body_width_m", default_value="0.28"),
             DeclareLaunchArgument(
@@ -709,6 +732,15 @@ def generate_launch_description():
                     ),
                     "degraded_path_minimum_span_m": LaunchConfiguration(
                         "degraded_path_minimum_span_m"
+                    ),
+                    "degraded_path_release_span_m": LaunchConfiguration(
+                        "degraded_path_release_span_m"
+                    ),
+                    "degraded_path_confirmation_frames": LaunchConfiguration(
+                        "degraded_path_confirmation_frames"
+                    ),
+                    "degraded_path_release_frames": LaunchConfiguration(
+                        "degraded_path_release_frames"
                     ),
                     "command_rate_hz": LaunchConfiguration(
                         "direct_bev_command_rate_hz"
@@ -924,6 +956,24 @@ def generate_launch_description():
                             ),
                             value_type=float,
                         ),
+                        "degraded_path_release_span_m": ParameterValue(
+                            LaunchConfiguration(
+                                "degraded_path_release_span_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "degraded_path_confirmation_frames": ParameterValue(
+                            LaunchConfiguration(
+                                "degraded_path_confirmation_frames"
+                            ),
+                            value_type=int,
+                        ),
+                        "degraded_path_release_frames": ParameterValue(
+                            LaunchConfiguration(
+                                "degraded_path_release_frames"
+                            ),
+                            value_type=int,
+                        ),
                         "canonical_forward_range_m": ParameterValue(
                             LaunchConfiguration(
                                 "canonical_forward_range_m"
@@ -1114,6 +1164,24 @@ def generate_launch_description():
                         "external_lateral_offset_topic": (
                             "/hybrid/avoidance_lateral_offset"
                         ),
+                        "avoidance_return_active_topic": (
+                            "/hybrid/avoidance_return_active"
+                        ),
+                        "post_red_turn_exit_window_topic": (
+                            "/hybrid/post_red_turn_exit_window"
+                        ),
+                        "avoidance_return_state_timeout_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_return_diagnostics_timeout_sec"
+                            ),
+                            value_type=float,
+                        ),
+                        "return_center_straight_pure_pursuit_weight": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_return_straight_pure_pursuit_weight"
+                            ),
+                            value_type=float,
+                        ),
                         "sitl_bypass_path_enabled": False,
                         "sitl_bypass_path_request_topic": (
                             "/hybrid/avoidance_path_request"
@@ -1165,6 +1233,7 @@ def generate_launch_description():
                         ),
                         "camera_yaml": object_camera_yaml,
                         "startup_signal_hsv_enabled": False,
+                        "traffic_signal_cv_enabled": False,
                         "inference_rate_hz": 3.0,
                         "cone_confidence": ParameterValue(
                             LaunchConfiguration(
@@ -1495,6 +1564,9 @@ def generate_launch_description():
                             ),
                             value_type=float,
                         ),
+                        "post_red_turn_exit_window_topic": (
+                            "/hybrid/post_red_turn_exit_window"
+                        ),
                         "vehicle_yolo_min_confidence": ParameterValue(
                             LaunchConfiguration("vehicle_yolo_min_confidence"),
                             value_type=float,
@@ -1659,6 +1731,24 @@ def generate_launch_description():
                         ),
                         "vehicle_return_deadband_m": ParameterValue(
                             LaunchConfiguration("vehicle_return_deadband_m"),
+                            value_type=float,
+                        ),
+                        "vehicle_return_cross_track_error_m": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_return_cross_track_error_m"
+                            ),
+                            value_type=float,
+                        ),
+                        "vehicle_return_required_frames": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_return_required_frames"
+                            ),
+                            value_type=int,
+                        ),
+                        "vehicle_return_diagnostics_timeout_sec": ParameterValue(
+                            LaunchConfiguration(
+                                "vehicle_return_diagnostics_timeout_sec"
+                            ),
                             value_type=float,
                         ),
                         "vehicle_body_length_m": ParameterValue(

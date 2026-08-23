@@ -47,9 +47,9 @@ sequential_hybrid_driver:
     cone_exit_confidence: 0.20
     cone_entry_frames: 3
     cone_exit_frames: 1
-    # Match the validated jsb handoff: after sensor presence expires, require
-    # another continuous absence interval while retaining the last cone command.
-    cone_exit_absence_sec: 1.0
+    # Return to RULE about 0.5 s after the final cone observation: 0.25 s
+    # sensor freshness plus 0.25 s of continuous absence.
+    cone_exit_absence_sec: 0.25
     # Ignore isolated cones after slalom exit until normal RULE enters the S curve.
     cone_reentry_suppression_until_s_curve: true
     # cone_node publishes a physical wheel target. Convert it to the calibrated
@@ -88,7 +88,7 @@ sequential_hybrid_driver:
     # cone_node emits a command from every accepted LiDAR scan. Use that
     # timestamp for cone safety instead of a duplicate selector scan callback.
     cone_command_timeout_sec: 0.35
-    cone_sensor_presence_timeout_sec: 0.5
+    cone_sensor_presence_timeout_sec: 0.25
     # Before entry this topic contains only camera-confirmed candidates. Once
     # unlocked it follows the same corridor-gated LiDAR geometry used by the
     # planner, so a slow YOLO frame cannot falsely end an active cone course.
@@ -105,7 +105,7 @@ sequential_hybrid_driver:
     shortcut_yolo_required_frames: 2
     shortcut_yolo_absence_frames: 1
     shortcut_entry_speed_command: 9.0
-    shortcut_left_lane_offset_m: 0.10
+    shortcut_left_lane_offset_m: 0.05
     shortcut_wait_for_entry_ready: true
     shortcut_entry_ready_topic: /shortcut/entry/ready
     shortcut_entry_search_timeout_sec: 12.0
@@ -127,6 +127,8 @@ sequential_hybrid_driver:
     s_curve_entry_curve_speed_margin_command: 1.00
     s_curve_entry_curve_confirmation_frames: 3
     s_curve_entry_overdue_distance_m: 4.50
+    post_red_turn_exit_window_topic: /hybrid/post_red_turn_exit_window
+    post_red_turn_exit_window_maximum_sec: 6.0
 
     traffic_light_control_enabled: true
     traffic_light_red_class_name: red_4
@@ -181,8 +183,13 @@ sequential_hybrid_driver:
     vehicle_clear_hold_sec: 0.50
     vehicle_return_hold_sec: 0.30
     vehicle_return_deadband_m: 0.02
+    vehicle_return_cross_track_error_m: 0.08
+    vehicle_return_required_frames: 3
+    vehicle_return_diagnostics_timeout_sec: 0.30
+    rule_diagnostics_topic: /rule_drive/diagnostics
     avoidance_offset_topic: /hybrid/avoidance_lateral_offset
     avoidance_debug_topic: /hybrid/avoidance_debug
+    avoidance_return_active_topic: /hybrid/avoidance_return_active
     avoidance_path_request_topic: /hybrid/avoidance_path_request
     # Xycar envelope measured from the real vehicle: 28 cm at the wheels and
     # 55 cm from the front LiDAR edge to the rear body edge.

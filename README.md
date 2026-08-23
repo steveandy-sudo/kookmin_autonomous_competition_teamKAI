@@ -95,7 +95,7 @@ LiDAR ──── 라바콘 경계·장애물 거리 → CONE/AVOIDANCE 후보 
 
 ## 5. 통합 주행 실행 매뉴얼
 
-아래 명령은 새 direct Xbin 경로를 사용한다. 초기 질문은 모두 `Enter`를 눌러 지정된 값을 사용하고, `READY`가 표시되면 `Space`로 출발한다. 직선 `20`, 곡선 `12`, DEGRADED `12`, 라바콘 `8`, 전체 속도 상한 `20`이 적용된다.
+통합 실행 스크립트의 기본 차선 경로는 direct Xbin이다. 초기 질문은 모두 `Enter`를 눌러 지정된 값을 사용하고, `READY`가 표시되면 `Space`로 출발한다. 직선 `20`, 곡선 `12`, DEGRADED `12`, 라바콘 `8`, 전체 속도 상한 `20`이 적용된다.
 
 ```bash
 cd /home/xytron/xycar_ws
@@ -105,7 +105,6 @@ source install_xycar_only/setup.bash
 export ROS_DOMAIN_ID=7
 unset ROS_NAMESPACE
 
-XYCAR_RULE_PERCEPTION_BACKEND=direct_xbin \
 XYCAR_PERCEPTION_MAX_OUTPUT_RATE_HZ=20.0 \
 DIRECT_XBIN_PATH_TIMEOUT_SEC=0.50 \
 OVERALL_SPEED_LIMIT_COMMAND=20 \

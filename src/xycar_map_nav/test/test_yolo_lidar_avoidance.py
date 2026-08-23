@@ -28,6 +28,9 @@ from xycar_map_nav.sequential_hybrid_driver import (
 from xycar_map_nav.sequential_hybrid_driver import (
     straight_road_side_decision_allowed,
 )
+from xycar_map_nav.sequential_hybrid_driver import (
+    update_return_center_confirmation_frames,
+)
 
 
 def obstacle(left=1.2, right=0.5, distance=1.0, lateral=0.0):
@@ -839,6 +842,79 @@ def test_clear_hold_returns_to_center_and_releases_to_base_policy():
         if state.mode == YoloLidarAvoidanceMode.IDLE:
             break
     assert state.mode == YoloLidarAvoidanceMode.IDLE
+
+
+def test_return_center_waits_for_physical_lane_confirmation():
+    controller = YoloLidarAvoidanceController(
+        YoloLidarAvoidanceConfig(
+            yolo_timeout_sec=0.1,
+            yolo_required_frames=1,
+            preferred_side_required_frames=1,
+            immediate_on_yolo=True,
+            minimum_avoid_sec=0.0,
+            clear_hold_sec=0.0,
+            return_hold_sec=0.0,
+            offset_rate_mps=10.0,
+        )
+    )
+    controller.observe_yolo(
+        now_sec=0.0,
+        detected=True,
+        confidence=0.9,
+        lidar_distance_m=1.0,
+        preferred_mode=YoloLidarAvoidanceMode.AVOID_LEFT,
+    )
+    controller.step(
+        now_sec=0.0,
+        dt_sec=0.1,
+        obstacle=None,
+        cone_active=False,
+    )
+    controller.step(
+        now_sec=0.11,
+        dt_sec=0.1,
+        obstacle=None,
+        cone_active=False,
+        return_center_confirmed=False,
+    )
+    state = controller.step(
+        now_sec=0.12,
+        dt_sec=0.1,
+        obstacle=None,
+        cone_active=False,
+        return_center_confirmed=False,
+    )
+    assert state.mode == YoloLidarAvoidanceMode.RETURN_CENTER
+    assert state.lateral_offset_m == 0.0
+
+    state = controller.step(
+        now_sec=0.13,
+        dt_sec=0.1,
+        obstacle=None,
+        cone_active=False,
+        return_center_confirmed=True,
+    )
+    assert state.mode == YoloLidarAvoidanceMode.IDLE
+
+
+def test_return_center_confirmation_requires_three_valid_cte_frames():
+    frames = 0
+    for error in (0.12, 0.07, 0.06, 0.05):
+        frames = update_return_center_confirmation_frames(
+            frames,
+            return_center_active=True,
+            path_valid=True,
+            cross_track_error_m=error,
+            maximum_abs_error_m=0.08,
+        )
+    assert frames == 3
+    assert update_return_center_confirmation_frames(
+        frames,
+        return_center_active=True,
+        path_valid=False,
+        cross_track_error_m=0.01,
+        maximum_abs_error_m=0.08,
+    ) == 0
 
 
 def test_cone_has_priority_and_cancels_obstacle_override():

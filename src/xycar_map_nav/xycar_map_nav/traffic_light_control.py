@@ -87,6 +87,8 @@ class TrafficLightDecision:
     signal_name: str
     box_area_ratio: float
     reason: str
+    direction_finalized: bool = False
+    cancel_shortcut: bool = False
 
 
 def left_signal_approach_speed_limit(
@@ -108,13 +110,15 @@ def left_signal_approach_speed_limit(
 
 
 class TrafficLightController:
-    """Latch close red/yellow and sequence left-arrow shortcut entry.
+    """Latch stop signals and finalize turn direction at detector dropout.
 
     A close red or yellow remains latched through detector dropouts.  It is
     released only by consecutive close green or left-arrow observations.
-    A confirmed left arrow does not turn immediately: the controller waits
-    until the arrow is absent for consecutive detector frames and the
-    configurable straight-approach delay has elapsed.
+    Green and left detections form one direction-observation session.  The
+    latest qualifying YOLO class is retained while that class fluctuates, and
+    the session is finalized only after consecutive detector dropouts.  A
+    final left starts the shortcut sequence; a final green cancels any
+    provisional shortcut preparation.
     """
 
     def __init__(self, config: TrafficLightConfig) -> None:
@@ -133,6 +137,11 @@ class TrafficLightController:
         self.left_disappeared_sec: float | None = None
         self.left_confidence = 0.0
         self.left_triggered = False
+        self.direction_session_active = False
+        self.direction_seen_frames = 0
+        self.last_direction_signal = ""
+        self.last_direction_box_area_ratio = 0.0
+        self.direction_finalized = False
         self.latest_decision = TrafficLightDecision(
             action=TrafficLightAction.CLEAR,
             shortcut_start=False,
@@ -150,6 +159,11 @@ class TrafficLightController:
         self.left_disappeared_sec = None
         self.left_confidence = 0.0
         self.left_triggered = False
+        self.direction_session_active = False
+        self.direction_seen_frames = 0
+        self.last_direction_signal = ""
+        self.last_direction_box_area_ratio = 0.0
+        self.direction_finalized = False
         self.latest_decision = TrafficLightDecision(
             action=TrafficLightAction.CLEAR,
             shortcut_start=False,
@@ -191,6 +205,29 @@ class TrafficLightController:
         left_seen = frame.left.qualifies(
             minimum_confidence=self.config.left_minimum_confidence,
         )
+        direction_signal = ""
+        direction_observation = SignalObservation()
+        if left_seen and green_close:
+            left_score = (
+                float(frame.left.confidence),
+                float(frame.left.box_area_ratio),
+            )
+            green_score = (
+                float(frame.green.confidence),
+                float(frame.green.box_area_ratio),
+            )
+            if left_score >= green_score:
+                direction_signal = "left_4"
+                direction_observation = frame.left
+            else:
+                direction_signal = "green_4"
+                direction_observation = frame.green
+        elif left_seen:
+            direction_signal = "left_4"
+            direction_observation = frame.left
+        elif green_close:
+            direction_signal = "green_4"
+            direction_observation = frame.green
 
         stop_seen = red_close or yellow_close
         if stop_seen:
@@ -216,23 +253,31 @@ class TrafficLightController:
 
         if stop_seen:
             # Do not arm a turn from contradictory simultaneous detections.
-            self.left_frames = 0
-            self.left_confirmed = False
+            self._clear_direction_session(clear_trigger=True)
+        elif direction_signal:
+            if not self.direction_session_active:
+                self.direction_session_active = True
+                self.direction_seen_frames = 0
+                self.left_frames = 0
+                self.left_confirmed = False
+                self.left_triggered = False
+            self.direction_seen_frames += 1
+            self.last_direction_signal = direction_signal
+            self.direction_finalized = False
+            self.last_direction_box_area_ratio = float(
+                direction_observation.box_area_ratio
+            )
             self.left_absence_frames = 0
             self.left_disappeared_sec = None
-            self.left_triggered = False
-        elif left_seen:
-            self.left_last_seen_sec = float(now_sec)
-            self.left_confidence = float(frame.left.confidence)
-            self.left_absence_frames = 0
-            self.left_disappeared_sec = None
-            if not self.left_triggered:
+            if direction_signal == "left_4":
+                self.left_last_seen_sec = float(now_sec)
+                self.left_confidence = float(frame.left.confidence)
                 self.left_frames += 1
                 if self.left_frames >= self.config.left_required_frames:
                     self.left_confirmed = True
                     self.stop_latched = False
                     self.stop_signal = ""
-        elif self.left_confirmed and not self.left_triggered:
+        elif self.direction_session_active:
             self.left_absence_frames += 1
             if self.left_absence_frames == 1:
                 self.left_disappeared_sec = float(now_sec)
@@ -245,10 +290,57 @@ class TrafficLightController:
                 box_area_ratio=observed.box_area_ratio,
                 reason=f"close {self.stop_signal} latched",
             )
+        if self.direction_session_active and direction_signal:
+            return self._decision(
+                TrafficLightAction.LEFT_APPROACH,
+                signal_name=direction_signal,
+                box_area_ratio=direction_observation.box_area_ratio,
+                reason=(
+                    "traffic direction provisional; final YOLO class="
+                    f"{direction_signal}"
+                ),
+            )
+        finalized_left_now = False
+        if (
+            self.direction_session_active
+            and self.left_absence_frames >= self.config.left_absence_frames
+        ):
+            if self.last_direction_signal == "green_4":
+                area = self.last_direction_box_area_ratio
+                self._clear_direction_session(clear_trigger=True)
+                return self._decision(
+                    TrafficLightAction.CLEAR,
+                    signal_name="green_4",
+                    box_area_ratio=area,
+                    reason=(
+                        "final YOLO traffic direction green_4; "
+                        "shortcut cancelled"
+                    ),
+                    direction_finalized=True,
+                    cancel_shortcut=True,
+                )
+            finalized_left_now = not self.direction_finalized
+            self.direction_finalized = True
+            if not self.left_confirmed:
+                signal_name = self.last_direction_signal
+                area = self.last_direction_box_area_ratio
+                self._clear_direction_session(clear_trigger=True)
+                return self._decision(
+                    TrafficLightAction.CLEAR,
+                    signal_name=signal_name,
+                    box_area_ratio=area,
+                    reason=(
+                        "final YOLO traffic direction lacked two left_4 "
+                        "observations; shortcut cancelled"
+                    ),
+                    direction_finalized=True,
+                    cancel_shortcut=True,
+                )
         if self.left_confirmed:
             return self._left_approach_decision(
                 now_sec=float(now_sec),
-                box_area_ratio=frame.left.box_area_ratio,
+                box_area_ratio=self.last_direction_box_area_ratio,
+                direction_finalized=finalized_left_now,
             )
         if green_close:
             return self._decision(
@@ -296,11 +388,27 @@ class TrafficLightController:
         """Allow the next control tick to retry a ready start request."""
         self.left_triggered = False
 
+    def _clear_direction_session(self, *, clear_trigger: bool) -> None:
+        self.left_frames = 0
+        self.left_confirmed = False
+        self.left_absence_frames = 0
+        self.left_last_seen_sec = float("-inf")
+        self.left_disappeared_sec = None
+        self.left_confidence = 0.0
+        if clear_trigger:
+            self.left_triggered = False
+        self.direction_session_active = False
+        self.direction_seen_frames = 0
+        self.last_direction_signal = ""
+        self.last_direction_box_area_ratio = 0.0
+        self.direction_finalized = False
+
     def _left_approach_decision(
         self,
         *,
         now_sec: float,
         box_area_ratio: float = 0.0,
+        direction_finalized: bool = False,
     ) -> TrafficLightDecision:
         shortcut_start = bool(
             not self.stop_latched
@@ -336,6 +444,7 @@ class TrafficLightController:
             signal_name="left_4",
             box_area_ratio=box_area_ratio,
             reason=reason,
+            direction_finalized=direction_finalized,
         )
 
     def _decision(
@@ -346,6 +455,8 @@ class TrafficLightController:
         signal_name: str = "",
         box_area_ratio: float = 0.0,
         reason: str,
+        direction_finalized: bool = False,
+        cancel_shortcut: bool = False,
     ) -> TrafficLightDecision:
         self.latest_decision = TrafficLightDecision(
             action=action,
@@ -353,5 +464,7 @@ class TrafficLightController:
             signal_name=str(signal_name),
             box_area_ratio=float(box_area_ratio),
             reason=str(reason),
+            direction_finalized=bool(direction_finalized),
+            cancel_shortcut=bool(cancel_shortcut),
         )
         return self.latest_decision
