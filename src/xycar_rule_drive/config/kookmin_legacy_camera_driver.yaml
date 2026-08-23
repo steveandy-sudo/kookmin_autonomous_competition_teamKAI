@@ -1,0 +1,68 @@
+kookmin_legacy_camera_driver:
+  ros__parameters:
+    use_sim_time: true
+    image_topic: /image_raw
+    motor_topic: /xycar_motor
+    debug_image_topic: /rule_drive/legacy_debug_image
+    publish_rate_hz: 20.0
+    publish_debug_image: true
+
+    # Bird's-eye transform, adapted from the Kookmin contest camera pipeline.
+    bev_width: 640
+    bev_height: 160
+    src_top_y_ratio: 0.62
+    src_bottom_y_ratio: 0.82
+    src_top_half_width_ratio: 0.34
+    src_bottom_half_width_ratio: 0.50
+    dst_margin_ratio: 0.10
+
+    # Canny + probabilistic Hough line extraction.
+    canny_low: 50
+    canny_high: 150
+    blur_kernel: 7
+    hough_threshold: 22
+    hough_min_line_length: 10
+    hough_max_line_gap: 6
+
+    # Lane clustering and temporal prediction.
+    lane_row_ratio: 0.55
+    angle_tolerance_rad: 0.65
+    lane_cluster_threshold_px: 32.0
+    lane_match_threshold_px: 74.0
+    lane_left_offset_px: -200.0
+    lane_right_offset_px: 200.0
+    min_cos_angle: 0.50
+    lane_update_weight: 0.68
+    prediction_weight: 0.32
+    angle_prev_weight: 0.72
+    angle_new_weight: 0.28
+    max_lane_delta_px: 80.0
+    angle_correction_gain_px: 70.0
+
+    # Use right to keep the car between the yellow centerline and the right
+    # white edge. auto can pick the wrong side when the centerline crosses the
+    # image center during a curve.
+    target_lane: right
+    target_x_offset_px: -80.0
+    color_target_weight: 0.75
+    white_s_max: 85
+    white_v_min: 140
+    yellow_h_min: 15
+    yellow_h_max: 42
+    yellow_s_min: 55
+    yellow_v_min: 105
+    color_band_half_height_px: 12
+    color_min_pixels: 8
+
+    # Xycar Float32MultiArray [angle, speed]. Command 3 is the measured
+    # launch threshold; lower nonzero commands stop in the Gazebo bridge.
+    speed_command: 3.0
+    min_speed_command: 3.0
+    slow_down_error_px: 55.0
+    stop_error_px: 145.0
+    stop_on_large_error: false
+    steering_gain_cmd_per_px: 0.10
+    heading_gain_cmd_per_rad: 5.0
+    angle_command_min: -20.0
+    angle_command_max: 20.0
+    perception_timeout_sec: 0.35

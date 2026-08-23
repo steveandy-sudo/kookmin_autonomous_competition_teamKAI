@@ -1,0 +1,230 @@
+sequential_hybrid_driver:
+  ros__parameters:
+    use_sim_time: false
+    drive_enabled: false
+    gate_arming_required: false
+    # SPACE stops the motor immediately, but a short operator pause inside the
+    # cone course must not erase CONE_RULE and briefly resume normal driving.
+    gate_disarm_cone_hold_sec: 5.0
+    drive_armed_topic: /hybrid_gate/drive_armed
+    control_rate_hz: 20.0
+
+    rl_command_topic: /rl/policy_motor_shadow
+    rule_command_topic: /hybrid/rule_candidate
+    cone_command_topic: /my_rule/cone_cmd
+    scan_topic: /scan
+    motor_topic: /xycar_motor
+    shadow_motor_topic: /hybrid_gate/xycar_motor_shadow
+    mode_topic: /hybrid_gate/mode
+    status_topic: /hybrid_gate/status
+    diagnostics_topic: /hybrid_gate/diagnostics
+
+    # Robust 20th-percentile distance in seven narrow LiDAR sectors.
+    sector_centers_deg: [-90.0, -60.0, -30.0, 0.0, 30.0, 60.0, 90.0]
+    sector_half_angle_deg: 8.0
+    sector_distance_quantile: 0.20
+    minimum_sector_points: 4
+    minimum_sector_span_deg: 4.0
+    scan_timeout_sec: 0.35
+
+    # The base controller is fixed to RULE. Cone and vehicle avoidance are
+    # independent mission overrides; there is no waypoint source switching.
+    initial_source: RULE
+
+    start_delay_sec: 3.0
+    candidate_fresh_sec: 0.35
+    candidate_hold_sec: 0.75
+    minimum_speed_command: 3.0
+    maximum_speed_command: 30.0
+    maximum_abs_angle_command: 42.0
+
+    # Cone mode may start anywhere. While either YOLO or LiDAR still sees a
+    # cone, the selector holds the last valid cone steering command. It exits
+    # only after both sensors have been absent continuously. The sensor timeout
+    # absorbs transport jitter; the additional absence duration prevents one
+    # missed YOLO frame and one empty LiDAR scan from ending cone mode.
+    cone_entry_confidence: 0.35
+    cone_exit_confidence: 0.20
+    cone_entry_frames: 3
+    cone_exit_frames: 1
+    # Return to RULE about 0.5 s after the final cone observation: 0.25 s
+    # sensor freshness plus 0.25 s of continuous absence.
+    cone_exit_absence_sec: 0.25
+    # Ignore isolated cones after slalom exit until normal RULE enters the S curve.
+    cone_reentry_suppression_until_s_curve: true
+    # cone_node publishes a physical wheel target. Convert it to the calibrated
+    # Xycar servo command used by the main real-vehicle drive manager.
+    cone_max_target_angle_deg: 42.0
+    cone_steering_actual_deg: [0.0, 4.0, 10.0, 16.0, 26.0]
+    cone_steering_command: [0.0, 10.0, 20.0, 30.0, 42.0]
+    cone_yolo_min_confidence: 0.50
+    cone_yolo_required_frames: 2
+    cone_yolo_timeout_sec: 0.75
+    # Actual competition-course bags 20260820_135355 (collision) and 140013
+    # (success) showed that a fixed 0.80 m stop is too coarse. Start planning
+    # from a 0.40-confidence central cone, retain 0.50 for steering authority,
+    # and stop only when measured VESC speed needs more distance than remains.
+    cone_approach_slowdown_enabled: true
+    cone_approach_yolo_min_confidence: 0.40
+    cone_approach_center_min_ratio: 0.20
+    cone_approach_center_max_ratio: 0.80
+    cone_approach_first_speed_command: 15.0
+    cone_approach_confirmed_speed_command: 8.0
+    cone_approach_confirmed_distance_m: 1.15
+    cone_approach_target_speed_mps: 0.65
+    cone_approach_deceleration_mps2: 1.50
+    cone_approach_response_time_sec: 0.10
+    cone_approach_brake_margin_m: 0.10
+    cone_approach_hard_stop_distance_m: 0.35
+    cone_approach_stale_speed_stop_distance_m: 0.80
+    cone_approach_release_speed_mps: 0.80
+    cone_approach_release_frames: 2
+    vehicle_speed_timeout_sec: 0.25
+    vesc_state_topic: /vehicle/vesc_state
+    # Steering handoff uses the nearest cone's forward x, not radial range.
+    # Bag-derived boundary: success=0.883/0.797/0.701 m (3 valid frames),
+    # premature hand-push transition=1.320 m, late collision start=0.513 m.
+    cone_entry_distance_m: 0.95
+    cone_cluster_timeout_sec: 0.50
+    # cone_node emits a command from every accepted LiDAR scan. Use that
+    # timestamp for cone safety instead of a duplicate selector scan callback.
+    cone_command_timeout_sec: 0.35
+    cone_sensor_presence_timeout_sec: 0.25
+    # Before entry this topic contains only camera-confirmed candidates. Once
+    # unlocked it follows the same corridor-gated LiDAR geometry used by the
+    # planner, so a slow YOLO frame cannot falsely end an active cone course.
+    cone_cluster_topic: /my_rule/cone_clusters
+    cone_processing_enabled_topic: /my_rule/cone_processing_enabled
+
+    # One YOLO frame plus the yellow centerline side selects the opposite lane
+    # immediately. LiDAR remains distance/space telemetry, not an entry veto.
+    # Traffic-light detections are intentionally not consumed here.
+    object_detections_topic: /my_rule/object_detections
+    shortcut_enabled: true
+    shortcut_class_name: left_4
+    shortcut_yolo_min_confidence: 0.40
+    shortcut_yolo_required_frames: 2
+    shortcut_yolo_absence_frames: 1
+    shortcut_entry_speed_command: 9.0
+    shortcut_left_lane_offset_m: 0.05
+    shortcut_wait_for_entry_ready: true
+    shortcut_entry_ready_topic: /shortcut/entry/ready
+    shortcut_entry_search_timeout_sec: 12.0
+    shortcut_candidate_timeout_sec: 0.35
+    shortcut_rearm_absence_sec: 1.0
+    shortcut_command_topic: /hybrid/shortcut_candidate
+    shortcut_processing_enabled_topic: /hybrid/shortcut_processing_enabled
+
+    # Mission-scoped S-entry slowdown validated on the 2026-08-20 bags.
+    # Shortcut/green-car exits use the conservative cap. Red-car avoidance
+    # keeps a separate cap until the following left curve is confirmed.
+    s_curve_entry_guard_enabled: true
+    s_curve_entry_speed_cap_command: 11.0
+    s_curve_entry_red_car_speed_cap_command: 13.0
+    s_curve_entry_speed_cap_start_distance_m: 8.0
+    s_curve_entry_straight_max_abs_angle_command: 5.0
+    s_curve_entry_straight_confirmation_frames: 3
+    s_curve_entry_minimum_curve_distance_m: 1.50
+    s_curve_entry_left_angle_command: -8.0
+    s_curve_entry_curve_speed_margin_command: 1.00
+    s_curve_entry_curve_confirmation_frames: 3
+    s_curve_entry_overdue_distance_m: 4.50
+    post_red_turn_exit_window_topic: /hybrid/post_red_turn_exit_window
+    post_red_turn_exit_window_maximum_sec: 6.0
+
+    traffic_light_control_enabled: true
+    traffic_light_red_class_name: red_4
+    traffic_light_yellow_class_name: yellow_4
+    traffic_light_green_class_name: green_4
+    traffic_light_min_confidence: 0.50
+    # Signal decisions use confidence and consecutive frames without treating
+    # bounding-box area as a distance proxy.
+    traffic_light_stop_min_box_area_ratio: 0.0
+    traffic_light_go_min_box_area_ratio: 0.0
+    traffic_light_stop_required_frames: 2
+    traffic_light_go_required_frames: 2
+    traffic_light_status_topic: /hybrid/traffic_light_status
+    # First departure is always straight. Lap 2 follows YOLO; after a
+    # successful lap-2 shortcut, lap 3 is forced straight. Later red/yellow
+    # detections do not stop the vehicle after the initial green release.
+    race_lap_policy_enabled: true
+    race_total_laps: 3
+    race_signal_session_release_frames: 2
+    vehicle_class_names: [obstacle_vehicle, red_car, green_car]
+    vehicle_yolo_min_confidence: 0.45
+    vehicle_yolo_required_frames: 1
+    vehicle_yolo_timeout_sec: 0.50
+    # Release a stale red-car detection sooner; green-car behavior is unchanged.
+    vehicle_red_car_yolo_timeout_sec: 0.30
+    vehicle_camera_lidar_hfov_deg: 60.0
+    vehicle_camera_lidar_padding_deg: 3.0
+    vehicle_lidar_min_points: 2
+    # A stale car box must not bind a later traffic-light pole to avoidance.
+    # The detector runs at 3 Hz, so 0.5 s still spans a normal frame interval.
+    vehicle_lidar_sector_memory_sec: 0.5
+    vehicle_preferred_side_required_frames: 1
+    # Recheck obstacle position while avoiding, but reject one-frame side flips.
+    vehicle_active_side_reselection_required_frames: 2
+    # A persistent dynamic obstacle can cancel the post-avoidance S-entry gate.
+    vehicle_green_car_retrigger_required_frames: 2
+    # Move promptly across the center only after a side flip is confirmed.
+    vehicle_active_side_reselection_offset_rate_mps: 1.30
+    # Use the fitted yellow divider for avoidance-side selection on curves too.
+    vehicle_side_decision_straight_only: false
+    vehicle_side_decision_max_rule_angle_command: 8.0
+    vehicle_side_decision_rule_timeout_sec: 0.25
+    yellow_straight_max_rmse_px: 3.0
+    yellow_straight_min_span_ratio: 0.20
+    vehicle_avoidance_enabled: true
+    # Suppress every vehicle-avoidance class from shortcut perception start
+    # until the S-entry guard confirms the first S-curve handoff.
+    vehicle_avoidance_shortcut_suppression_enabled: true
+    vehicle_avoidance_shortcut_release_left_angle_command: -8.0
+    vehicle_avoidance_shortcut_release_required_frames: 2
+    vehicle_avoidance_immediate_on_yolo: true
+    vehicle_avoidance_entry_distance_m: 1.20
+    vehicle_minimum_side_clearance_m: 0.70
+    # Shift equally from the calibrated normal-driving centerline.
+    vehicle_left_offset_m: 0.13
+    vehicle_right_offset_m: 0.13
+    vehicle_offset_rate_mps: 0.65
+    vehicle_avoidance_speed_limit_command: 20.0
+    # AVOID_RIGHT stays slower until its negative offset is established.
+    vehicle_avoidance_right_settle_speed_limit_command: 14.0
+    vehicle_avoidance_right_settle_tolerance_m: 0.02
+    vehicle_red_car_avoidance_speed_limit_command: 20.0
+    vehicle_green_car_avoidance_speed_limit_command: 20.0
+    vehicle_minimum_avoid_sec: 0.50
+    vehicle_clear_hold_sec: 0.50
+    vehicle_green_car_clear_hold_sec: 0.60
+    vehicle_return_hold_sec: 0.30
+    vehicle_return_deadband_m: 0.02
+    vehicle_return_cross_track_error_m: 0.08
+    vehicle_return_required_frames: 3
+    vehicle_return_diagnostics_timeout_sec: 0.30
+    rule_diagnostics_topic: /rule_drive/diagnostics
+    avoidance_offset_topic: /hybrid/avoidance_lateral_offset
+    avoidance_debug_topic: /hybrid/avoidance_debug
+    avoidance_active_topic: /hybrid/avoidance_active
+    avoidance_return_active_topic: /hybrid/avoidance_return_active
+    avoidance_path_request_topic: /hybrid/avoidance_path_request
+    # Xycar envelope measured from the real vehicle: 28 cm at the wheels and
+    # 55 cm from the front LiDAR edge to the rear body edge.
+    vehicle_body_width_m: 0.28
+    vehicle_body_length_m: 0.55
+
+    # Multi-ray geometry rejects isolated noise and broad walls. It is used
+    # only after the vehicle YOLO has armed avoidance.
+    lidar_obstacle_detect_distance_m: 1.50
+    lidar_obstacle_minimum_distance_m: 0.18
+    lidar_obstacle_path_half_width_m: 0.18
+    lidar_obstacle_minimum_cluster_points: 3
+    lidar_obstacle_maximum_scan_index_gap: 2
+    lidar_obstacle_maximum_cluster_gap_m: 0.16
+    lidar_obstacle_minimum_cluster_width_m: 0.09
+    lidar_obstacle_maximum_cluster_width_m: 0.70
+    lidar_obstacle_side_probe_inner_m: 0.18
+    lidar_obstacle_side_probe_outer_m: 0.55
+    lidar_obstacle_lidar_x_m: 0.065
+    lidar_obstacle_lidar_y_m: 0.0
+    lidar_obstacle_lidar_yaw_deg: 0.0

@@ -1,0 +1,63 @@
+world:
+  name: kookmin_xycar_track
+  base_sdf: worlds/kookmin_xycar_track_cad_v4.sdf
+  output_sdf: worlds/kookmin_xycar_track_cad_v4_missions.sdf
+
+# The competition direction starts leftward on the top straight, continues
+# down the left side, and returns rightward on the bottom straight.
+moving_vehicle:
+  name: mission_moving_vehicle
+  class_name: car
+  # The yellow centre line is y=5.59m.  Put the car in the competition
+  # lane, rather than over the yellow line, so the other lane stays open.
+  pose: [-4.60, 5.39, 0.08, 0.0, 0.0, 3.141592654]
+  speed_mps: 0.16
+  # Shuttle inside the top straight instead of leaving the track.
+  shuttle_min_x: -7.70
+  shuttle_max_x: -4.60
+  size: [0.56, 0.30, 0.16]
+  color: [0.10, 0.35, 0.95, 1.0]
+
+fixed_vehicles:
+  - name: mission_fixed_vehicle
+    class_name: car
+    # The yellow centre line is y=-4.56m.  A +0.20m lateral shift centres
+    # this obstacle in one 0.40m lane and leaves the opposite lane open.
+    pose: [1.30, -4.36, 0.08, 0.0, 0.0, 0.0]
+    size: [0.58, 0.31, 0.16]
+    color: [0.90, 0.12, 0.10, 1.0]
+
+traffic_light:
+  name: mission_traffic_light
+  class_name: green
+  # Pole origin; the four-lamp head reaches over the top straight.
+  pose: [-3.90, 4.94, 0.0, 0.0, 0.0, 0.0]
+  active_color: green
+  detection_offset_xy: [0.0, 0.58]
+  head_width_m: 0.50
+  head_height_m: 0.16
+
+cone_corridor:
+  name_prefix: mission_cone
+  class_name: cone
+  # Vehicle travels toward decreasing Y here. East is vehicle-left.
+  east_x: -8.44
+  west_x: -9.22
+  start_y: 2.85
+  end_y: -1.65
+  spacing_m: 0.45
+  base_radius_m: 0.075
+  height_m: 0.27
+
+ground_truth_detection:
+  # ros_gz converts Pose_V to TFMessage without the Gazebo model names.
+  # Dynamic models in this generated world are ego first, mission car second.
+  ego_dynamic_pose_index: 0
+  moving_dynamic_pose_index: 1
+  image_width: 320
+  image_height: 256
+  horizontal_fov_rad: 1.7032
+  publish_hz: 10.0
+  car_max_range_m: 6.0
+  cone_max_range_m: 4.0
+  signal_max_range_m: 8.0

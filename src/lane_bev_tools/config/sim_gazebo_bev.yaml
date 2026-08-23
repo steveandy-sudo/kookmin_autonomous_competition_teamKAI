@@ -1,0 +1,24 @@
+bev_preview_homography:
+  ros__parameters:
+    use_sim_time: true
+    image_topic: /image_raw
+    use_compressed: false
+    calib_yaml: ""
+    enable_rectify: true
+    rect_balance: 0.3
+
+    src_tl_x_ratio: 0.39
+    src_tr_x_ratio: 0.67
+    src_bl_x_ratio: -0.10
+    src_br_x_ratio: 1.10
+    src_top_y_ratio: 0.48
+    src_bottom_y_ratio: 0.72
+
+    bev_width: 640
+    bev_height: 220
+    dst_left_ratio: 0.10
+    dst_right_ratio: 0.90
+
+    lateral_m_per_px: 0.0022
+    forward_m_per_px: 0.010
+    black_threshold: 70

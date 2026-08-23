@@ -1,0 +1,251 @@
+/**:
+  ros__parameters:
+    scan_topic: /scan
+    cone_cmd_topic: /my_rule/cone_cmd
+    cone_cluster_topic: /my_rule/cone_clusters
+    cone_lidar_cluster_topic: /my_rule/cone_lidar_clusters
+    cone_fused_cluster_topic: /my_rule/cone_fused_clusters
+    cone_path_topic: /my_rule/cone_path
+    # Numeric schema is documented in cone_node.publish_diagnostics. The text
+    # topic is convenient for live echo and both are useful in a rosbag.
+    cone_diagnostics_topic: /my_rule/cone_diagnostics
+    cone_status_topic: /my_rule/cone_status
+    # The integrated semantic launch overrides this to true. Standalone cone
+    # testing remains active without requiring a gate publisher.
+    processing_gate_enabled: false
+    processing_enabled_topic: /my_rule/cone_processing_enabled
+    # Real semantic launches override this to true. The latest confirmed YOLO
+    # cone boxes are cached, so LiDAR clustering remains at the native scan rate.
+    cone_yolo_association_enabled: false
+    object_detections_topic: /my_rule/object_detections
+    camera_rect_balance: 0.3
+    cone_yolo_box_timeout_sec: 0.75
+    cone_yolo_min_confidence: 0.50
+    # Preserve calibration tolerance here. The association step itself keeps
+    # only the nearest LiDAR candidate per box, which removes rear candidates
+    # without dropping near candidates at the edge of a box.
+    cone_yolo_box_padding_ratio: 0.35
+    cone_yolo_box_min_padding_px: 12.0
+    # The 2-D LiDAR measures one horizontal plane, not cone height. Match the
+    # projected camera bearing and do not reject a cone on vertical pixels.
+    cone_yolo_match_vertical: false
+    # If a bend hides one cone boundary from the camera, recover only a LiDAR
+    # partner that forms a valid 0.68~0.98 m corridor around the previous path.
+    # This keeps arbitrary chair/table legs excluded from the fused candidates.
+    cone_yolo_recover_corridor_partner: true
+    cone_yolo_recovered_centerline_max_deviation_m: 0.25
+    # YOLO still unlocks cone entry. After the first camera-confirmed LiDAR
+    # match, path geometry may use raw clusters close to the accepted corridor
+    # so a 3 Hz camera inference cannot erase a 2-D LiDAR steering path.
+    lidar_geometry_planning_enabled: true
+    lidar_geometry_path_band_margin_m: 0.16
+    # After control-path hold expires, retain only a short-lived geometry
+    # reference so LiDAR can reacquire while a YOLO frame is late.
+    lidar_geometry_reference_timeout_sec: 0.60
+    max_range_m: 2.2
+    min_range_m: 0.18
+    scan_angle_offset_deg: 0.0
+    scan_front_min_deg: -94.0
+    scan_front_max_deg: 94.0
+    dbscan_eps_m: 0.15
+    dbscan_min_samples: 3
+    sparse_dbscan_min_samples: 2
+    sparse_cluster_min_range_m: 0.8
+    sparse_cluster_min_intensity: 80.0
+    sparse_cluster_match_distance_m: 0.18
+    sparse_cluster_required_frames: 2
+    sparse_cluster_history_frames: 3
+    max_cone_diameter_m: 0.3
+    angle_bin_deg: 6.0
+    group_grow_distance_m: 0.5
+    boundary_expected_spacing_m: 0.30
+    boundary_direct_gap_max_m: 0.50
+    boundary_missing_gap_min_m: 0.50
+    # Bridge at most one RC-scale missing-cone gap, and only when two existing
+    # boundary points define a compatible forward tangent.
+    boundary_gap_max_m: 0.75
+    boundary_gap_max_turn_deg: 55.0
+    # 7/21 현장 bag의 경계 후보 간격은 최대 약 0.95~0.99 m였다. 0.75 m를
+    # 넘는 연결은 마지막 좌회전에서만, 기존 경계의 접선 0.15 m 이내이며
+    # 2 scan 연속 관측(또는 현재 YOLO 확인)일 때 허용한다.
+    boundary_extended_gap_max_m: 1.05
+    boundary_extended_gap_max_turn_deg: 30.0
+    boundary_extended_path_tube_m: 0.15
+    boundary_extended_required_frames: 2
+    boundary_extended_match_distance_m: 0.25
+    boundary_extended_min_track_cones: 2
+    boundary_identity_memory_frames: 6
+    boundary_identity_match_distance_m: 0.35
+    boundary_identity_swap_margin_m: 0.08
+    seed_min_angle_deg: 15.0
+    seed_max_angle_deg: 90.0
+    seed_max_range_m: 2.2
+    allow_single_boundary_fallback: true
+    single_boundary_min_cones: 2
+    single_boundary_min_span_m: 0.20
+    single_boundary_switch_frames: 3
+    paired_boundary_reanchor_frames: 3
+    # Once a previously valid path has expired, do not reacquire from only two
+    # isolated points on one side. Normal single-boundary tracking is unchanged
+    # while prev_path is alive; reacquisition needs one opposite-side supporter.
+    single_boundary_reacquire_min_fused_clusters: 3
+    single_boundary_reacquire_require_opposite_support: true
+    single_boundary_confidence_cap: 0.60
+    nearest_gate_confidence_cap: 0.40
+    single_boundary_max_speed: 9.5
+    lidar_to_rear_axle_m: 0.42
+    wheelbase_m: 0.33
+    lookahead_min_m: 0.7
+    lookahead_max_m: 1.45
+    lookahead_scale: 0.12
+    far_preview_distance_m: 0.75
+    far_preview_weight: 0.65
+    steering_gain: 1.05
+    max_steer_cmd: 42.0
+    # Preserve the existing speed reduction curve while allowing more
+    # steering headroom in tight cone turns.
+    cone_speed_full_steer_deg: 26.0
+    cone_speed: 17.0
+    cone_min_drive_speed: 9.0
+    cone_speed_steer_exponent: 1.0
+    cone_speed_confidence_floor_ratio: 0.35
+    cone_preview_speed_control: true
+    cone_straight_boost_speed: 17.0
+    cone_straight_boost_min_confidence: 0.75
+    cone_straight_boost_min_path_distance_m: 1.35
+    cone_straight_boost_full_angle_deg: 1.0
+    cone_straight_boost_max_angle_deg: 3.0
+    cone_speed_preview_near_m: 0.80
+    cone_speed_preview_far_m: 1.45
+    cone_speed_preview_samples: 4
+    min_confidence: 0.3
+    path_interpolation_method: linear
+    path_sample_count: 100
+    # Time is authoritative; frames remain only as a legacy fallback.
+    path_hold_sec: 0.35
+    path_hold_frames: 5
+    pair_max_forward_delta_m: 0.30
+    min_corridor_width_m: 0.68
+    max_corridor_width_m: 0.98
+    expected_corridor_width_m: 0.85
+    # 8/20 성공 bag의 마지막 좌회전에는 0.98 m보다 넓은 유효 pair가 약
+    # 22% 있었고 최대 약 1.05 m였다. 이전 경로 근처에서 2 scan 확인된
+    # 임시 pair만 1.10 m까지 쓰며 nominal 폭 학습에는 넣지 않는다.
+    final_left_pair_max_width_m: 1.10
+    final_left_pair_max_forward_delta_m: 0.45
+    final_left_wide_pair_path_deviation_m: 0.20
+    final_left_wide_pair_required_frames: 2
+    # Learn slowly inside the measured 0.68~0.98 m RC-course bounds. A single
+    # bad pair cannot move the estimate because two pairs are required.
+    corridor_width_learning_enabled: true
+    corridor_width_learning_alpha: 0.20
+    corridor_width_max_update_m: 0.04
+    corridor_width_learning_min_pairs: 2
+    min_path_midpoints: 2
+    min_path_span_m: 0.15
+    path_gap_fill_start_m: 0.35
+    path_gap_fill_max_m: 0.95
+    path_gap_sample_spacing_m: 0.12
+    max_path_target_jump_m: 0.30
+    # Single-boundary target motion is limited per second, not per LiDAR scan.
+    # The old per-scan value remains as a disabled-rate compatibility fallback.
+    inferred_path_target_rate_mps: 0.80
+    # 단측/희소 경계에서 양측 실측 경계로 돌아올 때 목표 차이가 8 cm 이상이면
+    # 첫 3 scan 동안 새 pairing을 약 0.065 m/scan(10 Hz) 이내로 넘긴다.
+    paired_reacquire_frames: 3
+    paired_reacquire_min_target_jump_m: 0.08
+    paired_reacquire_path_target_rate_mps: 0.65
+    path_target_rate_max_dt_sec: 0.12
+    inferred_max_path_target_jump_m: 0.08
+    path_max_heading_range_deg: 120.0
+    # 경로는 rear-axle 좌표에서 차량 가까운 쪽부터 전방으로 정렬한다.
+    # 급회전에서 경로 끝점이 원점에 가까워져도 Pure Pursuit가 끝점부터
+    # 역추적하지 않게 하며, 짧거나 한 프레임만 방향이 튄 경로는 보류한다.
+    path_min_control_arc_m: 0.20
+    # 단측 경계는 최소 0.50 m의 실제 전방 형상이 있을 때만 새 경로로 채택한다.
+    # 8/19의 0.37 m 단측 조각이 정상 우조향 경로를 덮은 현상을 차단한다.
+    single_boundary_min_control_arc_m: 0.50
+    # 8/20 실패 경로는 마지막 좌커브에서 차량 1.0~1.9 m 앞부터 시작했고,
+    # 성공 경로의 단측 시작점은 모두 0.73 m 이내였다.
+    final_left_single_path_max_start_m: 0.85
+    final_left_reversal_target_margin_m: 0.01
+    path_orientation_start_margin_m: 0.04
+    # 횡방향 제한 후 경로 후반부가 시작점보다 5 cm 이상 원점에 가까워지면
+    # 경로 순서가 무너진 것으로 보고 직전 정상 경로를 유지한다.
+    path_start_nearest_max_fraction: 0.20
+    path_start_nearest_distance_margin_m: 0.05
+    path_heading_jump_threshold_deg: 55.0
+    path_heading_jump_required_frames: 2
+    path_heading_confirmation_tolerance_deg: 20.0
+    path_heading_probe_distance_m: 0.35
+    path_reversal_min_lateral_m: 0.12
+    path_reversal_required_frames: 2
+    steering_median_window: 1
+    # These rates retain RC-scale smoothing while avoiding a hidden dependence
+    # on whether /scan arrives at 10 Hz or 20 Hz. Legacy per-frame values below
+    # are used only if a rate is explicitly set to zero.
+    steering_max_rate_deg_per_sec: 180.0
+    inferred_steering_max_rate_deg_per_sec: 100.0
+    steering_rate_max_dt_sec: 0.12
+    steering_max_delta_deg: 14.0
+    inferred_steering_max_delta_deg: 4.0
+    sharp_curve_preview_enabled: true
+    sharp_curve_heading_threshold_deg: 22.0
+    sharp_curve_steering_gain: 1.18
+    # 단독 라바콘 코스의 검증된 순서: 좌 -> 우 -> 큰 좌. 7/21 현장 bag은
+    # 마지막 좌조향 중앙값 -10.7~-13.3도, peak -16.2~-17.1도였고 8/20의
+    # 성공 fixed-8 주행은 -21.9도까지 사용했다. raw turn-back을 pending으로
+    # 먼저 잡고, sparse/held/반대 경로에서는 이 범위 안에서만 좌조향한다.
+    cone_turn_sequence_guard_enabled: true
+    cone_first_left_enter_steer_deg: 5.0
+    cone_right_enter_steer_deg: 8.0
+    # 성공 주행은 우회전을 약 1.6초 유지했지만 실패 주행은 약 0.5초 만에
+    # 마지막 좌회전으로 뒤집혔다. 우회전 진입 후 짧은 반대 경로가 생겨도
+    # 이 시간 동안은 우회전 최소 조향을 유지한다.
+    cone_right_minimum_hold_sec: 0.75
+    cone_final_left_pending_steer_deg: 3.0
+    cone_final_left_enter_steer_deg: 5.0
+    cone_final_left_pending_frames: 2
+    cone_final_left_pending_hold_steer_deg: 5.0
+    cone_final_left_min_hold_steer_deg: 12.0
+    cone_final_left_fallback_target_deg: 16.5
+    cone_final_left_fallback_max_steer_deg: 22.0
+    cone_final_left_fallback_ramp_deg_per_sec: 10.0
+    cone_final_left_recovery_speed: 8.0
+    # 최종 좌회전이 확정된 뒤에는 최대 약 1.3 m(고정속도 8 추정)의 짧은
+    # blind 구간을 통과할 수 있게 하되, 전방 0.35 m 비상정지는 별도로 유지한다.
+    cone_final_left_recovery_frames: 20
+    cone_final_left_recovery_max_sec: 2.00
+    # 7/21 세 주행의 실측 peak(-16.2~-17.1도)를 모두 포함하고, peak에서
+    # 3도 이상 풀리는 fresh paired 경로가 2회 연속일 때 직진 복귀한다.
+    cone_final_left_release_min_peak_deg: 15.0
+    # 8/20 03:11 실패에서는 raw peak가 -14.0도였지만 출력은 이미 -22도를
+    # 1초 이상 유지했고, 이후 fresh paired raw가 -9.8/-10.3도로 풀렸다.
+    # 이 경우만 보조 해제를 허용한다. 즉 raw peak 12도 이상 + 출력 21도
+    # 이상 0.60초 유지가 모두 확인되어야 하므로 작은 가짜 좌회전은 해제
+    # 조건으로 사용할 수 없다.
+    cone_final_left_release_guarded_min_peak_deg: 12.0
+    cone_final_left_release_guarded_output_deg: 21.0
+    cone_final_left_release_guarded_hold_sec: 0.60
+    cone_final_left_release_margin_deg: 3.0
+    cone_final_left_release_required_frames: 2
+    # release 이후 경로가 잠깐 사라질 때는 대회장 해제 추세(약 3도/s)를
+    # 이어가며, 다시 -22도 peak lock으로 복귀하지 않는다.
+    cone_final_left_release_recovery_rate_deg_per_sec: 3.0
+    cone_final_left_exit_steer_deg: 3.0
+    cone_final_left_exit_frames: 3
+    allow_nearest_gate_fallback: true
+    fallback_pair_min_lateral_separation_m: 0.4
+    fallback_pair_max_center_offset_m: 0.65
+    blind_recovery_frames: 5
+    blind_recovery_max_sec: 0.35
+    # 잘못된 단측 경로를 거부한 경우에는 최대 1초 동안 저속으로 전진하되,
+    # 마지막 큰 좌회전의 release 확인 전에는 검증된 좌조향을 풀지 않는다.
+    invalid_inferred_recovery_frames: 10
+    invalid_inferred_recovery_max_sec: 1.00
+    blind_recovery_min_clusters: 2
+    blind_recovery_steer_decay: 0.92
+    blind_recovery_speed: 4.0
+    invalid_inferred_recovery_speed: 3.0
+    invalid_inferred_recovery_steer_decay: 1.0
+    diagnostics_log_period_sec: 0.50
