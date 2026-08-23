@@ -208,6 +208,7 @@ def generate_launch_description() -> LaunchDescription:
                 name="parking_mission_manager",
                 output="screen",
                 parameters=[
+                    LaunchConfiguration("manager_params"),
                     {
                         "mission_config": LaunchConfiguration("mission_config"),
                         "behavior_tree": str(

@@ -113,7 +113,7 @@ def pose_error(current: Pose2D, target: Pose2D) -> tuple[float, float]:
 class LocalizationGateConfig:
     maximum_xy_variance: float = 0.04
     maximum_yaw_variance: float = 0.08
-    maximum_pose_age_sec: float = 0.50
+    maximum_pose_age_sec: float = 4.00
     maximum_position_jump_m: float = 0.60
     maximum_yaw_jump_rad: float = 0.80
     required_stable_samples: int = 8

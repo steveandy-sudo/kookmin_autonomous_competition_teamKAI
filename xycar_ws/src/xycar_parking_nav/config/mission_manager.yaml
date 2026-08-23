@@ -10,7 +10,10 @@ parking_mission_manager:
     initial_pose_publish_period_sec: 0.25
     maximum_xy_variance: 0.04
     maximum_yaw_variance: 0.08
-    maximum_pose_age_sec: 0.80
+    # AMCL does not publish a new pose while the vehicle is perfectly still.
+    # Keep the last high-quality estimate through each 3 s parking hold; once
+    # motion resumes, normal scan/odometry updates refresh the pose again.
+    maximum_pose_age_sec: 4.00
     maximum_position_jump_m: 0.60
     maximum_yaw_jump_rad: 0.80
     required_stable_samples: 8

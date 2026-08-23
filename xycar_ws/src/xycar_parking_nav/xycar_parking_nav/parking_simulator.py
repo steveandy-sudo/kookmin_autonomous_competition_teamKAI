@@ -126,9 +126,10 @@ class ParkingSimulator(Node):
         self.declare_parameter("odom_frame", "slam_odom")
         self.declare_parameter("base_frame", "base_footprint")
         self.declare_parameter("laser_frame", "laser_frame")
-        self.declare_parameter("initial_x", 1.64)
-        self.declare_parameter("initial_y", 0.9)
-        self.declare_parameter("initial_yaw", math.pi)
+        # Field-measured map -> base_footprint pose at START (2026-08-23).
+        self.declare_parameter("initial_x", 1.631)
+        self.declare_parameter("initial_y", 0.761)
+        self.declare_parameter("initial_yaw", -3.038)
         self.declare_parameter("laser_x", 0.065)
         self.declare_parameter("laser_y", 0.0)
         self.declare_parameter("laser_yaw", 0.0)

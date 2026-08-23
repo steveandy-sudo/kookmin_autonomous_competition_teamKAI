@@ -7,9 +7,11 @@ mission:
 
   initial_pose:
     name: START
-    x: 1.8
-    y: 0.9
-    yaw: 3.141592653589793
+    # 2026-08-23 field measurement. Values are the geometric-center pose
+    # converted from map -> base_footprint=(1.631, 0.761, -3.038).
+    x: 1.790142252
+    y: 0.777545195
+    yaw: -3.038
 
   # Hierarchical entry-point guidance makes each final action encode the
   # intended manoeuvre. A_CLEAR forces the body fully around the top of the
@@ -92,9 +94,10 @@ mission:
       hold_sec: 0.15
       maximum_retries: 2
     - name: A_PARK
-      x: 0.0
-      y: 4.20
-      yaw: 0.0
+      # Field-measured base pose=(0.144, 4.108, 0.021).
+      x: -0.015964721
+      y: 4.104640247
+      yaw: 0.021
       hold_sec: 3.0
       parking_goal: true
       maximum_retries: 3
@@ -155,9 +158,10 @@ mission:
       hold_sec: 0.15
       maximum_retries: 2
     - name: B_PARK
-      x: 2.10
-      y: 3.30
-      yaw: -1.5707963267948966
+      # Field-measured base pose=(2.070, 3.026, -1.503).
+      x: 2.059160896
+      y: 3.185632433
+      yaw: -1.503
       hold_sec: 3.0
       parking_goal: true
       maximum_retries: 3
@@ -220,8 +224,8 @@ mission:
       hold_sec: 0.15
       maximum_retries: 2
     - name: START_RETURN
-      x: 1.8
-      y: 0.9
-      yaw: 3.141592653589793
+      x: 1.790142252
+      y: 0.777545195
+      yaw: -3.038
       hold_sec: 1.0
       maximum_retries: 3

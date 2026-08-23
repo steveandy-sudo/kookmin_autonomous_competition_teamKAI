@@ -4,21 +4,69 @@
 ROS 2 Humble 패키지입니다.
 
 ```text
-Start (1.8, 0.9, pi)
-  -> A 후진주차 (0.0, 4.2, 0.0)
-  -> B 평행주차 (2.1, 3.3, -pi/2)
+Start (1.790, 0.778, -3.038)
+  -> A 후진주차 (-0.016, 4.105, 0.021)
+  -> B 평행주차 (2.059, 3.186, -1.503)
   -> Start 복귀
 ```
 
 주행 중 새 지도를 만드는 SLAM 패키지가 아니라, 제공된 정적 지도와 2D
 LiDAR를 이용하는 `map_server + AMCL` localization 구조입니다. 전역/주차
 경로는 `SmacPlannerHybrid (REEDS_SHEPP)`, 추종은 후진 가능한
-`MPPIController (Ackermann)`를 사용합니다. 공식 A/B/Start Pose는 그대로 두고,
+`MPPIController (Ackermann)`를 사용합니다. A/B/Start Pose는 2026-08-23 실차
+`map -> base_footprint` 측정값을 차량 중심 기준으로 변환해 사용하고,
 조향 서보가 따라갈 수 있도록 곡률 변화점과 전진/후진 cusp를 포함한 31개 단계로
 미션을 분할했습니다.
 
 `/slam/odom`, `/slam/scan_filtered`는 기존 차량 인터페이스와 맞춘 topic 이름일
 뿐이며, visual SLAM이나 `slam_toolbox` 노드는 실행하지 않습니다.
+
+## 동작 로직과 원리
+
+```text
+LiDAR + VESC + IMU
+        |
+        v
+scan_filter + vesc_imu_odom
+        |
+        v
+정적 지도 + AMCL 위치추정
+        |
+        v
+mission_manager (Start -> A -> B -> Start, 31단계)
+        |
+        v
+Hybrid-A* 경로계획 + Ackermann MPPI 경로추종
+        |
+        v
+cmd_vel_adapter (권한·LiDAR·방향전환 검사)
+        |
+        v
+/xycar_motor (+4 / 0 / -4)
+```
+
+1. `scan_filter`가 차량 자체와 사용할 수 없는 LiDAR 구간을 제거하고,
+   `vesc_imu_odom`이 VESC 이동량과 IMU yaw를 결합해 `/slam/odom`을 만듭니다.
+2. AMCL은 새 지도를 만들지 않고 제공된 PGM 지도에서
+   `map -> slam_odom` 변환과 `/amcl_pose`를 계산합니다. covariance, 위치·방향
+   급변과 시간 유효성을 모두 검사합니다. 완전 정차 시 AMCL이 새 Pose를 발행하지
+   않을 수 있어 마지막 정상 Pose는 3초 주차 확인시간보다 긴 4초까지 인정합니다.
+   4초를 넘기거나 위치 품질이 나빠지면 모터 권한을 닫습니다.
+3. `mission_manager`는 차량 중심으로 기록한 Start/A/B Pose를 전륜축
+   `base_footprint` 기준으로 변환합니다. 첫 SPACE가 미션과 초기 위치를 reset하고
+   시작 요청을 저장합니다. AMCL 정상 표본 8개가 연속으로 들어오면 `READY`가 되고
+   `RUNNING -> HOLDING`을 반복하며 31단계를 순서대로 실행합니다.
+4. 각 단계는 Reeds-Shepp Hybrid-A*가 전진·후진 가능한 경로를 만들고 Ackermann
+   MPPI가 이를 추종합니다. 전진/후진 cusp와 곡률 변화점을 별도 단계로 둬 조향을
+   먼저 맞춘 뒤 방향을 바꿉니다. costmap에 새 장애물이 들어오면 이동 방향 전환
+   비용까지 포함해 경로를 다시 계산합니다.
+5. `cmd_vel_adapter`만 최종 모터 명령 권한을 가집니다. 미션 승인, AMCL 정상,
+   최신 `/cmd_vel`과 `/scan`, 조향 정렬, 방향전환 정지시간, 예상 정지궤적의
+   LiDAR 충돌검사를 전부 통과해야 `+4` 또는 `-4`를 냅니다. 하나라도 실패하면
+   즉시 `0`을 내고 `/parking_cmd_vel_adapter/status`에 원인을 기록합니다.
+6. 두 번째 SPACE, `Q`, `ESC` 또는 abort 서비스는 Nav2 목표를 취소하고
+   `/parking/drive_authorized`를 닫습니다. 키보드 터미널에는 미션 단계와
+   `stale_pose`, LiDAR 충돌, 조향 대기 같은 정지 이유가 한글로 표시됩니다.
 
 ## 안전 기본값
 
@@ -55,7 +103,7 @@ LiDAR를 이용하는 `map_server + AMCL` localization 구조입니다. 전역/�
 보존합니다. `resolution`과 `origin`은 원본 그대로입니다.
 
 도면의 십자는 차량 기하 중심이지만 실차의 `base_footprint`는 전륜 중심입니다.
-`config/parking_mission.yaml`의 `base_from_reference_x_m: 0.16`이 모든 공식
+`config/parking_mission.yaml`의 `base_from_reference_x_m: 0.16`이 모든 차량 중심
 Pose를 TF 기준 Pose로 변환합니다. 이 값은 국민대 Gazebo 생성기의 전·후륜
 위치 `x=+0.16/-0.16 m`와 일치합니다.
 
@@ -75,11 +123,64 @@ sudo apt install -y \
   ros-humble-nav2-bringup \
   python3-pil python3-yaml
 
-cd ~/xycar_kookmin_gazebo_track/xycar_ws
+cd /home/xytron/parking_ws/xycar_ws
 source /opt/ros/humble/setup.bash
 colcon build --symlink-install --packages-up-to \
   xycar_msgs xycar_vesc_driver xycar_parking_nav
 source install/setup.bash
+```
+
+## 빠른 실행 명령
+
+실행 중인 이전 주차 launch가 있으면 먼저 `Ctrl+C`로 종료합니다. LiDAR, IMU,
+VESC를 주차 launch가 모두 시작하는 표준 실차 명령은 다음과 같습니다. 아래 명령은
+실제 모터 출력을 허용하므로 첫 SPACE 뒤 AMCL이 안정되면 차량이 움직입니다.
+
+터미널 1:
+
+```bash
+cd /home/xytron/parking_ws/xycar_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch xycar_parking_nav parking_real.launch.py \
+  drive_enabled:=true \
+  autostart_mission:=false
+```
+
+LiDAR를 다른 터미널에서 이미 lifecycle `active` 상태로 실행 중인 경우에만
+중복 포트를 피하도록 `start_lidar:=false`를 추가합니다.
+
+터미널 2:
+
+```bash
+cd /home/xytron/parking_ws/xycar_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 run xycar_parking_nav parking_keyboard_control
+```
+
+- 첫 SPACE: 미션/초기 위치 reset 후 AMCL 준비 시 자동 출발
+- 두 번째 SPACE: Nav2 목표 취소, 모터 권한 해제 및 즉시 정지
+- 다시 SPACE: 처음부터 재시작
+- `Q` 또는 `ESC`: 정지 후 키보드 프로그램 종료
+
+키보드 프로그램을 쓰지 않을 때의 서비스 명령은 다음과 같습니다.
+
+```bash
+ros2 service call /parking_mission_manager/reset std_srvs/srv/Trigger '{}'
+ros2 service call /parking_mission_manager/start std_srvs/srv/Trigger '{}'
+ros2 service call /parking_mission_manager/abort std_srvs/srv/Trigger '{}'
+```
+
+실차 출력 없이 전체 로직만 확인하려면 터미널 1의 launch에서
+`drive_enabled:=false`를 사용합니다. 상태와 정지 원인은 다음 명령으로 봅니다.
+
+```bash
+ros2 topic echo /parking/mission_state
+ros2 topic echo /parking_cmd_vel_adapter/status
+ros2 topic hz /amcl_pose
 ```
 
 ## 오프라인 검증
@@ -168,6 +269,15 @@ ros2 run tf2_ros tf2_echo base_footprint laser_frame
 RViz에서 지도 위 LiDAR 점이 벽과 일치하고 mission state가 `READY`가 되면
 미션을 시작합니다. Shadow 모드에서는 계산된 명령이
 `/parking/xycar_motor_shadow`에만 나옵니다.
+
+별도 터미널에서 SPACE 시작/정지 조작기를 실행할 수 있습니다. 첫 SPACE는
+위치추정을 reset한 뒤 미션 시작 요청을 저장하고, 다음 SPACE는 즉시 abort하여
+모터 주행 권한을 닫습니다. 같은 터미널에 현재 단계와 위치추정·LiDAR·Nav2 등
+정지 이유가 한글로 표시됩니다. `Q` 또는 `ESC`는 안전 정지 후 종료합니다.
+
+```bash
+ros2 run xycar_parking_nav parking_keyboard_control
+```
 
 ```bash
 ros2 service call /parking_mission_manager/start std_srvs/srv/Trigger '{}'

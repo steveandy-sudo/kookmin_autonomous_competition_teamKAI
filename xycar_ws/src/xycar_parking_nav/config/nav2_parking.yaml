@@ -41,11 +41,11 @@ amcl:
     set_initial_pose: true
     always_reset_initial_pose: true
     initial_pose:
-      # Official center pose (1.8, 0.9, pi), converted to front-wheel base.
-      x: 1.64
-      y: 0.9
+      # 2026-08-23 field-measured map -> base_footprint pose at START.
+      x: 1.631
+      y: 0.761
       z: 0.0
-      yaw: 3.141592653589793
+      yaw: -3.038
 
 bt_navigator:
   ros__parameters:

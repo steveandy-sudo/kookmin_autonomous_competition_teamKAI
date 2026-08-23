@@ -41,6 +41,7 @@ setup(
         "console_scripts": [
             "cmd_vel_adapter = xycar_parking_nav.cmd_vel_adapter:main",
             "mission_manager = xycar_parking_nav.mission_manager:main",
+            "parking_keyboard_control = xycar_parking_nav.parking_keyboard_control:main",
             "parking_preflight = xycar_parking_nav.parking_preflight:main",
             "parking_simulator = xycar_parking_nav.parking_simulator:main",
             "scan_filter = xycar_parking_nav.scan_filter_node:main",

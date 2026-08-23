@@ -53,11 +53,25 @@ def test_mission_manager_runtime_limits_are_in_a_ros_parameter_file():
     ]["parking_goal_checker"]
 
     assert manager["required_stable_samples"] >= 5
-    assert manager["maximum_pose_age_sec"] <= 1.0
+    # Covers the 3 s stationary parking holds without permitting an
+    # indefinitely stale localization estimate during motion.
+    assert 3.0 < manager["maximum_pose_age_sec"] <= 4.0
     assert manager["localization_loss_cancel_sec"] <= 1.0
     assert manager["retry_delay_sec"] <= 0.25
     assert manager["retry_delay_sec"] < manager["nav2_activation_timeout_sec"] <= 10.0
     assert goal_checker["xy_goal_tolerance"] <= manager["goal_position_tolerance_m"]
+
+
+def test_all_parking_launches_load_mission_manager_parameter_file():
+    for relative_path in (
+        "launch/parking_real.launch.py",
+        "launch/parking_navigation.launch.py",
+    ):
+        source = (PACKAGE / relative_path).read_text(encoding="utf-8")
+        manager_node = source.split('executable="mission_manager"', 1)[1].split(
+            'executable="cmd_vel_adapter"', 1
+        )[0]
+        assert 'LaunchConfiguration("manager_params")' in manager_node
 
 
 def test_mission_has_three_minute_budget_with_fast_transitions():
@@ -232,26 +246,37 @@ def test_global_planner_balances_fast_detours_and_motion_stability():
     assert planner["max_planning_time"] <= 2.0
 
 
-def test_mission_retains_official_reference_centers():
+def test_mission_uses_field_measured_reference_centers():
     mission = _yaml("config/parking_mission.yaml")["mission"]
+    amcl = _yaml("config/nav2_parking.yaml")["amcl"]["ros__parameters"]
     initial = mission["initial_pose"]
     steps = {step["name"]: step for step in mission["steps"]}
 
     assert (initial["x"], initial["y"], initial["yaw"]) == (
-        1.8,
-        0.9,
-        3.141592653589793,
+        1.790142252,
+        0.777545195,
+        -3.038,
     )
     assert (steps["A_PARK"]["x"], steps["A_PARK"]["y"], steps["A_PARK"]["yaw"]) == (
-        0.0,
-        4.2,
-        0.0,
+        -0.015964721,
+        4.104640247,
+        0.021,
     )
     assert (steps["B_PARK"]["x"], steps["B_PARK"]["y"], steps["B_PARK"]["yaw"]) == (
-        2.1,
-        3.3,
-        -1.5707963267948966,
+        2.059160896,
+        3.185632433,
+        -1.503,
     )
+    assert (
+        steps["START_RETURN"]["x"],
+        steps["START_RETURN"]["y"],
+        steps["START_RETURN"]["yaw"],
+    ) == (initial["x"], initial["y"], initial["yaw"])
+    assert (
+        amcl["initial_pose"]["x"],
+        amcl["initial_pose"]["y"],
+        amcl["initial_pose"]["yaw"],
+    ) == (1.631, 0.761, -3.038)
     assert "A_CLEAR" in steps
     assert steps["A_CLEAR"]["y"] >= 4.8
     assert "A_APPROACH" in steps

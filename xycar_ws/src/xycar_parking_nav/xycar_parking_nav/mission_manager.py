@@ -278,7 +278,7 @@ class ParkingMissionManager(Node):
         self.declare_parameter("initial_pose_publish_period_sec", 0.25)
         self.declare_parameter("maximum_xy_variance", 0.04)
         self.declare_parameter("maximum_yaw_variance", 0.08)
-        self.declare_parameter("maximum_pose_age_sec", 0.50)
+        self.declare_parameter("maximum_pose_age_sec", 4.00)
         self.declare_parameter("maximum_position_jump_m", 0.60)
         self.declare_parameter("maximum_yaw_jump_rad", 0.80)
         self.declare_parameter("required_stable_samples", 8)

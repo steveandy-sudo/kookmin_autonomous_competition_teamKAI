@@ -88,8 +88,8 @@ def test_localization_age_fails_closed():
         stamp_sec=1.0,
         now_sec=1.0,
     ).ready
-    assert gate.age_assessment(1.6).reason == "stale_pose"
-    assert not gate.age_assessment(1.6).ready
+    assert gate.age_assessment(5.1).reason == "stale_pose"
+    assert not gate.age_assessment(5.1).ready
 
 
 def test_mission_parser_rejects_duplicate_names():
