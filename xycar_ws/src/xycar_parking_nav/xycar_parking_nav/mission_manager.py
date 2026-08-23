@@ -57,6 +57,8 @@ REASON_KO = {
     "operator_abort": "운전자 중단 요청",
     "operator_reset": "운전자 초기화 요청",
     "waiting_for_nav2_action_server": "Nav2 경로주행 서버 시작 대기 중",
+    "waiting_for_nav2_activation": "Nav2 전체 활성화 대기 중(재시도 횟수 차감 안 함)",
+    "nav2_activation_timeout": "Nav2가 제한시간 안에 활성화되지 않아 안전 중단",
     "goal_rejected": "Nav2가 목표를 거부함",
     "no_final_pose": "목표 도착 후 AMCL 위치정보가 없음",
     "goal_cancelled_for_localization": "위치추정 이상으로 현재 목표 취소",
@@ -163,6 +165,9 @@ class ParkingMissionManager(Node):
         self.action_server_timeout = float(
             self.get_parameter("action_server_timeout_sec").value
         )
+        self.nav2_activation_timeout = float(
+            self.get_parameter("nav2_activation_timeout_sec").value
+        )
         self.retry_delay = float(self.get_parameter("retry_delay_sec").value)
         self.mission_time_limit = float(
             self.get_parameter("mission_time_limit_sec").value
@@ -175,6 +180,8 @@ class ParkingMissionManager(Node):
         )
         if self.mission_time_limit <= 0.0:
             raise ValueError("mission time limit must be positive")
+        if self.nav2_activation_timeout <= 0.0:
+            raise ValueError("Nav2 activation timeout must be positive")
         if not 0.0 <= self.time_warning_remaining < self.mission_time_limit:
             raise ValueError("time warning must be within the mission time limit")
         if self.time_log_period <= 0.0:
@@ -196,6 +203,8 @@ class ParkingMissionManager(Node):
         self.mission_finished_at: float | None = None
         self.next_time_log_at: float | None = None
         self.time_warning_emitted = False
+        self.nav2_first_goal_accepted = False
+        self.nav2_activation_deadline: float | None = None
         self.start_requested = self.autostart_mission
         self.goal_handle = None
         self.goal_active = False
@@ -277,6 +286,7 @@ class ParkingMissionManager(Node):
         self.declare_parameter("goal_position_tolerance_m", 0.09)
         self.declare_parameter("goal_yaw_tolerance_rad", 0.10)
         self.declare_parameter("action_server_timeout_sec", 1.0)
+        self.declare_parameter("nav2_activation_timeout_sec", 10.0)
         self.declare_parameter("retry_delay_sec", 1.0)
         self.declare_parameter("mission_time_limit_sec", 180.0)
         self.declare_parameter("time_warning_remaining_sec", 30.0)
@@ -450,6 +460,8 @@ class ParkingMissionManager(Node):
         self.mission_finished_at = None
         self.next_time_log_at = None
         self.time_warning_emitted = False
+        self.nav2_first_goal_accepted = False
+        self.nav2_activation_deadline = None
         self.start_requested = False
         self.initial_pose_remaining = int(
             self.get_parameter("initial_pose_publish_count").value
@@ -478,8 +490,7 @@ class ParkingMissionManager(Node):
             self._set_state("PAUSED_LOCALIZATION", self.localization_reason)
             return
         if not self.nav_client.wait_for_server(timeout_sec=self.action_server_timeout):
-            self.retry_at = self._now_sec() + self.retry_delay
-            self._set_state("RUNNING", "waiting_for_nav2_action_server")
+            self._defer_for_nav2_activation("waiting_for_nav2_action_server")
             return
 
         target = self.base_goals[self.current_index]
@@ -511,8 +522,13 @@ class ParkingMissionManager(Node):
             return
         handle = future.result()
         if not handle.accepted:
+            if not self.nav2_first_goal_accepted:
+                self._defer_for_nav2_activation("waiting_for_nav2_activation")
+                return
             self._handle_goal_failure("goal_rejected")
             return
+        self.nav2_first_goal_accepted = True
+        self.nav2_activation_deadline = None
         self.goal_handle = handle
         self.goal_active = True
         result_future = handle.get_result_async()
@@ -521,6 +537,21 @@ class ParkingMissionManager(Node):
                 completed, goal_serial
             )
         )
+
+    def _defer_for_nav2_activation(self, reason: str) -> None:
+        """Wait for lifecycle activation without spending a driving retry."""
+
+        now_sec = self._now_sec()
+        if self.nav2_activation_deadline is None:
+            self.nav2_activation_deadline = now_sec + self.nav2_activation_timeout
+        if now_sec >= self.nav2_activation_deadline:
+            self.start_requested = False
+            if self.mission_started_at is not None:
+                self.mission_finished_at = now_sec
+            self._set_state("ABORTED", "nav2_activation_timeout")
+            return
+        self.retry_at = now_sec + self.retry_delay
+        self._set_state("RUNNING", reason)
 
     def _on_feedback(self, _feedback) -> None:
         # Authorization is deliberately based on AMCL health, not action feedback.

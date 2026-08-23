@@ -110,12 +110,19 @@ Nav2 trinary 변환 규칙을 그대로 검증한 결과 원본에서는 UNKNOWN
 검증한 31단계 좌표와 공식 `B_PARK (2.1, 3.3, -pi/2)` Pose는 변경하지 않는다.
 
 주행 중 새로 생긴 장애물은 `/slam/scan_filtered`에서 local/global obstacle
-layer로 동시에 marking한다. 전역 costmap은 5 Hz로 갱신하고 Behavior Tree의
-`PipelineSequence`가 2 Hz로 경로를 다시 계산하므로, 차량 회전반경과 footprint를
-만족하는 다른 통로가 있으면 Smac Hybrid-A* 경로가 자동으로 바뀐다. 관측은 1초
-유지하고 LiDAR ray tracing으로 clearing한다. 우회로가 없는 동안에는 LiDAR
-shield가 모터를 0으로 유지하며, 제한된 재계획/대기 횟수를 넘기면 해당 단계가
-실패해 미션 관리자의 재시도 또는 안전 중단으로 넘어간다.
+layer로 동시에 marking한다. 전역 costmap은 10 Hz로 갱신하고 Behavior Tree의
+`PipelineSequence`가 검증된 2 Hz로 전역 경로를 다시 계산한다. 차량 회전반경과
+footprint를 만족하는 다른 통로가 있으면 Smac Hybrid-A* 경로가 자동으로 바뀐다.
+Smac에는 기어 전환비용이
+따로 없으므로 검증된 후진·곡률 일관성 regularizer(1.35/1.10/0.20)를 유지한다.
+이를 거리 최단에 가깝게 낮춘 실기동에서는 경로 안에 작은 cusp가 반복되어 매번
+0.4초 정지했고 20초 동안 첫 단계를 벗어나지 못했다. 따라서 안전한 우회 후보 중
+경로 길이뿐 아니라 방향·곡률 일관성까지 포함한 실제 주행시간 최소 경로를 쓴다.
+동적 장애물마다 obstacle heuristic을 다시 계산해 이미 막힌 통로의 오래된 비용을
+재사용하지 않는다. 관측은 1초 유지하고 LiDAR ray tracing으로 clearing한다.
+우회로가 없는 동안에는 LiDAR shield가 모터를 0으로 유지하며, Humble의 정수초
+Wait 대신 즉시 재계획하고 0.25초 뒤 미션 재시도로 넘어간다. 제한된 횟수를
+넘기면 해당 단계가 실패해 안전 중단으로 넘어간다.
 
 경기 제한 3분은 미션 start 승인 후 첫 목표를 보내는 순간부터 출발지 복귀 완료까지
 연속으로 측정한다. 위치추정 일시정지와 장애물 재계획 시간도 경기 시간에 포함한다.

@@ -31,6 +31,11 @@ class HybridAStarConfig:
     footprint_margin_m: float = 0.095
     goal_position_tolerance_m: float = 0.12
     goal_yaw_tolerance_rad: float = 0.12
+    # Smac does not model a forward/reverse gear-change cost directly.  The
+    # reverse regularizer prevents consecutive replans from flipping their
+    # first direction and repeatedly paying the physical 0.40 s dwell.  An
+    # actual gear change costs the distance-equivalent of that dwell at
+    # 0.322 m/s.
     reverse_multiplier: float = 1.35
     direction_change_cost: float = 0.20
     non_straight_multiplier: float = 1.10

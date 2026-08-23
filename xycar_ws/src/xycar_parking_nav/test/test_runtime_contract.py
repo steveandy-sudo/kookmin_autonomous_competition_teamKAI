@@ -55,6 +55,8 @@ def test_mission_manager_runtime_limits_are_in_a_ros_parameter_file():
     assert manager["required_stable_samples"] >= 5
     assert manager["maximum_pose_age_sec"] <= 1.0
     assert manager["localization_loss_cancel_sec"] <= 1.0
+    assert manager["retry_delay_sec"] <= 0.25
+    assert manager["retry_delay_sec"] < manager["nav2_activation_timeout_sec"] <= 10.0
     assert goal_checker["xy_goal_tolerance"] <= manager["goal_position_tolerance_m"]
 
 
@@ -185,7 +187,10 @@ def test_behavior_tree_has_no_non_ackermann_recovery():
     assert "Spin" not in tags
     assert "BackUp" not in tags
     assert "DriveOnHeading" not in tags
-    assert {"ComputePathToPose", "FollowPath", "Wait"} <= tags
+    assert {"ComputePathToPose", "FollowPath"} <= tags
+    # Humble rounds the stock Wait action to whole seconds.  A fixed one-second
+    # recovery delay would dominate obstacle detour latency.
+    assert "Wait" not in tags
     assert rate_controller is not None
     assert float(rate_controller.attrib["hz"]) >= 2.0
     assert navigation_recovery is not None
@@ -207,10 +212,24 @@ def test_lidar_obstacles_are_marked_cleared_and_sent_to_global_replanner():
 
     assert nav2["global_costmap"]["global_costmap"]["ros__parameters"][
         "update_frequency"
-    ] >= 5.0
+    ] >= 10.0
     assert nav2["planner_server"]["ros__parameters"][
         "expected_planner_frequency"
     ] >= 2.0
+
+
+def test_global_planner_balances_fast_detours_and_motion_stability():
+    planner = _yaml("config/nav2_parking.yaml")["planner_server"]["ros__parameters"][
+        "GridBased"
+    ]
+
+    assert planner["motion_model_for_search"] == "REEDS_SHEPP"
+    assert 1.3 <= planner["reverse_penalty"] <= 1.4
+    assert 0.15 <= planner["change_penalty"] <= 0.20
+    assert 1.05 <= planner["non_straight_penalty"] <= 1.10
+    assert 0.0 < planner["retrospective_penalty"] <= 0.015
+    assert planner["cache_obstacle_heuristic"] is False
+    assert planner["max_planning_time"] <= 2.0
 
 
 def test_mission_retains_official_reference_centers():
