@@ -180,6 +180,23 @@ def selected_external_lateral_offset(
     return float(avoidance_offset_m)
 
 
+def shortcut_preposition_requested(
+    *,
+    action: TrafficLightAction,
+    signal_name: str,
+    shortcut_class_name: str,
+    green_class_name: str,
+    suppress_initial_green: bool,
+) -> bool:
+    """Preserve signal pre-positioning except during the first green release."""
+    signal = str(signal_name)
+    return bool(
+        action == TrafficLightAction.LEFT_APPROACH
+        and signal in {str(shortcut_class_name), str(green_class_name)}
+        and not bool(suppress_initial_green)
+    )
+
+
 def cone_approach_speed_limit(
     *,
     enabled: bool,
@@ -644,6 +661,8 @@ class SequentialHybridDriver(Node):
         self.last_left_detect_count = 0
         self.last_left_absence_count = 0
         self.shortcut_left_lane_offset_active = False
+        self.initial_green_offset_suppression_active = False
+        self.initial_green_offset_suppression_completed = False
         self.cone_command = (0.0, 0.0, 0.0)
         self.last_valid_cone_command = (0.0, 0.0)
         self.cone_command_time = float("-inf")
@@ -1143,7 +1162,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("vehicle_speed_timeout_sec", 0.25)
         self.declare_parameter("vesc_state_topic", "/vehicle/vesc_state")
         self.declare_parameter("s_curve_entry_guard_enabled", True)
-        self.declare_parameter("s_curve_entry_speed_cap_command", 11.0)
+        self.declare_parameter("s_curve_entry_speed_cap_command", 20.0)
         self.declare_parameter(
             "s_curve_entry_red_car_speed_cap_command", 13.0
         )
@@ -1189,7 +1208,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("shortcut_yolo_required_frames", 2)
         self.declare_parameter("shortcut_yolo_absence_frames", 1)
         self.declare_parameter("shortcut_entry_speed_command", 9.0)
-        self.declare_parameter("shortcut_left_lane_offset_m", 0.05)
+        self.declare_parameter("shortcut_left_lane_offset_m", 0.02)
         self.declare_parameter("shortcut_wait_for_entry_ready", True)
         self.declare_parameter(
             "shortcut_entry_ready_topic", "/shortcut/entry/ready"
@@ -1662,6 +1681,8 @@ class SequentialHybridDriver(Node):
             # intentionally retained for gate_disarm_cone_hold_sec.
             self._reset_shortcut_state()
             self.race_lap_policy.reset()
+            self.initial_green_offset_suppression_active = False
+            self.initial_green_offset_suppression_completed = False
             self._reset_s_curve_entry_guard("SPACE disarmed")
             self._reset_post_red_turn_exit_window()
             self.green_car_retrigger_blocked = False
@@ -2093,12 +2114,16 @@ class SequentialHybridDriver(Node):
                 control_traffic_frame,
                 left=SignalObservation(),
             )
+        suppress_initial_green_offset_this_frame = (
+            self.initial_green_offset_suppression_active
+        )
         if (
             self.drive_armed
             and bool(
                 self.get_parameter("traffic_light_control_enabled").value
             )
         ):
+            stop_was_latched = self.traffic_light_controller.stop_latched
             self.traffic_light_decision = (
                 self.traffic_light_controller.observe(
                     now_sec=now,
@@ -2107,6 +2132,32 @@ class SequentialHybridDriver(Node):
                     shortcut_active=False,
                 )
             )
+            initial_green_released = bool(
+                not self.initial_green_offset_suppression_completed
+                and stop_was_latched
+                and not self.traffic_light_controller.stop_latched
+                and traffic_frame.green.qualifies(
+                    minimum_confidence=float(
+                        self.get_parameter("traffic_light_min_confidence").value
+                    ),
+                    minimum_box_area_ratio=float(
+                        self.get_parameter(
+                            "traffic_light_go_min_box_area_ratio"
+                        ).value
+                    ),
+                )
+            )
+            if initial_green_released:
+                self.initial_green_offset_suppression_active = True
+                suppress_initial_green_offset_this_frame = True
+                self._set_shortcut_left_lane_offset_active(
+                    False,
+                    reason="initial red-to-green departure",
+                )
+                self.get_logger().warning(
+                    f"{ANSI_GREEN}[TRAFFIC] INITIAL GREEN OFFSET SUPPRESSED"
+                    f"{ANSI_RESET}"
+                )
             start_event = self.race_lap_policy.observe_start_gate(
                 green_release_confirmed=bool(
                     not self.traffic_light_controller.stop_latched
@@ -2138,6 +2189,13 @@ class SequentialHybridDriver(Node):
                 f"{int(self.traffic_light_decision.cancel_shortcut)}"
                 f"{ANSI_RESET}"
             )
+            if self.initial_green_offset_suppression_active:
+                self.initial_green_offset_suppression_active = False
+                self.initial_green_offset_suppression_completed = True
+                self.get_logger().warning(
+                    f"{ANSI_GREEN}[TRAFFIC] INITIAL GREEN SESSION COMPLETE; "
+                    f"GREEN OFFSET RESTORED{ANSI_RESET}"
+                )
         if self.traffic_light_decision.cancel_shortcut:
             self._cancel_shortcut_for_final_straight()
 
@@ -2175,8 +2233,19 @@ class SequentialHybridDriver(Node):
                 )
                 self.last_left_absence_count = count
         if (
-            self.traffic_light_decision.action
-            == TrafficLightAction.LEFT_APPROACH
+            shortcut_preposition_requested(
+                action=self.traffic_light_decision.action,
+                signal_name=self.traffic_light_decision.signal_name,
+                shortcut_class_name=str(
+                    self.get_parameter("shortcut_class_name").value
+                ),
+                green_class_name=str(
+                    self.get_parameter("traffic_light_green_class_name").value
+                ),
+                suppress_initial_green=(
+                    suppress_initial_green_offset_this_frame
+                ),
+            )
             and bool(self.get_parameter("shortcut_enabled").value)
             and self.race_lap_policy.shortcut_allowed
             and self.shortcut_latch.armed
@@ -2819,6 +2888,8 @@ class SequentialHybridDriver(Node):
             self.controller.source = CandidateSource.RULE
         self._reset_shortcut_state()
         self.race_lap_policy.reset()
+        self.initial_green_offset_suppression_active = False
+        self.initial_green_offset_suppression_completed = False
         self.cone_bypass.reset()
         self.cone_reentry_suppression.reset()
         self.cone_yolo_frames = 0

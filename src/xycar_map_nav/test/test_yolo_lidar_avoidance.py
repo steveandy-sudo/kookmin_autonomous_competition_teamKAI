@@ -30,6 +30,10 @@ from xycar_map_nav.sequential_hybrid_driver import (
     selected_external_lateral_offset,
 )
 from xycar_map_nav.sequential_hybrid_driver import (
+    shortcut_preposition_requested,
+)
+from xycar_map_nav.traffic_light_control import TrafficLightAction
+from xycar_map_nav.sequential_hybrid_driver import (
     straight_road_side_decision_allowed,
 )
 from xycar_map_nav.sequential_hybrid_driver import (
@@ -97,6 +101,37 @@ def test_shortcut_left_lane_offset_overrides_avoidance_until_release():
         shortcut_left_lane_offset_m=0.10,
         avoidance_offset_m=-0.31,
     ) == -0.31
+
+
+def test_shortcut_preposition_ignores_initial_green_release():
+    assert not shortcut_preposition_requested(
+        action=TrafficLightAction.LEFT_APPROACH,
+        signal_name="green_4",
+        shortcut_class_name="left_4",
+        green_class_name="green_4",
+        suppress_initial_green=True,
+    )
+    assert shortcut_preposition_requested(
+        action=TrafficLightAction.LEFT_APPROACH,
+        signal_name="green_4",
+        shortcut_class_name="left_4",
+        green_class_name="green_4",
+        suppress_initial_green=False,
+    )
+    assert not shortcut_preposition_requested(
+        action=TrafficLightAction.LEFT_APPROACH,
+        signal_name="left_4",
+        shortcut_class_name="left_4",
+        green_class_name="green_4",
+        suppress_initial_green=True,
+    )
+    assert shortcut_preposition_requested(
+        action=TrafficLightAction.LEFT_APPROACH,
+        signal_name="left_4",
+        shortcut_class_name="left_4",
+        green_class_name="green_4",
+        suppress_initial_green=False,
+    )
 
 
 def test_shortcut_suppresses_every_vehicle_class():

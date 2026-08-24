@@ -72,7 +72,7 @@ def update_post_red_turn_window(
 @dataclass(frozen=True)
 class SCurveEntryGuardConfig:
     enabled: bool = True
-    speed_cap_command: float = 11.0
+    speed_cap_command: float = 20.0
     red_car_speed_cap_command: float = 13.0
     speed_cap_start_distance_m: float = 8.0
     straight_max_abs_angle_command: float = 5.0

@@ -10,7 +10,7 @@ import rclpy
 from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import Pose, PoseArray, PoseStamped
 from my_rule_msgs.msg import ObjectDetectionArray
-from nav_msgs.msg import Path
+from nav_msgs.msg import Odometry, Path
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import (
@@ -29,6 +29,14 @@ from my_rule.perception.lidar_camera_association import (
     load_lidar_camera_extrinsic,
 )
 from my_rule.perception.object_perception import normalize_class_name
+from my_rule.ego_cone_tracker import (
+    EgoConeTracker,
+    PlanarPose,
+    TrackerSnapshot,
+    merge_points,
+    normalize_angle,
+    reproject_points,
+)
 
 try:
     from scipy.interpolate import CubicSpline
@@ -102,8 +110,30 @@ class ConeNode(Node):
         self.declare_parameter("lidar_geometry_planning_enabled", True)
         self.declare_parameter("lidar_geometry_path_band_margin_m", 0.16)
         self.declare_parameter(
-            "lidar_geometry_reference_timeout_sec", 1.00
+            "lidar_geometry_reference_timeout_sec", 0.35
         )
+        # Store camera-confirmed cone landmarks in odom and reproject them into
+        # the current LiDAR frame. This replaces raw reuse of old vehicle-frame
+        # coordinates during a short camera/LiDAR dropout.
+        self.declare_parameter("ego_cone_tracking_enabled", True)
+        self.declare_parameter("odom_topic", "/odom")
+        self.declare_parameter("ego_pose_timeout_sec", 0.12)
+        self.declare_parameter("ego_cone_track_ttl_sec", 0.30)
+        self.declare_parameter(
+            "ego_cone_lidar_association_distance_m", 0.22
+        )
+        self.declare_parameter(
+            "ego_cone_semantic_association_distance_m", 0.25
+        )
+        self.declare_parameter("ego_cone_lidar_smoothing_alpha", 0.30)
+        self.declare_parameter("ego_cone_semantic_smoothing_alpha", 0.40)
+        self.declare_parameter("ego_cone_merge_distance_m", 0.08)
+        self.declare_parameter("ego_cone_min_forward_m", -0.20)
+        self.declare_parameter("ego_cone_max_abs_lateral_m", 1.40)
+        self.declare_parameter("ego_cone_max_pose_jump_m", 0.30)
+        self.declare_parameter("ego_cone_max_pose_jump_yaw_deg", 45.0)
+        self.declare_parameter("ego_cone_predicted_speed", 4.0)
+        self.declare_parameter("ego_cone_predicted_confidence_cap", 0.55)
         self.declare_parameter("max_range_m", 3.0)
         self.declare_parameter("min_range_m", 0.18)
         self.declare_parameter("scan_angle_offset_deg", 0.0)
@@ -192,7 +222,7 @@ class ConeNode(Node):
         self.declare_parameter("path_interpolation_method", "linear")
         self.declare_parameter("path_sample_count", 100)
         self.declare_parameter("path_hold_frames", 5)
-        self.declare_parameter("path_hold_sec", 0.40)
+        self.declare_parameter("path_hold_sec", 0.35)
         self.declare_parameter("pair_max_forward_delta_m", 0.30)
         # LiDAR cluster centres can measure a few centimetres inside the physical
         # cone spacing, so keep a small tolerance below the 0.78 m course minimum.
@@ -272,7 +302,9 @@ class ConeNode(Node):
         # sequence.  A pending phase catches the first measured turn-back even
         # when bilateral geometry is sparse; once committed, a one-frame path
         # failure must not release or reverse the known final turn.
-        self.declare_parameter("cone_turn_sequence_guard_enabled", True)
+        # Course phase remains available in diagnostics, but must not impose a
+        # fixed left-right-left steering sequence on a displaced entry.
+        self.declare_parameter("cone_turn_sequence_guard_enabled", False)
         self.declare_parameter("cone_first_left_enter_steer_deg", 5.0)
         self.declare_parameter("cone_right_enter_steer_deg", 8.0)
         self.declare_parameter("cone_right_minimum_hold_sec", 0.75)
@@ -409,6 +441,68 @@ class ConeNode(Node):
         self.last_path_update_time: Optional[float] = None
         self.geometry_reference_path: Optional[List[Point2]] = None
         self.geometry_reference_time: Optional[float] = None
+        self.ego_cone_tracking_enabled = bool(
+            self.get_parameter("ego_cone_tracking_enabled").value
+        )
+        self.latest_odom_pose: Optional[PlanarPose] = None
+        self.latest_odom_pose_time = float("-inf")
+        self.last_ego_projection_pose: Optional[PlanarPose] = None
+        self.ego_tracker_pose_valid = False
+        self.ego_tracker_observed_count = 0
+        self.ego_tracker_predicted_count = 0
+        self.ego_tracker_max_prediction_age_sec = 0.0
+        self.ego_tracker_prediction_only = False
+        self.ego_tracker_prediction_authoritative = False
+        self.ego_tracker_pose_jump_reset = False
+        self.ego_cone_tracker = EgoConeTracker(
+            ttl_sec=float(
+                self.get_parameter("ego_cone_track_ttl_sec").value
+            ),
+            lidar_association_distance_m=float(
+                self.get_parameter(
+                    "ego_cone_lidar_association_distance_m"
+                ).value
+            ),
+            semantic_association_distance_m=float(
+                self.get_parameter(
+                    "ego_cone_semantic_association_distance_m"
+                ).value
+            ),
+            lidar_smoothing_alpha=float(
+                self.get_parameter("ego_cone_lidar_smoothing_alpha").value
+            ),
+            semantic_smoothing_alpha=float(
+                self.get_parameter(
+                    "ego_cone_semantic_smoothing_alpha"
+                ).value
+            ),
+            sensor_x_offset_m=float(
+                self.get_parameter("lidar_to_rear_axle_m").value
+            ),
+            minimum_forward_m=float(
+                self.get_parameter("ego_cone_min_forward_m").value
+            ),
+            maximum_forward_m=float(
+                self.get_parameter("max_range_m").value
+            ),
+            maximum_abs_lateral_m=float(
+                self.get_parameter("ego_cone_max_abs_lateral_m").value
+            ),
+            maximum_pose_jump_m=float(
+                self.get_parameter("ego_cone_max_pose_jump_m").value
+            ),
+            maximum_pose_jump_yaw_deg=float(
+                self.get_parameter("ego_cone_max_pose_jump_yaw_deg").value
+            ),
+        )
+        self.odom_subscription = None
+        if self.ego_cone_tracking_enabled:
+            self.odom_subscription = self.create_subscription(
+                Odometry,
+                str(self.get_parameter("odom_topic").value),
+                self.odometry_callback,
+                20,
+            )
         self.last_steering_time: Optional[float] = None
         self.last_diagnostics_log_time = float("-inf")
         self.learned_corridor_width_m = float(
@@ -513,6 +607,236 @@ class ConeNode(Node):
             f"{float(self.get_parameter('steering_max_rate_deg_per_sec').value):.0f}/"
             f"{float(self.get_parameter('inferred_steering_max_rate_deg_per_sec').value):.0f}deg/s"
         )
+
+    def odometry_callback(self, message: Odometry) -> None:
+        position = message.pose.pose.position
+        orientation = message.pose.pose.orientation
+        sin_yaw = 2.0 * (
+            float(orientation.w) * float(orientation.z)
+            + float(orientation.x) * float(orientation.y)
+        )
+        cos_yaw = 1.0 - 2.0 * (
+            float(orientation.y) * float(orientation.y)
+            + float(orientation.z) * float(orientation.z)
+        )
+        self.latest_odom_pose = PlanarPose(
+            x=float(position.x),
+            y=float(position.y),
+            yaw=math.atan2(sin_yaw, cos_yaw),
+        )
+        self.latest_odom_pose_time = time.monotonic()
+
+    def fresh_ego_pose(self, now: float) -> Optional[PlanarPose]:
+        if not self.ego_cone_tracking_enabled:
+            return None
+        timeout = max(
+            0.0,
+            float(self.get_parameter("ego_pose_timeout_sec").value),
+        )
+        if (
+            self.latest_odom_pose is None
+            or float(now) - float(self.latest_odom_pose_time) > timeout
+        ):
+            return None
+        return self.latest_odom_pose
+
+    def clear_cached_geometry(self) -> None:
+        """Drop geometry that cannot be safely moved across an odom jump."""
+
+        self.prev_path = None
+        self.geometry_reference_path = None
+        self.geometry_reference_time = None
+        self.last_path_accept_time = None
+        self.last_path_update_time = None
+        self.last_path_target_lateral = None
+        self.previous_left_boundary = []
+        self.previous_right_boundary = []
+        self.cluster_candidate_history.clear()
+        self.extended_boundary_candidates = {0: None, 1: None}
+
+    def prepare_cached_geometry_for_pose(
+        self,
+        pose: Optional[PlanarPose],
+    ) -> None:
+        """Reproject all cached vehicle-frame geometry into the current pose."""
+
+        self.ego_tracker_pose_valid = pose is not None
+        if pose is None:
+            return
+        previous = self.last_ego_projection_pose
+        self.last_ego_projection_pose = pose
+        if previous is None:
+            return
+
+        translation = math.hypot(pose.x - previous.x, pose.y - previous.y)
+        yaw_delta = abs(normalize_angle(pose.yaw - previous.yaw))
+        maximum_translation = max(
+            0.0,
+            float(self.get_parameter("ego_cone_max_pose_jump_m").value),
+        )
+        maximum_yaw = math.radians(
+            max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "ego_cone_max_pose_jump_yaw_deg"
+                    ).value
+                ),
+            )
+        )
+        if (
+            (maximum_translation > 0.0 and translation > maximum_translation)
+            or (maximum_yaw > 0.0 and yaw_delta > maximum_yaw)
+        ):
+            self.clear_cached_geometry()
+            self.ego_tracker_pose_jump_reset = True
+            return
+
+        rear_offset = float(
+            self.get_parameter("lidar_to_rear_axle_m").value
+        )
+        if self.prev_path:
+            self.prev_path = reproject_points(
+                self.prev_path,
+                previous,
+                pose,
+            )
+            self.last_path_target_lateral = self.path_target_lateral(
+                self.prev_path
+            )
+            self.last_output_path_target_lateral = float(
+                self.last_path_target_lateral
+            )
+            self.last_path_heading_deg = self.path_heading_at_distance_deg(
+                self.prev_path,
+                float(
+                    self.get_parameter(
+                        "path_heading_probe_distance_m"
+                    ).value
+                ),
+            )
+            self.last_path_nearest_index = self.path_nearest_index(
+                self.prev_path
+            )
+            self.last_path_remaining_arc_m = self.path_arc_length(
+                self.prev_path
+            )
+        if self.geometry_reference_path:
+            self.geometry_reference_path = reproject_points(
+                self.geometry_reference_path,
+                previous,
+                pose,
+            )
+        if self.previous_left_boundary:
+            self.previous_left_boundary = reproject_points(
+                self.previous_left_boundary,
+                previous,
+                pose,
+                origin_x_offset_m=rear_offset,
+            )
+        if self.previous_right_boundary:
+            self.previous_right_boundary = reproject_points(
+                self.previous_right_boundary,
+                previous,
+                pose,
+                origin_x_offset_m=rear_offset,
+            )
+        if self.current_yolo_confirmed_clusters:
+            self.current_yolo_confirmed_clusters = reproject_points(
+                self.current_yolo_confirmed_clusters,
+                previous,
+                pose,
+                origin_x_offset_m=rear_offset,
+            )
+        history_maxlen = self.cluster_candidate_history.maxlen
+        self.cluster_candidate_history = deque(
+            (
+                reproject_points(
+                    points,
+                    previous,
+                    pose,
+                    origin_x_offset_m=rear_offset,
+                )
+                for points in self.cluster_candidate_history
+            ),
+            maxlen=history_maxlen,
+        )
+        for side, candidate in list(self.extended_boundary_candidates.items()):
+            if candidate is None:
+                continue
+            self.extended_boundary_candidates[side] = reproject_points(
+                [candidate],
+                previous,
+                pose,
+                origin_x_offset_m=rear_offset,
+            )[0]
+
+    def augment_planning_clusters_with_ego_tracks(
+        self,
+        planning_clusters: Sequence[Point2],
+        lidar_clusters: Sequence[Point2],
+        fused_clusters: Sequence[Point2],
+        pose: Optional[PlanarPose],
+        now: float,
+    ) -> List[Point2]:
+        self.ego_tracker_observed_count = 0
+        self.ego_tracker_predicted_count = 0
+        self.ego_tracker_max_prediction_age_sec = 0.0
+        self.ego_tracker_prediction_only = False
+        self.ego_tracker_prediction_authoritative = False
+        if pose is None or not self.ego_cone_tracking_enabled:
+            return list(planning_clusters)
+
+        semantic_points = (
+            list(fused_clusters)
+            if self.cone_yolo_association_enabled
+            else list(lidar_clusters)
+        )
+        snapshot: TrackerSnapshot = self.ego_cone_tracker.update(
+            pose=pose,
+            semantic_points=semantic_points,
+            lidar_points=lidar_clusters,
+            now_sec=now,
+        )
+        self.ego_tracker_pose_jump_reset = bool(
+            self.ego_tracker_pose_jump_reset or snapshot.pose_jump_reset
+        )
+        self.ego_tracker_observed_count = snapshot.observed_count
+        self.ego_tracker_predicted_count = snapshot.predicted_count
+        self.ego_tracker_prediction_only = bool(
+            snapshot.predicted_count > 0 and snapshot.observed_count == 0
+        )
+        self.ego_tracker_max_prediction_age_sec = max(
+            (
+                cone.age_sec
+                for cone in snapshot.cones
+                if cone.predicted
+            ),
+            default=0.0,
+        )
+        merged = merge_points(
+            planning_clusters,
+            snapshot.points,
+            minimum_separation_m=float(
+                self.get_parameter("ego_cone_merge_distance_m").value
+            ),
+        )
+        fresh_left = any(point[1] > 0.05 for point in planning_clusters)
+        fresh_right = any(point[1] < -0.05 for point in planning_clusters)
+        merged_left = any(point[1] > 0.05 for point in merged)
+        merged_right = any(point[1] < -0.05 for point in merged)
+        self.ego_tracker_prediction_authoritative = bool(
+            snapshot.predicted_count > 0
+            and (
+                not planning_clusters
+                or (
+                    not (fresh_left and fresh_right)
+                    and merged_left
+                    and merged_right
+                )
+            )
+        )
+        return merged
 
     def object_detections_callback(
         self, message: ObjectDetectionArray
@@ -991,6 +1315,15 @@ class ConeNode(Node):
         self.last_path_update_time = None
         self.geometry_reference_path = None
         self.geometry_reference_time = None
+        self.ego_cone_tracker.reset()
+        self.last_ego_projection_pose = None
+        self.ego_tracker_pose_valid = False
+        self.ego_tracker_observed_count = 0
+        self.ego_tracker_predicted_count = 0
+        self.ego_tracker_max_prediction_age_sec = 0.0
+        self.ego_tracker_prediction_only = False
+        self.ego_tracker_prediction_authoritative = False
+        self.ego_tracker_pose_jump_reset = False
         self.last_steering_time = None
         self.learned_corridor_width_m = float(
             self.get_parameter("expected_corridor_width_m").value
@@ -1059,6 +1392,9 @@ class ConeNode(Node):
         )
         self.current_scan_time = now
         self.last_scan_time = now
+        self.ego_tracker_pose_jump_reset = False
+        ego_pose = self.fresh_ego_pose(now)
+        self.prepare_cached_geometry_for_pose(ego_pose)
         scan_stamp_ns = self.message_stamp_ns(msg)
         points = self.scan_to_points(msg)
         clusters = self.cluster_cones(points)
@@ -1079,6 +1415,13 @@ class ConeNode(Node):
         planning_clusters = self.select_planning_clusters(
             clusters,
             fused_clusters,
+        )
+        planning_clusters = self.augment_planning_clusters_with_ego_tracks(
+            planning_clusters,
+            clusters,
+            fused_clusters,
+            ego_pose,
+            now,
         )
         # The historical topic now reflects the exact candidates consumed by
         # path planning. Camera-only safety/entry logic keeps using the explicit
@@ -1161,6 +1504,29 @@ class ConeNode(Node):
         angle = self.apply_cone_turn_phase_guard(angle)
         confidence = self.path_confidence(evidence_midpoint_count)
         speed = self.compute_speed(angle, confidence, path)
+        if self.ego_tracker_prediction_authoritative:
+            confidence = min(
+                confidence,
+                max(
+                    0.21,
+                    float(
+                        self.get_parameter(
+                            "ego_cone_predicted_confidence_cap"
+                        ).value
+                    ),
+                ),
+            )
+            speed = min(
+                speed,
+                max(
+                    0.0,
+                    float(
+                        self.get_parameter(
+                            "ego_cone_predicted_speed"
+                        ).value
+                    ),
+                ),
+            )
         self.last_valid_steering = angle
         self.had_valid_path = True
         if not self.path_is_held:
@@ -2961,11 +3327,20 @@ class ConeNode(Node):
         )
         self.last_path_nearest_index = self.path_nearest_index(new_path)
         self.last_path_remaining_arc_m = self.path_arc_length(new_path)
-        accepted_at = float(
+        updated_at = float(
             getattr(self, "current_scan_time", None) or time.monotonic()
         )
+        previous_accept_time = getattr(self, "last_path_accept_time", None)
+        accepted_at = (
+            float(previous_accept_time)
+            if (
+                bool(getattr(self, "ego_tracker_prediction_only", False))
+                and previous_accept_time is not None
+            )
+            else updated_at
+        )
         self.last_path_accept_time = accepted_at
-        self.last_path_update_time = accepted_at
+        self.last_path_update_time = updated_at
         self.geometry_reference_path = list(new_path)
         self.geometry_reference_time = accepted_at
         self.pending_path_reversal_sign = 0
@@ -3794,6 +4169,15 @@ class ConeNode(Node):
         return max(minimum, speed)
 
     def publish_blind_recovery(self, cluster_count: int) -> bool:
+        if (
+            bool(getattr(self, "ego_cone_tracking_enabled", False))
+            and int(getattr(self, "ego_tracker_observed_count", 0))
+            + int(getattr(self, "ego_tracker_predicted_count", 0))
+            <= 0
+        ):
+            # Once the bounded odom landmark set expires, unrelated raw LiDAR
+            # clusters must not restart a second vehicle-frame recovery window.
+            return False
         max_frames = max(0, int(self.get_parameter("blind_recovery_frames").value))
         max_seconds = max(
             0.0,
@@ -3909,7 +4293,10 @@ class ConeNode(Node):
          path_limit_applied, geometry_unlocked, path_nearest_index,
          path_remaining_arc, path_orientation_reversed, turn_phase_code,
          observed_pair_width, temporary_wide_pair, measured_final_left_peak,
-         guarded_strong_hold_age, final_left_release_frames]
+         guarded_strong_hold_age, final_left_release_frames,
+         ego_pose_valid, ego_observed_tracks, ego_predicted_tracks,
+         ego_max_prediction_age, ego_prediction_authoritative,
+         ego_pose_jump_reset]
         """
         source = str(getattr(self, "midpoint_source", "none"))
         source_codes = {
@@ -3986,6 +4373,22 @@ class ConeNode(Node):
             ),
             float(strong_hold_age),
             float(getattr(self, "final_left_release_frames", 0)),
+            1.0 if getattr(self, "ego_tracker_pose_valid", False) else 0.0,
+            float(getattr(self, "ego_tracker_observed_count", 0)),
+            float(getattr(self, "ego_tracker_predicted_count", 0)),
+            float(
+                getattr(self, "ego_tracker_max_prediction_age_sec", 0.0)
+            ),
+            1.0
+            if getattr(
+                self,
+                "ego_tracker_prediction_authoritative",
+                False,
+            )
+            else 0.0,
+            1.0
+            if getattr(self, "ego_tracker_pose_jump_reset", False)
+            else 0.0,
         ]
         self.diagnostics_pub.publish(message)
 
@@ -3998,6 +4401,12 @@ class ConeNode(Node):
             f"path_y={getattr(self, 'last_raw_path_target_lateral', 0.0):+.3f}->"
             f"{getattr(self, 'last_output_path_target_lateral', 0.0):+.3f}m "
             f"held={int(self.path_is_held)} "
+            "ego="
+            f"{int(getattr(self, 'ego_tracker_pose_valid', False))}/"
+            f"{getattr(self, 'ego_tracker_observed_count', 0)}/"
+            f"{getattr(self, 'ego_tracker_predicted_count', 0)}/"
+            f"{getattr(self, 'ego_tracker_max_prediction_age_sec', 0.0):.2f}s/"
+            f"{int(getattr(self, 'ego_tracker_prediction_authoritative', False))} "
             f"phase={phase} "
             f"pair_width={getattr(self, 'last_observed_pair_width_m', 0.0):.3f}m "
             f"wide={int(getattr(self, 'wide_pair_active', False))} "

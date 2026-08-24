@@ -106,7 +106,7 @@ sequential_hybrid_driver:
     shortcut_yolo_required_frames: 2
     shortcut_yolo_absence_frames: 1
     shortcut_entry_speed_command: 9.0
-    shortcut_left_lane_offset_m: 0.05
+    shortcut_left_lane_offset_m: 0.02
     shortcut_wait_for_entry_ready: true
     shortcut_entry_ready_topic: /shortcut/entry/ready
     shortcut_entry_search_timeout_sec: 12.0
@@ -119,7 +119,7 @@ sequential_hybrid_driver:
     # Shortcut/green-car exits use the conservative cap. Red-car avoidance
     # keeps a separate cap until the following left curve is confirmed.
     s_curve_entry_guard_enabled: true
-    s_curve_entry_speed_cap_command: 11.0
+    s_curve_entry_speed_cap_command: 20.0
     s_curve_entry_red_car_speed_cap_command: 13.0
     s_curve_entry_speed_cap_start_distance_m: 8.0
     s_curve_entry_straight_max_abs_angle_command: 5.0

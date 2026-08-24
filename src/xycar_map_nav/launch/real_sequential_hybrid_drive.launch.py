@@ -277,7 +277,7 @@ def generate_launch_description():
                 "shortcut_entry_speed_command", default_value="9.0"
             ),
             DeclareLaunchArgument(
-                "shortcut_left_lane_offset_m", default_value="0.05"
+                "shortcut_left_lane_offset_m", default_value="0.02"
             ),
             DeclareLaunchArgument(
                 "vehicle_avoidance_enabled", default_value="true"
@@ -286,7 +286,7 @@ def generate_launch_description():
                 "s_curve_entry_guard_enabled", default_value="true"
             ),
             DeclareLaunchArgument(
-                "s_curve_entry_speed_cap_command", default_value="11.0"
+                "s_curve_entry_speed_cap_command", default_value="20.0"
             ),
             DeclareLaunchArgument(
                 "s_curve_entry_red_car_speed_cap_command",
@@ -358,6 +358,12 @@ def generate_launch_description():
                 "selector_minimum_speed_command", default_value="3.0"
             ),
             DeclareLaunchArgument("cone_speed_command", default_value="8.0"),
+            DeclareLaunchArgument(
+                "cone_approach_first_speed_command", default_value="15.0"
+            ),
+            DeclareLaunchArgument(
+                "cone_approach_confirmed_speed_command", default_value="8.0"
+            ),
             DeclareLaunchArgument(
                 "cone_approach_yolo_min_confidence", default_value="0.40"
             ),
@@ -1549,6 +1555,18 @@ def generate_launch_description():
                         "cone_approach_yolo_min_confidence": ParameterValue(
                             LaunchConfiguration(
                                 "cone_approach_yolo_min_confidence"
+                            ),
+                            value_type=float,
+                        ),
+                        "cone_approach_first_speed_command": ParameterValue(
+                            LaunchConfiguration(
+                                "cone_approach_first_speed_command"
+                            ),
+                            value_type=float,
+                        ),
+                        "cone_approach_confirmed_speed_command": ParameterValue(
+                            LaunchConfiguration(
+                                "cone_approach_confirmed_speed_command"
                             ),
                             value_type=float,
                         ),

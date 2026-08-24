@@ -51,7 +51,7 @@ LiDAR
 
 현재 direct 경로는 전방 최대 `2.5 m`, 좌우 약 `+/-0.7 m`를 사용한다. 경로가 `0.50초` 이상 갱신되지 않으면 stale 경로로 처리한다.
 
-기준 주행 속도는 직선 `25`, 일반 곡선과 S자 내부 `12`, 짧거나 기억된 DEGRADED 경로 `15`다. S자 진입 가드는 지름길 또는 동적 장애물 구간 이후 곡선이 확인되거나 가드 이동거리가 `8.0 m`에 도달하면 속도를 `11`로 제한한다. `red_car` 회피 직후 좌회전은 별도 상한 `13`을 즉시 사용한다.
+기준 주행 속도는 직선 `25`, 일반 곡선과 S자 내부 `12`, 짧거나 기억된 DEGRADED 경로 `15`다. 지름길 탐색·진입은 `9`를 사용한다. S자 진입 가드는 지름길 또는 `green_car` 구간 이후 `20`, `red_car` 회피 이후 좌회전·S자 진입 전에는 `13`을 상한으로 사용한다.
 
 ## 미션 동작
 
@@ -81,6 +81,10 @@ LiDAR
 - 카메라와 연결된 LiDAR 콘 군집의 전방 거리가 `1.15 m` 이내이면 속도 상한을 `8`로 낮춘다.
 - 실제 CONE 조향권 진입 거리 `0.95 m`는 감속 기준과 분리되어 있다.
 - LiDAR에서 좌우 경계를 분리하고 두 경계의 중앙에 주행 경로를 만든다.
+- 확인된 라바콘을 `odom` landmark로 저장하고 현재 차량 좌표로 매 scan
+  재투영한다. 관측이 끊기면 최대 `0.30초` 동안만 저속 예측한다.
+- 라바콘 구간에서는 Xbin 차선으로 fallback하지 않으며, 예측 시간이나
+  명령 freshness를 넘으면 오래된 조향을 재사용하지 않고 정지한다.
 - 라바콘 주행 속도 기본값은 `8`이다.
 - 탈출 후 S자 진입 전까지 단일 라바콘 때문에 CONE 모드가 다시 켜지지 않도록 재진입을 억제한다.
 
@@ -128,7 +132,7 @@ bash src/xycar_map_nav/scripts/build_xycar_only.sh
 
 ## 통합 주행
 
-아래는 대회용 최종 기준 명령이다. direct Xbin 인지와 3바퀴 정책을 사용하며, 직선 `25`, 곡선/S자 `12`, DEGRADED `15`, S자 진입 `11`, `red_car` 이후 좌회전 `13`, 라바콘 `8`, 전체 상한 `25`를 적용한다.
+아래 실행기는 속도 관련 값만 순서대로 입력받는다. 직선, 전체 상한, 곡선, DEGRADED, 지름길, S자 진입 보호, 라바콘 접근·주행, 차량 회피 속도를 각각 조절할 수 있다. LD·Stanley·오프셋을 비롯한 비속도 파라미터는 검증된 기본값을 자동 적용한다.
 
 ```bash
 cd /home/xytron/xycar_ws
@@ -138,23 +142,10 @@ source install_xycar_only/setup.bash
 export ROS_DOMAIN_ID=7
 unset ROS_NAMESPACE
 
-XYCAR_RULE_PERCEPTION_BACKEND=direct_xbin \
-OVERALL_SPEED_LIMIT_COMMAND=25 \
-CURVATURE_SPEED_CONTROL_ENABLED=true \
-CURVE_SPEED_COMMAND=12 \
-DEGRADED_PATH_SPEED_COMMAND=15 \
-S_CURVE_ENTRY_SPEED_CAP_COMMAND=11 \
-S_CURVE_ENTRY_RED_CAR_SPEED_CAP_COMMAND=13 \
-CONE_APPROACH_CONFIRMED_DISTANCE_M=1.15 \
-CURVE_STEERING_MULTIPLIER=1.0 \
-VEHICLE_LEFT_OFFSET_M=0.13 \
-VEHICLE_RIGHT_OFFSET_M=0.13 \
-XYCAR_ENABLE_RVIZ=false \
-bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh \
-  25 0.30 20 0
+bash src/xycar_map_nav/scripts/run_complete_space_hybrid.sh
 ```
 
-실행 중 고급 조향 파라미터는 터미널 질문에서 확인하거나 변경할 수 있다. 모든 센서가 정상이고 `READY`가 표시된 뒤 `Space`를 한 번 누르면 출발하며, 다시 누르면 정지한다. `Ctrl+C`는 전체 스택을 종료한다.
+각 속도 질문에 값을 하나씩 입력하고 기본값을 유지할 항목은 Enter를 누른다. 비속도 파라미터 질문은 표시되지 않는다. 모든 센서가 정상이고 `READY`가 표시된 뒤 `Space`를 한 번 누르면 출발하며, 다시 누르면 정지한다. `Ctrl+C`는 전체 스택을 종료한다.
 
 주행 시작 전에 반드시 다음을 확인한다.
 

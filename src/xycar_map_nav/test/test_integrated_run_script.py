@@ -53,11 +53,13 @@ def test_integrated_run_exposes_independent_overall_speed_limit() -> None:
     run_source = RUN_SCRIPT.read_text(encoding="utf-8")
     complete_source = COMPLETE_SCRIPT.read_text(encoding="utf-8")
 
-    for source in (run_source, complete_source):
-        assert (
-            'OVERALL_SPEED_LIMIT_COMMAND="${OVERALL_SPEED_LIMIT_COMMAND:-25.0}"'
-            in source
-        )
+    assert (
+        'OVERALL_SPEED_LIMIT_COMMAND="${OVERALL_SPEED_LIMIT_COMMAND:-25.0}"'
+        in run_source
+    )
+    assert 'OVERALL_SPEED_LIMIT_COMMAND="${OVERALL_SPEED_LIMIT_COMMAND:-}"' in complete_source
+    assert 'prompt_float OVERALL_SPEED_LIMIT_COMMAND \\\n' in complete_source
+    assert '"전체 최종 속도 상한 command" "$SPEED_COMMAND"' in complete_source
     assert (
         "overall_speed_limit_command: $OVERALL_SPEED_LIMIT_COMMAND"
         in run_source
@@ -126,7 +128,7 @@ def test_integrated_run_exposes_shortcut_left_lane_preposition_offset() -> None:
     config_source = HYBRID_CONFIG.read_text(encoding="utf-8")
 
     assert (
-        'SHORTCUT_LEFT_LANE_OFFSET_M="${SHORTCUT_LEFT_LANE_OFFSET_M:-0.05}"'
+        'SHORTCUT_LEFT_LANE_OFFSET_M="${SHORTCUT_LEFT_LANE_OFFSET_M:-0.02}"'
         in run_source
     )
     assert (
@@ -134,10 +136,10 @@ def test_integrated_run_exposes_shortcut_left_lane_preposition_offset() -> None:
         in run_source
     )
     assert (
-        '"shortcut_left_lane_offset_m", default_value="0.05"'
+        '"shortcut_left_lane_offset_m", default_value="0.02"'
         in launch_source
     )
-    assert "shortcut_left_lane_offset_m: 0.05" in config_source
+    assert "shortcut_left_lane_offset_m: 0.02" in config_source
 
 
 def test_integrated_curve_response_defaults_match_real_profile() -> None:
@@ -212,8 +214,11 @@ def test_integrated_run_uses_validated_eight_as_cone_speed() -> None:
     source = RUN_SCRIPT.read_text(encoding="utf-8")
     launch_source = LAUNCH_FILE.read_text(encoding="utf-8")
 
-    assert 'CONE_SPEED_COMMAND="8.0"' in source
+    assert 'CONE_SPEED_COMMAND="${CONE_SPEED_COMMAND:-8.0}"' in source
+    assert 'CONE_APPROACH_FIRST_SPEED_COMMAND="${CONE_APPROACH_FIRST_SPEED_COMMAND:-15.0}"' in source
     assert '"cone_speed_command", default_value="8.0"' in launch_source
+    assert '"cone_approach_first_speed_command", default_value="15.0"' in launch_source
+    assert '"cone_approach_confirmed_speed_command", default_value="8.0"' in launch_source
 
 
 def test_integrated_cone_precompute_uses_weak_detection_without_weakening_entry():
@@ -225,7 +230,7 @@ def test_integrated_cone_precompute_uses_weak_detection_without_weakening_entry(
     assert '"cone_yolo_min_confidence": ParameterValue(' in launch_source
 
 
-def test_integrated_cone_exit_matches_remote_jsb_hold_policy() -> None:
+def test_integrated_cone_exit_matches_main_hold_policy() -> None:
     launch_source = LAUNCH_FILE.read_text(encoding="utf-8")
     config_source = HYBRID_CONFIG.read_text(encoding="utf-8")
     selector_source = SELECTOR_DRIVER.read_text(encoding="utf-8")
@@ -310,8 +315,9 @@ def test_integrated_run_defaults_to_25_12_15_profile() -> None:
     complete_source = COMPLETE_SCRIPT.read_text(encoding="utf-8")
     launch_source = LAUNCH_FILE.read_text(encoding="utf-8")
 
+    assert 'SPEED_COMMAND="${1:-${SPEED_COMMAND:-25.0}}"' in run_source
+    assert 'SPEED_COMMAND="${1:-${SPEED_COMMAND:-}}"' in complete_source
     for source in (run_source, complete_source):
-        assert 'SPEED_COMMAND="${1:-${SPEED_COMMAND:-25.0}}"' in source
         assert 'CURVATURE_SPEED_CONTROL_ENABLED="${CURVATURE_SPEED_CONTROL_ENABLED:-true}"' in source
         assert 'CURVE_SPEED_COMMAND="${CURVE_SPEED_COMMAND:-}"' in source
         assert 'DEGRADED_PATH_SPEED_COMMAND="${DEGRADED_PATH_SPEED_COMMAND:-}"' in source
@@ -347,7 +353,7 @@ def test_integrated_run_enables_only_post_mission_s_entry_guard() -> None:
     launch_source = LAUNCH_FILE.read_text(encoding="utf-8")
 
     assert 'S_CURVE_ENTRY_GUARD_ENABLED="${S_CURVE_ENTRY_GUARD_ENABLED:-true}"' in run_source
-    assert 'S_CURVE_ENTRY_SPEED_CAP_COMMAND="${S_CURVE_ENTRY_SPEED_CAP_COMMAND:-11.0}"' in run_source
+    assert 'S_CURVE_ENTRY_SPEED_CAP_COMMAND="${S_CURVE_ENTRY_SPEED_CAP_COMMAND:-20.0}"' in run_source
     assert (
         'S_CURVE_ENTRY_SPEED_CAP_START_DISTANCE_M="'
         '${S_CURVE_ENTRY_SPEED_CAP_START_DISTANCE_M:-8.0}"'
@@ -377,7 +383,7 @@ def test_integrated_run_enables_only_post_mission_s_entry_guard() -> None:
         in launch_source
     )
     assert (
-        '"s_curve_entry_speed_cap_command", default_value="11.0"'
+        '"s_curve_entry_speed_cap_command", default_value="20.0"'
         in launch_source
     )
     assert (
@@ -400,6 +406,33 @@ def test_integrated_run_enables_only_post_mission_s_entry_guard() -> None:
         '                default_value="1.50",'
         in launch_source
     )
+
+
+def test_complete_launcher_prompts_only_for_speed_values() -> None:
+    source = COMPLETE_SCRIPT.read_text(encoding="utf-8")
+
+    expected_speed_prompts = (
+        "전체 최종 속도 상한 command",
+        "곡선 확정 시 속도 command",
+        "짧거나 기억된 경로의 속도 command",
+        "지름길 탐색·진입 속도 command",
+        "지름길/green_car 이후 S자 진입 보호 속도 command",
+        "red_car 이후 좌회전·S자 진입 보호 속도 command",
+        "라바콘 최초 감지 접근 속도 command",
+        "라바콘 확정·구간 주행 속도 command",
+        "기타 차량 회피 속도 상한 command",
+        "red_car 회피 속도 상한 command",
+        "green_car 회피 속도 상한 command",
+        "AVOID_RIGHT 차선 정착 전 속도 상한 command",
+        "최대 조향 시 속도 command",
+    )
+    for prompt in expected_speed_prompts:
+        assert prompt in source
+
+    assert 'PURE_PURSUIT_CONTROL_X_M="${PURE_PURSUIT_CONTROL_X_M:--0.08}"' in source
+    assert 'STANLEY_GAIN="${STANLEY_GAIN:-1.30}"' in source
+    assert 'VEHICLE_LEFT_OFFSET_M="${VEHICLE_LEFT_OFFSET_M:-0.13}"' in source
+    assert 'VEHICLE_RIGHT_OFFSET_M="${VEHICLE_RIGHT_OFFSET_M:-0.13}"' in source
 
 
 def test_low_speed_profile_derives_curve_defaults_from_requested_cap() -> None:

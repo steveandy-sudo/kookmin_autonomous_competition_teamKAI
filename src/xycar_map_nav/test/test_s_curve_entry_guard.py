@@ -151,7 +151,7 @@ def test_post_red_turn_window_times_out_and_resets_on_disarm() -> None:
         SCurveEntryTrigger.GREEN_CAR_EXIT,
     ],
 )
-def test_shortcut_and_green_car_guards_delay_command_11_cap(trigger) -> None:
+def test_shortcut_and_green_car_guards_delay_command_20_cap(trigger) -> None:
     guard = SCurveEntryGuard(SCurveEntryGuardConfig())
 
     assert guard.start(trigger) == SCurveEntryEvent.STARTED
@@ -166,8 +166,12 @@ def test_shortcut_and_green_car_guards_delay_command_11_cap(trigger) -> None:
     assert guard.state().speed_cap_active
     assert guard.limit_command(
         angle_command=-2.0,
+        speed_command=25.0,
+    ) == (-2.0, 20.0)
+    assert guard.limit_command(
+        angle_command=-2.0,
         speed_command=12.0,
-    ) == (-2.0, 11.0)
+    ) == (-2.0, 12.0)
 
 
 def test_shortcut_guard_uses_distance_fallback_before_s_curve() -> None:
@@ -181,7 +185,7 @@ def test_shortcut_guard_uses_distance_fallback_before_s_curve() -> None:
     assert guard.limit_command(
         angle_command=0.0,
         speed_command=25.0,
-    ) == (0.0, 11.0)
+    ) == (0.0, 20.0)
 
 
 def test_red_car_exit_starts_command_13_guard() -> None:
@@ -321,4 +325,4 @@ def test_overdue_guard_stays_slow_instead_of_reaccelerating() -> None:
     assert guard.limit_command(
         angle_command=0.0,
         speed_command=25.0,
-    ) == (0.0, 11.0)
+    ) == (0.0, 20.0)
