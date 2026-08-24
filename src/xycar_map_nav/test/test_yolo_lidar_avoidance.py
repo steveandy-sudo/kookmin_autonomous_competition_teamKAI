@@ -231,7 +231,7 @@ def test_selected_vehicle_class_speed_persists_during_avoidance():
 def test_red_car_yolo_expires_sooner_without_changing_green_car_timeout():
     config = YoloLidarAvoidanceConfig(
         yolo_timeout_sec=1.0,
-        red_car_yolo_timeout_sec=0.3,
+        red_car_yolo_timeout_sec=0.5,
         yolo_required_frames=1,
         immediate_on_yolo=True,
         preferred_side_required_frames=1,
@@ -250,19 +250,19 @@ def test_red_car_yolo_expires_sooner_without_changing_green_car_timeout():
         target_class_name="red_car",
     )
     assert red.step(
-        now_sec=0.30,
+        now_sec=0.50,
         dt_sec=0.1,
         obstacle=None,
         cone_active=False,
     ).mode == YoloLidarAvoidanceMode.AVOID_LEFT
     red.step(
-        now_sec=0.31,
+        now_sec=0.51,
         dt_sec=0.01,
         obstacle=None,
         cone_active=False,
     )
     assert red.step(
-        now_sec=0.32,
+        now_sec=0.52,
         dt_sec=0.01,
         obstacle=None,
         cone_active=False,
@@ -278,7 +278,7 @@ def test_red_car_yolo_expires_sooner_without_changing_green_car_timeout():
         target_class_name="green_car",
     )
     assert green.step(
-        now_sec=0.32,
+        now_sec=0.52,
         dt_sec=0.1,
         obstacle=None,
         cone_active=False,

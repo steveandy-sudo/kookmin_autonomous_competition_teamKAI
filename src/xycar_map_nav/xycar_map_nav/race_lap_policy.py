@@ -16,7 +16,7 @@ class RaceLapEvent(str, Enum):
 
 @dataclass(frozen=True)
 class RaceLapPolicyConfig:
-    enabled: bool = True
+    enabled: bool = False
     total_laps: int = 3
     signal_release_frames: int = 2
 

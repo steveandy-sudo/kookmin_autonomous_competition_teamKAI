@@ -1084,7 +1084,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter(
             "traffic_light_status_topic", "/hybrid/traffic_light_status"
         )
-        self.declare_parameter("race_lap_policy_enabled", True)
+        self.declare_parameter("race_lap_policy_enabled", False)
         self.declare_parameter("race_total_laps", 3)
         self.declare_parameter("race_signal_session_release_frames", 2)
         self.declare_parameter(
@@ -1237,7 +1237,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("cone_as_vehicle_min_confidence", 0.50)
         self.declare_parameter("vehicle_yolo_required_frames", 1)
         self.declare_parameter("vehicle_yolo_timeout_sec", 0.50)
-        self.declare_parameter("vehicle_red_car_yolo_timeout_sec", 0.30)
+        self.declare_parameter("vehicle_red_car_yolo_timeout_sec", 0.50)
         self.declare_parameter("vehicle_camera_lidar_hfov_deg", 60.0)
         self.declare_parameter("vehicle_camera_lidar_padding_deg", 3.0)
         self.declare_parameter(

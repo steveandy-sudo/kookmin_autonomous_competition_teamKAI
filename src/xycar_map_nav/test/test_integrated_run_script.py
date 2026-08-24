@@ -272,6 +272,20 @@ def test_integrated_run_exposes_temporary_traffic_light_disable() -> None:
     )
     assert 'VEHICLE_YOLO_TIMEOUT_SEC:-0.50' in source
     assert '"vehicle_yolo_timeout_sec", default_value="0.50"' in launch_source
+    assert 'VEHICLE_RED_CAR_YOLO_TIMEOUT_SEC:-0.50' in source
+    assert '"vehicle_red_car_yolo_timeout_sec", default_value="0.50"' in launch_source
+
+
+def test_integrated_run_exposes_race_lap_policy_toggle_default_off() -> None:
+    source = RUN_SCRIPT.read_text(encoding="utf-8")
+    launch_source = LAUNCH_FILE.read_text(encoding="utf-8")
+    hybrid_config = HYBRID_CONFIG.read_text(encoding="utf-8")
+
+    assert 'XYCAR_RACE_LAP_POLICY_ENABLED:-false' in source
+    assert 'race_lap_policy_enabled:="$RACE_LAP_POLICY_ENABLED"' in source
+    assert '"race_lap_policy_enabled", default_value="false"' in launch_source
+    assert 'LaunchConfiguration(\n                                "race_lap_policy_enabled"' in launch_source
+    assert "race_lap_policy_enabled: false" in hybrid_config
 
 
 def test_integrated_run_exposes_temporary_shortcut_disable() -> None:

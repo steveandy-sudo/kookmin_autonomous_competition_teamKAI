@@ -185,6 +185,9 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "traffic_light_control_enabled", default_value="true"
             ),
+            DeclareLaunchArgument(
+                "race_lap_policy_enabled", default_value="false"
+            ),
             DeclareLaunchArgument("shortcut_strategy", default_value="w1"),
             DeclareLaunchArgument(
                 "shortcut_handoff_to_rule", default_value="true"
@@ -525,7 +528,7 @@ def generate_launch_description():
                 "vehicle_yolo_timeout_sec", default_value="0.50"
             ),
             DeclareLaunchArgument(
-                "vehicle_red_car_yolo_timeout_sec", default_value="0.30"
+                "vehicle_red_car_yolo_timeout_sec", default_value="0.50"
             ),
             DeclareLaunchArgument(
                 "vehicle_camera_lidar_hfov_deg", default_value="60.0"
@@ -1493,6 +1496,12 @@ def generate_launch_description():
                         "traffic_light_control_enabled": ParameterValue(
                             LaunchConfiguration(
                                 "traffic_light_control_enabled"
+                            ),
+                            value_type=bool,
+                        ),
+                        "race_lap_policy_enabled": ParameterValue(
+                            LaunchConfiguration(
+                                "race_lap_policy_enabled"
                             ),
                             value_type=bool,
                         ),

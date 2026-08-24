@@ -147,15 +147,15 @@ sequential_hybrid_driver:
     # First departure is always straight. Lap 2 follows YOLO; after a
     # successful lap-2 shortcut, lap 3 is forced straight. Later red/yellow
     # detections do not stop the vehicle after the initial green release.
-    race_lap_policy_enabled: true
+    race_lap_policy_enabled: false
     race_total_laps: 3
     race_signal_session_release_frames: 2
     vehicle_class_names: [obstacle_vehicle, red_car, green_car]
     vehicle_yolo_min_confidence: 0.45
     vehicle_yolo_required_frames: 1
     vehicle_yolo_timeout_sec: 0.50
-    # Release a stale red-car detection sooner; green-car behavior is unchanged.
-    vehicle_red_car_yolo_timeout_sec: 0.30
+    # Keep the static red-car track for 0.5 s after its last valid YOLO frame.
+    vehicle_red_car_yolo_timeout_sec: 0.50
     vehicle_camera_lidar_hfov_deg: 60.0
     vehicle_camera_lidar_padding_deg: 3.0
     vehicle_lidar_min_points: 2
