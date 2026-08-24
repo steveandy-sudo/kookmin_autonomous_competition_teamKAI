@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 
 from geometry_msgs.msg import Twist
@@ -12,16 +13,22 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Bool, Float32MultiArray, String
+from xycar_msgs.msg import XycarVescState
 
 from .command_core import (
     DirectionChangeGuard,
     Footprint,
     MotorCalibration,
+    TransientZeroHold,
+    rotate_request_to_reverse_crawl,
+    stopped_request_to_reverse_crawl,
     scan_points_in_base,
+    should_hold_for_steering_settle,
     slew,
     swept_footprint_collision,
     twist_to_motor_command,
 )
+from .parking_keyboard_core import parse_status_line
 
 
 GATE_REASON_KO = {
@@ -35,9 +42,19 @@ GATE_REASON_KO = {
     "non_finite_twist": "유효하지 않은 주행 명령을 받음",
     "stopped": "정지 명령",
     "rotate_in_place_rejected": "차량이 수행할 수 없는 제자리 회전 명령을 거부함",
+    "reverse_align_rotate_crawl": "제자리 회전 대신 조향을 유지하며 -4 후진 중",
+    "reverse_align_zero_crawl": "Nav2 0속도 대신 마지막 조향을 유지하며 -4 후진 중",
     "lidar_swept_collision": "예상 주행 궤적에서 장애물을 감지함",
+    "obstacle_reverse_settle": "장애물 회피 후진 전 안전 정지 중",
+    "obstacle_reverse_active": "장애물에서 벗어나기 위해 약 20cm 직선 후진 중",
+    "obstacle_reverse_complete": "짧은 후진 완료 후 경로 재계산 대기 중",
     "direction_change_dwell": "전진·후진 전환 전 안전 정지 중",
     "steering_settle": "목표 조향각 정렬 중",
+    "transient_nav2_zero_hold": "짧은 Nav2 0 명령을 무시하고 이전 ±4를 유지 중",
+    "no_vesc_telemetry": "VESC 상태정보가 아직 없음",
+    "stale_vesc_telemetry": "VESC 상태정보가 끊김",
+    "vesc_low_voltage_stop": "VESC 입력전압이 모터 정지 기준 이하임",
+    "vesc_fault": "VESC 하드웨어 fault가 발생함",
     "shutdown": "노드 종료로 정지",
 }
 
@@ -56,15 +73,46 @@ class CmdVelAdapter(Node):
             self.get_parameter("authorization_topic").value
         )
         self.scan_topic = str(self.get_parameter("scan_topic").value)
+        self.mission_state_topic = str(
+            self.get_parameter("mission_state_topic").value
+        )
+        self.vesc_state_topic = str(self.get_parameter("vesc_state_topic").value)
         self.drive_enabled = bool(self.get_parameter("drive_enabled").value)
         self.command_timeout = float(self.get_parameter("command_timeout_sec").value)
         self.scan_timeout = float(self.get_parameter("scan_timeout_sec").value)
         self.timer_period = float(self.get_parameter("timer_period_sec").value)
+        self.diagnostic_log_period = float(
+            self.get_parameter("diagnostic_log_period_sec").value
+        )
+        self.vesc_telemetry_timeout = float(
+            self.get_parameter("vesc_telemetry_timeout_sec").value
+        )
+        self.vesc_low_voltage_limit = float(
+            self.get_parameter("vesc_low_voltage_limit").value
+        )
+        self.vesc_low_voltage_stop = float(
+            self.get_parameter("vesc_low_voltage_stop").value
+        )
         self.maximum_steering_rate = float(
             self.get_parameter("maximum_steering_command_rate").value
         )
         self.steering_settle_tolerance = float(
             self.get_parameter("steering_settle_tolerance_command").value
+        )
+        self.transient_nav2_zero_hold_sec = float(
+            self.get_parameter("transient_nav2_zero_hold_sec").value
+        )
+        self.obstacle_reverse_recovery_enabled = bool(
+            self.get_parameter("obstacle_reverse_recovery_enabled").value
+        )
+        self.obstacle_reverse_settle_sec = float(
+            self.get_parameter("obstacle_reverse_settle_sec").value
+        )
+        self.obstacle_reverse_duration_sec = float(
+            self.get_parameter("obstacle_reverse_duration_sec").value
+        )
+        self.obstacle_reverse_cooldown_sec = float(
+            self.get_parameter("obstacle_reverse_cooldown_sec").value
         )
 
         self.calibration = MotorCalibration(
@@ -119,8 +167,20 @@ class CmdVelAdapter(Node):
         self.laser_y = float(self.get_parameter("laser_y").value)
         self.laser_yaw = float(self.get_parameter("laser_yaw").value)
 
-        self.direction_guard = DirectionChangeGuard(
-            float(self.get_parameter("direction_change_dwell_sec").value)
+        direction_change_dwell_sec = float(
+            self.get_parameter("direction_change_dwell_sec").value
+        )
+        if (
+            self.obstacle_reverse_settle_sec < direction_change_dwell_sec
+            or self.obstacle_reverse_duration_sec <= 0.0
+            or self.obstacle_reverse_cooldown_sec < 0.0
+        ):
+            raise ValueError(
+                "obstacle reverse timing must be positive and include direction dwell"
+            )
+        self.direction_guard = DirectionChangeGuard(direction_change_dwell_sec)
+        self.transient_zero_hold = TransientZeroHold(
+            self.transient_nav2_zero_hold_sec
         )
         self.latest_twist: Twist | None = None
         self.latest_twist_time: float | None = None
@@ -131,6 +191,18 @@ class CmdVelAdapter(Node):
         self.applied_speed = 0.0
         self.last_timer_time = time.monotonic()
         self.last_reason = "startup"
+        self.next_diagnostic_log_at = 0.0
+        self.mission_state = "UNKNOWN"
+        self.mission_step = "-"
+        self.mission_precise = True
+        self.mission_reverse_crawl = False
+        self.latest_vesc_time: float | None = None
+        self.vesc_voltage = math.nan
+        self.vesc_fault_code = 0
+        self.obstacle_recovery_phase = "idle"
+        self.obstacle_reverse_at = 0.0
+        self.obstacle_reverse_until = 0.0
+        self.obstacle_reverse_cooldown_until = 0.0
 
         self.motor_publisher = self.create_publisher(
             Float32MultiArray, self.motor_topic, 10
@@ -141,6 +213,11 @@ class CmdVelAdapter(Node):
         self.status_publisher = self.create_publisher(
             String, "~/status", 10
         )
+        self.obstacle_recovery_publisher = self.create_publisher(
+            String,
+            str(self.get_parameter("obstacle_recovery_request_topic").value),
+            10,
+        )
         self.debug_publisher = self.create_publisher(
             Float32MultiArray, "~/debug", 10
         )
@@ -150,6 +227,15 @@ class CmdVelAdapter(Node):
         )
         self.create_subscription(
             LaserScan, self.scan_topic, self._on_scan, qos_profile_sensor_data
+        )
+        self.create_subscription(
+            String, self.mission_state_topic, self._on_mission_state, 20
+        )
+        self.create_subscription(
+            XycarVescState,
+            self.vesc_state_topic,
+            self._on_vesc_state,
+            qos_profile_sensor_data,
         )
         self.create_timer(self.timer_period, self._on_timer)
         self.get_logger().info(
@@ -162,20 +248,54 @@ class CmdVelAdapter(Node):
                 self.calibration.minimum_moving_command,
             )
         )
+        self.get_logger().info(
+            "모터 차단진단: 단계·미션상태·cmd_vel/scan 나이·LiDAR 점수·"
+            "VESC 전압/fault를 %.1f초마다 출력합니다"
+            % self.diagnostic_log_period
+        )
+        self.get_logger().info(
+            "LiDAR 안전입력: 유효점 최소=%d, scan timeout=%.2fs, "
+            "자체반사 제거영역 x=[%.2f,%.2f] y=±%.2f m, "
+            "예상충돌 검사거리=%.2f~%.2f m"
+            % (
+                self.minimum_scan_points,
+                self.scan_timeout,
+                self.footprint.minimum_x,
+                self.footprint.maximum_x,
+                self.footprint.half_width,
+                self.minimum_projection,
+                self.maximum_projection,
+            )
+        )
 
     def _declare_parameters(self) -> None:
-        self.declare_parameter("input_topic", "/cmd_vel")
+        self.declare_parameter("input_topic", "/cmd_vel_nav")
         self.declare_parameter("motor_topic", "/xycar_motor")
         self.declare_parameter("shadow_topic", "/parking/xycar_motor_shadow")
         self.declare_parameter("authorization_topic", "/parking/drive_authorized")
         self.declare_parameter("scan_topic", "/slam/scan_filtered")
+        self.declare_parameter("mission_state_topic", "/parking/mission_state")
+        self.declare_parameter("vesc_state_topic", "/vehicle/vesc_state")
         self.declare_parameter("drive_enabled", False)
         self.declare_parameter("command_timeout_sec", 0.35)
         self.declare_parameter("scan_timeout_sec", 0.35)
         self.declare_parameter("timer_period_sec", 0.05)
+        self.declare_parameter("diagnostic_log_period_sec", 2.0)
+        self.declare_parameter("vesc_telemetry_timeout_sec", 0.35)
+        self.declare_parameter("vesc_low_voltage_limit", 7.5)
+        self.declare_parameter("vesc_low_voltage_stop", 6.0)
         self.declare_parameter("maximum_steering_command_rate", 160.0)
         self.declare_parameter("steering_settle_tolerance_command", 3.0)
+        self.declare_parameter("transient_nav2_zero_hold_sec", 0.40)
         self.declare_parameter("direction_change_dwell_sec", 0.40)
+        self.declare_parameter("obstacle_reverse_recovery_enabled", True)
+        self.declare_parameter("obstacle_reverse_settle_sec", 0.40)
+        self.declare_parameter("obstacle_reverse_duration_sec", 0.62)
+        self.declare_parameter("obstacle_reverse_cooldown_sec", 0.80)
+        self.declare_parameter(
+            "obstacle_recovery_request_topic",
+            "/parking/obstacle_recovery_request",
+        )
 
         self.declare_parameter("speed_gain_mps_per_command", 0.080612)
         self.declare_parameter("minimum_moving_command", 4.0)
@@ -216,6 +336,21 @@ class CmdVelAdapter(Node):
         self.authorized = bool(message.data)
         if not self.authorized:
             self.direction_guard.reset()
+            self.obstacle_recovery_phase = "idle"
+
+    def _on_mission_state(self, message: String) -> None:
+        fields = parse_status_line(message.data)
+        self.mission_state = fields.get("state", "UNKNOWN")
+        self.mission_step = fields.get("step", "-")
+        self.mission_precise = fields.get("precise", "true") == "true"
+        self.mission_reverse_crawl = (
+            fields.get("reverse_crawl", "false") == "true"
+        )
+
+    def _on_vesc_state(self, message: XycarVescState) -> None:
+        self.latest_vesc_time = self._now_sec()
+        self.vesc_voltage = float(message.voltage_input)
+        self.vesc_fault_code = int(message.fault_code)
 
     def _on_scan(self, message: LaserScan) -> None:
         points = scan_points_in_base(
@@ -241,9 +376,100 @@ class CmdVelAdapter(Node):
         self.latest_scan_time = self._now_sec()
 
     def _stop(self, reason: str) -> None:
+        self.transient_zero_hold.reset()
         self.applied_steering = 0.0
         self.applied_speed = 0.0
         self._publish(0.0, 0.0, 0.0, reason, live=self.drive_enabled)
+
+    def _start_obstacle_reverse_recovery(self, now_sec: float) -> bool:
+        if (
+            not self.obstacle_reverse_recovery_enabled
+            or self.mission_state != "RUNNING"
+            or now_sec < self.obstacle_reverse_cooldown_until
+        ):
+            return False
+        self.obstacle_recovery_phase = "settle"
+        self.obstacle_reverse_at = now_sec + self.obstacle_reverse_settle_sec
+        self.obstacle_reverse_until = (
+            self.obstacle_reverse_at + self.obstacle_reverse_duration_sec
+        )
+        self.obstacle_reverse_cooldown_until = (
+            self.obstacle_reverse_until + self.obstacle_reverse_cooldown_sec
+        )
+        self.transient_zero_hold.reset()
+        self.direction_guard.reset()
+        self.obstacle_recovery_publisher.publish(
+            String(data=f"step={self.mission_step}")
+        )
+        return True
+
+    def _run_obstacle_reverse_recovery(
+        self,
+        now_sec: float,
+        dt_sec: float,
+    ) -> bool:
+        if self.obstacle_recovery_phase == "idle":
+            return False
+        self.applied_steering = slew(
+            self.applied_steering,
+            0.0,
+            self.maximum_steering_rate,
+            dt_sec,
+        )
+        if now_sec < self.obstacle_reverse_at:
+            self.applied_speed = 0.0
+            self._publish(
+                self.applied_steering,
+                0.0,
+                0.0,
+                "obstacle_reverse_settle",
+                live=self.drive_enabled,
+            )
+            return True
+        if now_sec < self.obstacle_reverse_until:
+            self.obstacle_recovery_phase = "reverse"
+            self.applied_speed = -self.calibration.minimum_moving_command
+            self._publish(
+                self.applied_steering,
+                self.applied_speed,
+                0.0,
+                "obstacle_reverse_active",
+                live=self.drive_enabled,
+            )
+            return True
+        self.obstacle_recovery_phase = "idle"
+        self.direction_guard.reset()
+        self.applied_speed = 0.0
+        self._publish(
+            self.applied_steering,
+            0.0,
+            0.0,
+            "obstacle_reverse_complete",
+            live=self.drive_enabled,
+        )
+        return True
+
+    @staticmethod
+    def _age_text(now_sec: float, stamp_sec: float | None) -> str:
+        if stamp_sec is None:
+            return "없음"
+        return "%.3fs" % max(0.0, now_sec - stamp_sec)
+
+    def _vesc_text(self, now_sec: float) -> str:
+        if self.latest_vesc_time is None:
+            return "없음"
+        age = max(0.0, now_sec - self.latest_vesc_time)
+        if age > self.vesc_telemetry_timeout:
+            return "stale(%.3fs)" % age
+        if self.vesc_fault_code != 0:
+            return "%.2fV fault=%d" % (self.vesc_voltage, self.vesc_fault_code)
+        if self.vesc_voltage <= self.vesc_low_voltage_stop:
+            state = "정지전압"
+        elif self.vesc_voltage < self.vesc_low_voltage_limit:
+            state = "저전압출력제한"
+        else:
+            state = "정상"
+        return "%.2fV(%s)" % (self.vesc_voltage, state)
 
     def _publish(
         self,
@@ -269,14 +495,39 @@ class CmdVelAdapter(Node):
                 ]
             )
         )
-        if reason != self.last_reason:
+        now_sec = self._now_sec()
+        reason_changed = reason != self.last_reason
+        if reason_changed:
             self.status_publisher.publish(String(data=reason))
-            if reason == "ok":
-                self.get_logger().info("모터 안전조건: 정상, 주행 출력을 허용합니다")
-            else:
-                self.get_logger().warning(
-                    "모터 안전조건: %s" % GATE_REASON_KO.get(reason, reason)
+        moving = abs(float(speed)) > 1.0e-6
+        should_log = reason_changed or (
+            reason != "ok" and now_sec >= self.next_diagnostic_log_at
+        )
+        if should_log:
+            label = "모터 출력" if moving else "모터 정지"
+            message = (
+                "[%s] 단계=%s 미션=%s 이유=%s 명령=[조향 %.1f, 속도 %.1f] "
+                "주행권한=%s cmd_vel나이=%s scan나이=%s LiDAR점=%d VESC=%s"
+                % (
+                    label,
+                    self.mission_step,
+                    self.mission_state,
+                    GATE_REASON_KO.get(reason, reason),
+                    steering,
+                    speed,
+                    "있음" if self.authorized else "없음",
+                    self._age_text(now_sec, self.latest_twist_time),
+                    self._age_text(now_sec, self.latest_scan_time),
+                    len(self.latest_scan_points),
+                    self._vesc_text(now_sec),
                 )
+            )
+            if moving:
+                self.get_logger().info(message)
+            else:
+                self.get_logger().warning(message)
+            self.next_diagnostic_log_at = now_sec + self.diagnostic_log_period
+        if reason_changed:
             self.last_reason = reason
 
     def _on_timer(self) -> None:
@@ -287,6 +538,34 @@ class CmdVelAdapter(Node):
 
         if not self.authorized:
             self._stop("not_authorized")
+            return
+        if self.drive_enabled:
+            if self.latest_vesc_time is None:
+                self._stop("no_vesc_telemetry")
+                return
+            if now_sec - self.latest_vesc_time > self.vesc_telemetry_timeout:
+                self._stop("stale_vesc_telemetry")
+                return
+            if self.vesc_fault_code != 0:
+                self._stop("vesc_fault")
+                return
+            if self.vesc_voltage <= self.vesc_low_voltage_stop:
+                self._stop("vesc_low_voltage_stop")
+                return
+        # Nav2 is cancelled as soon as an obstacle recovery starts, so its
+        # cmd_vel may disappear. Keep only the bounded recovery maneuver alive
+        # while authorization, VESC and fresh scan health remain valid.
+        if self.obstacle_recovery_phase != "idle":
+            if self.latest_scan_time is None:
+                self._stop("no_scan")
+                return
+            if now_sec - self.latest_scan_time > self.scan_timeout:
+                self._stop("stale_scan")
+                return
+            if len(self.latest_scan_points) < self.minimum_scan_points:
+                self._stop("insufficient_scan")
+                return
+            self._run_obstacle_reverse_recovery(now_sec, dt_sec)
             return
         if self.latest_twist is None or self.latest_twist_time is None:
             self._stop("no_cmd_vel")
@@ -308,6 +587,35 @@ class CmdVelAdapter(Node):
             self.latest_twist.linear.x,
             self.latest_twist.angular.z,
             self.calibration,
+        )
+        reverse_align_rotate_crawl = False
+        reverse_align_zero_crawl = False
+        if (
+            desired.reason == "rotate_in_place_rejected"
+            and self.mission_state == "RUNNING"
+            and self.mission_reverse_crawl
+        ):
+            desired = rotate_request_to_reverse_crawl(
+                self.latest_twist.angular.z,
+                self.calibration,
+            )
+            reverse_align_rotate_crawl = desired.reason == "ok"
+        elif (
+            desired.reason == "stopped"
+            and self.mission_state == "RUNNING"
+            and self.mission_reverse_crawl
+        ):
+            desired = stopped_request_to_reverse_crawl(
+                self.applied_steering,
+                self.calibration,
+            )
+            reverse_align_zero_crawl = desired.reason == "ok"
+        desired, holding_transient_zero = self.transient_zero_hold.filter(
+            desired,
+            now_sec,
+            eligible=(
+                self.mission_state == "RUNNING" and not self.mission_precise
+            ),
         )
         if desired.reason != "ok":
             self._stop(desired.reason)
@@ -331,8 +639,15 @@ class CmdVelAdapter(Node):
             sample_step_m=self.projection_step,
         )
         if collision.collision:
+            if (
+                desired.speed_command > 0.0
+                and self._start_obstacle_reverse_recovery(now_sec)
+            ):
+                self._run_obstacle_reverse_recovery(now_sec, dt_sec)
+                return
             # Stay stopped but allow the servo to follow a newly safe steering
             # request. Centering it here creates repeatable stop/retry drift.
+            self.transient_zero_hold.reset()
             self.applied_steering = slew(
                 self.applied_steering,
                 desired.steering_command,
@@ -355,6 +670,7 @@ class CmdVelAdapter(Node):
         )
         if guard_reason == "direction_change_dwell":
             # Pre-position steering while the car is physically stopped.
+            self.transient_zero_hold.reset()
             self.applied_steering = slew(
                 self.applied_steering,
                 desired.steering_command,
@@ -377,13 +693,15 @@ class CmdVelAdapter(Node):
             self.maximum_steering_rate,
             dt_sec,
         )
-        if (
-            abs(desired.steering_command - next_steering)
-            > self.steering_settle_tolerance
+        if should_hold_for_steering_settle(
+            applied_speed_command=self.applied_speed,
+            desired_steering_command=desired.steering_command,
+            next_steering_command=next_steering,
+            tolerance_command=self.steering_settle_tolerance,
         ):
-            # MPPI assumes its requested Ackermann curvature is available now.
-            # Stop traction until the measured-rate servo is close enough so
-            # a tight arc is not geometrically shortened or extended.
+            # Pre-align before initial motion, after a direction dwell, or
+            # after a safety stop. During ordinary same-direction driving the
+            # servo slews while command 4 remains continuous.
             self.applied_steering = next_steering
             self.applied_speed = 0.0
             self._publish(
@@ -403,7 +721,15 @@ class CmdVelAdapter(Node):
             self.applied_steering,
             self.applied_speed,
             desired.curvature,
-            "ok",
+            (
+                "transient_nav2_zero_hold"
+                if holding_transient_zero
+                else "reverse_align_zero_crawl"
+                if reverse_align_zero_crawl
+                else "reverse_align_rotate_crawl"
+                if reverse_align_rotate_crawl
+                else "ok"
+            ),
             live=self.drive_enabled,
         )
 

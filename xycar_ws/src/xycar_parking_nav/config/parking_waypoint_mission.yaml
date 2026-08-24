@@ -1,0 +1,236 @@
+mission:
+  frame_id: map
+  base_from_reference_x_m: 0.0
+  reverse_waypoint_ranges:
+  - 9-13
+  - 21-25
+  initial_pose:
+    name: WP_00
+    x: 1.6831
+    y: 0.8636
+    yaw: 2.963134319389646
+  steps:
+  - name: WP_01
+    x: 0.9197
+    y: 1.0013
+    yaw: 2.052366001717961
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+  - name: WP_02
+    x: 0.6319
+    y: 1.552
+    yaw: 1.3164013222145297
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+  - name: WP_03
+    x: 0.7946
+    y: 2.1777
+    yaw: 1.3481407970333077
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+  - name: WP_04
+    x: 0.9448
+    y: 2.8411
+    yaw: 1.6200034618465518
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+  - name: WP_05
+    x: 0.9072
+    y: 3.6046
+    yaw: 1.6665383576587867
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+  - name: WP_06
+    x: 0.8447
+    y: 4.2554
+    yaw: 1.3497635985370515
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+  - name: WP_07
+    x: 0.9453
+    y: 4.7031
+    yaw: 0.42664868630267033
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+  - name: WP_08
+    x: 1.3008
+    y: 4.8647
+    yaw: 0.4368981380383241
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+  - name: WP_09
+    x: 1.5432
+    y: 4.9779
+    yaw: 0.2188509294934078
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+  - name: WP_10
+    x: 1.2523
+    y: 4.9132
+    yaw: 0.5261482910738673
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+    reverse_only: true
+  - name: WP_11
+    x: 0.7514
+    y: 4.6223
+    yaw: 0.364089254681923
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+    reverse_only: true
+  - name: WP_12
+    x: 0.4121
+    y: 4.493
+    yaw: 0.7065005944471463
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+    reverse_only: true
+  - name: WP_13
+    x: 0.35
+    y: 4.44
+    yaw: 0.741787019314516
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 3
+    reverse_only: true
+  - name: A_PARK
+    x: -0.016
+    y: 4.1046
+    yaw: 0.021
+    hold_sec: 1.0
+    parking_goal: true
+    precise_goal: true
+    allow_reverse: true
+    reverse_only: true
+    maximum_retries: 3
+  - name: WP_15
+    x: 0.6221
+    y: 4.59
+    yaw: 0.2186547296162309
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+  - name: WP_16
+    x: 2.1117
+    y: 4.921
+    yaw: -0.6371248554972895
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+  - name: WP_17
+    x: 2.8227
+    y: 4.3948
+    yaw: -1.6296657668437888
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+  - name: WP_18
+    x: 2.7843
+    y: 3.7426
+    yaw: -1.6901923099913054
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+  - name: WP_19
+    x: 2.7092
+    y: 3.1167
+    yaw: -1.5273579560818784
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+  - name: WP_20
+    x: 2.7342
+    y: 2.541
+    yaw: -1.1161866136609533
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+  - name: WP_21
+    x: 3.0095
+    y: 1.9777
+    yaw: -0.6787834133874642
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+  - name: WP_22
+    x: 2.6216
+    y: 2.2906
+    yaw: -0.8004220746429962
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+    reverse_only: true
+  - name: WP_23
+    x: 2.2086
+    y: 2.7162
+    yaw: -1.2795410971907037
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+    reverse_only: true
+  - name: WP_24
+    x: 2.0585
+    y: 3.2169
+    yaw: -1.3261694047720634
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+    reverse_only: true
+  - name: WP_25
+    x: 2.0084
+    y: 3.4176
+    yaw: -1.3553646129994352
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 3
+    reverse_only: true
+    precise_goal: true
+  - name: B_PARK
+    x: 2.0592
+    y: 3.1856
+    yaw: -1.503
+    hold_sec: 1.0
+    parking_goal: true
+    precise_goal: true
+    allow_reverse: false
+    maximum_retries: 3
+  - name: WP_27
+    x: 2.5964
+    y: 2.4909
+    yaw: -0.8836407283487503
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+  - name: WP_28
+    x: 2.997
+    y: 2.0027
+    yaw: -1.9808218385469425
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+  - name: WP_29
+    x: 2.7467
+    y: 1.4269
+    yaw: -2.5600849544318645
+    hold_sec: 0.0
+    allow_reverse: true
+    maximum_retries: 2
+  - name: WP_30
+    x: 1.8708
+    y: 0.8512
+    yaw: -2.5600849544318645
+    hold_sec: 1.0
+    allow_reverse: true
+    maximum_retries: 2

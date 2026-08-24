@@ -1,0 +1,29 @@
+<!-- Forward-only Ackermann Nav2 tree for transit between parking maneuvers. -->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <!-- Clear and retry once, then let the mission manager switch this one
+         ordinary transit goal to the bidirectional fallback tree. -->
+    <RecoveryNode number_of_retries="1" name="NavigateRecovery">
+      <!-- Compute the nominal segment once. Replanning from a pose already
+           close to a heading-constrained waypoint can require an impossible
+           Dubins loop even though the original path is still valid. -->
+      <Sequence name="NavigateForwardOnNominalPath">
+        <RecoveryNode number_of_retries="1" name="ComputeForwardPathToPose">
+          <ComputePathToPose goal="{goal}" path="{path}" planner_id="ForwardGrid"/>
+          <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
+        </RecoveryNode>
+        <RecoveryNode number_of_retries="1" name="FollowForwardPath">
+          <FollowPath path="{path}" controller_id="FollowPathForward" goal_checker_id="transit_goal_checker"/>
+          <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
+        </RecoveryNode>
+      </Sequence>
+      <ReactiveFallback name="RecoveryFallback">
+        <GoalUpdated/>
+        <Sequence name="ClearingActions">
+          <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap"/>
+          <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
+        </Sequence>
+      </ReactiveFallback>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

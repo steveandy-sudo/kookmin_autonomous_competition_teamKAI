@@ -1,0 +1,34 @@
+parking_waypoint_route:
+  ros__parameters:
+    use_sim_time: false
+    frame_id: map
+    closed_route: false
+    # Inclusive waypoint ranges: 4-5 means segment 4 -> 5 is reverse-only.
+    # Set from parking_waypoint_capture.launch.py with, for example,
+    # reverse_waypoint_ranges:="4-5,8-9".
+    reverse_waypoint_ranges: ""
+    capture_enabled: false
+    path_topic: /parking/waypoint_route
+    marker_topic: /parking/waypoint_markers
+    reference_marker_topic: /parking/reference_locations
+    reference_box_length_m: 0.80
+    reference_box_width_m: 0.50
+    # A click inside 45 cm of a surveyed A/B center becomes a strict parking
+    # goal and is snapped to the recorded center pose and heading.
+    parking_snap_radius_m: 0.45
+    clicked_point_topic: /clicked_point
+
+    # Same occupancy-grid route generation defaults as the imported branch.
+    inflation_radius_m: 0.23
+    unknown_is_occupied: true
+    ignore_map_occupancy: false
+    waypoint_snap_radius_m: 0.45
+    path_spacing_m: 0.10
+    path_smoothing_enabled: true
+    path_smoothing_data_weight: 0.0005
+    path_smoothing_weight: 0.45
+    path_smoothing_iterations: 2500
+    path_smoothing_anchor_weight: 0.02
+    path_smoothing_maximum_deviation_m: -1.0
+    clearance_cost_weight: 3.0
+    clearance_cost_decay_m: 0.35

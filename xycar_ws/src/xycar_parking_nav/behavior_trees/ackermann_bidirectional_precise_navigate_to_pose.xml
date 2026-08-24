@@ -1,0 +1,26 @@
+<!-- Bidirectional Ackermann tree for an exact alignment pose. -->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+      <!-- Freeze one Reeds-Shepp path. Replanning at the direction boundary
+           can move the cusp and alternate forward/reverse commands. -->
+      <Sequence name="NavigateBidirectionallyToPreciseAlignment">
+        <RecoveryNode number_of_retries="1" name="ComputePrecisePathToPose">
+          <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+          <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
+        </RecoveryNode>
+        <RecoveryNode number_of_retries="1" name="FollowPrecisePath">
+          <FollowPath path="{path}" controller_id="FollowPath" goal_checker_id="parking_goal_checker"/>
+          <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
+        </RecoveryNode>
+      </Sequence>
+      <ReactiveFallback name="RecoveryFallback">
+        <GoalUpdated/>
+        <Sequence name="ClearingActions">
+          <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap"/>
+          <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
+        </Sequence>
+      </ReactiveFallback>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

@@ -1,18 +1,42 @@
 parking_cmd_vel_adapter:
   ros__parameters:
     use_sim_time: false
-    input_topic: /cmd_vel
+    # Consume MPPI's Ackermann-constrained command directly.  The generic
+    # velocity smoother limits linear/angular axes independently and can leave
+    # a transient v=0, w!=0 command that this vehicle cannot execute.
+    input_topic: /cmd_vel_nav
     motor_topic: /xycar_motor
     shadow_topic: /parking/xycar_motor_shadow
     authorization_topic: /parking/drive_authorized
+    mission_state_topic: /parking/mission_state
     scan_topic: /slam/scan_filtered
+    vesc_state_topic: /vehicle/vesc_state
     drive_enabled: false
     command_timeout_sec: 0.35
     scan_timeout_sec: 0.35
     timer_period_sec: 0.05
+    # Repeat a structured stop reason while output remains zero.
+    diagnostic_log_period_sec: 2.0
+    vesc_telemetry_timeout_sec: 0.35
+    vesc_low_voltage_limit: 7.5
+    vesc_low_voltage_stop: 6.0
     maximum_steering_command_rate: 160.0
     steering_settle_tolerance_command: 3.0
+    # Bridge only brief Nav2 zero chatter during loose transit. At command 4
+    # this is at most about 0.13 m. Parking/final poses and every safety gate
+    # still stop immediately.
+    transient_nav2_zero_hold_sec: 0.40
     direction_change_dwell_sec: 0.40
+    # Forward LiDAR blockage recovery: stop, center steering, reverse about
+    # 20 cm, then ask the mission manager to recalculate the same step.
+    # Rear LiDAR coverage is unavailable, so the maneuver is time-bounded and
+    # allowed only while authorization, scan health and VESC health are valid.
+    obstacle_reverse_recovery_enabled: true
+    obstacle_reverse_settle_sec: 0.40
+    # 0.62 s * command 4 * 0.080612 m/s/command = 0.200 m nominal.
+    obstacle_reverse_duration_sec: 0.62
+    obstacle_reverse_cooldown_sec: 0.80
+    obstacle_recovery_request_topic: /parking/obstacle_recovery_request
     # The real chassis does not move below command 4. Every non-zero Nav2
     # request is therefore sent continuously as exactly +4 or -4.
     # Same real-vehicle calibration used by the Kookmin Gazebo bridge.

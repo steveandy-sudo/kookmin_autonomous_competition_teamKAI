@@ -24,6 +24,20 @@ def test_a_entry_to_bay_requires_reverse():
     assert any(point.direction < 0 for point in result.points)
 
 
+def test_recorded_a_entry_to_parking_is_one_reverse_only_leg():
+    result = planner().plan(
+        Pose2D(1.034, 4.127, 0.021),
+        Pose2D(-0.016, 4.105, 0.021),
+    )
+
+    assert result.success, (result.reason, result.expansions)
+    moving_directions = {
+        point.direction for point in result.points if point.direction != 0
+    }
+    assert moving_directions == {-1}
+    assert result.direction_changes == 0
+
+
 def test_b_entry_to_parallel_goal_is_kinematically_feasible():
     result = planner().plan(
         Pose2D(2.75, 2.39, -math.pi / 2.0),

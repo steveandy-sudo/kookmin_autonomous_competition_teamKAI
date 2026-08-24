@@ -31,6 +31,7 @@ class ParkingKeyboardControl(Node):
         self.sequence = 0
         self.start_phase = "IDLE"
         self.abort_pending = False
+        self.abort_in_flight = False
         self.state_fields: dict[str, str] = {}
         self.motor_reason = "startup"
         self.last_display = ""
@@ -86,11 +87,16 @@ class ParkingKeyboardControl(Node):
         action = self.intent.handle_key(key)
         if action == "START":
             self.sequence += 1
-            self.abort_pending = False
-            self.start_phase = "NEED_RESET"
-            self.get_logger().warning(
-                "[RUN 요청] 위치추정을 새로 갱신한 뒤 자동으로 미션을 시작합니다"
-            )
+            if self.abort_pending or self.abort_in_flight:
+                self.start_phase = "WAIT_ABORT"
+                self.get_logger().warning(
+                    "[RUN 예약] 이전 STOP 완료 후 위치추정을 초기화하고 시작합니다"
+                )
+            else:
+                self.start_phase = "NEED_RESET"
+                self.get_logger().warning(
+                    "[RUN 요청] 위치추정을 새로 갱신한 뒤 자동으로 미션을 시작합니다"
+                )
         elif action in {"STOP", "QUIT"}:
             self.sequence += 1
             self.start_phase = "IDLE"
@@ -104,6 +110,7 @@ class ParkingKeyboardControl(Node):
             if not self.abort_client.service_is_ready():
                 return
             self.abort_pending = False
+            self.abort_in_flight = True
             future = self.abort_client.call_async(Trigger.Request())
             future.add_done_callback(self._on_abort_done)
             return
@@ -162,14 +169,24 @@ class ParkingKeyboardControl(Node):
         log(f"[START 처리] {response.message}")
 
     def _on_abort_done(self, future) -> None:
+        self.abort_in_flight = False
         try:
             response = future.result()
         except Exception as error:  # noqa: BLE001
+            self.start_phase = "IDLE"
+            self.intent.desired_running = False
             self.get_logger().error(f"[정지 실패] abort 서비스 오류: {error}")
             return
         if response.success:
             self.get_logger().warning(f"[STOP 완료] {response.message}")
+            if self.intent.desired_running:
+                self.start_phase = "NEED_RESET"
+                self.get_logger().warning(
+                    "[RUN 재개] STOP 완료를 확인해 초기화부터 진행합니다"
+                )
         else:
+            self.start_phase = "IDLE"
+            self.intent.desired_running = False
             self.get_logger().error(f"[정지 실패] {response.message}")
 
     def _display_status(self) -> None:
@@ -180,9 +197,20 @@ class ParkingKeyboardControl(Node):
         )
         mode = "RUN 요청" if self.intent.desired_running else "STOP"
         step = self.state_fields.get("step", "-")
-        localization = self.state_fields.get("localization", "-")
+        state = self.state_fields.get("state", "")
+        localization = (
+            "-"
+            if state in {"ABORTED", "COMPLETED"}
+            else self.state_fields.get("localization", "-")
+        )
+        raw_index = self.state_fields.get("index", "-")
+        try:
+            zero_based, total = raw_index.split("/", 1)
+            stage_index = "%d/%s" % (int(zero_based) + 1, total)
+        except (TypeError, ValueError):
+            stage_index = raw_index
         display = (
-            f"[{mode}] 상태={state_text} | 단계={step} | "
+            f"[{mode}] 상태={state_text} | 단계={stage_index} {step} | "
             f"위치추정={localization} | 이유={reason}"
         )
         if display != self.last_display:

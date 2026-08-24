@@ -6,9 +6,13 @@ from xycar_parking_nav.command_core import (
     DirectionChangeGuard,
     Footprint,
     MotorCalibration,
+    MotorCommand,
+    TransientZeroHold,
     motor_command_to_twist,
     predicted_stop_distance,
+    rotate_request_to_reverse_crawl,
     scan_points_in_base,
+    stopped_request_to_reverse_crawl,
     swept_footprint_collision,
     twist_to_motor_command,
 )
@@ -34,6 +38,27 @@ def test_twist_conversion_uses_measured_inverse_map(calibration):
     left = twist_to_motor_command(0.24, 0.24 * 1.5, calibration)
     assert left.steering_command == pytest.approx(-42.0)
     assert left.speed_command == pytest.approx(4.0)
+
+
+def test_transient_nav2_zero_is_bridged_then_released():
+    hold = TransientZeroHold(0.40)
+    moving = MotorCommand(8.0, 4.0, -0.1, "ok")
+    stopped = MotorCommand(0.0, 0.0, 0.0, "stopped")
+
+    assert hold.filter(moving, 1.0, eligible=True) == (moving, False)
+    assert hold.filter(stopped, 1.1, eligible=True) == (moving, True)
+    assert hold.filter(stopped, 1.49, eligible=True) == (moving, True)
+    assert hold.filter(stopped, 1.51, eligible=True) == (stopped, False)
+
+
+def test_transient_zero_hold_is_disabled_for_precise_or_safety_context():
+    hold = TransientZeroHold(0.40)
+    moving = MotorCommand(-8.0, -4.0, 0.1, "ok")
+    stopped = MotorCommand(0.0, 0.0, 0.0, "stopped")
+
+    hold.filter(moving, 2.0, eligible=True)
+    assert hold.filter(stopped, 2.1, eligible=False) == (stopped, False)
+    assert hold.last_nonzero is None
 
 
 def test_reverse_preserves_path_curvature(calibration):
@@ -88,6 +113,38 @@ def test_rotate_in_place_is_rejected(calibration):
     command = twist_to_motor_command(0.0, 1.0, calibration)
     assert command.speed_command == 0.0
     assert command.reason == "rotate_in_place_rejected"
+
+
+def test_reverse_alignment_converts_spin_to_minimum_reverse_arc(calibration):
+    command = rotate_request_to_reverse_crawl(0.30, calibration)
+
+    assert command.reason == "ok"
+    assert command.speed_command == pytest.approx(-4.0)
+    assert command.steering_command > 0.0
+    linear, angular = motor_command_to_twist(
+        command.steering_command,
+        command.speed_command,
+        calibration,
+    )
+    assert linear < 0.0
+    assert angular > 0.0
+
+
+def test_reverse_alignment_converts_zero_to_last_steering_reverse_crawl(
+    calibration,
+):
+    command = stopped_request_to_reverse_crawl(-21.0, calibration)
+
+    assert command.reason == "ok"
+    assert command.speed_command == pytest.approx(-4.0)
+    assert command.steering_command == pytest.approx(-21.0)
+    linear, angular = motor_command_to_twist(
+        command.steering_command,
+        command.speed_command,
+        calibration,
+    )
+    assert linear < 0.0
+    assert angular < 0.0
 
 
 def test_direction_change_guard_inserts_dwell():

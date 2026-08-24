@@ -50,6 +50,17 @@ def generate_launch_description() -> LaunchDescription:
                 ),
             ),
             DeclareLaunchArgument("autostart_mission", default_value="false"),
+            DeclareLaunchArgument(
+                "require_route_localization", default_value="false"
+            ),
+            DeclareLaunchArgument(
+                "initial_pose_publish_count",
+                default_value="5",
+                description=(
+                    "Mission seed count; set 0 when route LiDAR matching "
+                    "owns /initialpose"
+                ),
+            ),
             DeclareLaunchArgument("start_lidar", default_value="true"),
             DeclareLaunchArgument("start_imu", default_value="true"),
             DeclareLaunchArgument("start_vesc", default_value="true"),
@@ -57,6 +68,8 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("enable_preflight", default_value="true"),
             DeclareLaunchArgument("preflight_timeout_sec", default_value="20.0"),
             DeclareLaunchArgument("enable_rviz", default_value="true"),
+            DeclareLaunchArgument("start_mission_manager", default_value="true"),
+            DeclareLaunchArgument("start_cmd_vel_adapter", default_value="true"),
             DeclareLaunchArgument("vesc_port", default_value="/dev/ttyMOTOR"),
             DeclareLaunchArgument("laser_x", default_value="0.065"),
             DeclareLaunchArgument("laser_y", default_value="0.0"),
@@ -220,9 +233,18 @@ def generate_launch_description() -> LaunchDescription:
                             LaunchConfiguration("autostart_mission"),
                             value_type=bool,
                         ),
+                        "initial_pose_publish_count": ParameterValue(
+                            LaunchConfiguration("initial_pose_publish_count"),
+                            value_type=int,
+                        ),
+                        "require_route_localization": ParameterValue(
+                            LaunchConfiguration("require_route_localization"),
+                            value_type=bool,
+                        ),
                         "use_sim_time": ParameterValue(use_sim_time, value_type=bool),
                     },
                 ],
+                condition=IfCondition(LaunchConfiguration("start_mission_manager")),
             ),
             Node(
                 package="xycar_parking_nav",
@@ -247,6 +269,7 @@ def generate_launch_description() -> LaunchDescription:
                         "use_sim_time": ParameterValue(use_sim_time, value_type=bool),
                     },
                 ],
+                condition=IfCondition(LaunchConfiguration("start_cmd_vel_adapter")),
             ),
             Node(
                 package="xycar_parking_nav",

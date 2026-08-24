@@ -44,9 +44,12 @@ setup(
             "parking_keyboard_control = xycar_parking_nav.parking_keyboard_control:main",
             "parking_preflight = xycar_parking_nav.parking_preflight:main",
             "parking_simulator = xycar_parking_nav.parking_simulator:main",
+            "route_scan_localizer = xycar_parking_nav.route_scan_localizer:main",
             "scan_filter = xycar_parking_nav.scan_filter_node:main",
             "vesc_imu_odom = xycar_parking_nav.vesc_imu_odom_node:main",
             "validate_map = xycar_parking_nav.validate_map:main",
+            "waypoint_route_manager = "
+            "xycar_parking_nav.waypoint_route_manager:main",
         ],
     },
 )

@@ -19,6 +19,36 @@ def slew(current: float, target: float, maximum_rate: float, dt_sec: float) -> f
     return clamp(float(target), float(current) - delta, float(current) + delta)
 
 
+def should_hold_for_steering_settle(
+    *,
+    applied_speed_command: float,
+    desired_steering_command: float,
+    next_steering_command: float,
+    tolerance_command: float,
+) -> bool:
+    """Pre-align steering only while traction is already stopped.
+
+    Once the car is moving in one direction, repeatedly dropping command 4 to
+    zero for ordinary MPPI steering changes prevents the drivetrain from ever
+    overcoming its deadband. Direction changes and every safety stop set the
+    applied speed to zero, so those cases still require pre-alignment.
+    """
+
+    values = (
+        applied_speed_command,
+        desired_steering_command,
+        next_steering_command,
+        tolerance_command,
+    )
+    if not all(math.isfinite(float(value)) for value in values):
+        return True
+    return (
+        abs(float(applied_speed_command)) <= 1.0e-6
+        and abs(float(desired_steering_command) - float(next_steering_command))
+        > max(0.0, float(tolerance_command))
+    )
+
+
 def interpolate_clamped(
     value: float,
     inputs: Sequence[float],
@@ -82,6 +112,56 @@ class MotorCommand:
     speed_command: float
     curvature: float
     reason: str = "ok"
+
+
+class TransientZeroHold:
+    """Bridge short Nav2 zero commands without masking safety-stop gates.
+
+    The caller must invoke this only after authorization and live sensor gates
+    have passed.  It therefore smooths controller chatter, while an operator
+    stop, localization loss, stale sensor, VESC fault, or collision can still
+    bypass/reset it and publish zero immediately.
+    """
+
+    def __init__(self, hold_sec: float) -> None:
+        self.hold_sec = max(0.0, float(hold_sec))
+        self.last_nonzero: MotorCommand | None = None
+        self.zero_started_at: float | None = None
+
+    def filter(
+        self,
+        desired: MotorCommand,
+        now_sec: float,
+        *,
+        eligible: bool,
+    ) -> tuple[MotorCommand, bool]:
+        if desired.reason == "ok" and abs(desired.speed_command) > 1.0e-6:
+            self.last_nonzero = desired
+            self.zero_started_at = None
+            return desired, False
+
+        is_nav2_zero = desired.reason in {"stopped", "rotate_in_place_rejected"}
+        if (
+            not eligible
+            or not is_nav2_zero
+            or self.hold_sec <= 0.0
+            or self.last_nonzero is None
+        ):
+            self.reset()
+            return desired, False
+
+        now = float(now_sec)
+        if self.zero_started_at is None:
+            self.zero_started_at = now
+        if now - self.zero_started_at < self.hold_sec:
+            return self.last_nonzero, True
+
+        self.reset()
+        return desired, False
+
+    def reset(self) -> None:
+        self.last_nonzero = None
+        self.zero_started_at = None
 
 
 def curvature_to_steering_command(
@@ -153,6 +233,54 @@ def twist_to_motor_command(
     if 0.0 < abs(speed_command) < calibration.minimum_moving_command:
         speed_command = math.copysign(calibration.minimum_moving_command, speed_command)
     return MotorCommand(steering, speed_command, curvature, "ok")
+
+
+def rotate_request_to_reverse_crawl(
+    angular_z_rad_s: float,
+    calibration: MotorCalibration,
+) -> MotorCommand:
+    """Execute an Ackermann-infeasible spin request as minimum-speed reverse.
+
+    The angular velocity sign is retained.  With negative linear speed this
+    naturally selects the opposite steering curvature and produces the same
+    requested yaw direction while the chassis backs up.
+    """
+
+    angular = float(angular_z_rad_s)
+    if not math.isfinite(angular):
+        return MotorCommand(0.0, 0.0, 0.0, "non_finite_twist")
+    if abs(angular) <= 1.0e-6:
+        return MotorCommand(0.0, 0.0, 0.0, "stopped")
+    reverse_speed = -(
+        calibration.minimum_moving_command
+        * calibration.speed_gain_mps_per_command
+    )
+    return twist_to_motor_command(reverse_speed, angular, calibration)
+
+
+def stopped_request_to_reverse_crawl(
+    steering_command: float,
+    calibration: MotorCalibration,
+) -> MotorCommand:
+    """Keep a reverse-only transit moving through a fresh Nav2 zero command.
+
+    This helper is deliberately used only after the adapter has passed motor
+    authorization, localization, VESC, cmd_vel-age, and LiDAR-age gates.  It
+    retains the last achievable steering angle and requests the hardware's
+    minimum executable reverse command instead of allowing controller goal
+    chatter to alternate ``-4, 0, -4``.
+    """
+
+    steering = float(steering_command)
+    if not math.isfinite(steering):
+        return MotorCommand(0.0, 0.0, 0.0, "non_finite_twist")
+    reverse_command = -calibration.minimum_moving_command
+    linear, angular = motor_command_to_twist(
+        steering,
+        reverse_command,
+        calibration,
+    )
+    return twist_to_motor_command(linear, angular, calibration)
 
 
 @dataclass(frozen=True)

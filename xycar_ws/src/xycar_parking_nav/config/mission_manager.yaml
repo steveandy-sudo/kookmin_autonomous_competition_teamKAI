@@ -2,31 +2,89 @@ parking_mission_manager:
   ros__parameters:
     navigate_to_pose_action: /navigate_to_pose
     amcl_pose_topic: /amcl_pose
+    amcl_nomotion_update_service: /request_nomotion_update
     initial_pose_topic: /initialpose
     authorization_topic: /parking/drive_authorized
     state_topic: /parking/mission_state
+    # Direct command shares the adapter input. Nav2 has no active goal during
+    # this B_PARK-only segment, so there is a single publisher in control.
+    direct_cmd_vel_topic: /cmd_vel_nav
     goal_pose_array_topic: /parking/mission_goals
+    visualization_topic: /parking/mission_visualization
+    require_route_localization: false
+    route_localization_ready_topic: /parking/route_localization/ready
+    # Recorded parking center shown as a vehicle-sized bay in RViz.
+    parking_box_length_m: 0.80
+    parking_box_width_m: 0.50
     initial_pose_publish_count: 5
     initial_pose_publish_period_sec: 0.25
-    maximum_xy_variance: 0.04
-    maximum_yaw_variance: 0.08
+    # Relaxed for a hand-reproduced map: sqrt(0.0625)=0.25 m position sigma
+    # and sqrt(0.12)=0.35 rad yaw sigma. Live LiDAR collision checks remain
+    # independent from this localization-quality gate.
+    maximum_xy_variance: 0.0625
+    maximum_yaw_variance: 0.12
     # AMCL does not publish a new pose while the vehicle is perfectly still.
     # Keep the last high-quality estimate through each 3 s parking hold; once
     # motion resumes, normal scan/odometry updates refresh the pose again.
     maximum_pose_age_sec: 4.00
     maximum_position_jump_m: 0.60
     maximum_yaw_jump_rad: 0.80
-    required_stable_samples: 8
-    localization_loss_cancel_sec: 0.80
-    # Nav2's 8 cm goal checker operates on the controller-cycle pose.  Allow
-    # the following AMCL sample plus the measured ~2 cm map/scan bias so the
+    required_stable_samples: 6
+    # AMCL normally skips laser updates at exactly zero odometry motion. Force
+    # a scan match only after pose output has been quiet, at most 4 Hz.
+    nomotion_update_period_sec: 0.25
+    nomotion_update_pose_silence_sec: 0.20
+    localization_loss_cancel_sec: 1.00
+    # Nav2's relaxed goal checker operates on the controller-cycle pose. Allow
+    # the following AMCL sample plus the reproduced-map registration bias so the
     # independent final check does not reject a goal Nav2 just accepted.
-    goal_position_tolerance_m: 0.12
-    goal_yaw_tolerance_rad: 0.12
+    goal_position_tolerance_m: 0.16
+    goal_yaw_tolerance_rad: 0.18
+    # Ordinary route-shaping points are pass gates, not parking poses. Accept
+    # them without forcing an Ackermann loop back to an exact point/heading.
+    transit_goal_position_tolerance_m: 0.48
+    transit_goal_yaw_tolerance_rad: 3.14
+    transit_pass_radius_m: 0.45
+    transit_pass_maximum_miss_distance_m: 0.75
+    transit_pass_lateral_tolerance_m: 0.55
     action_server_timeout_sec: 1.0
     nav2_activation_timeout_sec: 10.0
     retry_delay_sec: 0.25
+    # Ordinary transit remains forward-only first. If Dubins aborts after the
+    # car passed a waypoint, retry that one goal with Reeds-Shepp. Precise
+    # parking/cusp directions never use this fallback.
+    forward_failure_reverse_fallback_enabled: true
+    # Do not wait indefinitely for the full Nav2 recovery tree. If remaining
+    # distance does not improve by 8 cm for 3 seconds, cancel the forward goal
+    # and retry the same ordinary waypoint with a reverse-capable path.
+    forward_no_progress_timeout_sec: 3.0
+    forward_progress_minimum_improvement_m: 0.08
+    # Keep the last valid command authorized across a short cancel/replan gap.
+    # The cmd_vel timeout and independent live-LiDAR shield remain in force.
+    replan_authorization_grace_sec: 0.45
+    # Never drive through a live hazard. If Nav2 exhausts its short retries,
+    # stay stopped and start the same step again after a fresh costmap cycle.
+    automatic_recovery_enabled: true
+    automatic_recovery_delay_sec: 0.25
+    obstacle_recovery_request_topic: /parking/obstacle_recovery_request
+    # Adapter sequence is 0.40 s stop + 0.62 s (~0.20 m) reverse. Keep authorization
+    # open only through that bounded maneuver, then resend the same Nav2 goal.
+    obstacle_reverse_replan_delay_sec: 1.05
+    obstacle_reverse_authorization_sec: 1.35
     # Competition clock: start command to final Start-zone return.
     mission_time_limit_sec: 180.0
+    # Keep measuring against the three-minute competition target, but do not
+    # abort or revoke motor authorization when tuning runs exceed it.
+    mission_time_limit_enforced: false
     time_warning_remaining_sec: 30.0
     time_log_period_sec: 10.0
+    # Emit current/target pose, error, goal mode and state while each step runs.
+    diagnostic_log_period_sec: 2.0
+    # WP18 is already aligned with the surveyed B bay. Nav2 currently aborts
+    # this straight reverse action before producing cmd_vel, so close the final
+    # 18->B_PARK segment directly on AMCL pose error at physical command -4.
+    direct_reverse_parking_enabled: true
+    direct_reverse_parking_goal_names: [B_PARK]
+    direct_reverse_speed_mps: 0.322448
+    direct_reverse_heading_gain: 0.8
+    direct_reverse_maximum_curvature: 1.2

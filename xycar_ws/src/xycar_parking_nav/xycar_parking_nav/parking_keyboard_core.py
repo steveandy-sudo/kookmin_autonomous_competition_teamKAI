@@ -11,6 +11,7 @@ STATE_KO = {
     "RUNNING": "주차 미션 주행 중",
     "HOLDING": "목표 지점 정지 확인 중",
     "PAUSED_LOCALIZATION": "위치추정 이상으로 일시정지",
+    "RECOVERING": "장애물 우회 경로 재탐색 중",
     "COMPLETED": "주차 미션 완료",
     "ABORTED": "주차 미션 중단",
 }
@@ -27,6 +28,7 @@ LOCALIZATION_REASON_KO = {
     "non_monotonic_stamp": "AMCL 시간정보 순서가 뒤바뀜",
     "position_jump": "AMCL 위치가 갑자기 크게 변함",
     "yaw_jump": "AMCL 방향이 갑자기 크게 변함",
+    "route_localization_not_ready": "경로 기반 LiDAR 초기 정합이 아직 완료되지 않음",
 }
 
 MISSION_REASON_KO = {
@@ -37,10 +39,21 @@ MISSION_REASON_KO = {
     "nav2_activation_timeout": "Nav2 활성화 시간 초과",
     "goal_rejected": "Nav2가 목표를 거부함",
     "goal_cancelled_for_localization": "위치추정 이상으로 목표를 취소함",
+    "aligned_completion_waiting_for_localization": (
+        "주차점/최종점 도착을 확정할 정합 상태가 아니어서 재검증 대기 중"
+    ),
     "returned_to_start": "출발지 복귀 완료",
     "mission_time_limit": "3분 제한시간 초과",
     "amcl_stable": "AMCL 위치추정이 안정됨",
     "localization_recovered": "AMCL 위치추정이 다시 정상화됨",
+    "automatic_recovery": "짧은 간격 후 같은 단계에서 우회 경로를 다시 계산함",
+    "forward_path_failed_reverse_fallback": (
+        "전진 경로를 찾지 못해 후진 허용 경로로 다시 계산하는 중"
+    ),
+    "forward_progress_stalled_reverse_fallback": (
+        "전진 진행이 멈춰 후진 허용 경로로 다시 계산하는 중"
+    ),
+    "reverse_fallback_active": "후진 허용 우회경로로 현재 목표 주행 중",
 }
 
 MOTOR_REASON_KO = {
@@ -55,9 +68,19 @@ MOTOR_REASON_KO = {
     "non_finite_twist": "유효하지 않은 주행 명령",
     "stopped": "Nav2 정지 명령",
     "rotate_in_place_rejected": "차량이 수행할 수 없는 제자리 회전 명령",
+    "reverse_align_rotate_crawl": "제자리 회전 대신 조향하며 -4 후진 중",
+    "reverse_align_zero_crawl": "Nav2 0속도 대신 마지막 조향을 유지하며 -4 후진 중",
     "lidar_swept_collision": "예상 주행 궤적에서 장애물을 감지함",
+    "obstacle_reverse_settle": "약 20cm 장애물 회피 후진 전 방향전환 보호 중",
+    "obstacle_reverse_active": "장애물에서 벗어나기 위해 약 20cm 직선 후진 중",
+    "obstacle_reverse_complete": "약 20cm 후진 완료 후 경로 재계산 중",
     "direction_change_dwell": "전진·후진 전환 전 안전 정지 중",
     "steering_settle": "목표 조향각 정렬 중",
+    "transient_nav2_zero_hold": "짧은 Nav2 정지 명령을 무시하고 ±4를 유지 중",
+    "no_vesc_telemetry": "VESC 상태정보가 아직 없음",
+    "stale_vesc_telemetry": "VESC 상태정보가 끊김",
+    "vesc_low_voltage_stop": "VESC 입력전압이 모터 정지 기준 이하임",
+    "vesc_fault": "VESC 하드웨어 fault가 발생함",
     "shutdown": "노드 종료로 정지",
 }
 
@@ -105,6 +128,8 @@ def explain_status(
         return state_text, "운전자가 STOP 상태로 설정함"
     if state in {"LOCALIZING", "PAUSED_LOCALIZATION"}:
         return state_text, LOCALIZATION_REASON_KO.get(localization, localization)
+    if state == "RECOVERING":
+        return state_text, "짧은 간격 후 같은 단계에서 우회 경로를 자동 재계산하는 중"
     if state == "ABORTED":
         return state_text, MISSION_REASON_KO.get(mission_reason, mission_reason or "미션 중단")
     if state == "COMPLETED":
@@ -113,6 +138,12 @@ def explain_status(
         return state_text, "SPACE 시작 요청 또는 Nav2 첫 목표 전송 대기"
     if state == "HOLDING":
         return state_text, "목표 도착 후 정지시간 확인 중"
+    if mission_reason in {
+        "forward_path_failed_reverse_fallback",
+        "forward_progress_stalled_reverse_fallback",
+        "reverse_fallback_active",
+    }:
+        return state_text, MISSION_REASON_KO[mission_reason]
     if motor_reason and motor_reason != "ok":
         return state_text, MOTOR_REASON_KO.get(motor_reason, motor_reason)
     if mission_reason:

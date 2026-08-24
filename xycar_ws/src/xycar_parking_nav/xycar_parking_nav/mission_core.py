@@ -23,12 +23,71 @@ class Pose2D:
 
 
 @dataclass(frozen=True)
+class TransitPassAssessment:
+    passed: bool
+    reason: str
+    distance_m: float
+    along_past_m: float
+    lateral_error_m: float
+
+
+def assess_transit_waypoint_pass(
+    *,
+    current: Pose2D,
+    previous: Pose2D,
+    target: Pose2D,
+    radius_m: float,
+    maximum_miss_distance_m: float,
+    lateral_tolerance_m: float,
+) -> TransitPassAssessment:
+    """Accept a loose transit point by radius or by crossing its gate."""
+    limits = (
+        float(radius_m),
+        float(maximum_miss_distance_m),
+        float(lateral_tolerance_m),
+    )
+    if not all(math.isfinite(value) and value > 0.0 for value in limits):
+        raise ValueError("transit pass limits must be finite and positive")
+
+    distance = math.hypot(current.x - target.x, current.y - target.y)
+    if distance <= limits[0]:
+        return TransitPassAssessment(True, "radius", distance, 0.0, 0.0)
+
+    segment_x = target.x - previous.x
+    segment_y = target.y - previous.y
+    segment_length = math.hypot(segment_x, segment_y)
+    if segment_length <= 1.0e-6:
+        return TransitPassAssessment(False, "degenerate", distance, 0.0, distance)
+    unit_x = segment_x / segment_length
+    unit_y = segment_y / segment_length
+    offset_x = current.x - target.x
+    offset_y = current.y - target.y
+    along_past = offset_x * unit_x + offset_y * unit_y
+    lateral = abs(-offset_x * unit_y + offset_y * unit_x)
+    passed = (
+        along_past >= 0.0
+        and distance <= limits[1]
+        and lateral <= limits[2]
+    )
+    return TransitPassAssessment(
+        passed,
+        "crossed_gate" if passed else "not_passed",
+        distance,
+        along_past,
+        lateral,
+    )
+
+
+@dataclass(frozen=True)
 class MissionStep:
     name: str
     reference_pose: Pose2D
     hold_sec: float = 0.0
     parking_goal: bool = False
+    allow_reverse: bool = False
+    precise_goal: bool = False
     maximum_retries: int = 2
+    reverse_only: bool = False
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -37,6 +96,51 @@ class MissionStep:
             raise ValueError("hold_sec must be non-negative")
         if self.maximum_retries < 0:
             raise ValueError("maximum_retries must be non-negative")
+        if self.reverse_only and not self.allow_reverse:
+            raise ValueError("reverse_only requires allow_reverse")
+
+
+def is_reverse_fallback_candidate(step: MissionStep) -> bool:
+    """Return whether a failed forward transit may retry bidirectionally.
+
+    Precise cusp/parking poses retain their explicitly designed direction. The
+    fallback is only for ordinary transit waypoints that a forward-only Dubins
+    planner can make unreachable after the vehicle has passed them.
+    """
+
+    return not (step.allow_reverse or step.precise_goal or step.parking_goal)
+
+
+class ForwardProgressWatchdog:
+    """Detect a forward goal whose remaining distance is not decreasing."""
+
+    def __init__(self, timeout_sec: float, minimum_improvement_m: float) -> None:
+        values = (float(timeout_sec), float(minimum_improvement_m))
+        if not all(math.isfinite(value) and value > 0.0 for value in values):
+            raise ValueError("forward progress limits must be finite and positive")
+        self.timeout_sec = values[0]
+        self.minimum_improvement_m = values[1]
+        self.best_distance_m: float | None = None
+        self.last_progress_sec: float | None = None
+
+    def reset(self) -> None:
+        self.best_distance_m = None
+        self.last_progress_sec = None
+
+    def update(self, *, distance_m: float, now_sec: float) -> bool:
+        distance = float(distance_m)
+        now = float(now_sec)
+        if not math.isfinite(distance) or distance < 0.0 or not math.isfinite(now):
+            return False
+        if self.best_distance_m is None or self.last_progress_sec is None:
+            self.best_distance_m = distance
+            self.last_progress_sec = now
+            return False
+        if distance <= self.best_distance_m - self.minimum_improvement_m:
+            self.best_distance_m = distance
+            self.last_progress_sec = now
+            return False
+        return now - self.last_progress_sec >= self.timeout_sec
 
 
 @dataclass(frozen=True)
@@ -110,13 +214,92 @@ def pose_error(current: Pose2D, target: Pose2D) -> tuple[float, float]:
 
 
 @dataclass(frozen=True)
+class DirectReverseCommand:
+    """Closed-loop reverse command for the final straight parking segment."""
+
+    linear_x: float
+    angular_z: float
+    distance_m: float
+    yaw_error_rad: float
+    lateral_error_m: float
+    reached: bool
+
+
+def direct_reverse_parking_command(
+    *,
+    current: Pose2D,
+    target: Pose2D,
+    speed_mps: float,
+    position_tolerance_m: float,
+    yaw_tolerance_rad: float,
+    heading_gain: float,
+    maximum_curvature: float,
+) -> DirectReverseCommand:
+    """Track a target behind the vehicle without asking Nav2 to replan.
+
+    The position term is reverse pure pursuit.  A separate signed heading
+    term keeps the body aligned with the surveyed parking-pose yaw.  The
+    caller still owns localization, obstacle and actuator safety gates.
+    """
+
+    values = (
+        float(speed_mps),
+        float(position_tolerance_m),
+        float(yaw_tolerance_rad),
+        float(heading_gain),
+        float(maximum_curvature),
+    )
+    if not all(math.isfinite(value) and value > 0.0 for value in values):
+        raise ValueError("direct reverse controller limits must be positive")
+
+    delta_x = target.x - current.x
+    delta_y = target.y - current.y
+    distance = math.hypot(delta_x, delta_y)
+    yaw_error = normalize_angle(target.yaw - current.yaw)
+    lateral = -math.sin(current.yaw) * delta_x + math.cos(current.yaw) * delta_y
+    reached = (
+        distance <= position_tolerance_m
+        and abs(yaw_error) <= yaw_tolerance_rad
+    )
+    if reached:
+        return DirectReverseCommand(
+            linear_x=0.0,
+            angular_z=0.0,
+            distance_m=distance,
+            yaw_error_rad=yaw_error,
+            lateral_error_m=lateral,
+            reached=True,
+        )
+
+    # Pure-pursuit curvature stays finite near the target.  The heading term
+    # is expressed as yaw rate, so its sign remains intuitive with v < 0.
+    squared_distance = max(distance * distance, 0.01)
+    path_curvature = max(
+        -maximum_curvature,
+        min(maximum_curvature, 2.0 * lateral / squared_distance),
+    )
+    linear_x = -abs(speed_mps)
+    angular_z = linear_x * path_curvature + heading_gain * yaw_error
+    maximum_yaw_rate = abs(linear_x) * maximum_curvature
+    angular_z = max(-maximum_yaw_rate, min(maximum_yaw_rate, angular_z))
+    return DirectReverseCommand(
+        linear_x=linear_x,
+        angular_z=angular_z,
+        distance_m=distance,
+        yaw_error_rad=yaw_error,
+        lateral_error_m=lateral,
+        reached=False,
+    )
+
+
+@dataclass(frozen=True)
 class LocalizationGateConfig:
-    maximum_xy_variance: float = 0.04
-    maximum_yaw_variance: float = 0.08
+    maximum_xy_variance: float = 0.0625
+    maximum_yaw_variance: float = 0.12
     maximum_pose_age_sec: float = 4.00
     maximum_position_jump_m: float = 0.60
     maximum_yaw_jump_rad: float = 0.80
-    required_stable_samples: int = 8
+    required_stable_samples: int = 6
 
     def __post_init__(self) -> None:
         positive = (
@@ -238,7 +421,10 @@ def mission_steps_from_dicts(items: Iterable[dict]) -> list[MissionStep]:
                 ),
                 hold_sec=float(item.get("hold_sec", 0.0)),
                 parking_goal=bool(item.get("parking_goal", False)),
+                allow_reverse=bool(item.get("allow_reverse", False)),
+                precise_goal=bool(item.get("precise_goal", False)),
                 maximum_retries=int(item.get("maximum_retries", 2)),
+                reverse_only=bool(item.get("reverse_only", False)),
             )
         )
     if not steps:

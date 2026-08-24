@@ -1,0 +1,24 @@
+<!-- Reverse-only Ackermann tree for loose, route-shaping waypoints. -->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+      <Sequence name="ReverseOnlyTransit">
+        <RecoveryNode number_of_retries="1" name="ComputeReverseOnlyPathToPose">
+          <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+          <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
+        </RecoveryNode>
+        <RecoveryNode number_of_retries="1" name="FollowReverseOnlyTransitPath">
+          <FollowPath path="{path}" controller_id="FollowPathReverse" goal_checker_id="transit_goal_checker"/>
+          <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
+        </RecoveryNode>
+      </Sequence>
+      <ReactiveFallback name="RecoveryFallback">
+        <GoalUpdated/>
+        <Sequence name="ClearingActions">
+          <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap"/>
+          <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
+        </Sequence>
+      </ReactiveFallback>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

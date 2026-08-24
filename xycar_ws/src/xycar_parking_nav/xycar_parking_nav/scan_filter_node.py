@@ -59,6 +59,11 @@ class SlamScanFilterNode(Node):
             "주차용 LiDAR 필터가 준비되었습니다: 사용 거리 %.2f~%.2f m"
             % (self.minimum_range, self.maximum_range)
         )
+        self.get_logger().info(
+            "LiDAR 필터 조건: 유한한 거리값이면서 %.2f <= range <= %.2f m만 "
+            "통과, 나머지는 NaN 처리, 각도 제외구간 없음"
+            % (self.minimum_range, self.maximum_range)
+        )
 
     def _on_scan(self, message: LaserScan) -> None:
         ranges = filter_ranges(
@@ -85,7 +90,15 @@ class SlamScanFilterNode(Node):
         if now - self.last_report_sec >= 5.0:
             ratio = self.accepted / max(1, self.received)
             self.get_logger().info(
-                "주차용 LiDAR 유효 데이터 비율: %.1f%%" % (ratio * 100.0)
+                "주차용 LiDAR 유효 데이터: %d/%d (%.1f%%), "
+                "필터조건=finite & %.2f~%.2fm"
+                % (
+                    self.accepted,
+                    self.received,
+                    ratio * 100.0,
+                    self.minimum_range,
+                    self.maximum_range,
+                )
             )
             self.received = 0
             self.accepted = 0
