@@ -1208,7 +1208,7 @@ class SequentialHybridDriver(Node):
         self.declare_parameter("shortcut_yolo_required_frames", 2)
         self.declare_parameter("shortcut_yolo_absence_frames", 1)
         self.declare_parameter("shortcut_entry_speed_command", 9.0)
-        self.declare_parameter("shortcut_left_lane_offset_m", 0.02)
+        self.declare_parameter("shortcut_left_lane_offset_m", 0.03)
         self.declare_parameter("shortcut_wait_for_entry_ready", True)
         self.declare_parameter(
             "shortcut_entry_ready_topic", "/shortcut/entry/ready"

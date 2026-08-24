@@ -106,7 +106,7 @@ sequential_hybrid_driver:
     shortcut_yolo_required_frames: 2
     shortcut_yolo_absence_frames: 1
     shortcut_entry_speed_command: 9.0
-    shortcut_left_lane_offset_m: 0.02
+    shortcut_left_lane_offset_m: 0.03
     shortcut_wait_for_entry_ready: true
     shortcut_entry_ready_topic: /shortcut/entry/ready
     shortcut_entry_search_timeout_sec: 12.0

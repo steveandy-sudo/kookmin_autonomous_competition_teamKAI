@@ -128,7 +128,7 @@ def test_integrated_run_exposes_shortcut_left_lane_preposition_offset() -> None:
     config_source = HYBRID_CONFIG.read_text(encoding="utf-8")
 
     assert (
-        'SHORTCUT_LEFT_LANE_OFFSET_M="${SHORTCUT_LEFT_LANE_OFFSET_M:-0.02}"'
+        'SHORTCUT_LEFT_LANE_OFFSET_M="${SHORTCUT_LEFT_LANE_OFFSET_M:-0.03}"'
         in run_source
     )
     assert (
@@ -136,10 +136,10 @@ def test_integrated_run_exposes_shortcut_left_lane_preposition_offset() -> None:
         in run_source
     )
     assert (
-        '"shortcut_left_lane_offset_m", default_value="0.02"'
+        '"shortcut_left_lane_offset_m", default_value="0.03"'
         in launch_source
     )
-    assert "shortcut_left_lane_offset_m: 0.02" in config_source
+    assert "shortcut_left_lane_offset_m: 0.03" in config_source
 
 
 def test_integrated_curve_response_defaults_match_real_profile() -> None:

@@ -277,7 +277,7 @@ def generate_launch_description():
                 "shortcut_entry_speed_command", default_value="9.0"
             ),
             DeclareLaunchArgument(
-                "shortcut_left_lane_offset_m", default_value="0.02"
+                "shortcut_left_lane_offset_m", default_value="0.03"
             ),
             DeclareLaunchArgument(
                 "vehicle_avoidance_enabled", default_value="true"
